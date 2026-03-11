@@ -14,6 +14,7 @@ import { AIAssistant } from '../components/AIAssistant.jsx'
 import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useTheme } from '../context/ThemeContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
 
@@ -90,6 +91,7 @@ export function FinanceWorkspace() {
   const { page = 'dashboard' } = useParams()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+  const { mode, toggleTheme } = useTheme()
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState('')
@@ -189,12 +191,18 @@ export function FinanceWorkspace() {
           <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{user.email}</div>
         </div>
 
-        <div style={{ padding:'16px 20px', borderBottom:`1px solid ${C.border}`, background:'linear-gradient(180deg, transparent, rgba(59,130,246,0.06))' }}>
+        <div style={{ padding:'16px 20px', borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
           <div style={{ fontSize:24, fontWeight:900, color:C.accent, marginBottom:8 }}>{fmt(summary.cashBalance)}</div>
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
             {sidebarQuickStats.map(item => <div key={item} style={{ color:C.textDim, fontSize:12 }}>{item}</div>)}
           </div>
+        </div>
+
+        <div style={{ padding:'12px 10px 0' }}>
+          <button onClick={toggleTheme} style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
+            {mode === 'light' ? 'Usar modo escuro' : 'Usar modo claro'}
+          </button>
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:'14px 10px 18px' }}>
@@ -243,7 +251,7 @@ export function FinanceWorkspace() {
         </div>
       </aside>
 
-      <main style={{ flex:1, overflowY:'auto', padding:isMobile ? '20px 16px 56px' : '28px 28px 64px', marginLeft:isMobile ? 0 : 0 }}>
+      <main style={{ flex:1, overflowY:'auto', padding:isMobile ? '20px 16px 56px' : '28px 28px 64px' }}>
         <div style={{ marginBottom:22 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
@@ -254,10 +262,11 @@ export function FinanceWorkspace() {
                 <div style={{ fontSize:14, color:C.textSub, marginTop:10, maxWidth:620 }}>{SUBTITLES[page]}</div>
               </div>
             </div>
-            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+              {!isMobile && <button onClick={toggleTheme} style={{ ...chipButton, border:`1px solid ${C.border}` }}>{mode === 'light' ? 'Modo escuro' : 'Modo claro'}</button>}
               {quickLinks.map(item => {
                 const active = item.id === page
-                return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ padding:'8px 12px', borderRadius:999, border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>{item.label}</button>
+                return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...chipButton, border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
               })}
             </div>
           </div>
@@ -283,4 +292,14 @@ const iconButton = {
   fontSize:16,
   fontFamily:'inherit',
   flexShrink:0,
+}
+
+const chipButton = {
+  padding:'8px 12px',
+  borderRadius:999,
+  background:'transparent',
+  color:C.textSub,
+  fontSize:12,
+  cursor:'pointer',
+  fontFamily:'inherit',
 }
