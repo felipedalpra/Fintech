@@ -13,8 +13,9 @@ import { Goals } from '../components/Goals.jsx'
 import { AIAssistant } from '../components/AIAssistant.jsx'
 import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
+import { Settings } from '../components/Settings.jsx'
+import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { useTheme } from '../context/ThemeContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
 
@@ -36,6 +37,7 @@ const NAV_SECTIONS = [
       { id:'goals', label:'Metas', icon:'◉', hint:'Objetivos e acompanhamento' },
       { id:'reports', label:'Relatórios', icon:'◫', hint:'Análises e comparativos' },
       { id:'ai', label:'Assistente', icon:'✦', hint:'Perguntas sobre os dados' },
+      { id:'settings', label:'Configurações', icon:'⚙', hint:'Tema e preferências' },
     ],
   },
 ]
@@ -52,7 +54,8 @@ const TITLES = {
   balance:'Balanço Patrimonial',
   goals:'Metas',
   reports:'Relatórios Analíticos',
-  ai:'Assistente ERP',
+  ai:'Central de IA',
+  settings:'Configurações',
 }
 
 const SUBTITLES = {
@@ -67,7 +70,8 @@ const SUBTITLES = {
   balance:'Ativos, passivos e patrimônio da clínica.',
   goals:'Metas financeiras com progresso automático.',
   reports:'Relatórios analíticos para apoiar decisões.',
-  ai:'Pergunte sobre lucro, caixa, metas e desempenho.',
+  ai:'Previsões, diagnósticos e recomendações em tópicos.',
+  settings:'Ajuste visualização e preferências da plataforma.',
 }
 
 const PAGES = {
@@ -83,6 +87,7 @@ const PAGES = {
   goals:Goals,
   reports:Reports,
   ai:AIAssistant,
+  settings:Settings,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
@@ -91,7 +96,6 @@ export function FinanceWorkspace() {
   const { page = 'dashboard' } = useParams()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
-  const { mode, toggleTheme } = useTheme()
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState('')
@@ -199,12 +203,6 @@ export function FinanceWorkspace() {
           </div>
         </div>
 
-        <div style={{ padding:'12px 10px 0' }}>
-          <button onClick={toggleTheme} style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
-            {mode === 'light' ? 'Usar modo escuro' : 'Usar modo claro'}
-          </button>
-        </div>
-
         <div style={{ flex:1, overflowY:'auto', padding:'14px 10px 18px' }}>
           {NAV_SECTIONS.map(section => (
             <div key={section.title} style={{ marginBottom:14 }}>
@@ -263,7 +261,6 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-              {!isMobile && <button onClick={toggleTheme} style={{ ...chipButton, border:`1px solid ${C.border}` }}>{mode === 'light' ? 'Modo escuro' : 'Modo claro'}</button>}
               {quickLinks.map(item => {
                 const active = item.id === page
                 return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...chipButton, border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
@@ -276,6 +273,7 @@ export function FinanceWorkspace() {
         {saveError && <Card style={{ marginBottom:16, border:`1px solid ${C.yellow}33` }}><div style={{ color:C.yellow, fontSize:13 }}>Falha ao sincronizar com o backend. As alterações continuam na tela, mas não foram confirmadas no Supabase.</div></Card>}
         {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.6 }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
         <Page data={data} setData={setData} />
+        <CopilotWidget data={data} />
       </main>
     </div>
   )
