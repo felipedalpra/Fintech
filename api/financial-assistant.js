@@ -18,7 +18,7 @@ export default async function handler(req, res) {
 
   const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini'
   const systemPrompt = [
-    'Você é o CFO automático do SurgiFlow, um ERP financeiro para cirurgiões plásticos.',
+    'Você é o CFO automático do SurgiMetrics, um ERP financeiro para cirurgiões plásticos.',
     'Responda sempre em português do Brasil.',
     'Use somente os dados fornecidos no contexto.',
     'Seja conversacional, natural e direto, sem parecer um template engessado.',

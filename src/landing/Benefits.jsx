@@ -23,9 +23,9 @@ export function Benefits() {
   return (
     <section style={{ padding:'24px 0 78px' }}>
       <div style={{ marginBottom:24, animation:'fadeUp 0.8s ease both' }}>
-        <div style={{ fontSize:12, color:'#7DD3FC', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Por que escolher o SurgiFlow</div>
+        <div style={{ fontSize:12, color:'#7DD3FC', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Por que escolher o SurgiMetrics</div>
         <h2 style={{ margin:'0 0 10px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text, maxWidth:860 }}>Seu financeiro deixa de ser um ponto cego e passa a virar uma vantagem competitiva</h2>
-        <p style={{ margin:0, color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:760 }}>Cirurgiões plásticos de alta performance não podem operar com gestão improvisada. O SurgiFlow organiza o bastidor financeiro para sustentar crescimento com controle.</p>
+        <p style={{ margin:0, color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:760 }}>Cirurgiões plásticos de alta performance não podem operar com gestão improvisada. O SurgiMetrics organiza o bastidor financeiro para sustentar crescimento com controle.</p>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:18 }}>
         {ITEMS.map((item, index) => (

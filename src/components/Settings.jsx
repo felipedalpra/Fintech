@@ -14,7 +14,7 @@ export function Settings() {
             <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Visualização</div>
             <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Modo da plataforma</h3>
             <p style={{ margin:0, color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:460 }}>
-              O SurgiFlow abre por padrão em modo escuro. Ative a lanterna para usar o modo claro.
+              O SurgiMetrics abre por padrão em modo escuro. Ative a lanterna para usar o modo claro.
             </p>
           </div>
 

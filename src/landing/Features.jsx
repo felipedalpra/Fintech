@@ -19,7 +19,7 @@ export function Features() {
           <div style={{ fontSize:12, color:'#FDBA74', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>O que você ganha</div>
           <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text }}>Uma plataforma pensada para vender tranquilidade, clareza e crescimento</h2>
           <p style={{ margin:0, color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:580 }}>
-            O SurgiFlow combina visão executiva, controle financeiro e organização clínica em uma experiência que transmite sofisticação e controle do negócio.
+            O SurgiMetrics combina visão executiva, controle financeiro e organização clínica em uma experiência que transmite sofisticação e controle do negócio.
           </p>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:16 }}>

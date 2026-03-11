@@ -33,7 +33,7 @@ export function ProofSection() {
           <div style={{ fontSize:12, color:'#6EE7B7', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Valor percebido</div>
           <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text }}>A clínica cresce melhor quando o financeiro transmite segurança</h2>
           <p style={{ margin:'0 0 22px', color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:580 }}>
-            O SurgiFlow não vende só controle. Ele vende tranquilidade para decidir, inteligência para crescer e uma operação financeira à altura da sua imagem profissional.
+            O SurgiMetrics não vende só controle. Ele vende tranquilidade para decidir, inteligência para crescer e uma operação financeira à altura da sua imagem profissional.
           </p>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:14 }}>
             {METRICS.map(([label, value], index) => <div key={label} style={{ padding:18, borderRadius:20, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', animation:'fadeUp 0.8s ease both', animationDelay:`${0.08 * index}s` }}><div style={{ fontSize:11, color:'#7F98A3', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{label}</div><div style={{ fontSize:24, color:C.text, fontWeight:900, letterSpacing:'-0.04em', lineHeight:1.2 }}>{value}</div></div>)}

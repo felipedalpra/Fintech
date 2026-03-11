@@ -23,7 +23,7 @@ export function LoginPage({ initialMode = 'login' }) {
     const onboarding = searchParams.get('onboarding')
     if (!cycle && !trial && !onboarding) return ''
     const cycleLabel = BILLING_LABELS[cycle] || 'Mensal'
-    return `Plano SurgiFlow selecionado: ${cycleLabel}. Acesso gratuito no lançamento${trial ? ` + ${trial} dias grátis` : ''}.`
+    return `Plano SurgiMetrics selecionado: ${cycleLabel}. Acesso gratuito no lançamento${trial ? ` + ${trial} dias grátis` : ''}.`
   }, [searchParams])
 
   useEffect(() => {
@@ -114,7 +114,7 @@ export function LoginPage({ initialMode = 'login' }) {
           </h1>
           <p style={{ color:C.textSub, fontSize:14, lineHeight:1.6, marginBottom:22 }}>
             {isRegister
-              ? 'Cadastre seu acesso e comece a centralizar o financeiro da clínica no SurgiFlow.'
+              ? 'Cadastre seu acesso e comece a centralizar o financeiro da clínica no SurgiMetrics.'
               : 'Login com sessao persistida, rotas protegidas e sincronizacao remota da operacao financeira.'}
           </p>
 
@@ -175,7 +175,7 @@ export function LoginPage({ initialMode = 'login' }) {
       <div style={{ padding:'48px 32px', display:'flex', alignItems:'center' }}>
         <div style={{ maxWidth:560, width:'100%' }}>
           <div style={{ display:'inline-flex', padding:'8px 12px', borderRadius:999, border:`1px solid ${C.borderBright}`, background:C.glass, color:C.textSub, fontSize:12, marginBottom:20 }}>
-            SurgiFlow
+            SurgiMetrics
           </div>
           <h2 style={{ fontSize:'clamp(36px, 5vw, 64px)', lineHeight:0.95, margin:'0 0 18px', letterSpacing:'-0.04em' }}>
             Gestão financeira para cirurgia plástica.
@@ -189,7 +189,7 @@ export function LoginPage({ initialMode = 'login' }) {
             {[
               ['Tudo conectado em um só lugar', 'Análise financeira por IA, controle de consultas, gerenciamento financeiro e muito mais.'],
               ['Saiba exatamente o que está acontecendo', 'Acompanhe em tempo real o desempenho financeiro da sua clínica.'],
-              ['Desenvolvido para a cirurgia plástica', 'SurgiFlow é construído do zero para atender a rotina financeira de clínicas especializadas.'],
+              ['Desenvolvido para a cirurgia plástica', 'SurgiMetrics é construído do zero para atender a rotina financeira de clínicas especializadas.'],
             ].map(([title, text]) => (
               <div key={title} style={{ ...base.card, background:C.glass, backdropFilter:'blur(8px)' }}>
                 <div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{title}</div>

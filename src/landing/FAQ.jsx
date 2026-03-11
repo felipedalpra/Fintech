@@ -2,7 +2,7 @@ import { C } from '../theme.js'
 
 const ITEMS = [
   {
-    q:'O SurgiFlow é só para controle financeiro?',
+    q:'O SurgiMetrics é só para controle financeiro?',
     a:'Ele foi pensado para entregar visão gerencial do negócio. Você acompanha cirurgias, consultas, receitas, despesas e entende o resultado financeiro real da clínica.',
   },
   {
@@ -15,7 +15,7 @@ const ITEMS = [
   },
   {
     q:'O sistema passa uma imagem mais profissional para a clínica?',
-    a:'Sim. Além do ganho de controle, o SurgiFlow posiciona a operação com um nível de gestão compatível com clínicas premium.',
+    a:'Sim. Além do ganho de controle, o SurgiMetrics posiciona a operação com um nível de gestão compatível com clínicas premium.',
   },
 ]
 

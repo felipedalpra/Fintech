@@ -1,4 +1,4 @@
-# SurgiFlow
+# SurgiMetrics
 
 ERP financeiro para clínicas e cirurgiões plásticos com:
 - dashboard financeiro

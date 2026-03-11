@@ -37,7 +37,7 @@ export function Hero() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
               <div>
                 <div style={{ fontSize:11, color:'#8AA2AE', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Clínica no controle</div>
-                <div style={{ color:C.text, fontSize:26, fontWeight:900, letterSpacing:'-0.04em' }}>SurgiFlow</div>
+                <div style={{ color:C.text, fontSize:26, fontWeight:900, letterSpacing:'-0.04em' }}>SurgiMetrics</div>
               </div>
               <div style={{ padding:'8px 12px', borderRadius:999, background:'rgba(16,185,129,0.16)', color:'#6EE7B7', fontSize:12, fontWeight:700 }}>Caixa saudável</div>
             </div>

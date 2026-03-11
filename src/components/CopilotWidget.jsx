@@ -15,7 +15,7 @@ export function CopilotWidget({ data }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [messages, setMessages] = useState([
-    { role:'assistant', content:'Sou o copiloto do SurgiFlow. Posso responder sobre lucro, caixa, metas, riscos e previsões.' },
+    { role:'assistant', content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.' },
   ])
   const bottomRef = useRef(null)
 

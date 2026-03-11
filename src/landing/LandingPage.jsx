@@ -38,7 +38,7 @@ export function LandingPage() {
       `}</style>
       <header style={{ position:'sticky', top:0, zIndex:20, backdropFilter:'blur(14px)', background:'rgba(5,11,18,0.68)', borderBottom:'1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ maxWidth:1180, margin:'0 auto', padding:'16px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:20 }}>
-          <div style={{ fontSize:20, fontWeight:900, letterSpacing:'-0.03em' }}><span style={{ color:'#67E8F9' }}>▲</span> SurgiFlow</div>
+          <div style={{ fontSize:20, fontWeight:900, letterSpacing:'-0.03em' }}><span style={{ color:'#67E8F9' }}>▲</span> SurgiMetrics</div>
           <nav style={{ display:'flex', gap:18, alignItems:'center', flexWrap:'wrap' }}>
             <a href="#beneficios" style={navLink}>Benefícios</a>
             <a href="#funcionalidades" style={navLink}>Funcionalidades</a>
