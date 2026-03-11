@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C, base } from '../theme.js'
-import { answerFinancialQuestion, buildFinancialBrain, buildFinancialContext } from '../ai/financialBrain.js'
+import { buildFinancialBrain } from '../ai/financialBrain.js'
+import { queryFinancialAssistant } from '../lib/aiClient.js'
 
 const QUICK_QUESTIONS = [
   'Qual foi meu lucro este mês?',
@@ -30,27 +31,9 @@ export function CopilotWidget({ data }) {
     setInput('')
     setSending(true)
 
-    const fallback = answerFinancialQuestion(question, brain)
-    let answer = fallback
-
-    try {
-      const response = await fetch('/api/financial-assistant', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({
-          question,
-          context:buildFinancialContext(brain),
-        }),
-      })
-      if (response.ok) {
-        const payload = await response.json()
-        if (payload?.answer) answer = payload.answer
-      }
-    } catch {
-      answer = fallback
-    } finally {
-      setSending(false)
-    }
+    const history = [...messages, { role:'user', content:question }]
+    const answer = await queryFinancialAssistant({ question, brain, history })
+    setSending(false)
 
     setMessages(current => [...current, { role:'assistant', content:answer }])
   }

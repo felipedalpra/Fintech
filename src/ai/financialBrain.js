@@ -97,6 +97,17 @@ export function answerFinancialQuestion(question, brain) {
   const q = normalize(question)
   const lines = []
 
+  if (matches(q, ['oi', 'ola', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'e ai', 'e aí'])) {
+    lines.push('Oi. Estou acompanhando os dados da clínica e posso ajudar com lucro, caixa, metas, previsões e rentabilidade.')
+    lines.push('Se quiser, me pergunte algo direto, como "qual foi meu lucro este mês?" ou "qual procedimento é mais lucrativo?".')
+    return lines.join('\n')
+  }
+
+  if (matches(q, ['obrigado', 'obrigada', 'valeu'])) {
+    lines.push('Certo. Se quiser, posso analisar outro ponto do financeiro da clínica.')
+    return lines.join('\n')
+  }
+
   if (matches(q, ['lucro este mes', 'lucro do mes', 'lucro do mês'])) {
     lines.push(`Lucro do mês: ${fmt(brain.analysisLayer.main.monthNetProfit)}.`)
     lines.push(`Margem líquida: ${brain.analysisLayer.main.monthMarginLabel}.`)

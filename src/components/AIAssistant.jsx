@@ -1,65 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { C, base } from '../theme.js'
+import { useMemo } from 'react'
+import { C } from '../theme.js'
 import { fmt } from '../utils.js'
-import { answerFinancialQuestion, buildFinancialBrain, buildFinancialContext } from '../ai/financialBrain.js'
-import { Card, Btn, Badge, Progress } from './UI.jsx'
-
-const TOPIC_QUESTIONS = [
-  'Qual foi meu lucro este mês?',
-  'Faça uma previsão para o próximo mês.',
-  'Qual procedimento é mais lucrativo?',
-  'Quais erros financeiros você encontrou?',
-  'Quantas cirurgias preciso para bater minha meta?',
-]
+import { buildFinancialBrain } from '../ai/financialBrain.js'
+import { Card, Badge, Progress } from './UI.jsx'
 
 export function AIAssistant({ data }) {
   const brain = useMemo(() => buildFinancialBrain(data), [data])
-  const [messages, setMessages] = useState([
-    {
-      role:'assistant',
-      content:'Este é o centro de inteligência do SurgiFlow. Aqui você acompanha previsões, diagnósticos, metas e recomendações. O copiloto conversacional principal também fica disponível no canto inferior direito.',
-    },
-  ])
-  const [input, setInput] = useState('')
-  const [sending, setSending] = useState(false)
-  const bottomRef = useRef(null)
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior:'smooth' })
-  }, [messages, sending])
-
-  const send = async preset => {
-    const question = (preset || input).trim()
-    if (!question || sending) return
-
-    setMessages(current => [...current, { role:'user', content:question }])
-    setInput('')
-    setSending(true)
-
-    const fallback = answerFinancialQuestion(question, brain)
-    let answer = fallback
-
-    try {
-      const response = await fetch('/api/financial-assistant', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({
-          question,
-          context:buildFinancialContext(brain),
-        }),
-      })
-      if (response.ok) {
-        const payload = await response.json()
-        if (payload?.answer) answer = payload.answer
-      }
-    } catch {
-      answer = fallback
-    } finally {
-      setSending(false)
-    }
-
-    setMessages(current => [...current, { role:'assistant', content:answer }])
-  }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
@@ -127,55 +73,6 @@ export function AIAssistant({ data }) {
           </div>
         </SummaryCard>
       </TopicGrid>
-
-      <Card>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
-          <div>
-            <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Agente conversacional</div>
-            <div style={{ color:C.textDim, fontSize:13, marginTop:4 }}>Canal específico para perguntas detalhadas. O copiloto flutuante usa a mesma lógica.</div>
-          </div>
-          <Badge color={C.accent}>CFO automático</Badge>
-        </div>
-
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
-          {TOPIC_QUESTIONS.map(item => (
-            <button key={item} type="button" onClick={() => send(item)} style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:20, padding:'6px 14px', color:C.textSub, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
-              {item}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ minHeight:280, maxHeight:420, overflowY:'auto', display:'flex', flexDirection:'column', gap:12, padding:'4px 0 10px' }}>
-          {messages.map((message, index) => (
-            <div key={index} style={{ display:'flex', justifyContent:message.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div style={{ maxWidth:'82%', background:message.role === 'user' ? C.accent : C.surface, border:`1px solid ${message.role === 'user' ? C.accent + '55' : C.border}`, borderRadius:message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', padding:'12px 14px', whiteSpace:'pre-wrap', color:C.text, fontSize:13, lineHeight:1.65 }}>
-                {message.content}
-              </div>
-            </div>
-          ))}
-          {sending && <div style={{ maxWidth:'82%', background:C.surface, border:`1px solid ${C.border}`, borderRadius:'16px 16px 16px 4px', padding:'12px 14px', color:C.textDim, fontSize:13 }}>Analisando os dados da clínica...</div>}
-          <div ref={bottomRef} />
-        </div>
-
-        <div style={{ display:'flex', gap:10, marginTop:12 }}>
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-            rows={3}
-            placeholder="Pergunte sobre lucro, metas, despesas, fluxo de caixa, consultas ou procedimentos"
-            style={{ ...base.input, flex:1, resize:'none', padding:'12px 14px', lineHeight:1.6 }}
-          />
-          <Btn onClick={() => send()} disabled={!input.trim() || sending} style={{ alignSelf:'flex-end', padding:'12px 24px' }}>
-            {sending ? 'Enviando...' : 'Enviar'}
-          </Btn>
-        </div>
-      </Card>
     </div>
   )
 }

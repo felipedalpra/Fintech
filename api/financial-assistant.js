@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(503).json({ error:'OPENAI_API_KEY not configured' })
   }
 
-  const { question, context } = req.body || {}
+  const { question, context, history = [] } = req.body || {}
   if (!question || typeof question !== 'string') {
     return res.status(400).json({ error:'Question is required' })
   }
@@ -21,10 +21,58 @@ export default async function handler(req, res) {
     'Você é o CFO automático do SurgiFlow, um ERP financeiro para cirurgiões plásticos.',
     'Responda sempre em português do Brasil.',
     'Use somente os dados fornecidos no contexto.',
-    'Estruture a resposta de forma objetiva: dados, explicação, diagnóstico e recomendação.',
+    'Seja conversacional, natural e direto, sem parecer um template engessado.',
+    'Considere o histórico recente da conversa para manter contexto e continuidade.',
+    'Se a mensagem do usuário for apenas uma saudação, resposta social curta ou agradecimento, responda de forma breve e natural, sem despejar métricas financeiras automaticamente.',
+    'Só entre em análise financeira quando a pergunta pedir isso ou quando o usuário demonstrar intenção clara de análise.',
+    'Quando fizer sentido, organize a resposta em blocos curtos: dados, leitura, risco e ação.',
+    'Não precisa usar sempre a mesma estrutura; varie de acordo com a pergunta.',
     'Se o contexto não sustentar uma conclusão, diga isso explicitamente.',
     'Não invente números.',
+    'Evite frases genéricas e repetitivas.',
   ].join(' ')
+
+  const input = [
+    {
+      role:'system',
+      content:[
+        { type:'input_text', text:systemPrompt },
+      ],
+    },
+    {
+      role:'user',
+      content:[
+        {
+          type:'input_text',
+          text:[
+            'Contexto financeiro estruturado da clínica:',
+            JSON.stringify(context || {}, null, 2),
+          ].join('\n\n'),
+        },
+      ],
+    },
+  ]
+
+  const recentHistory = Array.isArray(history) ? history.slice(-8) : []
+  recentHistory.forEach(item => {
+    if (!item?.content || (item.role !== 'user' && item.role !== 'assistant')) return
+    input.push({
+      role:item.role,
+      content:[
+        { type:'input_text', text:item.content },
+      ],
+    })
+  })
+
+  input.push({
+    role:'user',
+    content:[
+      {
+        type:'input_text',
+        text:`Pergunta atual do médico: ${question}`,
+      },
+    ],
+  })
 
   try {
     const response = await fetch(OPENAI_URL, {
@@ -35,27 +83,7 @@ export default async function handler(req, res) {
       },
       body:JSON.stringify({
         model,
-        input:[
-          {
-            role:'system',
-            content:[
-              { type:'input_text', text:systemPrompt },
-            ],
-          },
-          {
-            role:'user',
-            content:[
-              {
-                type:'input_text',
-                text:[
-                  `Pergunta do médico: ${question}`,
-                  'Contexto financeiro estruturado da clínica:',
-                  JSON.stringify(context || {}, null, 2),
-                ].join('\n\n'),
-              },
-            ],
-          },
-        ],
+        input,
       }),
     })
 
