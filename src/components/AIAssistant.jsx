@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt } from '../utils.js'
-import { answerFinancialQuestion, buildFinancialBrain, buildFinancialWelcomeMessage } from '../ai/financialBrain.js'
+import { answerFinancialQuestion, buildFinancialBrain, buildFinancialContext, buildFinancialWelcomeMessage } from '../ai/financialBrain.js'
 import { Card, Btn, Badge, Progress } from './UI.jsx'
 
 const SUGGESTIONS = [
@@ -20,6 +20,7 @@ export function AIAssistant({ data }) {
   const brain = useMemo(() => buildFinancialBrain(data), [data])
   const [messages, setMessages] = useState([{ role:'assistant', content:buildFinancialWelcomeMessage(brain) }])
   const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -30,12 +31,36 @@ export function AIAssistant({ data }) {
     bottomRef.current?.scrollIntoView({ behavior:'smooth' })
   }, [messages])
 
-  const send = () => {
+  const send = async () => {
     if (!input.trim()) return
     const question = input.trim()
-    const answer = answerFinancialQuestion(question, brain)
-    setMessages(current => [...current, { role:'user', content:question }, { role:'assistant', content:answer }])
+    setMessages(current => [...current, { role:'user', content:question }])
     setInput('')
+    setSending(true)
+
+    const fallback = answerFinancialQuestion(question, brain)
+    let answer = fallback
+
+    try {
+      const response = await fetch('/api/financial-assistant', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({
+          question,
+          context:buildFinancialContext(brain),
+        }),
+      })
+      if (response.ok) {
+        const payload = await response.json()
+        if (payload?.answer) answer = payload.answer
+      }
+    } catch {
+      answer = fallback
+    } finally {
+      setSending(false)
+    }
+
+    setMessages(current => [...current, { role:'assistant', content:answer }])
   }
 
   return (
@@ -166,6 +191,14 @@ export function AIAssistant({ data }) {
             </div>
           </div>
         ))}
+        {sending && (
+          <div style={{ display:'flex', justifyContent:'flex-start' }}>
+            <div style={{ maxWidth:'82%', background:C.surface, border:`1px solid ${C.border}`, borderRadius:'18px 18px 18px 4px', padding:'13px 17px', fontSize:14, color:C.textDim, lineHeight:1.7 }}>
+              <div style={{ fontSize:11, color:C.accent, fontWeight:700, marginBottom:8, letterSpacing:'0.06em', textTransform:'uppercase' }}>CFO Automático</div>
+              Analisando os dados da clínica...
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </Card>
 
@@ -174,7 +207,7 @@ export function AIAssistant({ data }) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter' && !e.shiftKey && !sending) {
               e.preventDefault()
               send()
             }
@@ -183,7 +216,7 @@ export function AIAssistant({ data }) {
           rows={3}
           style={{ ...base.input, flex:1, padding:'12px 16px', fontSize:14, resize:'none', lineHeight:1.5 }}
         />
-        <Btn onClick={send} disabled={!input.trim()} style={{ padding:'12px 24px', alignSelf:'flex-end' }}>Enviar</Btn>
+        <Btn onClick={send} disabled={!input.trim() || sending} style={{ padding:'12px 24px', alignSelf:'flex-end' }}>{sending ? 'Enviando...' : 'Enviar'}</Btn>
       </div>
     </div>
   )

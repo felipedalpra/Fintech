@@ -70,6 +70,29 @@ export function buildFinancialWelcomeMessage(brain) {
   return lines.join('\n')
 }
 
+export function buildFinancialContext(brain) {
+  return {
+    main:brain.analysisLayer.main,
+    unitEconomics:brain.analysisLayer.unitEconomics,
+    operational:brain.analysisLayer.operational,
+    trends:brain.analysisLayer.trends,
+    forecast:brain.forecast,
+    health:brain.health,
+    strategicPanel:brain.strategicPanel,
+    alerts:brain.diagnosisLayer.alerts,
+    highlights:brain.diagnosisLayer.highlights,
+    recommendations:brain.recommendationLayer.priorities,
+    goals:brain.goals.items.map(item => ({
+      title:item.title,
+      metric:item.metric,
+      current:item.current,
+      target:item.target,
+      gap:item.gap,
+      guidance:item.guidance,
+    })),
+  }
+}
+
 export function answerFinancialQuestion(question, brain) {
   const q = normalize(question)
   const lines = []
