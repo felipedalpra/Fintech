@@ -97,13 +97,13 @@ export function answerFinancialQuestion(question, brain) {
   const q = normalize(question)
   const lines = []
 
-  if (matches(q, ['oi', 'ola', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'e ai', 'e aí'])) {
+  if (isGreeting(q)) {
     lines.push('Oi. Estou acompanhando os dados da clínica e posso ajudar com lucro, caixa, metas, previsões e rentabilidade.')
     lines.push('Se quiser, me pergunte algo direto, como "qual foi meu lucro este mês?" ou "qual procedimento é mais lucrativo?".')
     return lines.join('\n')
   }
 
-  if (matches(q, ['obrigado', 'obrigada', 'valeu'])) {
+  if (isThanks(q)) {
     lines.push('Certo. Se quiser, posso analisar outro ponto do financeiro da clínica.')
     return lines.join('\n')
   }
@@ -736,6 +736,29 @@ function normalize(text) {
 
 function matches(text, patterns) {
   return patterns.some(pattern => text.includes(pattern))
+}
+
+function isGreeting(text) {
+  const compact = text.trim()
+  return [
+    'oi',
+    'ola',
+    'bom dia',
+    'boa tarde',
+    'boa noite',
+    'e ai',
+  ].includes(compact)
+}
+
+function isThanks(text) {
+  const compact = text.trim()
+  return [
+    'obrigado',
+    'obrigada',
+    'valeu',
+    'show',
+    'perfeito',
+  ].includes(compact)
 }
 
 function sum(values) {
