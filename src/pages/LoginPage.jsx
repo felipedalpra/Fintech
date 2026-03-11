@@ -1,19 +1,41 @@
-import { useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { hasSupabaseEnv } from '../lib/supabase.js'
 import { Btn, Card, FInput } from '../components/UI.jsx'
 import { C, base } from '../theme.js'
+import { BILLING_LABELS } from '../billing/plans.js'
 
-export function LoginPage() {
+export function LoginPage({ initialMode = 'login' }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const { user, loading, signIn, signUp, requestPasswordReset } = useAuth()
-  const [mode, setMode] = useState('login')
+  const [mode, setMode] = useState(initialMode)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [form, setForm] = useState({ name:'', email:'', password:'' })
+
+  const checkoutSummary = useMemo(() => {
+    const cycle = searchParams.get('cycle')
+    const trial = searchParams.get('trial')
+    const onboarding = searchParams.get('onboarding')
+    if (!cycle && !trial && !onboarding) return ''
+    const cycleLabel = BILLING_LABELS[cycle] || 'Mensal'
+    return `Plano SurgiFlow selecionado: ${cycleLabel}. Acesso gratuito no lançamento${trial ? ` + ${trial} dias grátis` : ''}.`
+  }, [searchParams])
+
+  useEffect(() => {
+    setMode(initialMode)
+  }, [initialMode])
+
+  useEffect(() => {
+    const email = searchParams.get('email')
+    if (email) {
+      setForm(current => ({ ...current, email }))
+    }
+  }, [searchParams])
 
   if (!hasSupabaseEnv) {
     return <SupabaseSetupScreen />
@@ -39,8 +61,8 @@ export function LoginPage() {
     try {
       if (isRegister) {
         await signUp(form)
-        setMode('login')
         setMessage('Conta criada. Verifique seu e-mail para confirmar o acesso, se o projeto estiver com confirmacao habilitada.')
+        navigate(`/login${location.search}`, { replace:true })
       } else {
         await signIn(form)
         navigate(location.state?.from || '/app/dashboard', { replace: true })
@@ -81,17 +103,26 @@ export function LoginPage() {
     }}>
       <div style={{ padding:'48px 24px', display:'flex', alignItems:'center', justifyContent:'center' }}>
         <Card style={{ width:'100%', maxWidth:420, padding:32 }}>
-          <div style={{ fontSize:13, color:C.accentLight, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:10 }}>
-            Acesso seguro
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:10 }}>
+            <div style={{ fontSize:13, color:C.accentLight, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>
+              {isRegister ? 'Nova conta' : 'Acesso seguro'}
+            </div>
+            <Link to="/" style={{ color:C.textDim, textDecoration:'none', fontSize:13 }}>Voltar ao site</Link>
           </div>
           <h1 style={{ fontSize:32, lineHeight:1.05, margin:'0 0 10px', color:C.text }}>
             {isRegister ? 'Crie sua conta' : 'Entre na plataforma'}
           </h1>
           <p style={{ color:C.textSub, fontSize:14, lineHeight:1.6, marginBottom:22 }}>
             {isRegister
-              ? 'Autenticacao real via Supabase com base financeira isolada para o consultorio.'
+              ? 'Cadastre seu acesso e comece a centralizar o financeiro da clínica no SurgiFlow.'
               : 'Login com sessao persistida, rotas protegidas e sincronizacao remota da operacao financeira.'}
           </p>
+
+          {checkoutSummary && (
+            <div style={{ background:C.green+'14', border:`1px solid ${C.green}33`, borderRadius:12, padding:'12px 14px', color:C.green, fontSize:13, marginBottom:16 }}>
+              {checkoutSummary}
+            </div>
+          )}
 
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {isRegister && (
@@ -131,12 +162,12 @@ export function LoginPage() {
             <span style={{ fontSize:13, color:C.textDim }}>
               {isRegister ? 'Ja tem acesso?' : 'Ainda nao tem conta?'}
             </span>
-            <button
-              onClick={() => setMode(isRegister ? 'login' : 'register')}
-              style={{ background:'transparent', border:'none', color:C.accentLight, cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}
+            <Link
+              to={isRegister ? '/login' : `/signup${location.search}`}
+              style={{ color:C.accentLight, textDecoration:'none', fontSize:13, fontWeight:700 }}
             >
               {isRegister ? 'Fazer login' : 'Criar conta'}
-            </button>
+            </Link>
           </div>
         </Card>
       </div>
@@ -158,7 +189,7 @@ export function LoginPage() {
             {[
               ['Tudo conectado em um só lugar', 'Análise financeira por IA, controle de consultas, gerenciamento financeiro e muito mais.'],
               ['Saiba exatamente o que está acontecendo', 'Acompanhe em tempo real o desempenho financeiro da sua clínica.'],
-              ['Desenvolvido para a realidade da cirurgia plástica', 'SurgiFlow é construído do zero para atender as necessidades específicas de clínicas de cirurgia plástica.'],
+              ['Desenvolvido para a cirurgia plástica', 'SurgiFlow é construído do zero para atender a rotina financeira de clínicas especializadas.'],
             ].map(([title, text]) => (
               <div key={title} style={{ ...base.card, background:C.glass, backdropFilter:'blur(8px)' }}>
                 <div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{title}</div>

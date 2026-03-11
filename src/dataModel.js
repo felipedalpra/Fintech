@@ -3,6 +3,9 @@ export function createEmptyData() {
     procedures: [],
     surgeries: [],
     consultations: [],
+    products: [],
+    productSales: [],
+    productPurchases: [],
     extraRevenues: [],
     expenses: [],
     assets: [],
@@ -50,6 +53,9 @@ export function normalizeData(data) {
     procedures,
     surgeries,
     consultations: Array.isArray(data?.consultations) ? data.consultations : [],
+    products: Array.isArray(data?.products) ? data.products : [],
+    productSales: Array.isArray(data?.productSales) ? data.productSales : [],
+    productPurchases: Array.isArray(data?.productPurchases) ? data.productPurchases : [],
     extraRevenues: Array.isArray(data?.extraRevenues) ? data.extraRevenues : [],
     expenses: Array.isArray(data?.expenses)
       ? data.expenses.map(expense => ({
@@ -73,6 +79,9 @@ export function isDataEmpty(data) {
   return normalized.procedures.length === 0
     && normalized.surgeries.length === 0
     && normalized.consultations.length === 0
+    && normalized.products.length === 0
+    && normalized.productSales.length === 0
+    && normalized.productPurchases.length === 0
     && normalized.extraRevenues.length === 0
     && normalized.expenses.length === 0
     && normalized.assets.length === 0
