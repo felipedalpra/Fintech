@@ -1,0 +1,176 @@
+import { useMemo, useState } from 'react'
+import { C } from '../theme.js'
+import { fmt, getPeriodRange, today, uid } from '../utils.js'
+import { buildMetrics } from '../useMetrics.js'
+import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+
+const EXTRA_REVENUE_EMPTY = { description:'', category:'procedimento_estetico', value:0, date:today() }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:'', status:'aberto' }
+const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
+
+const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'outros']
+
+export function Finance({ data, setData }) {
+  const [tab, setTab] = useState('receber')
+  const [period, setPeriod] = useState('month')
+  const [customRange, setCustomRange] = useState({ start:'', end:'' })
+  const [modalType, setModalType] = useState(null)
+  const [editing, setEditing] = useState(null)
+  const [showModal, setShowModal] = useState(false)
+  const [confirmState, setConfirmState] = useState(null)
+  const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
+  const range = getPeriodRange(period, customRange)
+  const m = buildMetrics(data, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
+
+  const flowRows = useMemo(() => {
+    const grouped = {}
+    m.cashFlowEntries.forEach(item => {
+      const key = item.date
+      if (!grouped[key]) grouped[key] = { date:key, entradas:0, saidas:0, saldo:0 }
+      if (item.type === 'entrada') grouped[key].entradas += item.value
+      if (item.type === 'saida') grouped[key].saidas += item.value
+      grouped[key].saldo = grouped[key].entradas - grouped[key].saidas
+    })
+    return Object.values(grouped).sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+  }, [m])
+
+  const openAdd = type => {
+    const defaults = {
+      extra:EXTRA_REVENUE_EMPTY,
+      expense:EXPENSE_EMPTY,
+      asset:BALANCE_EMPTY,
+      liability:BALANCE_EMPTY,
+    }[type]
+    setModalType(type)
+    setForm(defaults)
+    setEditing(null)
+    setShowModal(true)
+  }
+
+  const openEdit = (type, item) => {
+    setModalType(type)
+    setForm({ ...item })
+    setEditing(item.id)
+    setShowModal(true)
+  }
+
+  const save = () => {
+    if (modalType === 'extra') {
+      if (!form.description) return
+      setData(current => ({ ...current, extraRevenues: editing ? current.extraRevenues.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.extraRevenues, { ...form, id:uid() }] }))
+    }
+    if (modalType === 'expense') {
+      if (!form.description) return
+      setData(current => ({ ...current, expenses: editing ? current.expenses.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.expenses, { ...form, id:uid() }] }))
+    }
+    if (modalType === 'asset') {
+      if (!form.name) return
+      setData(current => ({ ...current, assets: editing ? current.assets.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.assets, { ...form, id:uid() }] }))
+    }
+    if (modalType === 'liability') {
+      if (!form.name) return
+      setData(current => ({ ...current, liabilities: editing ? current.liabilities.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.liabilities, { ...form, id:uid() }] }))
+    }
+    setShowModal(false)
+  }
+
+  const markReceivableAsPaid = item => {
+    if (item.source === 'cirurgia') {
+      setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
+    }
+    if (item.source === 'consulta') {
+      setData(current => ({ ...current, consultations:current.consultations.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
+    }
+  }
+
+  const markExpenseAsPaid = item => {
+    setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:today() } : record) }))
+  }
+
+  const removeRecord = record => {
+    const collection = { extra:'extraRevenues', expense:'expenses', asset:'assets', liability:'liabilities' }[record.type]
+    setData(current => ({ ...current, [collection]:current[collection].filter(item => item.id !== record.id) }))
+  }
+
+  const Tab = ({ id, label }) => <button onClick={() => setTab(id)} style={{ background:tab === id ? C.card : 'transparent', color:tab === id ? C.text : C.textSub, border:tab === id ? `1px solid ${C.border}` : '1px solid transparent', borderRadius:9, padding:'7px 18px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s' }}>{label}</button>
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
+        <select value={period} onChange={e => setPeriod(e.target.value)} style={{ minWidth:180 }}>
+          <option value="day">Dia</option>
+          <option value="week">Semana</option>
+          <option value="month">Mês</option>
+          <option value="quarter">Trimestre</option>
+          <option value="year">Ano</option>
+          <option value="custom">Personalizado</option>
+        </select>
+        {period === 'custom' && <><input type="date" value={customRange.start} onChange={e => setCustomRange(current => ({ ...current, start:e.target.value }))} /><input type="date" value={customRange.end} onChange={e => setCustomRange(current => ({ ...current, end:e.target.value }))} /></>}
+      </div>
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:14 }}>
+        {[
+          ['Receita bruta', fmt(m.grossRevenue), C.green],
+          ['Lucro líquido', fmt(m.netProfit), m.netProfit >= 0 ? C.green : C.red],
+          ['Fluxo de caixa', fmt(m.cashBalance), m.cashBalance >= 0 ? C.cyan : C.red],
+          ['Contas a receber', fmt(m.receivablesOpenTotal), C.accent],
+          ['Contas a pagar', fmt(m.payablesOpenTotal), C.yellow],
+          ['Patrimônio', fmt(m.equity), m.equity >= 0 ? C.green : C.red],
+        ].map(([label, value, color]) => <Card key={label} style={{ padding:18 }}><div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{label}</div><div style={{ fontSize:22, fontWeight:800, color }}>{value}</div></Card>)}
+      </div>
+
+      <div style={{ display:'flex', gap:4, background:C.surface, padding:4, borderRadius:12, width:'fit-content', flexWrap:'wrap' }}>
+        <Tab id="receber" label="Contas a receber" />
+        <Tab id="pagar" label="Contas a pagar" />
+        <Tab id="receitas" label="Outras receitas" />
+        <Tab id="despesas" label="Despesas" />
+        <Tab id="dre" label="DRE" />
+        <Tab id="balanco" label="Balanço" />
+        <Tab id="fluxo" label="Fluxo de caixa" />
+      </div>
+
+      {tab === 'receber' && <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />}
+
+      {tab === 'pagar' && <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{fmt(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />}
+
+      {tab === 'receitas' && <SectionTable title="Receitas extras" buttonLabel="+ Nova Receita" onAdd={() => openAdd('extra')} rows={data.extraRevenues.map(item => ({ key:item.id, cells:[item.description, item.category, item.date, <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.value)}</span>, <ActionButtons onEdit={() => openEdit('extra', item)} onDelete={() => setConfirmState({ type:'extra', id:item.id })} />] }))} columns={['Descrição', 'Categoria', 'Data', 'Valor', 'Ações']} emptyMessage="Nenhuma receita extra cadastrada." />}
+
+      {tab === 'despesas' && <SectionTable title="Despesas operacionais" buttonLabel="+ Nova Despesa" onAdd={() => openAdd('expense')} rows={data.expenses.map(item => ({ key:item.id, cells:[item.description, item.category, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{fmt(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <ActionButtons onEdit={() => openEdit('expense', item)} onDelete={() => setConfirmState({ type:'expense', id:item.id })} />] }))} columns={['Descrição', 'Categoria', 'Vencimento', 'Valor', 'Status', 'Ações']} emptyMessage="Nenhuma despesa cadastrada." />}
+
+      {tab === 'dre' && <Card><h3 style={{ margin:'0 0 18px', fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>DRE automática</h3>{[['Receita bruta', m.grossRevenue, C.green], ['(-) Custos cirúrgicos', -m.surgeryCostTotal, C.textSub], ['(-) Despesas operacionais', -m.operationalExpenses, C.textSub], ['Lucro operacional', m.operatingProfit, m.operatingProfit >= 0 ? C.green : C.red], ['(-) Impostos', -m.taxExpenses, C.textSub], ['Lucro líquido', m.netProfit, m.netProfit >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'11px 0', borderTop:`1px solid ${C.border}22` }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{fmt(value)}</span></div>)}<div style={{ paddingTop:10, color:C.textDim, fontSize:12 }}>Regime de competência: considera receitas e despesas geradas no período selecionado.</div></Card>}
+
+      {tab === 'balanco' && <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}><h3 style={{ margin:0, fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Ativos complementares</h3><Btn onClick={() => openAdd('asset')} style={{ padding:'7px 12px' }}>+ Ativo</Btn></div><BalanceList items={data.assets} color={C.green} onEdit={item => openEdit('asset', item)} onDelete={item => setConfirmState({ type:'asset', id:item.id })} emptyMessage="Nenhum ativo complementar." /></Card><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}><h3 style={{ margin:0, fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Passivos complementares</h3><Btn onClick={() => openAdd('liability')} style={{ padding:'7px 12px' }}>+ Passivo</Btn></div><BalanceList items={data.liabilities} color={C.red} onEdit={item => openEdit('liability', item)} onDelete={item => setConfirmState({ type:'liability', id:item.id })} emptyMessage="Nenhum passivo complementar." /></Card><Card style={{ gridColumn:'1 / -1' }}><h3 style={{ margin:'0 0 18px', fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Balanço patrimonial automático</h3>{[['Caixa', m.cashBalance, C.cyan], ['Contas a receber', m.receivablesOpenTotal, C.green], ['Banco e outros ativos', data.assets.reduce((acc, item) => acc + (item.value || 0), 0), C.accent], ['Contas a pagar', m.payablesOpenTotal, C.red], ['Passivos complementares', data.liabilities.reduce((acc, item) => acc + (item.value || 0), 0), C.red], ['Lucros acumulados / patrimônio', m.equity, m.equity >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'12px 0', borderTop:`1px solid ${C.border}22` }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{fmt(value)}</span></div>)}</Card></div>}
+
+      {tab === 'fluxo' && <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[item.date, <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{fmt(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{fmt(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." />}
+
+      <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
+        {modalType === 'extra' && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: venda de produto" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="procedimento_estetico" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.description} /></div>}
+        {modalType === 'expense' && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: aluguel do consultório" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:item }))} /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Data de vencimento" value={form.dueDate} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" /><FInput label="Status" value={form.status} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'aberto', l:'Aberto' }, { v:'pago', l:'Pago' }]} /><FInput label="Data do pagamento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.description} /></div>}
+        {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}
+      </Modal>
+
+      <ConfirmModal open={!!confirmState} onClose={() => setConfirmState(null)} onConfirm={() => removeRecord(confirmState)} />
+    </div>
+  )
+}
+
+function SectionTable({ title, buttonLabel, onAdd, columns, rows, emptyMessage }) {
+  return <><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}><h3 style={{ margin:0, fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>{title}</h3><Btn onClick={onAdd}>{buttonLabel}</Btn></div><RecordTable columns={columns} rows={rows} emptyMessage={emptyMessage} /></>
+}
+
+function RecordTable({ columns, rows, emptyMessage }) {
+  return <Card style={{ padding:0, overflow:'hidden' }}><div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}><thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{columns.map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.length === 0 && <tr><td colSpan={columns.length} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</td></tr>}{rows.map(row => <tr key={row.key} style={{ borderBottom:`1px solid ${C.border}` }}>{row.cells.map((cell, index) => <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{cell}</td>)}</tr>)}</tbody></table></div></Card>
+}
+
+function ActionButtons({ onEdit, onDelete }) {
+  return <div style={{ display:'flex', gap:8 }}><Btn variant="ghost" onClick={onEdit} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn><Btn variant="danger" onClick={onDelete} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn></div>
+}
+
+function BalanceList({ items, color, onEdit, onDelete, emptyMessage }) {
+  if (items.length === 0) return <p style={{ color:C.textDim, fontSize:13 }}>{emptyMessage}</p>
+  return items.map(item => <div key={item.id} style={{ padding:'14px 0', borderTop:`1px solid ${C.border}22`, display:'flex', justifyContent:'space-between', gap:16 }}><div><div style={{ color:C.text, fontWeight:600 }}>{item.name}</div><div style={{ color:C.textDim, fontSize:12 }}>{item.category || 'Sem categoria'}{item.notes ? ` · ${item.notes}` : ''}</div></div><div style={{ display:'flex', gap:12, alignItems:'center' }}><span style={{ color, fontWeight:700 }}>{fmt(item.value)}</span><ActionButtons onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} /></div></div>)
+}
+
+function FormActions({ onCancel, onSave, disabled }) {
+  return <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn onClick={onSave} disabled={disabled}>Salvar</Btn></div>
+}

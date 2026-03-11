@@ -1,0 +1,189 @@
+import { useState } from 'react'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext.jsx'
+import { hasSupabaseEnv } from '../lib/supabase.js'
+import { Btn, Card, FInput } from '../components/UI.jsx'
+import { C, base } from '../theme.js'
+
+export function LoginPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { user, loading, signIn, signUp, requestPasswordReset } = useAuth()
+  const [mode, setMode] = useState('login')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [form, setForm] = useState({ name:'', email:'', password:'' })
+
+  if (!hasSupabaseEnv) {
+    return <SupabaseSetupScreen />
+  }
+
+  if (!loading && user) {
+    return <Navigate to={location.state?.from || '/app/dashboard'} replace />
+  }
+
+  const isRegister = mode === 'register'
+
+  const onChange = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }))
+    if (error) setError('')
+    if (message) setMessage('')
+  }
+
+  const submit = async () => {
+    setBusy(true)
+    setError('')
+    setMessage('')
+
+    try {
+      if (isRegister) {
+        await signUp(form)
+        setMode('login')
+        setMessage('Conta criada. Verifique seu e-mail para confirmar o acesso, se o projeto estiver com confirmacao habilitada.')
+      } else {
+        await signIn(form)
+        navigate(location.state?.from || '/app/dashboard', { replace: true })
+      }
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const forgotPassword = async () => {
+    if (!form.email) {
+      setError('Informe seu e-mail para recuperar a senha.')
+      return
+    }
+
+    setBusy(true)
+    setError('')
+    setMessage('')
+
+    try {
+      await requestPasswordReset(form.email)
+      setMessage('Link de recuperacao enviado. Abra o e-mail e siga o fluxo para redefinir a senha.')
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight:'100vh',
+      display:'grid',
+      gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))',
+      background:`radial-gradient(circle at top left, ${C.accent}26, transparent 28%), radial-gradient(circle at bottom right, ${C.cyan}20, transparent 24%), ${C.bg}`,
+    }}>
+      <div style={{ padding:'48px 24px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <Card style={{ width:'100%', maxWidth:420, padding:32 }}>
+          <div style={{ fontSize:13, color:C.accentLight, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:10 }}>
+            Acesso seguro
+          </div>
+          <h1 style={{ fontSize:32, lineHeight:1.05, margin:'0 0 10px', color:C.text }}>
+            {isRegister ? 'Crie sua conta' : 'Entre na plataforma'}
+          </h1>
+          <p style={{ color:C.textSub, fontSize:14, lineHeight:1.6, marginBottom:22 }}>
+            {isRegister
+              ? 'Autenticacao real via Supabase com base financeira isolada para o consultorio.'
+              : 'Login com sessao persistida, rotas protegidas e sincronizacao remota da operacao financeira.'}
+          </p>
+
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {isRegister && (
+              <FInput label="Nome" value={form.name} onChange={value => onChange('name', value)} placeholder="Seu nome" required />
+            )}
+            <FInput label="E-mail" value={form.email} onChange={value => onChange('email', value)} placeholder="voce@empresa.com" required />
+            <FInput label="Senha" value={form.password} onChange={value => onChange('password', value)} type="password" placeholder="Minimo de 6 caracteres" required />
+
+            {error && (
+              <div style={{ background:C.red+'14', border:`1px solid ${C.red}33`, borderRadius:12, padding:'12px 14px', color:C.red, fontSize:13 }}>
+                {error}
+              </div>
+            )}
+
+            {message && (
+              <div style={{ background:C.green+'14', border:`1px solid ${C.green}33`, borderRadius:12, padding:'12px 14px', color:C.green, fontSize:13 }}>
+                {message}
+              </div>
+            )}
+
+            <Btn onClick={submit} disabled={busy || !form.email || !form.password || (isRegister && !form.name)} style={{ justifyContent:'center', display:'inline-flex' }}>
+              {busy ? 'Processando...' : isRegister ? 'Criar conta' : 'Entrar'}
+            </Btn>
+
+            {!isRegister && (
+              <button
+                onClick={forgotPassword}
+                disabled={busy}
+                style={{ background:'transparent', border:'none', color:C.textSub, cursor:'pointer', fontFamily:'inherit', fontSize:13 }}
+              >
+                Esqueci minha senha
+              </button>
+            )}
+          </div>
+
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:20, paddingTop:20, borderTop:`1px solid ${C.border}` }}>
+            <span style={{ fontSize:13, color:C.textDim }}>
+              {isRegister ? 'Ja tem acesso?' : 'Ainda nao tem conta?'}
+            </span>
+            <button
+              onClick={() => setMode(isRegister ? 'login' : 'register')}
+              style={{ background:'transparent', border:'none', color:C.accentLight, cursor:'pointer', fontSize:13, fontWeight:700, fontFamily:'inherit' }}
+            >
+              {isRegister ? 'Fazer login' : 'Criar conta'}
+            </button>
+          </div>
+        </Card>
+      </div>
+
+      <div style={{ padding:'48px 32px', display:'flex', alignItems:'center' }}>
+        <div style={{ maxWidth:560, width:'100%' }}>
+          <div style={{ display:'inline-flex', padding:'8px 12px', borderRadius:999, border:`1px solid ${C.borderBright}`, background:C.glass, color:C.textSub, fontSize:12, marginBottom:20 }}>
+            SurgiFlow
+          </div>
+          <h2 style={{ fontSize:'clamp(36px, 5vw, 64px)', lineHeight:0.95, margin:'0 0 18px', letterSpacing:'-0.04em' }}>
+            Gestão financeira para cirurgia plástica.
+          </h2>
+          <p style={{ fontSize:18, color:C.textSub, lineHeight:1.6, maxWidth:520, marginBottom:28 }}>
+            Controle sua clínica com clareza total.
+            Cirurgias, consultas, receitas, despesas, fluxo de caixa, DRE, balanço e metas passam a funcionar de forma integrada em um único sistema seguro na nuvem.
+          </p>
+
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:14 }}>
+            {[
+              ['Tudo conectado em um só lugar', 'Análise financeira por IA, controle de consultas, gerenciamento financeiro e muito mais.'],
+              ['Saiba exatamente o que está acontecendo', 'Acompanhe em tempo real o desempenho financeiro da sua clínica.'],
+              ['Desenvolvido para a realidade da cirurgia plástica', 'SurgiFlow é construído do zero para atender as necessidades específicas de clínicas de cirurgia plástica.'],
+            ].map(([title, text]) => (
+              <div key={title} style={{ ...base.card, background:C.glass, backdropFilter:'blur(8px)' }}>
+                <div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{title}</div>
+                <div style={{ fontSize:14, color:C.textSub, lineHeight:1.6 }}>{text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SupabaseSetupScreen() {
+  return (
+    <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:C.bg, padding:24 }}>
+      <Card style={{ width:'min(760px, 100%)' }}>
+        <div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>Configuracao pendente</div>
+        <h1 style={{ margin:'0 0 12px', fontSize:30 }}>Faltam as variaveis do Supabase.</h1>
+        <p style={{ color:C.textSub, lineHeight:1.7, marginBottom:18 }}>
+          Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` em um arquivo `.env` para ativar autenticacao real, reset de senha e persistencia remota.
+        </p>
+        <pre style={{ ...base.card, overflowX:'auto', fontSize:13 }}>{`VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-chave-anon`}</pre>
+      </Card>
+    </div>
+  )
+}
