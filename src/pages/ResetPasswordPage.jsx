@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { Btn, Card, FInput } from '../components/UI.jsx'
 import { C } from '../theme.js'
 import { hasSupabaseEnv, supabase } from '../lib/supabase.js'
 
 export function ResetPasswordPage() {
+  const navigate = useNavigate()
   const { user, loading, isRecoveryMode, updatePassword } = useAuth()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -88,7 +89,10 @@ export function ResetPasswordPage() {
     setBusy(true)
     try {
       await updatePassword(password)
-      setMessage('Senha atualizada com sucesso. Voce ja pode entrar na plataforma com a nova senha.')
+      setMessage('Senha atualizada com sucesso. Redirecionando para o login...')
+      setTimeout(() => {
+        navigate('/login', { replace:true })
+      }, 1200)
     } catch (nextError) {
       setError(nextError.message)
     } finally {
