@@ -15,6 +15,7 @@ import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
+import { BrandLogo } from '../components/BrandLogo.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
@@ -183,7 +184,7 @@ export function FinanceWorkspace() {
       <aside style={{ width:272, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'sticky', left:isMobile ? 0 : 'auto', top:0, height:'100dvh', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease' }}>
         <div style={{ padding:'24px 20px 18px', borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
           <div>
-            <div style={{ fontSize:18, fontWeight:800, letterSpacing:'-0.02em', color:C.text }}><span style={{ color:C.accent }}>▲</span> SurgiMetrics</div>
+            <BrandLogo size="sm" />
             <div style={{ fontSize:11, color:C.textDim, marginTop:4 }}>ERP financeiro para cirurgia plástica</div>
           </div>
           {isMobile && <button onClick={() => setMobileNavOpen(false)} style={iconButton}>✕</button>}

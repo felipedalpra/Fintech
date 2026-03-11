@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react
 import { useAuth } from '../context/AuthContext.jsx'
 import { hasSupabaseEnv } from '../lib/supabase.js'
 import { Btn, Card, FInput } from '../components/UI.jsx'
+import { BrandLogo } from '../components/BrandLogo.jsx'
 import { C, base } from '../theme.js'
 import { BILLING_LABELS } from '../billing/plans.js'
 
@@ -103,6 +104,9 @@ export function LoginPage({ initialMode = 'login' }) {
     }}>
       <div style={{ padding:'48px 24px', display:'flex', alignItems:'center', justifyContent:'center' }}>
         <Card style={{ width:'100%', maxWidth:420, padding:32 }}>
+          <div style={{ marginBottom:20 }}>
+            <BrandLogo size="sm" />
+          </div>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:10 }}>
             <div style={{ fontSize:13, color:C.accentLight, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>
               {isRegister ? 'Nova conta' : 'Acesso seguro'}
@@ -174,8 +178,8 @@ export function LoginPage({ initialMode = 'login' }) {
 
       <div style={{ padding:'48px 32px', display:'flex', alignItems:'center' }}>
         <div style={{ maxWidth:560, width:'100%' }}>
-          <div style={{ display:'inline-flex', padding:'8px 12px', borderRadius:999, border:`1px solid ${C.borderBright}`, background:C.glass, color:C.textSub, fontSize:12, marginBottom:20 }}>
-            SurgiMetrics
+          <div style={{ display:'inline-flex', padding:'10px 14px', borderRadius:20, border:`1px solid ${C.borderBright}`, background:C.glass, marginBottom:20 }}>
+            <BrandLogo size="sm" />
           </div>
           <h2 style={{ fontSize:'clamp(36px, 5vw, 64px)', lineHeight:0.95, margin:'0 0 18px', letterSpacing:'-0.04em' }}>
             Gestão financeira para cirurgia plástica.
