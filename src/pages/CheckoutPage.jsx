@@ -17,7 +17,7 @@ export function CheckoutPage() {
   const cycle = searchParams.get('cycle') || 'mensal'
   const selected = OPTIONS[cycle] || OPTIONS.mensal
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ fullName:'', email:'', phone:'', document:'', cardName:'', cardNumber:'', cardExpiry:'', cardCvv:'' })
+  const [form, setForm] = useState({ fullName:'', email:'', cardName:'', cardNumber:'', cardExpiry:'', cardCvv:'' })
 
   const summary = useMemo(() => ({
     trialDays:7,
@@ -83,8 +83,6 @@ export function CheckoutPage() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:18 }}>
               <FInput label="Nome completo" value={form.fullName} onChange={value => setForm(current => ({ ...current, fullName:value }))} placeholder="Seu nome" required />
               <FInput label="E-mail" value={form.email} onChange={value => setForm(current => ({ ...current, email:value }))} placeholder="voce@clinica.com" required />
-              <FInput label="Telefone" value={form.phone} onChange={value => setForm(current => ({ ...current, phone:value }))} placeholder="(00) 00000-0000" />
-              <FInput label="CPF/CNPJ" value={form.document} onChange={value => setForm(current => ({ ...current, document:value }))} placeholder="Documento para cobrança" />
             </div>
 
             <div style={{ padding:18, borderRadius:20, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.08)', marginBottom:18 }}>

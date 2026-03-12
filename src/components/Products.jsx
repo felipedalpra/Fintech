@@ -272,7 +272,7 @@ export function Products({ data, setData }) {
             const product = productsById.get(value)
             setForm(current => ({ ...current, productId:value, unitValue:product?.salePrice || current.unitValue, totalValue:(product?.salePrice || current.unitValue) * (current.quantity || 1) }))
           }} options={data.products.map(item => ({ v:item.id, l:item.name }))} />
-          <FInput label="Paciente" value={form.patientName} onChange={value => setForm(current => ({ ...current, patientName:value }))} placeholder="Opcional" />
+          <FInput label="Paciente ou ID interno" value={form.patientName} onChange={value => setForm(current => ({ ...current, patientName:value }))} placeholder="Opcional, use o mínimo necessário" />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
           <FInput label="Data da venda" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value }))} type="date" />

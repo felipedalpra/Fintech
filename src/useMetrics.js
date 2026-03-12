@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { inRange, monthKey, onOrBefore, today } from './utils.js'
+import { createPatientAlias } from './privacy/lgpd.js'
 
 function surgeryCosts(item) {
   return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0)
@@ -17,6 +18,10 @@ function accumulateByMonth(target, date, value) {
   const key = monthKey(date)
   if (!key) return
   target[key] = (target[key] || 0) + (value || 0)
+}
+
+function patientLabel(value, fallback = '') {
+  return createPatientAlias(value || fallback)
 }
 
 export function buildMetrics(rawData, options = {}) {
@@ -66,7 +71,7 @@ export function buildMetrics(rawData, options = {}) {
 
   surgeries.forEach(item => {
     if (item.paymentStatus === 'pago' && inRange(item.paymentDate || item.date, startDate, endDate)) {
-      entriesFinancial.push({ id:`entry-surgery-${item.id}`, description:`Cirurgia - ${item.patient}`, category:'cirurgia', value:item.totalValue || 0, date:item.paymentDate || item.date, origin:'cirurgia', referenceId:item.id })
+      entriesFinancial.push({ id:`entry-surgery-${item.id}`, description:`Cirurgia - ${patientLabel(item.patient, item.id)}`, category:'cirurgia', value:item.totalValue || 0, date:item.paymentDate || item.date, origin:'cirurgia', referenceId:item.id })
     }
     if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
       ;[
@@ -75,14 +80,14 @@ export function buildMetrics(rawData, options = {}) {
         ['material', item.materialCost || 0],
         ['outros', item.otherCosts || 0],
       ].forEach(([category, value]) => {
-        if (value > 0) exitsFinancial.push({ id:`exit-surgery-${item.id}-${category}`, description:`Custo cirúrgico - ${item.patient}`, category, value, date:item.date, origin:'custo_cirurgico', referenceId:item.id })
+        if (value > 0) exitsFinancial.push({ id:`exit-surgery-${item.id}-${category}`, description:`Custo cirúrgico - ${patientLabel(item.patient, item.id)}`, category, value, date:item.date, origin:'custo_cirurgico', referenceId:item.id })
       })
     }
   })
 
   consultations.forEach(item => {
     if (item.paymentStatus === 'pago' && inRange(item.paymentDate || item.date, startDate, endDate)) {
-      entriesFinancial.push({ id:`entry-consultation-${item.id}`, description:`Consulta - ${item.patient}`, category:'consulta', value:item.value || 0, date:item.paymentDate || item.date, origin:'consulta', referenceId:item.id })
+      entriesFinancial.push({ id:`entry-consultation-${item.id}`, description:`Consulta - ${patientLabel(item.patient, item.id)}`, category:'consulta', value:item.value || 0, date:item.paymentDate || item.date, origin:'consulta', referenceId:item.id })
     }
   })
 
@@ -118,8 +123,8 @@ export function buildMetrics(rawData, options = {}) {
   const cashBalance = cashIn - cashOut
 
   const accountsReceivable = [
-    ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:item.patient, category:'cirurgia', value:item.totalValue || 0, dueDate:item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
-    ...consultations.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`consultation-${item.id}`, source:'consulta', sourceId:item.id, patient:item.patient, category:item.paymentType || 'consulta', value:item.value || 0, dueDate:item.forecastPaymentDate || item.date, status:item.paymentStatus, description:item.consultationType })),
+    ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:'cirurgia', value:item.totalValue || 0, dueDate:item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
+    ...consultations.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`consultation-${item.id}`, source:'consulta', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:item.paymentType || 'consulta', value:item.value || 0, dueDate:item.forecastPaymentDate || item.date, status:item.paymentStatus, description:item.consultationType })),
   ]
 
   const accountsPayable = expenses.filter(item => item.status !== 'pago' && item.status !== 'cancelado' && onOrBefore(item.dueDate, balanceDate)).map(item => ({ id:`expense-${item.id}`, source:'despesa', sourceId:item.id, supplier:item.description, category:item.category, value:item.value || 0, dueDate:item.dueDate, status:item.status }))

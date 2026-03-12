@@ -67,7 +67,7 @@ export function Consultations({ data, setData }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar paciente..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:280 }} />
+        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:280 }} />
         <span style={{ marginLeft:'auto', fontSize:13, color:C.textDim }}>{filtered.length} consulta{filtered.length !== 1 ? 's' : ''}</span>
         <Btn onClick={openAdd}>+ Nova Consulta</Btn>
       </div>
@@ -96,7 +96,7 @@ export function Consultations({ data, setData }) {
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Consulta' : 'Nova Consulta'} width={640}>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <FInput label="Paciente" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Nome do paciente" />
+          <FInput label="Paciente ou ID interno" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Use somente o dado mínimo necessário" />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
           <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" placeholder="0" />

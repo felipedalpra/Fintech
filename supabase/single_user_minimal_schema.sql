@@ -1,3 +1,5 @@
+create extension if not exists pgcrypto;
+
 create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
@@ -140,59 +142,16 @@ create table if not exists public.goals (
   created_at timestamptz not null default timezone('utc', now())
 );
 
-create or replace view public.entries_financial as
-select s.user_id, s.id, concat('Cirurgia - ', s.patient) as description, 'cirurgia'::text as category, s.total_value as value, coalesce(s.payment_date, s.date) as date, 'cirurgia'::text as origin, s.id as reference_id
-from public.surgeries s
-where s.payment_status = 'pago'
-union all
-select c.user_id, c.id, concat('Consulta - ', c.patient), 'consulta', c.value, coalesce(c.payment_date, c.date), 'consulta', c.id
-from public.consultations c
-where c.payment_status = 'pago'
-union all
-select ps.user_id, ps.id, concat('Venda de produto - ', p.name), 'venda_produto', ps.total_value, ps.sale_date, 'venda_produto', ps.id
-from public.product_sales ps
-join public.products p on p.id = ps.product_id
-union all
-select r.user_id, r.id, r.description, r.category, r.value, r.date, 'outra_receita', r.id
-from public.extra_revenues r;
-
-create or replace view public.exits_financial as
-select s.user_id, gen_random_uuid() as id, concat('Custo cirúrgico - ', s.patient) as description, 'hospital'::text as category, s.hospital_cost as value, s.date, 'custo_cirurgico'::text as origin, s.id as reference_id
-from public.surgeries s where s.hospital_cost > 0
-union all
-select s.user_id, gen_random_uuid(), concat('Custo cirúrgico - ', s.patient), 'anestesia', s.anesthesia_cost, s.date, 'custo_cirurgico', s.id from public.surgeries s where s.anesthesia_cost > 0
-union all
-select s.user_id, gen_random_uuid(), concat('Custo cirúrgico - ', s.patient), 'material', s.material_cost, s.date, 'custo_cirurgico', s.id from public.surgeries s where s.material_cost > 0
-union all
-select s.user_id, gen_random_uuid(), concat('Custo cirúrgico - ', s.patient), 'outros', s.other_costs, s.date, 'custo_cirurgico', s.id from public.surgeries s where s.other_costs > 0
-union all
-select pp.user_id, pp.id, concat('Compra de produto - ', p.name), 'compra_produto', pp.total_value, pp.purchase_date, 'compra_produto', pp.id
-from public.product_purchases pp
-join public.products p on p.id = pp.product_id
-union all
-select e.user_id, e.id, e.description, e.category, e.value, coalesce(e.payment_date, e.due_date), 'despesa', e.id
-from public.expenses e
-where e.status = 'pago';
-
-create or replace view public.accounts_receivable as
-select s.user_id, 'surgery'::text as source, s.id as source_id, s.patient, coalesce(p.name, 'Sem procedimento') as description, s.total_value as value, s.date as due_date, s.payment_status as status
-from public.surgeries s
-left join public.procedures p on p.id = s.procedure_id
-where s.payment_status not in ('pago', 'cancelado')
-union all
-select c.user_id, 'consultation'::text as source, c.id as source_id, c.patient, c.consultation_type as description, c.value, coalesce(c.forecast_payment_date, c.date) as due_date, c.payment_status
-from public.consultations c
-where c.payment_status not in ('pago', 'cancelado');
-
-create or replace view public.accounts_payable as
-select e.user_id, e.id as source_id, e.description, e.category, e.value, e.due_date, e.status
-from public.expenses e
-where e.status not in ('pago', 'cancelado');
-
-create or replace view public.cash_flow_entries as
-select user_id, date, 'entrada'::text as type, category, value, origin, reference_id from public.entries_financial
-union all
-select user_id, date, 'saida'::text, category, value, origin, reference_id from public.exits_financial;
+create table if not exists public.audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  actor_id uuid not null references auth.users(id) on delete cascade,
+  action text not null,
+  entity_type text not null,
+  entity_id uuid,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc', now())
+);
 
 alter table public.user_profiles enable row level security;
 alter table public.procedures enable row level security;
@@ -206,6 +165,7 @@ alter table public.expenses enable row level security;
 alter table public.assets enable row level security;
 alter table public.liabilities enable row level security;
 alter table public.goals enable row level security;
+alter table public.audit_logs enable row level security;
 
 do $$
 declare item text;
@@ -218,3 +178,9 @@ begin
     end;
   end loop;
 end $$;
+
+create policy "Users read own audit logs"
+on public.audit_logs
+for select
+to authenticated
+using (auth.uid() = user_id);
