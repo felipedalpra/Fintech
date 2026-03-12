@@ -96,6 +96,16 @@ export function buildFinancialContext(brain) {
 export function answerFinancialQuestion(question, brain) {
   const q = normalize(question)
   const lines = []
+  const asksProfit = hasAny(q, ['lucro', 'lucrei', 'lucratividade', 'margem'])
+  const asksMonth = hasAny(q, ['mes', 'mensal', 'esse mes', 'este mes', 'no mes'])
+  const asksForecast = hasAny(q, ['previs', 'proximo', 'proxima', 'amanha', 'amanhã', 'futuro'])
+  const asksCash = hasAny(q, ['caixa', 'fluxo de caixa', 'fluxo'])
+  const asksGoals = hasAny(q, ['meta', 'metas', 'bater meta', 'atingir meta'])
+  const asksProcedure = hasAny(q, ['procedimento', 'cirurgia', 'cirurgias'])
+  const asksConsultation = hasAny(q, ['consulta', 'consultas', 'conversao', 'conversão'])
+  const asksExpense = hasAny(q, ['despesa', 'despesas', 'custo', 'custos', 'gasto', 'gastos'])
+  const asksGrowth = hasAny(q, ['cresceu', 'crescimento', 'subiu', 'caiu', 'queda'])
+  const asksSummary = hasAny(q, ['resumo', 'geral', 'dashboard', 'visao geral', 'visão geral'])
 
   if (isGreeting(q)) {
     lines.push('Oi. Estou acompanhando os dados da clínica e posso ajudar com lucro, caixa, metas, previsões e rentabilidade.')
@@ -108,13 +118,13 @@ export function answerFinancialQuestion(question, brain) {
     return lines.join('\n')
   }
 
-  if (matches(q, ['lucro este mes', 'lucro do mes', 'lucro do mês'])) {
+  if ((asksProfit && asksMonth) || matches(q, ['lucro este mes', 'lucro do mes', 'lucro do mês'])) {
     lines.push(`Lucro do mês: ${fmt(brain.analysisLayer.main.monthNetProfit)}.`)
     lines.push(`Margem líquida: ${brain.analysisLayer.main.monthMarginLabel}.`)
     lines.push(`Recomendação: ${brain.recommendationLayer.profit[0] || brain.recommendationLayer.priorities[0] || 'Mantenha disciplina de caixa e priorize os procedimentos de maior margem.'}`)
   }
 
-  if (matches(q, ['dobrar o lucro', 'quanto preciso faturar'])) {
+  if (matches(q, ['dobrar o lucro', 'quanto preciso faturar']) || (asksProfit && hasAny(q, ['dobrar', 'aumentar', 'faturar']))) {
     const targetProfit = brain.analysisLayer.main.monthNetProfit * 2
     const margin = Math.max(brain.analysisLayer.main.monthMargin, 0.08)
     const requiredRevenue = targetProfit / margin
@@ -124,27 +134,27 @@ export function answerFinancialQuestion(question, brain) {
     if (brain.goals.revenueBridge) lines.push(brain.goals.revenueBridge)
   }
 
-  if (matches(q, ['score', 'saude financeira', 'saúde financeira', 'health score'])) {
+  if (matches(q, ['score', 'saude financeira', 'saúde financeira', 'health score']) || (hasAny(q, ['saude', 'saúde']) && hasAny(q, ['financeira', 'financeiro']))) {
     lines.push(`Financial Health Score: ${brain.health.score}/100.`)
     lines.push(`Status: ${brain.health.label}.`)
     lines.push(brain.health.summary)
     brain.health.factors.forEach(item => lines.push(`${item.label}: ${item.value}.`))
   }
 
-  if (matches(q, ['previsao', 'previsão', 'proximo mes', 'próximo mês'])) {
+  if ((asksForecast && asksMonth) || matches(q, ['previsao', 'previsão', 'proximo mes', 'próximo mês'])) {
     lines.push(`Receita prevista para o próximo mês: ${fmt(brain.forecast.nextMonth.revenue)}.`)
     lines.push(`Saídas previstas: ${fmt(brain.forecast.nextMonth.expenses)}.`)
     lines.push(`Lucro líquido projetado: ${fmt(brain.forecast.nextMonth.netProfit)}.`)
     lines.push(`Fluxo projetado do próximo dia útil médio: ${fmt(brain.forecast.nextDay.netProfit)}.`)
   }
 
-  if (matches(q, ['ano', '12 meses', 'proximo ano', 'próximo ano'])) {
+  if ((asksForecast && hasAny(q, ['ano', 'anual', '12 meses'])) || matches(q, ['ano', '12 meses', 'proximo ano', 'próximo ano'])) {
     lines.push(`Receita prevista para os próximos 12 meses: ${fmt(brain.forecast.nextYear.revenue)}.`)
     lines.push(`Lucro líquido previsto: ${fmt(brain.forecast.nextYear.netProfit)}.`)
     lines.push(`Base da projeção: média móvel recente ajustada pelo mês atual.`)
   }
 
-  if (matches(q, ['erro', 'riscos', 'risco', 'alerta', 'alertas', 'problema'])) {
+  if (matches(q, ['erro', 'riscos', 'risco', 'alerta', 'alertas', 'problema']) || (asksExpense && asksGrowth) || hasAny(q, ['erro', 'erros', 'problema', 'problemas'])) {
     if (brain.diagnosisLayer.alerts.length === 0) {
       lines.push('Não encontrei alertas críticos no momento.')
     } else {
@@ -155,14 +165,14 @@ export function answerFinancialQuestion(question, brain) {
     }
   }
 
-  if (matches(q, ['despesa mais cresceu', 'despesas cresceram', 'qual despesa'])) {
+  if ((asksExpense && asksGrowth) || matches(q, ['despesa mais cresceu', 'despesas cresceram', 'qual despesa'])) {
     const expense = brain.strategicPanel.fastestGrowingExpense
     lines.push(expense
       ? `A despesa com maior aceleração é ${expense.category}, que cresceu ${expense.growthLabel} contra o mês anterior.`
       : 'Ainda não há base suficiente para comparar crescimento de despesas entre meses.')
   }
 
-  if (matches(q, ['procedimento mais lucrativo', 'cirurgia mais lucrativa', 'qual cirurgia'])) {
+  if ((asksProcedure && asksProfit) || matches(q, ['procedimento mais lucrativo', 'cirurgia mais lucrativa', 'qual cirurgia'])) {
     const top = brain.analysisLayer.operational.topProcedure
     if (top) {
       lines.push(`Procedimento mais lucrativo: ${top.name}.`)
@@ -173,7 +183,7 @@ export function answerFinancialQuestion(question, brain) {
     }
   }
 
-  if (matches(q, ['meta', 'quantas cirurgias preciso', 'quantas consultas'])) {
+  if (asksGoals || matches(q, ['meta', 'quantas cirurgias preciso', 'quantas consultas'])) {
     if (brain.goals.items.length === 0) {
       lines.push('Não há metas cadastradas para simular cenário.')
     } else {
@@ -184,13 +194,13 @@ export function answerFinancialQuestion(question, brain) {
     }
   }
 
-  if (matches(q, ['fluxo de caixa previsto', 'fluxo de caixa', 'caixa previsto'])) {
+  if (asksCash || matches(q, ['fluxo de caixa previsto', 'fluxo de caixa', 'caixa previsto'])) {
     lines.push(`Fluxo de caixa realizado no mês: ${fmt(brain.analysisLayer.main.monthCashFlow)}.`)
     lines.push(`Fluxo previsto de curto prazo: ${fmt(brain.forecast.nextMonth.netProfit)} no próximo mês.`)
     lines.push(`Saldo potencial incluindo recebíveis e contas a pagar: ${fmt(brain.allTime.prediction)}.`)
   }
 
-  if (matches(q, ['resumo', 'geral', 'analise', 'análise', 'dashboard'])) {
+  if (asksSummary || matches(q, ['resumo', 'geral', 'analise', 'análise', 'dashboard'])) {
     lines.push('Resumo executivo:')
     lines.push(`Receita do mês: ${fmt(brain.analysisLayer.main.monthRevenue)}.`)
     lines.push(`Lucro líquido do mês: ${fmt(brain.analysisLayer.main.monthNetProfit)}.`)
@@ -201,16 +211,18 @@ export function answerFinancialQuestion(question, brain) {
     if (brain.recommendationLayer.priorities[0]) lines.push(`Próxima ação: ${brain.recommendationLayer.priorities[0]}.`)
   }
 
-  if (matches(q, ['semana', 'acao semanal', 'ação semanal', 'o que fazer'])) {
+  if (matches(q, ['semana', 'acao semanal', 'ação semanal', 'o que fazer']) || hasAny(q, ['semana', 'prioridade', 'prioridades'])) {
     lines.push('Plano de ação da semana:')
     brain.weeklyPlan.forEach((item, index) => lines.push(`${index + 1}. ${item.title}: ${item.description}`))
   }
 
   if (lines.length === 0) {
-    lines.push(`Receita do mês ${fmt(brain.analysisLayer.main.monthRevenue)}, lucro ${fmt(brain.analysisLayer.main.monthNetProfit)} e score ${brain.health.score}/100.`)
-    lines.push(`Próximo mês projetado: ${fmt(brain.forecast.nextMonth.netProfit)}. Próximos 12 meses: ${fmt(brain.forecast.nextYear.netProfit)}.`)
-    if (brain.diagnosisLayer.alerts[0]) lines.push(`Diagnóstico principal: ${brain.diagnosisLayer.alerts[0].title}. ${brain.diagnosisLayer.alerts[0].detail}`)
-    if (brain.recommendationLayer.priorities[0]) lines.push(`Recomendação: ${brain.recommendationLayer.priorities[0]}`)
+    lines.push('Não identifiquei uma intenção financeira clara nessa pergunta.')
+    lines.push('Pergunte de forma mais direta, por exemplo:')
+    lines.push('- qual foi meu lucro este mês?')
+    lines.push('- qual procedimento é mais lucrativo?')
+    lines.push('- qual despesa mais cresceu?')
+    lines.push('- quantas cirurgias preciso para bater minha meta?')
   }
 
   return lines.join('\n')
@@ -735,6 +747,10 @@ function normalize(text) {
 }
 
 function matches(text, patterns) {
+  return patterns.some(pattern => text.includes(pattern))
+}
+
+function hasAny(text, patterns) {
   return patterns.some(pattern => text.includes(pattern))
 }
 

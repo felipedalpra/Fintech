@@ -17,11 +17,49 @@ export async function queryFinancialAssistant({ question, brain, history = [] })
       }),
     })
 
-    if (!response.ok) return fallback
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      return {
+        answer:fallback,
+        source:'fallback',
+        reason:explainHttpError(response.status, payload?.error),
+      }
+    }
 
     const payload = await response.json()
-    return payload?.answer || fallback
+    return {
+      answer:payload?.answer || fallback,
+      source:'openai',
+      reason:'',
+    }
   } catch {
-    return fallback
+    return {
+      answer:fallback,
+      source:'fallback',
+      reason:explainNetworkError(),
+    }
   }
+}
+
+function explainHttpError(status, errorMessage = '') {
+  if (status === 503 && errorMessage.includes('OPENAI_API_KEY')) {
+    return 'OPENAI_API_KEY não configurada na função /api'
+  }
+  if (status === 404) {
+    return 'Rota /api/financial-assistant não encontrada'
+  }
+  if (status === 500) {
+    return errorMessage || 'Erro interno na função da IA'
+  }
+  return errorMessage || `HTTP ${status}`
+}
+
+function explainNetworkError() {
+  if (typeof window !== 'undefined') {
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    if (isLocal) {
+      return 'Ambiente local sem função /api ativa. Use vercel dev ou teste na Vercel'
+    }
+  }
+  return 'Falha ao chamar /api/financial-assistant'
 }

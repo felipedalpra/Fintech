@@ -16,7 +16,7 @@ export function CopilotWidget({ data }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [messages, setMessages] = useState([
-    { role:'assistant', content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.' },
+    { role:'assistant', content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.', meta:{ source:'local', reason:'' } },
   ])
   const bottomRef = useRef(null)
 
@@ -33,10 +33,10 @@ export function CopilotWidget({ data }) {
     setSending(true)
 
     const history = [...messages, { role:'user', content:question }]
-    const answer = await queryFinancialAssistant({ question, brain, history })
+    const result = await queryFinancialAssistant({ question, brain, history })
     setSending(false)
 
-    setMessages(current => [...current, { role:'assistant', content:answer }])
+    setMessages(current => [...current, { role:'assistant', content:result.answer, meta:{ source:result.source, reason:result.reason } }])
   }
 
   return (
@@ -101,6 +101,14 @@ export function CopilotWidget({ data }) {
             {messages.map((message, index) => (
               <div key={index} style={{ alignSelf:message.role === 'user' ? 'flex-end' : 'flex-start', maxWidth:'88%', padding:'12px 14px', borderRadius:message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background:message.role === 'user' ? C.accent : C.surface, border:`1px solid ${message.role === 'user' ? C.accent + '55' : C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }}>
                 {message.content}
+                {message.role === 'assistant' && (
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:10 }}>
+                    <span style={{ fontSize:10, color:message.meta?.source === 'openai' ? C.green : C.yellow, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:700 }}>
+                      {message.meta?.source === 'openai' ? 'Resposta via OpenAI' : 'Fallback local'}
+                    </span>
+                    {message.meta?.reason ? <span style={{ fontSize:10, color:C.textDim }}>{message.meta.reason}</span> : null}
+                  </div>
+                )}
               </div>
             ))}
             {sending && <div style={{ maxWidth:'88%', padding:'12px 14px', borderRadius:'16px 16px 16px 4px', background:C.surface, border:`1px solid ${C.border}`, color:C.textDim, fontSize:13 }}>Analisando os dados...</div>}
