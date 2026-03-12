@@ -14,7 +14,7 @@ const FEATURES = [
 export function Features() {
   return (
     <section style={{ padding:'18px 0 82px' }}>
-      <div style={{ display:'grid', gridTemplateColumns:'minmax(0,0.92fr) minmax(0,1.08fr)', gap:24, alignItems:'start' }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap:24, alignItems:'start' }}>
         <div style={{ animation:'fadeUp 0.8s ease both' }}>
           <div style={{ fontSize:12, color:'#FDBA74', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>O que você ganha</div>
           <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text }}>Uma plataforma pensada para vender tranquilidade, clareza e crescimento</h2>

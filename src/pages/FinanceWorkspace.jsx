@@ -262,7 +262,7 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-              {quickLinks.map(item => {
+              {!isMobile && quickLinks.map(item => {
                 const active = item.id === page
                 return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...chipButton, border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
               })}

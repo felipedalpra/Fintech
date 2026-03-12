@@ -5,10 +5,10 @@ import { Btn } from '../components/UI.jsx'
 
 export function Hero() {
   return (
-    <section style={{ padding:'104px 0 84px', position:'relative', overflow:'hidden' }}>
+    <section style={{ padding:'clamp(54px, 9vw, 104px) 0 clamp(54px, 8vw, 84px)', position:'relative', overflow:'hidden' }}>
       <div style={{ position:'absolute', inset:0, background:`radial-gradient(circle at 18% 18%, rgba(0,184,217,0.22), transparent 24%), radial-gradient(circle at 82% 14%, rgba(255,111,60,0.24), transparent 24%), radial-gradient(circle at 52% 78%, rgba(255,255,255,0.06), transparent 28%)` }} />
       <div style={{ position:'absolute', top:80, right:'12%', width:220, height:220, borderRadius:'50%', background:'radial-gradient(circle, rgba(255,255,255,0.14), transparent 64%)', filter:'blur(8px)', animation:'orbFloat 10s ease-in-out infinite' }} />
-      <div style={{ position:'relative', display:'grid', gridTemplateColumns:'minmax(0,1.1fr) minmax(320px,0.9fr)', gap:30, alignItems:'center' }}>
+      <div style={{ position:'relative', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap:30, alignItems:'center' }}>
         <div style={{ animation:'fadeUp 0.8s ease both' }}>
           <div style={{ display:'inline-flex', padding:'8px 14px', borderRadius:999, border:'1px solid rgba(255,255,255,0.14)', background:'rgba(255,255,255,0.04)', color:'#C8E8F1', fontSize:12, letterSpacing:'0.08em', textTransform:'uppercase', fontWeight:700, marginBottom:18 }}>
             Mais controle. Mais margem. Menos improviso.
@@ -16,10 +16,10 @@ export function Hero() {
           <h1 style={{ margin:'0 0 18px', fontSize:'clamp(44px, 7vw, 78px)', lineHeight:0.92, letterSpacing:'-0.06em', color:C.text, maxWidth:760 }}>
             A forma mais elegante de comandar o financeiro da sua clínica
           </h1>
-          <p style={{ margin:'0 0 14px', color:'#D3E2EA', fontSize:22, lineHeight:1.45, maxWidth:700 }}>
+          <p style={{ margin:'0 0 14px', color:'#D3E2EA', fontSize:'clamp(18px, 4vw, 22px)', lineHeight:1.45, maxWidth:700 }}>
             Gestão financeira inteligente para cirurgiões plásticos.
           </p>
-          <p style={{ margin:'0 0 28px', color:'#8EA6B2', fontSize:17, lineHeight:1.8, maxWidth:680 }}>
+          <p style={{ margin:'0 0 28px', color:'#8EA6B2', fontSize:'clamp(15px, 3.8vw, 17px)', lineHeight:1.8, maxWidth:680 }}>
             Tenha visibilidade clara do faturamento, da lucratividade de cada cirurgia e do caixa da clínica sem depender de planilhas, controles paralelos ou decisões no escuro.
           </p>
           <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:28 }}>
@@ -42,7 +42,7 @@ export function Hero() {
               </div>
               <div style={{ padding:'8px 12px', borderRadius:999, background:'rgba(16,185,129,0.16)', color:'#6EE7B7', fontSize:12, fontWeight:700 }}>Caixa saudável</div>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:12, marginBottom:12 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginBottom:12 }}>
               {[
                 ['Faturamento do mês', 'R$ 186 mil', '#5EEAD4'],
                 ['Lucro líquido', 'R$ 72 mil', '#7DD3FC'],

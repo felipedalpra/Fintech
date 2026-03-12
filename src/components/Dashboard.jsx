@@ -4,6 +4,7 @@ import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 
 export function Dashboard({ data }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const monthRange = getPeriodRange('month')
   const m = buildMetrics(data, { startDate:monthRange.start, endDate:monthRange.end, balanceDate:monthRange.end })
   const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
@@ -32,19 +33,19 @@ export function Dashboard({ data }) {
         ))}
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1.25fr 1fr', gap:16 }}>
+      <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1.25fr 1fr', gap:16 }}>
         <Card>
           <h3 style={{ margin:'0 0 20px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Entradas x saídas por mês</h3>
           {monthKeys.length === 0 ? <p style={{ color:C.textDim, fontSize:13 }}>Ainda não há movimentações suficientes para montar o fluxo.</p> : (
             <>
-              <div style={{ display:'flex', gap:8, alignItems:'flex-end', height:160 }}>
+              <div style={{ display:'flex', gap:isMobile ? 4 : 8, alignItems:'flex-end', height:160, overflowX:isMobile ? 'auto' : 'visible', paddingBottom:isMobile ? 8 : 0 }}>
                 {monthKeys.map(key => {
                   const rec = m.revenueByMonth[key] || 0
                   const exp = m.expenseByMonth[key] || 0
                   const recH = Math.max((rec / maxBar) * 140, 2)
                   const expH = Math.max((exp / maxBar) * 140, 2)
                   const label = new Date(`${key}-01T00:00:00`).toLocaleDateString('pt-BR', { month:'short' })
-                  return <div key={key} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}><div style={{ display:'flex', gap:3, alignItems:'flex-end', height:140 }}><div style={{ width:16, height:recH, background:`linear-gradient(0deg,${C.green},${C.cyan})`, borderRadius:'3px 3px 0 0' }} /><div style={{ width:16, height:expH, background:`linear-gradient(0deg,${C.red}88,${C.red})`, borderRadius:'3px 3px 0 0' }} /></div><span style={{ fontSize:10, color:C.textDim }}>{label}</span></div>
+                  return <div key={key} style={{ flex:isMobile ? '0 0 42px' : 1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}><div style={{ display:'flex', gap:3, alignItems:'flex-end', height:140 }}><div style={{ width:16, height:recH, background:`linear-gradient(0deg,${C.green},${C.cyan})`, borderRadius:'3px 3px 0 0' }} /><div style={{ width:16, height:expH, background:`linear-gradient(0deg,${C.red}88,${C.red})`, borderRadius:'3px 3px 0 0' }} /></div><span style={{ fontSize:10, color:C.textDim }}>{label}</span></div>
                 })}
               </div>
               <div style={{ display:'flex', gap:16, marginTop:14 }}><span style={{ fontSize:11, color:C.textSub, display:'flex', alignItems:'center', gap:6 }}><span style={{ width:10, height:10, background:C.green, borderRadius:2, display:'inline-block' }} />Entradas</span><span style={{ fontSize:11, color:C.textSub, display:'flex', alignItems:'center', gap:6 }}><span style={{ width:10, height:10, background:C.red, borderRadius:2, display:'inline-block' }} />Saídas</span></div>

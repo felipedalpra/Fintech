@@ -14,7 +14,7 @@ export function Pricing() {
       </div>
 
       <div style={{ padding:'28px clamp(22px, 4vw, 34px)', borderRadius:30, background:'linear-gradient(155deg, rgba(17,24,39,0.98), rgba(10,16,27,0.98))', border:'1px solid rgba(255,255,255,0.1)', boxShadow:'0 32px 90px rgba(0,0,0,0.24)' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'minmax(260px, 0.9fr) minmax(0,1.1fr)', gap:22, alignItems:'start' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap:22, alignItems:'start' }}>
           <div style={{ animation:'fadeUp 0.85s ease both' }}>
             <div style={{ fontSize:24, color:C.text, fontWeight:900, letterSpacing:'-0.04em', marginBottom:10 }}>SurgiMetrics Premium</div>
             <p style={{ margin:'0 0 16px', color:'#A9BCC5', fontSize:15, lineHeight:1.8 }}>Cirurgias, consultas, produtos, fluxo de caixa, DRE, balanço, metas e IA em uma única assinatura.</p>
