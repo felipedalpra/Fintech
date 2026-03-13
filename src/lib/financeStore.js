@@ -373,7 +373,7 @@ async function insertAuditLog(userId, action, details = {}) {
     details,
   })
 
-  if (error && error.code !== '42P01') throw error
+  if (error && !isIgnorableAuditLogError(error)) throw error
 }
 
 export async function fetchFinanceData(userId) {
@@ -448,4 +448,13 @@ export async function importLegacyDataIfNeeded(user) {
   await saveFinanceData(user.id, normalized)
   localStorage.setItem(migratedKey(user.id), '1')
   return normalized
+}
+
+function isIgnorableAuditLogError(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return code === '42P01'
+    || code === 'PGRST204'
+    || message.includes('audit_logs')
+    || message.includes('schema cache')
 }
