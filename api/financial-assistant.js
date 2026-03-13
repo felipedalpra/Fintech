@@ -40,21 +40,14 @@ export default async function handler(req, res) {
   const input = [
     {
       role:'system',
-      content:[
-        { type:'input_text', text:systemPrompt },
-      ],
+      content:systemPrompt,
     },
     {
       role:'user',
       content:[
-        {
-          type:'input_text',
-          text:[
-            'Contexto financeiro estruturado da clínica:',
-            JSON.stringify(context || {}, null, 2),
-          ].join('\n\n'),
-        },
-      ],
+        'Contexto financeiro estruturado da clínica:',
+        JSON.stringify(context || {}, null, 2),
+      ].join('\n\n'),
     },
   ]
 
@@ -63,20 +56,13 @@ export default async function handler(req, res) {
     if (!item?.content || (item.role !== 'user' && item.role !== 'assistant')) return
     input.push({
       role:item.role,
-      content:[
-        { type:'input_text', text:item.content },
-      ],
+      content:item.content,
     })
   })
 
   input.push({
     role:'user',
-    content:[
-      {
-        type:'input_text',
-        text:`Pergunta atual do médico: ${question}`,
-      },
-    ],
+    content:`Pergunta atual do médico: ${question}`,
   })
 
   try {
