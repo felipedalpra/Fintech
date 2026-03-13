@@ -57,8 +57,12 @@ export function AuthProvider({ children }) {
     isRecoveryMode,
     async signIn({ email, password }) {
       if (!hasSupabaseEnv) throw new Error('Supabase nao configurado.')
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw new Error(mapAuthError(error, 'Nao foi possivel entrar.'))
+      if (!data?.user?.email_confirmed_at) {
+        await supabase.auth.signOut()
+        throw new Error('Confirme seu e-mail antes de acessar a plataforma.')
+      }
     },
     async signUp({ name, email, password, billingCycle }) {
       if (!hasSupabaseEnv) throw new Error('Supabase nao configurado.')
@@ -66,6 +70,7 @@ export function AuthProvider({ children }) {
         email,
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/login`,
           data: {
             name: name.trim(),
             selected_billing_cycle: billingCycle || 'mensal',

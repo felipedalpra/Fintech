@@ -7,6 +7,14 @@ import { BrandLogo } from '../components/BrandLogo.jsx'
 import { C, base } from '../theme.js'
 import { BILLING_LABELS, FREE_TRIAL_DAYS } from '../billing/plans.js'
 
+const PASSWORD_POLICY = {
+  minLength:8,
+  upper:/[A-Z]/,
+  lower:/[a-z]/,
+  number:/\d/,
+  special:/[^A-Za-z0-9]/,
+}
+
 export function LoginPage({ initialMode = 'login' }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -47,6 +55,14 @@ export function LoginPage({ initialMode = 'login' }) {
   }
 
   const isRegister = mode === 'register'
+  const passwordChecks = useMemo(() => ({
+    length:form.password.length >= PASSWORD_POLICY.minLength,
+    upper:PASSWORD_POLICY.upper.test(form.password),
+    lower:PASSWORD_POLICY.lower.test(form.password),
+    number:PASSWORD_POLICY.number.test(form.password),
+    special:PASSWORD_POLICY.special.test(form.password),
+  }), [form.password])
+  const passwordValid = Object.values(passwordChecks).every(Boolean)
 
   const onChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -55,6 +71,11 @@ export function LoginPage({ initialMode = 'login' }) {
   }
 
   const submit = async () => {
+    if (isRegister && !passwordValid) {
+      setError('A senha precisa ter no mínimo 8 caracteres, com 1 letra maiúscula, 1 minúscula, 1 número e 1 caractere especial.')
+      return
+    }
+
     setBusy(true)
     setError('')
     setMessage('')
@@ -62,7 +83,7 @@ export function LoginPage({ initialMode = 'login' }) {
     try {
       if (isRegister) {
         await signUp({ ...form, billingCycle:searchParams.get('cycle') || 'mensal' })
-        setMessage('Conta criada. Verifique seu e-mail para confirmar o acesso, se o projeto estiver com confirmacao habilitada.')
+        setMessage('Conta criada. Verifique seu e-mail e confirme o cadastro antes do primeiro login.')
         navigate(`/login${location.search}`, { replace:true })
       } else {
         await signIn(form)
@@ -133,7 +154,20 @@ export function LoginPage({ initialMode = 'login' }) {
               <FInput label="Nome" value={form.name} onChange={value => onChange('name', value)} placeholder="Seu nome" required />
             )}
             <FInput label="E-mail" value={form.email} onChange={value => onChange('email', value)} placeholder="voce@empresa.com" required />
-            <FInput label="Senha" value={form.password} onChange={value => onChange('password', value)} type="password" placeholder="Minimo de 6 caracteres" required />
+            <FInput label="Senha" value={form.password} onChange={value => onChange('password', value)} type="password" placeholder="8+ caracteres, com maiúscula, minúscula, número e especial" required />
+
+            {isRegister && (
+              <div style={{ padding:'12px 14px', borderRadius:12, border:`1px solid ${C.border}`, background:C.surface, display:'grid', gap:6 }}>
+                <PasswordRule ok={passwordChecks.length}>Pelo menos 8 caracteres</PasswordRule>
+                <PasswordRule ok={passwordChecks.upper}>1 letra maiúscula</PasswordRule>
+                <PasswordRule ok={passwordChecks.lower}>1 letra minúscula</PasswordRule>
+                <PasswordRule ok={passwordChecks.number}>1 número</PasswordRule>
+                <PasswordRule ok={passwordChecks.special}>1 caractere especial</PasswordRule>
+                <div style={{ color:C.textDim, fontSize:12, lineHeight:1.5, marginTop:2 }}>
+                  O primeiro acesso só é liberado após confirmação do e-mail.
+                </div>
+              </div>
+            )}
 
             {error && (
               <div style={{ background:C.red+'14', border:`1px solid ${C.red}33`, borderRadius:12, padding:'12px 14px', color:C.red, fontSize:13 }}>
@@ -147,7 +181,7 @@ export function LoginPage({ initialMode = 'login' }) {
               </div>
             )}
 
-            <Btn onClick={submit} disabled={busy || !form.email || !form.password || (isRegister && !form.name)} style={{ justifyContent:'center', display:'inline-flex' }}>
+            <Btn onClick={submit} disabled={busy || !form.email || !form.password || (isRegister && (!form.name || !passwordValid))} style={{ justifyContent:'center', display:'inline-flex' }}>
               {busy ? 'Processando...' : isRegister ? 'Criar conta' : 'Entrar'}
             </Btn>
 
@@ -219,6 +253,15 @@ function SupabaseSetupScreen() {
         <pre style={{ ...base.card, overflowX:'auto', fontSize:13 }}>{`VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anon`}</pre>
       </Card>
+    </div>
+  )
+}
+
+function PasswordRule({ ok, children }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:ok ? C.green : C.textDim }}>
+      <span style={{ width:16, textAlign:'center', fontWeight:700 }}>{ok ? '✓' : '•'}</span>
+      <span>{children}</span>
     </div>
   )
 }
