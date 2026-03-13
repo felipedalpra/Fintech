@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { inRange, monthKey, onOrBefore, today } from './utils.js'
-import { createPatientAlias } from './privacy/lgpd.js'
 
 function surgeryCosts(item) {
   return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0)
@@ -21,7 +20,7 @@ function accumulateByMonth(target, date, value) {
 }
 
 function patientLabel(value, fallback = '') {
-  return createPatientAlias(value || fallback)
+  return value || fallback || 'Paciente não informado'
 }
 
 export function buildMetrics(rawData, options = {}) {

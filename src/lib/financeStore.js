@@ -1,5 +1,4 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
-import { anonymizeFinanceData } from '../privacy/lgpd.js'
 import { supabase } from './supabase.js'
 
 const LEGACY_APP_KEY = 'startupfinance_v1'
@@ -386,7 +385,7 @@ export async function fetchFinanceData(userId) {
 }
 
 export async function saveFinanceData(userId, financeData) {
-  const payload = anonymizeFinanceData(normalizeData(financeData))
+  const payload = normalizeData(financeData)
 
   if (!(await canUseRelationalBackend())) {
     const { error } = await supabase
@@ -440,7 +439,7 @@ export async function importLegacyDataIfNeeded(user) {
     return remoteData
   }
 
-  const normalized = anonymizeFinanceData(normalizeData(importCandidate))
+  const normalized = normalizeData(importCandidate)
   if (isDataEmpty(normalized)) {
     localStorage.setItem(migratedKey(user.id), '1')
     return remoteData

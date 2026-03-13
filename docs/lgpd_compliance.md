@@ -21,8 +21,9 @@ Campos como CPF, telefone, e-mail pessoal do paciente e dados médicos detalhado
 - o fluxo comercial inativo deixou de coletar telefone e CPF/CNPJ sem necessidade operacional imediata
 
 ### Anonimização e pseudonimização
-- análises, relatórios financeiros e contexto enviado para IA usam alias internos de paciente no formato `PAC-XXXXXX`
-- descrições financeiras e contas a receber/pagar exibidas na camada financeira não carregam nome civil do paciente
+- a interface interna da plataforma pode exibir o nome real do paciente para usuários autenticados e autorizados da clínica
+- logs, integrações externas e qualquer contexto enviado para IA devem operar sem nome civil, telefone, CPF ou outros identificadores diretos
+- o contexto da IA no app é composto por métricas agregadas e dados financeiros estruturados sem identificadores pessoais
 - utilitários de LGPD foram adicionados em [src/privacy/lgpd.js](/Users/felipedalpra/Desktop/startup-finance/src/privacy/lgpd.js:1):
   - `anonymizeFinanceData()`
   - `exportPatientData()`
@@ -32,7 +33,7 @@ Campos como CPF, telefone, e-mail pessoal do paciente e dados médicos detalhado
 
 ### IA com contexto anonimizado
 - a IA não recebe nome civil do paciente
-- o contexto analítico é derivado de métricas agregadas e aliases
+- o contexto analítico é derivado de métricas agregadas
 - o endpoint da IA opera sobre contexto financeiro estruturado, sem identificadores diretos do titular
 
 ## Arquitetura recomendada
@@ -77,8 +78,8 @@ O schema recomendado está em [supabase/lgpd_schema.sql](/Users/felipedalpra/Des
 
 ## Limitações atuais
 
-- a persistência principal do app ainda usa `user_finance_data.payload` em JSON por usuário
-- isso atende bem ao desenvolvimento, mas não é a arquitetura final ideal para dados sensíveis sob LGPD
+- se o ambiente ainda estiver usando a tabela legada `user_finance_data.payload`, nomes reais continuam armazenados no payload para preservar a usabilidade interna
+- isso atende ao uso operacional da clínica, mas não é a arquitetura final ideal para dados sensíveis sob LGPD
 - para produção com maior rigor, a recomendação é migrar para o schema relacional segregado
 
 ## Próximo passo técnico recomendado
