@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error:'Question is required' })
   }
 
-  const model = process.env.OPENAI_MODEL || 'gpt-4.1-mini'
+  const model = process.env.OPENAI_MODEL || 'gpt-5.2-chat-latest'
   const systemPrompt = [
   "Você é o CFO automático do SurgiMetrics, um ERP financeiro inteligente para cirurgiões plásticos.",
   "Seu papel é atuar como diretor financeiro da clínica, ajudando o médico a entender a saúde financeira do consultório e tomar decisões melhores.",
