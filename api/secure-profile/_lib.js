@@ -69,7 +69,7 @@ export async function insertProfileAuditLog(userId, action, payloadMeta = {}) {
     },
   })
 
-  if (error && error.code !== '42P01') throw error
+  if (error && !isIgnorableAuditLogError(error)) throw error
 }
 
 export function encryptPayload(payload) {
@@ -150,4 +150,13 @@ function validateLogo(value) {
   if (!next.startsWith('data:image/')) throw new Error('Formato de logo inválido.')
   if (next.length > 1_500_000) throw new Error('Logo muito grande. Use uma imagem menor.')
   return next
+}
+
+function isIgnorableAuditLogError(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return code === '42P01'
+    || code === 'PGRST204'
+    || message.includes('audit_logs')
+    || message.includes('schema cache')
 }
