@@ -5,7 +5,7 @@ import { hasSupabaseEnv } from '../lib/supabase.js'
 import { Btn, Card, FInput } from '../components/UI.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { C, base } from '../theme.js'
-import { BILLING_LABELS } from '../billing/plans.js'
+import { BILLING_LABELS, FREE_TRIAL_DAYS } from '../billing/plans.js'
 
 export function LoginPage({ initialMode = 'login' }) {
   const navigate = useNavigate()
@@ -24,7 +24,7 @@ export function LoginPage({ initialMode = 'login' }) {
     const onboarding = searchParams.get('onboarding')
     if (!cycle && !trial && !onboarding) return ''
     const cycleLabel = BILLING_LABELS[cycle] || 'Mensal'
-    return `Plano SurgiMetrics selecionado: ${cycleLabel}. Acesso gratuito no lançamento${trial ? ` + ${trial} dias grátis` : ''}.`
+    return `Plano SurgiMetrics selecionado: ${cycleLabel}. Você começa com ${trial || FREE_TRIAL_DAYS} dias grátis e só precisa pagar depois do período de trial.`
   }, [searchParams])
 
   useEffect(() => {
@@ -61,7 +61,7 @@ export function LoginPage({ initialMode = 'login' }) {
 
     try {
       if (isRegister) {
-        await signUp(form)
+        await signUp({ ...form, billingCycle:searchParams.get('cycle') || 'mensal' })
         setMessage('Conta criada. Verifique seu e-mail para confirmar o acesso, se o projeto estiver com confirmacao habilitada.')
         navigate(`/login${location.search}`, { replace:true })
       } else {
@@ -119,7 +119,7 @@ export function LoginPage({ initialMode = 'login' }) {
           <p style={{ color:C.textSub, fontSize:14, lineHeight:1.6, marginBottom:22 }}>
             {isRegister
               ? 'Cadastre seu acesso e comece a centralizar o financeiro da clínica no SurgiMetrics.'
-              : 'Login com sessao persistida, rotas protegidas e sincronizacao remota da operacao financeira.'}
+              : 'Login com sessao persistida, trial automático de 30 dias e sincronizacao remota da operacao financeira.'}
           </p>
 
           {checkoutSummary && (

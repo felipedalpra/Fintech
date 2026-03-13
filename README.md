@@ -16,21 +16,36 @@ ERP financeiro para clínicas e cirurgiões plásticos com:
 ## Backend
 
 1. Crie um projeto no Supabase.
-2. Rode o SQL de [supabase/schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/schema.sql:1) no SQL Editor.
-3. Copie `.env.example` para `.env` e preencha:
+2. Rode o SQL base de [single_user_minimal_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/single_user_minimal_schema.sql:1) no SQL Editor.
+3. Rode o SQL de billing em [stripe_billing_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/stripe_billing_schema.sql:1).
+4. Copie `.env.example` para `.env` e preencha:
 
 ```bash
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anon
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
+APP_URL=https://sua-url-publica
+STRIPE_SECRET_KEY=sk_live_ou_sk_test
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+STRIPE_PRICE_MENSAL=price_xxx
+STRIPE_PRICE_SEMESTRAL=price_xxx
+STRIPE_PRICE_ANUAL=price_xxx
 ```
 
-4. Em `Authentication > URL Configuration`, adicione:
+5. Em `Authentication > URL Configuration`, adicione:
 - `http://localhost:5173`
 - `http://localhost:5173/reset-password`
 - a URL de produção da Vercel
 - a URL de produção com `/reset-password`
 
-5. Se a tabela já existir de uma versão anterior, atualize manualmente o payload inicial ou recrie a tabela usando o SQL atual.
+6. No Stripe:
+- crie 3 preços recorrentes
+- mensal: `R$ 197,00`
+- semestral: `R$ 1.062,00` a cada 6 meses
+- anual: `R$ 1.764,00` por ano
+- configure o webhook para `POST /api/stripe/webhook`
+
+7. Se a base já existir de uma versão anterior, aplique os scripts incrementais e valide a tabela `billing_accounts`.
 
 ## Rodar localmente
 
@@ -54,14 +69,22 @@ A saída fica em `dist`.
 1. Confirmar variáveis na Vercel:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `APP_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_MENSAL`
+- `STRIPE_PRICE_SEMESTRAL`
+- `STRIPE_PRICE_ANUAL`
 
 2. Confirmar Auth no Supabase:
 - `Site URL` da produção
 - redirect de `/reset-password`
 - provider `Email` ativo
 
-3. Confirmar tabela `user_finance_data`:
-- existe
+3. Confirmar tabelas e policies:
+- tabelas operacionais do schema mínimo existem
+- `billing_accounts` existe
 - `RLS` ativo
 - policies de `select`, `insert`, `update` para `authenticated`
 
@@ -71,6 +94,8 @@ A saída fica em `dist`.
 - criar conta
 - fazer login em `/login`
 - entrar em `/app`
+- validar trial de 30 dias em `/app/billing`
+- abrir checkout Stripe por um plano
 - cadastrar procedimento
 - cadastrar cirurgia ou produto
 - recarregar a página

@@ -60,7 +60,7 @@ export function AuthProvider({ children }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw new Error(mapAuthError(error, 'Nao foi possivel entrar.'))
     },
-    async signUp({ name, email, password }) {
+    async signUp({ name, email, password, billingCycle }) {
       if (!hasSupabaseEnv) throw new Error('Supabase nao configurado.')
       const { error } = await supabase.auth.signUp({
         email,
@@ -68,6 +68,7 @@ export function AuthProvider({ children }) {
         options: {
           data: {
             name: name.trim(),
+            selected_billing_cycle: billingCycle || 'mensal',
           },
         },
       })

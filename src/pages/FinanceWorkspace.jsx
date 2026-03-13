@@ -16,7 +16,9 @@ import { Reports } from '../components/Reports.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
+import { BillingPage } from './BillingPage.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useBilling } from '../context/BillingContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
 
@@ -38,6 +40,7 @@ const NAV_SECTIONS = [
       { id:'goals', label:'Metas', icon:'◉', hint:'Objetivos e acompanhamento' },
       { id:'reports', label:'Relatórios', icon:'◫', hint:'Análises e comparativos' },
       { id:'ai', label:'Assistente', icon:'✦', hint:'Perguntas sobre os dados' },
+      { id:'billing', label:'Assinatura', icon:'◌', hint:'Trial, checkout e cobrança' },
       { id:'settings', label:'Configurações', icon:'⚙', hint:'Tema e preferências' },
     ],
   },
@@ -56,6 +59,7 @@ const TITLES = {
   goals:'Metas',
   reports:'Relatórios Analíticos',
   ai:'Central de IA',
+  billing:'Assinatura',
   settings:'Configurações',
 }
 
@@ -72,6 +76,7 @@ const SUBTITLES = {
   goals:'Metas financeiras com progresso automático.',
   reports:'Relatórios analíticos para apoiar decisões.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
+  billing:'Gerencie trial, plano e status da cobrança.',
   settings:'Ajuste visualização e preferências da plataforma.',
 }
 
@@ -88,6 +93,7 @@ const PAGES = {
   goals:Goals,
   reports:Reports,
   ai:AIAssistant,
+  billing:BillingPage,
   settings:Settings,
 }
 
@@ -97,6 +103,7 @@ export function FinanceWorkspace() {
   const { page = 'dashboard' } = useParams()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+  const { trialDaysLeft, billing } = useBilling()
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState('')
@@ -170,6 +177,7 @@ export function FinanceWorkspace() {
     `Caixa ${fmt(summary.cashBalance)}`,
     `${summary.surgeriesCompleted} cirurgia(s)`,
     `${summary.consultationsCompleted} consulta(s)`,
+    billing?.status === 'trialing' ? `Trial: ${trialDaysLeft} dia(s)` : `Assinatura: ${billing?.status || 'pendente'}`,
   ]
   const quickLinks = NAV_SECTIONS.flatMap(section => section.items).slice(0, 4)
 
