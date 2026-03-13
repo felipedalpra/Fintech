@@ -84,9 +84,9 @@ export function Settings() {
 
     try {
       await saveSecureProfile(profile)
-      setMessage('Informações pessoais e da clínica salvas com criptografia no banco.')
+      setMessage('Informações pessoais e da clínica salvas com sucesso!')
     } catch (nextError) {
-      setError(nextError.message || 'Nao foi possivel salvar as configuracoes.')
+      setError(nextError.message || 'Não foi possivel salvar as configuracoes.')
     } finally {
       setSaving(false)
     }
@@ -161,7 +161,7 @@ export function Settings() {
             <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Perfil seguro</div>
             <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Médico e clínica</h3>
             <p style={{ margin:0, color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:620 }}>
-              Esses dados ficam em uma tabela separada, criptografados antes de serem gravados no banco. Logs e IA não recebem essas informações identificáveis.
+              Registre aqui as suas informações e da sua clínica.
             </p>
           </div>
           <div style={{ display:'grid', gap:8, minWidth:220 }}>
@@ -175,7 +175,7 @@ export function Settings() {
           <div style={{ marginTop:24, color:C.textSub }}>Carregando perfil seguro...</div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:22, marginTop:24 }}>
-            <SectionCard title="Informações do médico" subtitle="Dados pessoais e profissionais exibidos apenas para a conta autenticada.">
+            <SectionCard title="Informações do médico" subtitle="Dados pessoais e profissionais.">
               <Grid>
                 <FInput label="Nome completo" value={profile.doctor.fullName} onChange={value => updateField('doctor', 'fullName', value)} />
                 <FInput label="Título profissional" value={profile.doctor.professionalTitle} onChange={value => updateField('doctor', 'professionalTitle', value)} />
@@ -209,7 +209,7 @@ export function Settings() {
                   <div style={{ display:'grid', gap:10 }}>
                     <input type="file" accept="image/*" onChange={onLogoSelected} />
                     {profile.clinic.logoDataUrl ? <Btn variant="ghost" onClick={() => updateField('clinic', 'logoDataUrl', '')}>Remover logo</Btn> : null}
-                    <div style={{ color:C.textDim, fontSize:12 }}>A imagem é criptografada antes de ser salva. Use arquivos de até 1 MB.</div>
+                    <div style={{ color:C.textDim, fontSize:12 }}> Use arquivos de até 1 MB.</div>
                   </div>
                 </div>
               </div>
