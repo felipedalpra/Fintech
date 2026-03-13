@@ -3,12 +3,15 @@ import { C } from '../theme.js'
 import { fmt, fmtN, getPeriodRange } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card } from './UI.jsx'
+import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
 export function Reports({ data }) {
+  const { financialPrivacyMode } = useFinancialPrivacy()
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
   const range = getPeriodRange(period, customRange)
   const m = buildMetrics(data, { startDate:range.start, endDate:range.end, balanceDate:range.end })
+  const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
@@ -25,12 +28,12 @@ export function Reports({ data }) {
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-        <ReportList title="Procedimentos mais lucrativos" rows={m.byProcedure.map(item => `${item.name} · ${fmt(item.profit)} · ${item.count} cirurgia(s)`)} empty="Sem dados." />
-        <ReportList title="Produtos mais lucrativos" rows={m.productsByPerformance.map(item => `${item.name} · ${fmt(item.profit)} · ${fmtN(item.soldQty)} venda(s)`)} empty="Sem produtos vendidos." />
-        <ReportList title="Despesas por categoria" rows={Object.entries(m.expensesByCategory).sort(([, a], [, b]) => b - a).map(([category, value]) => `${category} · ${fmt(value)}`)} empty="Sem despesas." />
+        <ReportList title="Procedimentos mais lucrativos" rows={m.byProcedure.map(item => `${item.name} · ${money(item.profit)} · ${item.count} cirurgia(s)`)} empty="Sem dados." />
+        <ReportList title="Produtos mais lucrativos" rows={m.productsByPerformance.map(item => `${item.name} · ${money(item.profit)} · ${fmtN(item.soldQty)} venda(s)`)} empty="Sem produtos vendidos." />
+        <ReportList title="Despesas por categoria" rows={Object.entries(m.expensesByCategory).sort(([, a], [, b]) => b - a).map(([category, value]) => `${category} · ${money(value)}`)} empty="Sem despesas." />
         <ReportList title="Cirurgias por mês" rows={Object.entries(m.surgeriesByMonth).map(([month, total]) => `${month} · ${total} cirurgia(s)`)} empty="Sem cirurgias." />
         <ReportList title="Consultas por convênio" rows={Object.entries(m.consultationsByInsurance).map(([insurance, total]) => `${insurance} · ${total} consulta(s)`)} empty="Sem consultas." />
-        <ReportList title="Fluxo por origem" rows={aggregateByOrigin(m).map(item => `${item.origin} · entradas ${fmt(item.entries)} · saídas ${fmt(item.exits)}`)} empty="Sem movimentações." />
+        <ReportList title="Fluxo por origem" rows={aggregateByOrigin(m).map(item => `${item.origin} · entradas ${money(item.entries)} · saídas ${money(item.exits)}`)} empty="Sem movimentações." />
       </div>
     </div>
   )

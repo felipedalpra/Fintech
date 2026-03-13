@@ -3,6 +3,7 @@ import { C } from '../theme.js'
 import { getPeriodRange, today, uid, fmt, fmtN } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge, Progress } from './UI.jsx'
+import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
 const METRICS = [
   { v:'faturamento', l:'Faturamento' },
@@ -14,11 +15,15 @@ const METRICS = [
 ]
 
 export function Goals({ data, setData }) {
+  const { financialPrivacyMode } = useFinancialPrivacy()
   const empty = { name:'', metric:'faturamento', target:0, period:'mensal', dueDate:today(), isLower:false }
   const [form, setForm] = useState(empty)
   const [editing, setEditing] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
+
+  const isCountMetric = metric => metric === 'cirurgias' || metric === 'consultas'
+  const displayValue = (metric, value) => isCountMetric(metric) ? fmtN(value) : maskFinancialValue(value, financialPrivacyMode, fmt)
 
   const computedGoals = useMemo(() => data.goals.map(goal => {
     const range = getPeriodRange(goal.period === 'mensal' ? 'month' : goal.period === 'trimestral' ? 'quarter' : goal.period === 'anual' ? 'year' : 'custom', goal.period === 'personalizado' ? { start:today().slice(0, 7) + '-01', end:goal.dueDate } : {})
@@ -67,8 +72,8 @@ export function Goals({ data, setData }) {
                 <div style={{ display:'flex', gap:6, marginLeft:12 }}><Btn variant="ghost" onClick={() => openEdit(goal)} style={{ padding:'4px 10px', fontSize:12 }}>Editar</Btn><Btn variant="danger" onClick={() => setConfirmId(goal.id)} style={{ padding:'4px 10px', fontSize:12 }}>Excluir</Btn></div>
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
-                <div><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:3 }}>Atual</div><div style={{ fontSize:22, fontWeight:800, color }}>{goal.metric === 'cirurgias' || goal.metric === 'consultas' ? fmtN(goal.current) : fmt(goal.current)}</div></div>
-                <div style={{ textAlign:'right' }}><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:3 }}>Meta</div><div style={{ fontSize:22, fontWeight:800, color:C.textSub }}>{goal.metric === 'cirurgias' || goal.metric === 'consultas' ? fmtN(goal.target) : fmt(goal.target)}</div></div>
+                <div><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:3 }}>Atual</div><div style={{ fontSize:22, fontWeight:800, color }}>{displayValue(goal.metric, goal.current)}</div></div>
+                <div style={{ textAlign:'right' }}><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:3 }}>Meta</div><div style={{ fontSize:22, fontWeight:800, color:C.textSub }}>{displayValue(goal.metric, goal.target)}</div></div>
               </div>
               <Progress val={pct} max={100} color={color} h={10} />
               <div style={{ display:'flex', justifyContent:'space-between', marginTop:10 }}><span style={{ fontSize:13, fontWeight:700, color }}>{done ? 'Meta atingida' : `${pct.toFixed(1)}% concluído`}</span><span style={{ fontSize:11, color:C.textDim }}>até {goal.dueDate}</span></div>
