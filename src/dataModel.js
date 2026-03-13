@@ -15,11 +15,17 @@ export function createEmptyData() {
 }
 
 export function normalizeData(data) {
+  const procedureIdMap = new Map()
+  const productIdMap = new Map()
+
   const procedures = Array.isArray(data?.procedures)
-    ? data.procedures
+    ? data.procedures.map(plan => ({
+        ...plan,
+        id:normalizeUuid(plan.id, 'procedure', procedureIdMap),
+      }))
     : Array.isArray(data?.plans)
       ? data.plans.map(plan => ({
-          id:plan.id,
+          id:normalizeUuid(plan.id, 'procedure', procedureIdMap),
           name:plan.name,
           price:plan.price || 0,
           durationHours:plan.durationHours || 3,
@@ -30,12 +36,16 @@ export function normalizeData(data) {
       : []
 
   const surgeries = Array.isArray(data?.surgeries)
-    ? data.surgeries
+    ? data.surgeries.map(item => ({
+        ...item,
+        id:normalizeUuid(item.id, 'surgery'),
+        procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
+      }))
     : Array.isArray(data?.sales)
       ? data.sales.map(sale => ({
-          id:sale.id,
+          id:normalizeUuid(sale.id, 'surgery'),
           patient:sale.client || '',
-          procedureId:sale.plan || '',
+          procedureId:normalizeRelatedId(sale.plan, 'procedure', procedureIdMap),
           totalValue:sale.value || 0,
           date:sale.date || '',
           paymentMethod:sale.paymentMethod || 'pix',
@@ -49,17 +59,38 @@ export function normalizeData(data) {
         }))
       : []
 
+  const products = Array.isArray(data?.products)
+    ? data.products.map(item => ({
+        ...item,
+        id:normalizeUuid(item.id, 'product', productIdMap),
+      }))
+    : []
+
   return {
     procedures,
     surgeries,
-    consultations: Array.isArray(data?.consultations) ? data.consultations : [],
-    products: Array.isArray(data?.products) ? data.products : [],
-    productSales: Array.isArray(data?.productSales) ? data.productSales : [],
-    productPurchases: Array.isArray(data?.productPurchases) ? data.productPurchases : [],
-    extraRevenues: Array.isArray(data?.extraRevenues) ? data.extraRevenues : [],
+    consultations: Array.isArray(data?.consultations) ? data.consultations.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'consultation'),
+    })) : [],
+    products,
+    productSales: Array.isArray(data?.productSales) ? data.productSales.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'product_sale'),
+      productId:normalizeRelatedId(item.productId, 'product', productIdMap),
+    })) : [],
+    productPurchases: Array.isArray(data?.productPurchases) ? data.productPurchases.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'product_purchase'),
+      productId:normalizeRelatedId(item.productId, 'product', productIdMap),
+    })) : [],
+    extraRevenues: Array.isArray(data?.extraRevenues) ? data.extraRevenues.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'extra_revenue'),
+    })) : [],
     expenses: Array.isArray(data?.expenses)
       ? data.expenses.map(expense => ({
-          id:expense.id,
+          id:normalizeUuid(expense.id, 'expense'),
           description:expense.description || expense.desc || '',
           category:expense.category || 'outros',
           value:expense.value || 0,
@@ -68,9 +99,18 @@ export function normalizeData(data) {
           status:expense.status || (expense.paymentDate ? 'pago' : 'aberto'),
         }))
       : [],
-    assets: Array.isArray(data?.assets) ? data.assets : [],
-    liabilities: Array.isArray(data?.liabilities) ? data.liabilities : [],
-    goals: Array.isArray(data?.goals) ? data.goals : [],
+    assets: Array.isArray(data?.assets) ? data.assets.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'asset'),
+    })) : [],
+    liabilities: Array.isArray(data?.liabilities) ? data.liabilities.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'liability'),
+    })) : [],
+    goals: Array.isArray(data?.goals) ? data.goals.map(item => ({
+      ...item,
+      id:normalizeUuid(item.id, 'goal'),
+    })) : [],
   }
 }
 
@@ -88,3 +128,35 @@ export function isDataEmpty(data) {
     && normalized.liabilities.length === 0
     && normalized.goals.length === 0
 }
+
+function normalizeRelatedId(value, namespace, map) {
+  if (!value) return ''
+  return normalizeUuid(value, namespace, map)
+}
+
+function normalizeUuid(value, namespace = 'id', cacheMap = null) {
+  const raw = String(value || '').trim()
+  if (!raw) return stableUuid(`${namespace}:empty:${Math.random()}`)
+  if (UUID_RE.test(raw)) return raw.toLowerCase()
+  if (cacheMap?.has(raw)) return cacheMap.get(raw)
+  const next = stableUuid(`${namespace}:${raw}`)
+  if (cacheMap) cacheMap.set(raw, next)
+  return next
+}
+
+function stableUuid(seed) {
+  const hex = [hashHex(`${seed}:a`), hashHex(`${seed}:b`), hashHex(`${seed}:c`), hashHex(`${seed}:d`)].join('').slice(0, 32)
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
+
+function hashHex(input) {
+  let hash = 2166136261
+  const text = String(input)
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

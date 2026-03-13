@@ -1,7 +1,15 @@
 export const fmt = v => new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(v || 0)
 export const fmtN = v => new Intl.NumberFormat('pt-BR').format(v || 0)
 export const today = () => new Date().toISOString().split('T')[0]
-export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2)
+export const uid = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  const randomHex = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0')
+  const hex = `${randomHex()}${randomHex()}${randomHex()}${randomHex()}`
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
 
 export function toDate(value) {
   if (!value) return null
