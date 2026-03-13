@@ -7,6 +7,12 @@ function mapAuthError(error, fallback) {
   return error?.message || fallback
 }
 
+function resolveVerifiedUser(session) {
+  const nextUser = session?.user ?? null
+  if (!nextUser?.email_confirmed_at) return null
+  return nextUser
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
@@ -31,7 +37,7 @@ export function AuthProvider({ children }) {
       }
 
       setSession(data.session ?? null)
-      setUser(data.session?.user ?? null)
+      setUser(resolveVerifiedUser(data.session))
       setLoading(false)
     }
 
@@ -39,7 +45,7 @@ export function AuthProvider({ children }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession ?? null)
-      setUser(nextSession?.user ?? null)
+      setUser(resolveVerifiedUser(nextSession))
       setIsRecoveryMode(event === 'PASSWORD_RECOVERY')
       setLoading(false)
     })

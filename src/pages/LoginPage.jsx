@@ -19,7 +19,7 @@ export function LoginPage({ initialMode = 'login' }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const { user, loading, signIn, signUp, requestPasswordReset } = useAuth()
+  const { user, session, loading, signIn, signUp, requestPasswordReset } = useAuth()
   const [mode, setMode] = useState(initialMode)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -178,6 +178,12 @@ export function LoginPage({ initialMode = 'login' }) {
             {message && (
               <div style={{ background:C.green+'14', border:`1px solid ${C.green}33`, borderRadius:12, padding:'12px 14px', color:C.green, fontSize:13 }}>
                 {message}
+              </div>
+            )}
+
+            {!user && session?.user && !session.user.email_confirmed_at && (
+              <div style={{ background:C.yellow+'14', border:`1px solid ${C.yellow}33`, borderRadius:12, padding:'12px 14px', color:C.yellow, fontSize:13 }}>
+                Cadastro criado, mas o acesso só é liberado após confirmar o e-mail. Abra sua caixa de entrada e clique no link de verificação.
               </div>
             )}
 
