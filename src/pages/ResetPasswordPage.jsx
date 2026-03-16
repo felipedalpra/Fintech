@@ -5,6 +5,14 @@ import { Btn, Card, FInput } from '../components/UI.jsx'
 import { C } from '../theme.js'
 import { hasSupabaseEnv, supabase } from '../lib/supabase.js'
 
+const PASSWORD_POLICY = {
+  minLength:8,
+  upper:/[A-Z]/,
+  lower:/[a-z]/,
+  number:/\d/,
+  special:/[^A-Za-z0-9]/,
+}
+
 export function ResetPasswordPage() {
   const navigate = useNavigate()
   const { user, loading, isRecoveryMode, updatePassword } = useAuth()
@@ -71,13 +79,21 @@ export function ResetPasswordPage() {
   }
 
   const canReset = useMemo(() => Boolean(user && (isRecoveryMode || recoveryReady)), [user, isRecoveryMode, recoveryReady])
+  const passwordChecks = useMemo(() => ({
+    length:password.length >= PASSWORD_POLICY.minLength,
+    upper:PASSWORD_POLICY.upper.test(password),
+    lower:PASSWORD_POLICY.lower.test(password),
+    number:PASSWORD_POLICY.number.test(password),
+    special:PASSWORD_POLICY.special.test(password),
+  }), [password])
+  const passwordValid = Object.values(passwordChecks).every(Boolean)
 
   const submit = async () => {
     setError('')
     setMessage('')
 
-    if (password.length < 6) {
-      setError('A nova senha precisa ter pelo menos 6 caracteres.')
+    if (!passwordValid) {
+      setError('A nova senha precisa ter no mínimo 8 caracteres, com 1 letra maiúscula, 1 minúscula, 1 número e 1 caractere especial.')
       return
     }
 
@@ -123,9 +139,16 @@ export function ResetPasswordPage() {
 
         {!waiting && canReset && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            <FInput label="Nova senha" value={password} onChange={setPassword} type="password" placeholder="Minimo de 6 caracteres" required />
+            <FInput label="Nova senha" value={password} onChange={setPassword} type="password" placeholder="8+ caracteres, com maiúscula, minúscula, número e especial" required />
             <FInput label="Confirmar senha" value={confirmPassword} onChange={setConfirmPassword} type="password" placeholder="Repita a nova senha" required />
-            <Btn onClick={submit} disabled={busy || !password || !confirmPassword} style={{ justifyContent:'center', display:'inline-flex' }}>
+            <div style={{ padding:'12px 14px', borderRadius:12, border:`1px solid ${C.border}`, background:C.surface, display:'grid', gap:6 }}>
+              <PasswordRule ok={passwordChecks.length}>Pelo menos 8 caracteres</PasswordRule>
+              <PasswordRule ok={passwordChecks.upper}>1 letra maiúscula</PasswordRule>
+              <PasswordRule ok={passwordChecks.lower}>1 letra minúscula</PasswordRule>
+              <PasswordRule ok={passwordChecks.number}>1 número</PasswordRule>
+              <PasswordRule ok={passwordChecks.special}>1 caractere especial</PasswordRule>
+            </div>
+            <Btn onClick={submit} disabled={busy || !password || !confirmPassword || !passwordValid} style={{ justifyContent:'center', display:'inline-flex' }}>
               {busy ? 'Atualizando...' : 'Salvar nova senha'}
             </Btn>
           </div>
@@ -143,6 +166,15 @@ export function ResetPasswordPage() {
           </div>
         )}
       </Card>
+    </div>
+  )
+}
+
+function PasswordRule({ ok, children }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:ok ? C.green : C.textDim }}>
+      <span style={{ width:16, textAlign:'center', fontWeight:700 }}>{ok ? '✓' : '•'}</span>
+      <span>{children}</span>
     </div>
   )
 }
