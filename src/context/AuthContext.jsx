@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { hasSupabaseEnv, supabase } from '../lib/supabase.js'
+import { getAppOrigin, hasSupabaseEnv, supabase } from '../lib/supabase.js'
 
 const AuthContext = createContext(null)
 
@@ -76,7 +76,7 @@ export function AuthProvider({ children }) {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: `${getAppOrigin()}/login`,
           data: {
             name: name.trim(),
             selected_billing_cycle: billingCycle || 'mensal',
@@ -94,7 +94,7 @@ export function AuthProvider({ children }) {
     async requestPasswordReset(email) {
       if (!hasSupabaseEnv) throw new Error('Supabase nao configurado.')
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${getAppOrigin()}/reset-password`,
       })
 
       if (error) throw new Error(mapAuthError(error, 'Nao foi possivel enviar o link de recuperacao.'))

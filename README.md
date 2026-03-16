@@ -26,6 +26,7 @@ VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anon
 SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
 APP_DATA_ENCRYPTION_KEY=uma-chave-forte-para-criptografar-perfis
+VITE_APP_URL=https://sua-url-publica
 APP_URL=https://sua-url-publica
 STRIPE_SECRET_KEY=sk_live_ou_sk_test
 STRIPE_WEBHOOK_SECRET=whsec_xxx
@@ -71,6 +72,7 @@ A saída fica em `dist`.
 1. Confirmar variáveis na Vercel:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `VITE_APP_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_DATA_ENCRYPTION_KEY`
 - `APP_URL`
@@ -84,6 +86,7 @@ A saída fica em `dist`.
 - `Site URL` da produção
 - redirect de `/reset-password`
 - provider `Email` ativo
+- `VITE_APP_URL` e `APP_URL` apontando para o mesmo domínio público
 
 3. Confirmar tabelas e policies:
 - tabelas operacionais do schema mínimo existem

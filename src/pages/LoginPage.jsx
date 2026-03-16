@@ -254,10 +254,11 @@ function SupabaseSetupScreen() {
         <div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>Configuracao pendente</div>
         <h1 style={{ margin:'0 0 12px', fontSize:30 }}>Faltam as variaveis do Supabase.</h1>
         <p style={{ color:C.textSub, lineHeight:1.7, marginBottom:18 }}>
-          Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` em um arquivo `.env` para ativar autenticacao real, reset de senha e persistencia remota.
+          Defina `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `VITE_APP_URL` em um arquivo `.env` para ativar autenticacao real, reset de senha e persistencia remota.
         </p>
         <pre style={{ ...base.card, overflowX:'auto', fontSize:13 }}>{`VITE_SUPABASE_URL=https://seu-projeto.supabase.co
-VITE_SUPABASE_ANON_KEY=sua-chave-anon`}</pre>
+VITE_SUPABASE_ANON_KEY=sua-chave-anon
+VITE_APP_URL=https://sua-url-publica`}</pre>
       </Card>
     </div>
   )
