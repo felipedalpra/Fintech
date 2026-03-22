@@ -1,120 +1,264 @@
+import { useState } from 'react'
 import { C } from '../theme.js'
 import { fmt, fmtN, getPeriodRange } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
-export function Dashboard({ data }) {
+function prevMonthRange() {
+  const d = new Date()
+  d.setMonth(d.getMonth() - 1)
+  const y = d.getFullYear(), mo = d.getMonth()
+  return {
+    start: new Date(y, mo, 1).toISOString().split('T')[0],
+    end: new Date(y, mo + 1, 0).toISOString().split('T')[0],
+  }
+}
+
+function Sparkline({ values, color }) {
+  if (!values || values.length < 2) return null
+  const W = 80, H = 28, pad = 2
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min || 1
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (W - pad * 2)
+    const y = pad + (1 - (v - min) / range) * (H - pad * 2)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display:'block', overflow:'visible' }} aria-hidden="true">
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.75"
+      />
+    </svg>
+  )
+}
+
+function DeltaBadge({ current, previous, isPositiveGood = true }) {
+  if (previous === undefined || previous === null || previous === 0) return null
+  const delta = ((current - previous) / Math.abs(previous)) * 100
+  const isImprovement = isPositiveGood ? delta >= 0 : delta <= 0
+  const color = isImprovement ? C.green : C.red
+  const arrow = delta >= 0 ? '▲' : '▼'
+  const abs = Math.abs(delta)
+  const label = abs >= 10 ? `${Math.round(abs)}%` : `${abs.toFixed(1)}%`
+  return (
+    <span style={{ fontSize:11, fontWeight:700, color, marginLeft:6, display:'inline-flex', alignItems:'center', gap:2 }}>
+      {arrow}{label}
+    </span>
+  )
+}
+
+export function Dashboard({ data, saveError }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
+  const [showComparison, setShowComparison] = useState(false)
+
   const monthRange = getPeriodRange('month')
-  const m = buildMetrics(data, { startDate:monthRange.start, endDate:monthRange.end, balanceDate:monthRange.end })
+  const m = buildMetrics(data, { startDate: monthRange.start, endDate: monthRange.end, balanceDate: monthRange.end })
+
+  const prevRange = prevMonthRange()
+  const pm = buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
+
   const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
   const maxBar = Math.max(...monthKeys.map(key => Math.max(m.revenueByMonth[key] || 0, m.expenseByMonth[key] || 0)), 1)
   const topProcedure = m.byProcedure[0]
   const topProduct = m.productsByPerformance[0]
   const formatMoney = value => maskFinancialValue(value, financialPrivacyMode, fmt)
 
+  // Build sparkline data from last 6 months of revenue and expense keys
+  const allMonthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
+  const revenueSparkValues = allMonthKeys.map(k => m.revenueByMonth[k] || 0)
+  const cashSparkKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
+  const cashSparkValues = cashSparkKeys.map(k => (m.revenueByMonth[k] || 0) - (m.expenseByMonth[k] || 0))
+
   const kpis = [
     {
-      label:'Receita do mês',
-      value:m.grossRevenue,
-      isCurrency:true,
-      subLabel:'Lucro líquido',
-      subValue:m.netProfit,
-      subIsCurrency:true,
-      color:C.green,
-      glow:C.green + '22',
+      label: 'Receita do mês',
+      value: m.grossRevenue,
+      prevValue: pm.grossRevenue,
+      isPositiveGood: true,
+      isCurrency: true,
+      subLabel: 'Lucro líquido',
+      subValue: m.netProfit,
+      subIsCurrency: true,
+      color: C.green,
+      glow: C.green + '22',
+      sparkline: revenueSparkValues,
+      sparkColor: C.green,
     },
     {
-      label:'Cirurgias realizadas',
-      value:m.surgeriesCompleted,
-      isCurrency:false,
-      subLabel:'Ticket médio',
-      subValue:m.averageTicket,
-      subIsCurrency:true,
-      color:C.accent,
-      glow:C.accent + '22',
+      label: 'Cirurgias realizadas',
+      value: m.surgeriesCompleted,
+      prevValue: pm.surgeriesCompleted,
+      isPositiveGood: true,
+      isCurrency: false,
+      subLabel: 'Ticket médio',
+      subValue: m.averageTicket,
+      subIsCurrency: true,
+      color: C.accent,
+      glow: C.accent + '22',
+      sparkline: null,
+      sparkColor: C.accent,
     },
     {
-      label:'Consultas realizadas',
-      value:m.consultationsCompleted,
-      isCurrency:false,
-      subLabel:'Receita de consultas',
-      subValue:m.consultationRevenue,
-      subIsCurrency:true,
-      color:C.cyan,
-      glow:C.cyan + '22',
+      label: 'Consultas realizadas',
+      value: m.consultationsCompleted,
+      prevValue: pm.consultationsCompleted,
+      isPositiveGood: true,
+      isCurrency: false,
+      subLabel: 'Receita de consultas',
+      subValue: m.consultationRevenue,
+      subIsCurrency: true,
+      color: C.cyan,
+      glow: C.cyan + '22',
+      sparkline: null,
+      sparkColor: C.cyan,
     },
     {
-      label:'Produtos vendidos',
-      value:m.productSalesRevenue,
-      isCurrency:true,
-      subLabel:'Compras de estoque',
-      subValue:m.productPurchaseTotal,
-      subIsCurrency:true,
-      color:C.yellow,
-      glow:C.yellow + '22',
+      label: 'Produtos vendidos',
+      value: m.productSalesRevenue,
+      prevValue: pm.productSalesRevenue,
+      isPositiveGood: true,
+      isCurrency: true,
+      subLabel: 'Compras de estoque',
+      subValue: m.productPurchaseTotal,
+      subIsCurrency: true,
+      color: C.yellow,
+      glow: C.yellow + '22',
+      sparkline: null,
+      sparkColor: C.yellow,
     },
     {
-      label:'Fluxo de caixa',
-      value:m.cashBalance,
-      isCurrency:true,
-      subLabel:'Previsão',
-      subValue:m.prediction,
-      subIsCurrency:true,
-      color:m.cashBalance >= 0 ? C.green : C.red,
-      glow:(m.cashBalance >= 0 ? C.green : C.red) + '22',
+      label: 'Fluxo de caixa',
+      value: m.cashBalance,
+      prevValue: pm.cashBalance,
+      isPositiveGood: true,
+      isCurrency: true,
+      subLabel: 'Previsão',
+      subValue: m.prediction,
+      subIsCurrency: true,
+      color: m.cashBalance >= 0 ? C.green : C.red,
+      glow: (m.cashBalance >= 0 ? C.green : C.red) + '22',
+      sparkline: cashSparkValues,
+      sparkColor: m.cashBalance >= 0 ? C.green : C.red,
     },
     {
-      label:'Contas em aberto',
-      value:m.receivablesOpenTotal,
-      isCurrency:true,
-      subLabel:'A pagar',
-      subValue:m.payablesOpenTotal,
-      subIsCurrency:true,
-      color:C.purple,
-      glow:C.purple + '22',
+      label: 'Contas em aberto',
+      value: m.receivablesOpenTotal,
+      prevValue: pm.receivablesOpenTotal,
+      isPositiveGood: true,
+      isCurrency: true,
+      subLabel: 'A pagar',
+      subValue: m.payablesOpenTotal,
+      subIsCurrency: true,
+      color: C.purple,
+      glow: C.purple + '22',
+      sparkline: null,
+      sparkColor: C.purple,
     },
   ]
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
+
+      {/* Top bar: privacy toggle + comparison toggle + sync status */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-        <div>
-          <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Privacidade financeira</div>
-          <div style={{ color:C.textDim, fontSize:13, marginTop:4 }}>Oculte valores ao compartilhar a tela ou usar o sistema em público.</div>
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          <div>
+            <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Privacidade financeira</div>
+            <div style={{ color:C.textDim, fontSize:13, marginTop:4 }}>Oculte valores ao compartilhar a tela ou usar o sistema em público.</div>
+          </div>
         </div>
-        <button
-          onClick={toggleFinancialPrivacy}
-          aria-label={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
-          title={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
-          style={{
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          {/* Comparison toggle */}
+          <button
+            onClick={() => setShowComparison(v => !v)}
+            aria-pressed={showComparison}
+            title="Comparar com o mês anterior"
+            style={{
+              display:'inline-flex',
+              alignItems:'center',
+              gap:8,
+              padding:'10px 14px',
+              borderRadius:999,
+              border:`1px solid ${showComparison ? C.cyan + '55' : C.border}`,
+              background: showComparison ? C.cyan + '14' : 'transparent',
+              color: showComparison ? C.cyan : C.textSub,
+              cursor:'pointer',
+              fontFamily:'inherit',
+              fontSize:13,
+              fontWeight:700,
+            }}
+          >
+            vs. mês anterior
+          </button>
+
+          {/* Privacy toggle */}
+          <button
+            onClick={toggleFinancialPrivacy}
+            aria-label={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
+            title={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
+            style={{
+              display:'inline-flex',
+              alignItems:'center',
+              gap:8,
+              padding:'10px 14px',
+              borderRadius:999,
+              border:`1px solid ${financialPrivacyMode ? C.accent + '55' : C.border}`,
+              background: financialPrivacyMode ? C.accent + '14' : 'transparent',
+              color: financialPrivacyMode ? C.accentLight : C.textSub,
+              cursor:'pointer',
+              fontFamily:'inherit',
+              fontSize:13,
+              fontWeight:700,
+            }}
+          >
+            <EyeIcon off={financialPrivacyMode} />
+            {financialPrivacyMode ? 'Mostrar valores' : 'Ocultar valores'}
+          </button>
+
+          {/* Sync status pill */}
+          <span style={{
             display:'inline-flex',
             alignItems:'center',
-            gap:8,
-            padding:'10px 14px',
+            gap:6,
+            padding:'6px 12px',
             borderRadius:999,
-            border:`1px solid ${financialPrivacyMode ? C.accent + '55' : C.border}`,
-            background:financialPrivacyMode ? C.accent + '14' : 'transparent',
-            color:financialPrivacyMode ? C.accentLight : C.textSub,
-            cursor:'pointer',
-            fontFamily:'inherit',
-            fontSize:13,
+            fontSize:12,
             fontWeight:700,
-          }}
-        >
-          <EyeIcon off={financialPrivacyMode} />
-          {financialPrivacyMode ? 'Mostrar valores' : 'Ocultar valores'}
-        </button>
+            background: saveError ? C.red + '18' : C.green + '18',
+            color: saveError ? C.red : C.green,
+            border: `1px solid ${saveError ? C.red + '44' : C.green + '44'}`,
+            userSelect:'none',
+          }}>
+            {saveError ? '⚠ Erro ao salvar' : '● Dados atualizados'}
+          </span>
+        </div>
       </div>
 
+      {/* KPI cards */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:16 }}>
         {kpis.map(item => (
           <Card key={item.label} glow={item.glow} style={{ padding:20 }}>
-            <div style={{ fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8 }}>{item.label}</div>
-            <div style={{ fontSize:26, fontWeight:800, color:item.color, letterSpacing:'-0.02em' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+              <div style={{ fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8 }}>{item.label}</div>
+              {item.sparkline && item.sparkline.length >= 2 && (
+                <Sparkline values={item.sparkline} color={item.sparkColor} />
+              )}
+            </div>
+            <div style={{ fontSize:26, fontWeight:800, color:item.color, letterSpacing:'-0.02em', display:'flex', alignItems:'baseline', flexWrap:'wrap' }}>
               {item.isCurrency ? formatMoney(item.value) : fmtN(item.value)}
+              {showComparison && !financialPrivacyMode && (
+                <DeltaBadge current={item.value} previous={item.prevValue} isPositiveGood={item.isPositiveGood} />
+              )}
             </div>
             <div style={{ fontSize:12, color:C.textDim, marginTop:4 }}>
               {item.subLabel}: {item.subIsCurrency ? formatMoney(item.subValue) : fmtN(item.subValue)}

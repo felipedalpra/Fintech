@@ -17,6 +17,44 @@ const SUMMARY_CARDS = [
   ['Contas a pagar', 'payablesOpenTotal', C.yellow],
 ]
 
+function getPreviousPeriodRange(period, range) {
+  if (period === 'month') {
+    const start = new Date(`${range.start}T00:00:00`)
+    const prevMonth = new Date(start.getFullYear(), start.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(start.getFullYear(), start.getMonth(), 0)
+    const pad = n => String(n).padStart(2, '0')
+    return {
+      start: `${prevMonth.getFullYear()}-${pad(prevMonth.getMonth() + 1)}-${pad(prevMonth.getDate())}`,
+      end: `${prevMonthEnd.getFullYear()}-${pad(prevMonthEnd.getMonth() + 1)}-${pad(prevMonthEnd.getDate())}`,
+    }
+  }
+  if (period === 'year') {
+    const year = parseInt(range.start.slice(0, 4), 10) - 1
+    return { start: `${year}-01-01`, end: `${year}-12-31` }
+  }
+  if (period === 'quarter') {
+    const start = new Date(`${range.start}T00:00:00`)
+    const prevQuarterEnd = new Date(start.getFullYear(), start.getMonth(), 0)
+    const prevQuarterStart = new Date(prevQuarterEnd.getFullYear(), Math.floor(prevQuarterEnd.getMonth() / 3) * 3, 1)
+    const pad = n => String(n).padStart(2, '0')
+    return {
+      start: `${prevQuarterStart.getFullYear()}-${pad(prevQuarterStart.getMonth() + 1)}-${pad(prevQuarterStart.getDate())}`,
+      end: `${prevQuarterEnd.getFullYear()}-${pad(prevQuarterEnd.getMonth() + 1)}-${pad(prevQuarterEnd.getDate())}`,
+    }
+  }
+  // fallback: week / day / custom — shift by same duration
+  if (range.start && range.end) {
+    const startD = new Date(`${range.start}T00:00:00`)
+    const endD = new Date(`${range.end}T00:00:00`)
+    const diff = endD - startD
+    const prevEnd = new Date(startD - 1)
+    const prevStart = new Date(prevEnd - diff)
+    const fmt2 = d => d.toISOString().split('T')[0]
+    return { start: fmt2(prevStart), end: fmt2(prevEnd) }
+  }
+  return { start: '', end: '' }
+}
+
 export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const { financialPrivacyMode } = useFinancialPrivacy()
@@ -28,9 +66,20 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [showModal, setShowModal] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
   const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
+  const [showComparative, setShowComparative] = useState(false)
   const range = getPeriodRange(period, customRange)
   const m = buildMetrics(data, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
   const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
+
+  const prevRange = useMemo(() => {
+    if (!range.start) return { start:'', end:'' }
+    return getPreviousPeriodRange(period, range)
+  }, [period, range.start, range.end])
+
+  const mPrev = useMemo(() => {
+    if (!prevRange.start) return null
+    return buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
+  }, [data, prevRange.start, prevRange.end])
 
   useEffect(() => {
     setTab(defaultTab)
@@ -116,6 +165,46 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     ['fluxo', 'Fluxo de caixa'],
   ]
 
+  // DRE rows definition
+  const dreRows = [
+    { label: 'Receita bruta total', getValue: mx => mx.surgeryRevenue + mx.consultationRevenue + mx.productSalesRevenue + mx.extraRevenueTotal, color: C.green, bold: false },
+    { label: '(-) Custos de cirurgias', getValue: mx => mx.surgeryCostTotal, color: C.red, bold: false },
+    { label: 'Receita líquida de cirurgias', getValue: mx => mx.surgeryRevenue - mx.surgeryCostTotal, color: null, bold: false },
+    { label: 'Receita de consultas', getValue: mx => mx.consultationRevenue, color: C.green, bold: false },
+    { label: 'Receita de produtos', getValue: mx => mx.productSalesRevenue, color: C.green, bold: false },
+    { label: 'Outras receitas', getValue: mx => mx.extraRevenueTotal, color: C.green, bold: false },
+    { label: '= Receita operacional total', getValue: mx => mx.grossRevenue, color: C.accent, bold: true },
+    { label: '(-) Despesas operacionais', getValue: mx => mx.operationalExpenses, color: C.red, bold: false },
+    { label: '= Lucro operacional', getValue: mx => mx.operatingProfit, color: mx => mx.operatingProfit >= 0 ? C.accent : C.red, bold: true },
+    { label: 'Margem operacional %', getValue: mx => mx.grossRevenue > 0 ? (mx.operatingProfit / mx.grossRevenue * 100) : 0, isPercent: true, color: mx => mx.operatingProfit >= 0 ? C.green : C.red, bold: false },
+  ]
+
+  // Expense categories for top-5 chart in saidas tab
+  const topExpenseCategories = useMemo(() => {
+    const cats = Object.entries(m.expensesByCategory)
+      .map(([cat, total]) => ({ cat, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+    return cats
+  }, [m.expensesByCategory])
+
+  const maxExpense = topExpenseCategories.length > 0 ? topExpenseCategories[0].total : 1
+
+  // Revenue by origin totals for entradas tab
+  const revenueOrigins = useMemo(() => {
+    const cirurgias = m.surgeryRevenue
+    const consultas = m.consultationRevenue
+    const produtos = m.productSalesRevenue
+    const outras = m.extraRevenueTotal
+    const total = cirurgias + consultas + produtos + outras || 1
+    return [
+      { label: 'Cirurgias', value: cirurgias, color: C.accent },
+      { label: 'Consultas', value: consultas, color: C.cyan },
+      { label: 'Produtos', value: produtos, color: C.yellow },
+      { label: 'Outras receitas', value: outras, color: C.purple },
+    ].map(item => ({ ...item, pct: total > 0 ? item.value / total * 100 : 0, total }))
+  }, [m])
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ position:'sticky', top:0, zIndex:5, marginBottom:2 }}>
@@ -147,15 +236,164 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         })}
       </div>
 
-      {tab === 'entradas' && <><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}><SectionTitle title="Entradas automáticas e receitas adicionais" subtitle="Cirurgias pagas, consultas recebidas, vendas de produtos e outras receitas." /><Btn onClick={() => openAdd('extra')}>+ Outra receita</Btn></div><RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} rows={m.entriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>] }))} emptyMessage="Nenhuma entrada financeira no período." /></>}
+      {tab === 'entradas' && <>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+          <SectionTitle title="Entradas automáticas e receitas adicionais" subtitle="Cirurgias pagas, consultas recebidas, vendas de produtos e outras receitas." />
+          <Btn onClick={() => openAdd('extra')}>+ Outra receita</Btn>
+        </div>
 
-      {tab === 'saidas' && <><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}><SectionTitle title="Saídas do período" subtitle="Custos cirúrgicos, compras de produtos e despesas administrativas pagas." /><Btn onClick={() => openAdd('expense')}>+ Nova despesa</Btn></div><RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>] }))} emptyMessage="Nenhuma saída financeira no período." /></>}
+        <Card style={{ padding:20 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:16 }}>Receita por origem</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {revenueOrigins.map(item => (
+              <div key={item.label}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
+                  <span style={{ fontSize:12, color:C.textSub, fontWeight:600 }}>{item.label}</span>
+                  <span style={{ fontSize:12, color:C.textSub }}>
+                    <span style={{ color:item.color, fontWeight:700, marginRight:8 }}>{item.pct.toFixed(1)}%</span>
+                    {money(item.value)}
+                  </span>
+                </div>
+                <div style={{ height:8, borderRadius:999, background:`${C.border}44`, overflow:'hidden' }}>
+                  <div style={{ height:'100%', width:`${item.pct}%`, borderRadius:999, background:item.color, transition:'width 0.4s ease' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} rows={m.entriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>] }))} emptyMessage="Nenhuma entrada financeira no período." />
+      </>}
+
+      {tab === 'saidas' && <>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+          <SectionTitle title="Saídas do período" subtitle="Custos cirúrgicos, compras de produtos e despesas administrativas pagas." />
+          <Btn onClick={() => openAdd('expense')}>+ Nova despesa</Btn>
+        </div>
+
+        {topExpenseCategories.length > 0 && (
+          <Card style={{ padding:20 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:16 }}>Top categorias de despesa</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              {topExpenseCategories.map((item, idx) => {
+                const pct = maxExpense > 0 ? item.total / maxExpense * 100 : 0
+                const barColors = [C.red, C.yellow, C.purple, C.cyan, C.accent]
+                const barColor = barColors[idx % barColors.length]
+                return (
+                  <div key={item.cat}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
+                      <span style={{ fontSize:12, color:C.textSub, fontWeight:600, textTransform:'capitalize' }}>{item.cat}</span>
+                      <span style={{ fontSize:12, color:barColor, fontWeight:700 }}>{money(item.total)}</span>
+                    </div>
+                    <div style={{ height:8, borderRadius:999, background:`${C.border}44`, overflow:'hidden' }}>
+                      <div style={{ height:'100%', width:`${pct}%`, borderRadius:999, background:barColor, transition:'width 0.4s ease' }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        )}
+
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>] }))} emptyMessage="Nenhuma saída financeira no período." />
+      </>}
 
       {tab === 'receber' && <><SectionTitle title="Contas a receber" subtitle="Valores ainda não recebidos de cirurgias e consultas." /><RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." /></>}
 
       {tab === 'pagar' && <><SectionTitle title="Contas a pagar" subtitle="Despesas ainda não liquidadas pela clínica." /><RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." /></>}
 
-      {tab === 'dre' && <Card><SectionTitle title="Demonstração do resultado" subtitle="Resultado por competência para o período selecionado." /><div style={{ marginTop:8 }}>{[['Receita bruta', m.grossRevenue, C.green], ['(-) Custos cirúrgicos', m.surgeryCostTotal, C.red], ['(-) Compras de produtos', m.productPurchaseTotal, C.red], ['(-) Despesas operacionais', m.operationalExpenses, C.red], ['= Lucro operacional', m.operatingProfit, m.operatingProfit >= 0 ? C.accent : C.red], ['(-) Impostos', m.taxExpenses, C.red], ['= Lucro líquido', m.netProfit, m.netProfit >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'12px 0', borderTop:`1px solid ${C.border}22` }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{money(value)}</span></div>)}</div></Card>}
+      {tab === 'dre' && (
+        <Card>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12, marginBottom:4 }}>
+            <SectionTitle title="Demonstração do resultado" subtitle="Resultado por competência para o período selecionado." />
+            {['month', 'quarter', 'year'].includes(period) && (
+              <button
+                onClick={() => setShowComparative(prev => !prev)}
+                style={{
+                  background: showComparative ? C.accent : 'transparent',
+                  color: showComparative ? '#fff' : C.textSub,
+                  border: `1px solid ${showComparative ? C.accent : C.border}`,
+                  borderRadius: 999,
+                  padding: '7px 14px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'all 0.2s',
+                }}
+              >
+                Comparar com período anterior
+              </button>
+            )}
+          </div>
+
+          <div style={{ marginTop:8, overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              {showComparative && mPrev && (
+                <thead>
+                  <tr>
+                    <th style={{ padding:'10px 0', textAlign:'left', fontSize:11, color:C.textDim, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', width:'40%' }}>Item</th>
+                    <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Período atual</th>
+                    <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:C.textDim, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Período anterior</th>
+                    <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:C.textDim, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Var.</th>
+                  </tr>
+                </thead>
+              )}
+              <tbody>
+                {dreRows.map(row => {
+                  const currentVal = row.getValue(m)
+                  const prevVal = mPrev ? row.getValue(mPrev) : null
+                  const resolveColor = (val, colorProp) => {
+                    if (typeof colorProp === 'function') return colorProp({ operatingProfit: val })
+                    if (colorProp) return colorProp
+                    return val >= 0 ? C.green : C.red
+                  }
+                  const currentColor = resolveColor(currentVal, row.color)
+
+                  let delta = null
+                  if (showComparative && mPrev && prevVal !== null) {
+                    if (prevVal !== 0) {
+                      delta = ((currentVal - prevVal) / Math.abs(prevVal)) * 100
+                    } else if (currentVal !== 0) {
+                      delta = 100
+                    } else {
+                      delta = 0
+                    }
+                  }
+
+                  const formatVal = (val) => {
+                    if (row.isPercent) return `${val.toFixed(1)}%`
+                    return money(val)
+                  }
+
+                  return (
+                    <tr key={row.label} style={{ borderTop:`1px solid ${C.border}22` }}>
+                      <td style={{ padding:'12px 0', color:C.textSub, fontSize:13, fontWeight: row.bold ? 700 : 400 }}>{row.label}</td>
+                      <td style={{ padding:'12px 12px', textAlign:'right', color:currentColor, fontWeight: row.bold ? 800 : 700, fontSize:13 }}>
+                        {formatVal(currentVal)}
+                      </td>
+                      {showComparative && mPrev && (
+                        <>
+                          <td style={{ padding:'12px 12px', textAlign:'right', color:C.textDim, fontWeight:600, fontSize:13 }}>
+                            {formatVal(prevVal)}
+                          </td>
+                          <td style={{ padding:'12px 12px', textAlign:'right', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>
+                            {delta !== null && (
+                              <span style={{ color: delta > 0 ? C.green : delta < 0 ? C.red : C.textDim }}>
+                                {delta > 0 ? '▲' : delta < 0 ? '▼' : '—'} {Math.abs(delta).toFixed(1)}%
+                              </span>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {tab === 'balanco' && <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:16 }}><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Ativos complementares" subtitle="Banco, aplicações e outros ativos fora do caixa operacional." compact /><Btn onClick={() => openAdd('asset')} style={{ padding:'7px 12px' }}>+ Ativo</Btn></div><BalanceList items={data.assets} color={C.green} onEdit={item => openEdit('asset', item)} onDelete={item => setConfirmState({ type:'asset', id:item.id })} emptyMessage="Nenhum ativo complementar." hidden={financialPrivacyMode} /></Card><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Passivos complementares" subtitle="Empréstimos, obrigações e passivos extras." compact /><Btn onClick={() => openAdd('liability')} style={{ padding:'7px 12px' }}>+ Passivo</Btn></div><BalanceList items={data.liabilities} color={C.red} onEdit={item => openEdit('liability', item)} onDelete={item => setConfirmState({ type:'liability', id:item.id })} emptyMessage="Nenhum passivo complementar." hidden={financialPrivacyMode} /></Card><Card style={{ gridColumn:'1 / -1' }}><SectionTitle title="Balanço patrimonial automático" subtitle="Posição financeira consolidada na data selecionada." /><div style={{ marginTop:8 }}>{[['Caixa', m.cashBalance, C.cyan], ['Contas a receber', m.receivablesOpenTotal, C.green], ['Banco e outros ativos', data.assets.reduce((acc, item) => acc + (item.value || 0), 0), C.accent], ['Contas a pagar', m.payablesOpenTotal, C.red], ['Passivos complementares', data.liabilities.reduce((acc, item) => acc + (item.value || 0), 0), C.red], ['Lucros acumulados / patrimônio', m.equity, m.equity >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'12px 0', borderTop:`1px solid ${C.border}22`, alignItems:'center', flexWrap:'wrap' }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{money(value)}</span></div>)}</div></Card></div>}
 

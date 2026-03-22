@@ -1,5 +1,36 @@
 const OPENAI_URL = 'https://api.openai.com/v1/responses'
 
+const rateLimitMap = new Map()
+
+function getUserIdFromAuth(authHeader) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+  try {
+    const token = authHeader.slice(7)
+    const segments = token.split('.')
+    if (segments.length < 2) return null
+    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'))
+    return payload?.sub || null
+  } catch {
+    return null
+  }
+}
+
+function checkRateLimit(userId) {
+  const now = Date.now()
+  const midnight = new Date()
+  midnight.setUTCHours(24, 0, 0, 0)
+  const resetAt = midnight.getTime()
+
+  const entry = rateLimitMap.get(userId)
+  if (!entry || now >= entry.resetAt) {
+    rateLimitMap.set(userId, { count: 1, resetAt })
+    return true
+  }
+  if (entry.count >= 60) return false
+  entry.count += 1
+  return true
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
@@ -9,6 +40,13 @@ export default async function handler(req, res) {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
     return res.status(503).json({ error:'OPENAI_API_KEY not configured' })
+  }
+
+  const userId = getUserIdFromAuth(req.headers?.authorization)
+  if (userId) {
+    if (!checkRateLimit(userId)) {
+      return res.status(429).json({ error:'Limite diário de consultas ao assistente atingido (60/dia).' })
+    }
   }
 
   const { question, context, history = [] } = req.body || {}
@@ -41,6 +79,9 @@ export default async function handler(req, res) {
   "Só detalhe mais quando o usuário pedir análise aprofundada.",
   "Não repita contexto já dito na mesma resposta.",
   "Ao analisar dados financeiros, considere margem por procedimento, eficiência da agenda cirúrgica, previsibilidade de receita, estrutura de custos e possíveis riscos operacionais da clínica.",
+  "Ao identificar risco de fluxo de caixa negativo, proponha uma ação imediata e específica.",
+  "Quando o usuário perguntar sobre um procedimento específico, compare com a média dos outros procedimentos.",
+  "Se a pergunta envolver crescimento, mencione sempre se a trajetória é sustentável dado o nível de custos fixos.",
 ].join(" ")
   const input = [
     {
@@ -56,14 +97,27 @@ export default async function handler(req, res) {
     },
   ]
 
-  const recentHistory = Array.isArray(history) ? history.slice(-8) : []
-  recentHistory.forEach(item => {
-    if (!item?.content || (item.role !== 'user' && item.role !== 'assistant')) return
+  const validHistory = Array.isArray(history)
+    ? history.filter(item => item?.content && (item.role === 'user' || item.role === 'assistant'))
+    : []
+
+  if (validHistory.length > 10) {
+    const first3 = validHistory.slice(0, 3)
+    const bullets = first3
+      .map(item => `- [${item.role === 'user' ? 'Médico' : 'CFO'}] ${String(item.content).slice(0, 80)}`)
+      .join('\n')
     input.push({
-      role:item.role,
-      content:item.content,
+      role:'user',
+      content:`Resumo da conversa anterior:\n${bullets}`,
     })
-  })
+    validHistory.slice(-4).forEach(item => {
+      input.push({ role:item.role, content:item.content })
+    })
+  } else {
+    validHistory.slice(-8).forEach(item => {
+      input.push({ role:item.role, content:item.content })
+    })
+  }
 
   input.push({
     role:'user',
@@ -80,7 +134,7 @@ export default async function handler(req, res) {
       body:JSON.stringify({
         model,
         input,
-        max_output_tokens:220,
+        max_output_tokens:600,
       }),
     })
 
