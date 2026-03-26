@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { C } from '../theme.js'
 import { fmt } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
-import { Card } from '../components/UI.jsx'
+import { Card, SkeletonBlock } from '../components/UI.jsx'
 import { Dashboard } from '../components/Dashboard.jsx'
 import { Sales } from '../components/Sales.jsx'
 import { Plans } from '../components/Plans.jsx'
@@ -15,9 +15,11 @@ import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
+import { FAB } from '../components/FAB.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
+import { TaxCalculator } from '../components/TaxCalculator.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
@@ -39,6 +41,7 @@ const NAV_SECTIONS = [
     title:'Gestão',
     items:[
       { id:'finance', label:'Financeiro', icon:'◆', hint:'Caixa, DRE e balanço' },
+      { id:'impostos', label:'Impostos', icon:'◐', hint:'Carnê-Leão, IRPF e DAS' },
       { id:'goals', label:'Metas', icon:'◉', hint:'Objetivos e acompanhamento' },
       { id:'reports', label:'Relatórios', icon:'◫', hint:'Análises e comparativos' },
       { id:'ai', label:'Assistente', icon:'✦', hint:'Perguntas sobre os dados' },
@@ -56,6 +59,7 @@ const TITLES = {
   calendar:'Agenda',
   products:'Modeladores e Produtos Pós-Operatórios',
   finance:'Financeiro',
+  impostos:'Impostos & Tributos',
   cashflow:'Fluxo de Caixa',
   dre:'DRE',
   balance:'Balanço Patrimonial',
@@ -75,6 +79,7 @@ const SUBTITLES = {
   calendar:'Visualize cirurgias e consultas no calendário.',
   products:'Gerencie modeladores, compras, vendas e estoque.',
   finance:'Centralize entradas, saídas, contas, DRE e balanço.',
+  impostos:'Calcule Carnê-Leão, IRPF e tributos baseados nas suas receitas.',
   cashflow:'Movimentações realizadas e saldo por período.',
   dre:'Resultado do período por competência.',
   balance:'Ativos, passivos e patrimônio da clínica.',
@@ -93,6 +98,7 @@ const PAGES = {
   calendar:Calendar,
   products:Products,
   finance:props => <Finance {...props} defaultTab="entradas" />,
+  impostos:props => <TaxCalculator {...props} />,
   cashflow:props => <Finance {...props} defaultTab="fluxo" />,
   dre:props => <Finance {...props} defaultTab="dre" />,
   balance:props => <Finance {...props} defaultTab="balanco" />,
@@ -569,7 +575,72 @@ export function FinanceWorkspace() {
   const quickLinks = NAV_SECTIONS.flatMap(section => section.items).slice(0, 4)
 
   if (loading) {
-    return <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:C.bg }}><Card style={{ width:'min(420px, calc(100vw - 32px))', textAlign:'center' }}><div style={{ fontSize:14, color:C.textSub }}>Carregando dados da sua conta...</div></Card></div>
+    return (
+      <div style={{ display:'flex', minHeight:'100vh', background:C.bg }}>
+        {/* Sidebar skeleton */}
+        <aside style={{ width:272, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
+          <div style={{ padding:'24px 20px 18px', borderBottom:`1px solid ${C.border}` }}>
+            <SkeletonBlock w={120} h={28} />
+            <SkeletonBlock w={180} h={12} style={{ marginTop:8 }} />
+          </div>
+          <div style={{ padding:'16px 20px', borderBottom:`1px solid ${C.border}` }}>
+            <SkeletonBlock w={100} h={10} style={{ marginBottom:8 }} />
+            <SkeletonBlock w={160} h={18} style={{ marginBottom:6 }} />
+            <SkeletonBlock w={140} h={12} />
+          </div>
+          <div style={{ padding:'16px 20px', flex:1 }}>
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} style={{ display:'flex', gap:12, alignItems:'center', padding:'10px 0' }}>
+                <SkeletonBlock w={20} h={20} radius={6} />
+                <div style={{ flex:1 }}>
+                  <SkeletonBlock w="80%" h={13} style={{ marginBottom:5 }} />
+                  <SkeletonBlock w="60%" h={10} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+        {/* Main skeleton */}
+        <main style={{ flex:1, padding:'28px 28px 64px' }}>
+          <SkeletonBlock w={280} h={34} style={{ marginBottom:8 }} />
+          <SkeletonBlock w={200} h={14} style={{ marginBottom:32 }} />
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:16, marginBottom:24 }}>
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:20 }}>
+                <SkeletonBlock w="60%" h={11} style={{ marginBottom:12 }} />
+                <SkeletonBlock w="80%" h={28} style={{ marginBottom:8 }} />
+                <SkeletonBlock w="50%" h={12} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1.25fr 1fr', gap:16 }}>
+            <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:24 }}>
+              <SkeletonBlock w={160} h={13} style={{ marginBottom:20 }} />
+              <div style={{ display:'flex', gap:8, alignItems:'flex-end', height:140 }}>
+                {[1,2,3,4,5,6].map(i => (
+                  <div key={i} style={{ flex:1, display:'flex', gap:3, alignItems:'flex-end', height:140 }}>
+                    <SkeletonBlock w={16} h={`${40+i*12}px`} radius={3} />
+                    <SkeletonBlock w={16} h={`${20+i*10}px`} radius={3} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:24 }}>
+              <SkeletonBlock w={160} h={13} style={{ marginBottom:20 }} />
+              {[1,2,3].map(i => (
+                <div key={i} style={{ marginBottom:18 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+                    <SkeletonBlock w={100} h={13} />
+                    <SkeletonBlock w={60} h={13} />
+                  </div>
+                  <SkeletonBlock w="100%" h={8} radius={99} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   return (
@@ -698,6 +769,7 @@ export function FinanceWorkspace() {
         {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.6 }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
         <Page data={data} setData={setData} saveError={saveError} />
         <CopilotWidget data={data} />
+        <FAB currentPage={page} />
       </main>
 
       {/* Quick search modal */}
