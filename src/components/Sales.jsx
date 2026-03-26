@@ -25,6 +25,8 @@ const STATUS_COLORS = {
 }
 
 export function Sales({ data, setData }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const empty = {
     patient:'',
     procedureId:data.procedures[0]?.id || '',
@@ -118,19 +120,19 @@ export function Sales({ data, setData }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:280 }} />
+        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:isMobile ? '100%' : 280, width:isMobile ? '100%' : 'auto' }} />
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...base.input, width:'auto' }}>
           <option value="todos">Todos</option>
           {PAYMENT_STATUS.map(s => (
             <option key={s.v} value={s.v}>{s.l}</option>
           ))}
         </select>
-        <span style={{ marginLeft:'auto', fontSize:13, color:C.textDim }}>{filtered.length} cirurgia{filtered.length !== 1 ? 's' : ''}</span>
+        <span style={{ marginLeft:isMobile ? 0 : 'auto', fontSize:13, color:C.textDim, width:isMobile ? '100%' : 'auto' }}>{filtered.length} cirurgia{filtered.length !== 1 ? 's' : ''}</span>
         <Btn onClick={openAdd}>+ Nova Cirurgia</Btn>
       </div>
 
       {/* Summary stats bar */}
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+      <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap:12 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, background:C.yellow+'18', border:`1px solid ${C.yellow}33`, borderRadius:12, padding:'10px 18px', flex:1, minWidth:160 }}>
           <div>
             <div style={{ fontSize:11, fontWeight:700, color:C.yellow, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:2 }}>Total a receber</div>
@@ -151,7 +153,7 @@ export function Sales({ data, setData }) {
         </div>
       </div>
 
-      <Card style={{ padding:0, overflow:'hidden' }}>
+      {!isMobile && <Card style={{ padding:0, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
@@ -195,10 +197,43 @@ export function Sales({ data, setData }) {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>}
+
+      {isMobile && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma cirurgia cadastrada.</div></Card>}
+          {filtered.map(item => {
+            const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
+            const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0))
+            const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
+            const instValue = item.paymentStatus === 'parcelado' && item.installmentCount >= 2
+              ? (item.installmentValue || (item.totalValue / item.installmentCount))
+              : null
+
+            return (
+              <Card key={item.id} style={{ padding:14 }}>
+                <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
+                {item.referredBy && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>via {item.referredBy}</div>}
+                <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
+                  <MetricPill label="Procedimento" value={procedure?.name || 'Sem procedimento'} color={procedure?.color || C.textSub} />
+                  <MetricPill label="Data" value={item.date} color={C.textSub} />
+                  <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
+                  <MetricPill label="Receita líquida" value={fmt(netRevenue)} color={netRevenue >= 0 ? C.accent : C.red} />
+                  <MetricPill label="Pagamento" value={item.paymentStatus} color={statusColor} />
+                  {instValue !== null && <MetricPill label="Parcelas" value={`${item.installmentCount}x de ${fmt(instValue)}`} color={C.cyan} />}
+                </div>
+                <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
+                  <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Cirurgia' : 'Nova Cirurgia'} width={720}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <FInput label="Paciente ou ID interno" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Use o mínimo necessário para identificar" />
           <FInput label="Cirurgião" value={form.surgeon} onChange={value => setForm(current => ({ ...current, surgeon:value }))} placeholder="Nome do cirurgião responsável" />
           <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
@@ -241,4 +276,8 @@ export function Sales({ data, setData }) {
       <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => setData(current => ({ ...current, surgeries:current.surgeries.filter(item => item.id !== confirmId) }))} />
     </div>
   )
+}
+
+function MetricPill({ label, value, color }) {
+  return <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:'10px 12px' }}><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>{label}</div><div style={{ fontSize:13, color, fontWeight:700 }}>{value}</div></div>
 }
