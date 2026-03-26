@@ -37,7 +37,7 @@ export function FAB({ currentPage }) {
   }
 
   return (
-    <div ref={ref} style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10 }}>
+    <div ref={ref} style={{ position: 'fixed', bottom: 28, left: 28, zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
 
       {/* Action items */}
       {open && ACTIONS.map((action, i) => (
