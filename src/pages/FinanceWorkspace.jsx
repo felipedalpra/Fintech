@@ -472,6 +472,7 @@ export function FinanceWorkspace() {
   const [loadError, setLoadError] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
+  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const [quickSearchOpen, setQuickSearchOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(() =>
     typeof window !== 'undefined' ? window.localStorage.getItem('surgimetrics_onboarded') !== 'true' : false
@@ -722,12 +723,12 @@ export function FinanceWorkspace() {
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
               {isMobile && <button onClick={() => setMobileNavOpen(true)} style={iconButton}>☰</button>}
               <div>
-                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:2 }}>
+                <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', alignItems:isMobile ? 'flex-start' : 'center', gap:8, marginBottom:2 }}>
                   <h1 style={{ margin:0, fontSize:isMobile ? 24 : 28, fontWeight:900, letterSpacing:'-0.03em', color:C.text }}>{TITLES[page]}</h1>
                   <SyncStatus saveError={saveError} />
                 </div>
                 <div style={{ fontSize:13, color:C.textDim, marginTop:4, textTransform:'capitalize' }}>{dateStr}</div>
-                <div style={{ fontSize:14, color:C.textSub, marginTop:10, maxWidth:620 }}>{SUBTITLES[page]}</div>
+                <div style={{ fontSize:isMobile ? 13 : 14, color:C.textSub, marginTop:10, maxWidth:620, lineHeight:isMobile ? 1.55 : 1.5 }}>{SUBTITLES[page]}</div>
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -746,7 +747,7 @@ export function FinanceWorkspace() {
                 }}
               >
                 <span style={{ fontSize:13 }}>⌕</span>
-                {!isMobile && <span>Busca</span>}
+                <span>Busca</span>
                 {!isMobile && <kbd style={kbdSmall}>⌘K</kbd>}
               </button>
               {!isMobile && quickLinks.map(item => {
@@ -757,6 +758,36 @@ export function FinanceWorkspace() {
           </div>
         </div>
 
+        {isMobile && (
+          <Card style={{ marginBottom:16, padding:14 }}>
+            <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10, fontWeight:700 }}>
+              Acesso rapido
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8 }}>
+              {quickLinks.map(item => {
+                const active = item.id === page
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => navigate(`/app/${item.id}`)}
+                    style={{
+                      ...chipButton,
+                      border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`,
+                      background:active ? C.accent+'14' : 'transparent',
+                      color:active ? C.accentLight : C.textSub,
+                      borderRadius:12,
+                      padding:'10px 12px',
+                      textAlign:'left',
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          </Card>
+        )}
+
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
         {saveError && (
           <Card style={{ marginBottom:16, border:`1px solid ${C.yellow}33` }}>
@@ -766,7 +797,7 @@ export function FinanceWorkspace() {
             </div>
           </Card>
         )}
-        {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.6 }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
+        {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
         <Page data={data} setData={setData} saveError={saveError} />
         <CopilotWidget data={data} />
         <FAB currentPage={page} />

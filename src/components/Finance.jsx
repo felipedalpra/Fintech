@@ -438,6 +438,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 }
 
 function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
 
@@ -460,6 +462,62 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [rows, sortCol, sortDir])
+
+  if (isMobile) {
+    const activeSortCol = sortCol ?? (sortableColumns[0] ?? null)
+    const mobileSorted = activeSortCol === null
+      ? rows
+      : [...rows].sort((a, b) => {
+        const av = typeof a.cells[activeSortCol] === 'string' ? a.cells[activeSortCol] : (a.rawCells?.[activeSortCol] ?? '')
+        const bv = typeof b.cells[activeSortCol] === 'string' ? b.cells[activeSortCol] : (b.rawCells?.[activeSortCol] ?? '')
+        const cmp = String(av).localeCompare(String(bv), 'pt-BR', { numeric:true })
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+
+    return (
+      <Card style={{ padding:14 }}>
+        {sortableColumns.length > 0 && (
+          <div style={{ display:'flex', flexDirection:isNarrow ? 'column' : 'row', gap:8, marginBottom:12, alignItems:isNarrow ? 'stretch' : 'center' }}>
+            <select
+              value={activeSortCol ?? ''}
+              onChange={e => setSortCol(e.target.value === '' ? null : Number(e.target.value))}
+              style={{ flex:1, minHeight:38 }}
+            >
+              {sortableColumns.map(idx => (
+                <option key={idx} value={idx}>{`Ordenar por ${columns[idx]}`}</option>
+              ))}
+            </select>
+            <Btn
+              variant="ghost"
+              onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+              style={{ padding:'8px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}
+            >
+              {sortDir === 'asc' ? 'Crescente' : 'Decrescente'}
+            </Btn>
+          </div>
+        )}
+
+        {mobileSorted.length === 0 && (
+          <div style={{ padding:'20px 8px', textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</div>
+        )}
+
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {mobileSorted.map(row => (
+            <div key={row.key} style={{ border:`1px solid ${C.border}`, borderRadius:12, padding:'12px 12px 10px', background:C.surface }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
+                {row.cells.map((cell, index) => (
+                  <div key={index} style={{ display:'flex', flexDirection:'column', gap:4, borderTop:index === 0 ? 'none' : `1px solid ${C.border}33`, paddingTop:index === 0 ? 0 : 8 }}>
+                    <span style={{ fontSize:10, color:C.textDim, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>{columns[index]}</span>
+                    <span style={{ color:C.textSub, fontSize:13, lineHeight:1.45 }}>{cell}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <Card style={{ padding:0, overflow:'hidden' }}>
@@ -520,8 +578,23 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
 }
 
 function BalanceList({ items, color, onEdit, onDelete, emptyMessage, hidden }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   if (items.length === 0) return <p style={{ color:C.textDim, fontSize:13 }}>{emptyMessage}</p>
-  return items.map(item => <div key={item.id} style={{ padding:'14px 0', borderTop:`1px solid ${C.border}22`, display:'flex', justifyContent:'space-between', gap:16 }}><div><div style={{ color:C.text, fontWeight:600 }}>{item.name}</div><div style={{ color:C.textDim, fontSize:12 }}>{item.category || 'Sem categoria'}{item.notes ? ` · ${item.notes}` : ''}</div></div><div style={{ display:'flex', gap:12, alignItems:'center' }}><span style={{ color, fontWeight:700 }}>{hidden ? 'R$ XXXXX' : fmt(item.value)}</span><div style={{ display:'flex', gap:8 }}><Btn variant="ghost" onClick={() => onEdit(item)} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn><Btn variant="danger" onClick={() => onDelete(item)} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn></div></div></div>)
+  return items.map(item => (
+    <div key={item.id} style={{ padding:'14px 0', borderTop:`1px solid ${C.border}22`, display:'flex', flexDirection:isMobile ? 'column' : 'row', justifyContent:'space-between', gap:12 }}>
+      <div>
+        <div style={{ color:C.text, fontWeight:600 }}>{item.name}</div>
+        <div style={{ color:C.textDim, fontSize:12 }}>{item.category || 'Sem categoria'}{item.notes ? ` · ${item.notes}` : ''}</div>
+      </div>
+      <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', gap:10, alignItems:isMobile ? 'flex-start' : 'center' }}>
+        <span style={{ color, fontWeight:700 }}>{hidden ? 'R$ XXXXX' : fmt(item.value)}</span>
+        <div style={{ display:'flex', gap:8 }}>
+          <Btn variant="ghost" onClick={() => onEdit(item)} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn>
+          <Btn variant="danger" onClick={() => onDelete(item)} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn>
+        </div>
+      </div>
+    </div>
+  ))
 }
 
 function FormActions({ onCancel, onSave, disabled }) {

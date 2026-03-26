@@ -25,6 +25,8 @@ const STATUSES = [
 ]
 
 export function Consultations({ data, setData }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const empty = {
     patient:'',
     date:today(),
@@ -67,12 +69,12 @@ export function Consultations({ data, setData }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:280 }} />
-        <span style={{ marginLeft:'auto', fontSize:13, color:C.textDim }}>{filtered.length} consulta{filtered.length !== 1 ? 's' : ''}</span>
+        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:isMobile ? '100%' : 280, width:isMobile ? '100%' : 'auto' }} />
+        <span style={{ marginLeft:isMobile ? 0 : 'auto', fontSize:13, color:C.textDim, width:isMobile ? '100%' : 'auto' }}>{filtered.length} consulta{filtered.length !== 1 ? 's' : ''}</span>
         <Btn onClick={openAdd}>+ Nova Consulta</Btn>
       </div>
 
-      <Card style={{ padding:0, overflow:'hidden' }}>
+      {!isMobile && <Card style={{ padding:0, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{['Paciente', 'Data', 'Tipo', 'Pagamento', 'Valor', 'Status', 'Ações'].map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead>
@@ -92,10 +94,32 @@ export function Consultations({ data, setData }) {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>}
+
+      {isMobile && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma consulta cadastrada.</div></Card>}
+          {filtered.map(item => (
+            <Card key={item.id} style={{ padding:14 }}>
+              <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
+              <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
+                <MetricPill label="Data" value={item.date} color={C.textSub} />
+                <MetricPill label="Tipo" value={item.consultationType} color={C.textSub} />
+                <MetricPill label="Pagamento" value={item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType} color={C.textSub} />
+                <MetricPill label="Valor" value={fmt(item.value)} color={C.green} />
+                <MetricPill label="Status" value={item.paymentStatus} color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} />
+              </div>
+              <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+                <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
+                <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Consulta' : 'Nova Consulta'} width={640}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <FInput label="Paciente ou ID interno" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Use somente o dado mínimo necessário" />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
@@ -115,4 +139,8 @@ export function Consultations({ data, setData }) {
       <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => setData(current => ({ ...current, consultations:current.consultations.filter(item => item.id !== confirmId) }))} />
     </div>
   )
+}
+
+function MetricPill({ label, value, color }) {
+  return <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:'10px 12px' }}><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>{label}</div><div style={{ fontSize:13, color, fontWeight:700 }}>{value}</div></div>
 }

@@ -51,6 +51,8 @@ const PAYMENT_METHODS = [
 ]
 
 export function Products({ data, setData }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const m = buildMetrics(data)
   const [tab, setTab] = useState('catalogo')
   const [search, setSearch] = useState('')
@@ -149,31 +151,31 @@ export function Products({ data, setData }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))', gap:14 }}>
+      <div style={{ display:'grid', gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(auto-fill,minmax(210px,1fr))', gap:14 }}>
         {[
           ['Produtos ativos', fmtN(data.products.filter(item => item.active !== false).length), C.accent],
           ['Estoque total', fmtN(m.productsByPerformance.reduce((acc, item) => acc + (item.stock || 0), 0)), C.cyan],
           ['Receita com produtos', fmt(m.productSalesRevenue), C.green],
           ['Compra de estoque', fmt(m.productPurchaseTotal), C.red],
-        ].map(([label, value, color]) => <Card key={label} style={{ padding:18 }}><div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{label}</div><div style={{ fontSize:22, fontWeight:800, color }}>{value}</div></Card>)}
+        ].map(([label, value, color]) => <Card key={label} style={{ padding:isMobile ? 14 : 18 }}><div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8, lineHeight:1.35 }}>{label}</div><div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color }}>{value}</div></Card>)}
       </div>
 
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar produto ou categoria..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:320 }} />
-        <span style={{ marginLeft:'auto', fontSize:13, color:C.textDim }}>{filteredProducts.length} produto(s)</span>
+        <input placeholder="Buscar produto ou categoria..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:isMobile ? '100%' : 320, width:isMobile ? '100%' : 'auto' }} />
+        <span style={{ marginLeft:isMobile ? 0 : 'auto', fontSize:13, color:C.textDim, width:isMobile ? '100%' : 'auto' }}>{filteredProducts.length} produto(s)</span>
         <Btn variant="ghost" onClick={() => openAdd('purchase')} disabled={data.products.length === 0}>+ Compra</Btn>
         <Btn variant="success" onClick={() => openAdd('sale')} disabled={data.products.length === 0}>+ Venda</Btn>
         <Btn onClick={() => openAdd('product')}>+ Produto</Btn>
       </div>
 
-      <div style={{ display:'flex', gap:4, background:C.surface, padding:4, borderRadius:12, width:'fit-content', flexWrap:'wrap' }}>
+      <div style={{ display:'flex', gap:4, background:C.surface, padding:4, borderRadius:12, width:isMobile ? '100%' : 'fit-content', flexWrap:'wrap' }}>
         <Tab id="catalogo" label="Produtos" />
         <Tab id="vendas" label="Vendas" />
         <Tab id="compras" label="Compras" />
         <Tab id="lucro" label="Lucro por produto" />
       </div>
 
-      {tab === 'catalogo' && (
+      {tab === 'catalogo' && !isMobile && (
         <Card style={{ padding:0, overflow:'hidden' }}>
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -196,6 +198,33 @@ export function Products({ data, setData }) {
             </table>
           </div>
         </Card>
+      )}
+
+      {tab === 'catalogo' && isMobile && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {filteredProducts.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhum produto cadastrado.</div></Card>}
+          {filteredProducts.map(item => {
+            const performance = performanceById.get(item.id)
+            const stock = performance?.stock ?? item.stock ?? 0
+            return (
+              <Card key={item.id} style={{ padding:14 }}>
+                <div style={{ color:C.text, fontWeight:700 }}>{item.name}</div>
+                <div style={{ color:C.textDim, fontSize:12, marginTop:3 }}>{item.description || 'Sem descrição'}</div>
+                <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
+                  <MetricPill label="Categoria" value={item.category} color={C.textSub} />
+                  <MetricPill label="Status" value={item.active !== false ? 'Ativo' : 'Inativo'} color={item.active !== false ? C.green : C.textDim} />
+                  <MetricPill label="Compra" value={fmt(item.purchasePrice)} color={C.textSub} />
+                  <MetricPill label="Venda" value={fmt(item.salePrice)} color={C.green} />
+                  <MetricPill label="Estoque" value={fmtN(stock)} color={stock > 0 ? C.accent : C.red} />
+                </div>
+                <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
+                  <Btn variant="danger" onClick={() => setConfirmState({ type:'product', id:item.id })} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
       )}
 
       {tab === 'vendas' && (
@@ -242,7 +271,7 @@ export function Products({ data, setData }) {
           <h3 style={{ margin:'0 0 18px', fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Margem e estoque por produto</h3>
           {m.productsByPerformance.length === 0 && <p style={{ color:C.textDim, fontSize:13 }}>Cadastre produtos e registre compras/vendas para ver a performance.</p>}
           {m.productsByPerformance.map(item => (
-            <div key={item.id} style={{ padding:'12px 0', borderTop:`1px solid ${C.border}22`, display:'grid', gridTemplateColumns:'minmax(180px,1.2fr) repeat(4,1fr)', gap:12 }}>
+            <div key={item.id} style={{ padding:'12px 0', borderTop:`1px solid ${C.border}22`, display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(180px,1.2fr) repeat(4,1fr)', gap:12 }}>
               <div><div style={{ color:C.text, fontWeight:700 }}>{item.name}</div><div style={{ color:C.textDim, fontSize:12 }}>{fmtN(item.soldQty)} vendido(s) · estoque {fmtN(item.stock)}</div></div>
               <MetricPill label="Receita" value={fmt(item.revenue)} color={C.green} />
               <MetricPill label="Custo" value={fmt(item.cost)} color={C.red} />
@@ -254,7 +283,7 @@ export function Products({ data, setData }) {
       )}
 
       <Modal open={modalType === 'product'} onClose={() => setModalType(null)} title={editingId ? 'Editar produto' : 'Novo produto'} width={680}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Ex: Modelador premium" />
           <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={CATEGORIES} />
           <FInput label="Valor de compra" value={form.purchasePrice} onChange={value => setForm(current => ({ ...current, purchasePrice:value }))} type="number" />
@@ -267,7 +296,7 @@ export function Products({ data, setData }) {
       </Modal>
 
       <Modal open={modalType === 'sale'} onClose={() => setModalType(null)} title="Registrar venda de produto" width={640}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <FInput label="Produto" value={form.productId} onChange={value => {
             const product = productsById.get(value)
             setForm(current => ({ ...current, productId:value, unitValue:product?.salePrice || current.unitValue, totalValue:(product?.salePrice || current.unitValue) * (current.quantity || 1) }))
@@ -283,7 +312,7 @@ export function Products({ data, setData }) {
       </Modal>
 
       <Modal open={modalType === 'purchase'} onClose={() => setModalType(null)} title="Registrar compra de produto" width={640}>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+        <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <FInput label="Produto" value={form.productId} onChange={value => {
             const product = productsById.get(value)
             setForm(current => ({ ...current, productId:value, totalValue:(product?.purchasePrice || 0) * (current.quantity || 1) }))
@@ -303,6 +332,29 @@ export function Products({ data, setData }) {
 }
 
 function LedgerTable({ title, columns, rows, emptyMessage }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+
+  if (isMobile) {
+    return (
+      <Card style={{ padding:14 }}>
+        <h3 style={{ margin:'0 0 12px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{title}</h3>
+        {rows.length === 0 && <div style={{ padding:'10px 4px', textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</div>}
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {rows.map(row => (
+            <div key={row.key} style={{ border:`1px solid ${C.border}`, borderRadius:12, padding:'12px 12px 10px', background:C.surface }}>
+              {row.cells.map((cell, index) => (
+                <div key={index} style={{ display:'flex', flexDirection:'column', gap:4, borderTop:index === 0 ? 'none' : `1px solid ${C.border}33`, paddingTop:index === 0 ? 0 : 8, marginTop:index === 0 ? 0 : 8 }}>
+                  <span style={{ fontSize:10, color:C.textDim, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>{columns[index]}</span>
+                  <span style={{ color:C.textSub, fontSize:13, lineHeight:1.45 }}>{cell}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </Card>
+    )
+  }
+
   return <Card style={{ padding:0, overflow:'hidden' }}><div style={{ padding:'18px 20px', borderBottom:`1px solid ${C.border}` }}><h3 style={{ margin:0, fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{title}</h3></div><div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}><thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{columns.map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.length === 0 && <tr><td colSpan={columns.length} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</td></tr>}{rows.map(row => <tr key={row.key} style={{ borderBottom:`1px solid ${C.border}` }}>{row.cells.map((cell, index) => <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{cell}</td>)}</tr>)}</tbody></table></div></Card>
 }
 

@@ -58,6 +58,7 @@ function DeltaBadge({ current, previous, isPositiveGood = true }) {
 
 export function Dashboard({ data, saveError }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
   const [showComparison, setShowComparison] = useState(false)
 
@@ -174,10 +175,10 @@ export function Dashboard({ data, saveError }) {
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
           <div>
             <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Privacidade financeira</div>
-            <div style={{ color:C.textDim, fontSize:13, marginTop:4 }}>Oculte valores ao compartilhar a tela ou usar o sistema em público.</div>
+            {!isMobile && <div style={{ color:C.textDim, fontSize:13, marginTop:4 }}>Oculte valores ao compartilhar a tela ou usar o sistema em público.</div>}
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', width:isMobile ? '100%' : 'auto' }}>
           {/* Comparison toggle */}
           <button
             onClick={() => setShowComparison(v => !v)}
@@ -245,22 +246,22 @@ export function Dashboard({ data, saveError }) {
       </div>
 
       {/* KPI cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:16 }}>
+      <div style={{ display:'grid', gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(auto-fill,minmax(240px,1fr))', gap:isMobile ? 10 : 16 }}>
         {kpis.map(item => (
-          <Card key={item.label} glow={item.glow} style={{ padding:20 }}>
+          <Card key={item.label} glow={item.glow} style={{ padding:isMobile ? 14 : 20 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-              <div style={{ fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8 }}>{item.label}</div>
+              <div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8, lineHeight:1.35 }}>{item.label}</div>
               {item.sparkline && item.sparkline.length >= 2 && (
                 <Sparkline values={item.sparkline} color={item.sparkColor} />
               )}
             </div>
-            <div style={{ fontSize:26, fontWeight:800, color:item.color, letterSpacing:'-0.02em', display:'flex', alignItems:'baseline', flexWrap:'wrap' }}>
+            <div style={{ fontSize:isMobile ? 20 : 26, fontWeight:800, color:item.color, letterSpacing:'-0.02em', display:'flex', alignItems:'baseline', flexWrap:'wrap', lineHeight:1.2 }}>
               {item.isCurrency ? formatMoney(item.value) : fmtN(item.value)}
               {showComparison && !financialPrivacyMode && (
                 <DeltaBadge current={item.value} previous={item.prevValue} isPositiveGood={item.isPositiveGood} />
               )}
             </div>
-            <div style={{ fontSize:12, color:C.textDim, marginTop:4 }}>
+            <div style={{ fontSize:isMobile ? 11 : 12, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
               {item.subLabel}: {item.subIsCurrency ? formatMoney(item.subValue) : fmtN(item.subValue)}
             </div>
           </Card>
