@@ -1,5 +1,21 @@
 import { C, base } from '../theme.js'
 
+// Inject skeleton animation once
+if (typeof document !== 'undefined') {
+  const id = 'surgimetrics-skeleton-styles'
+  if (!document.getElementById(id)) {
+    const el = document.createElement('style')
+    el.id = id
+    el.textContent = `
+      @keyframes skeletonPulse {
+        0%, 100% { opacity: 0.5; }
+        50% { opacity: 1; }
+      }
+    `
+    document.head.appendChild(el)
+  }
+}
+
 export function Card({ children, style, glow }) {
   return <div style={{ ...base.card, boxShadow: glow?`0 0 32px ${glow}`:'0 2px 16px rgba(0,0,0,0.5)', ...style }}>{children}</div>
 }
@@ -83,6 +99,19 @@ export function Modal({ open, onClose, title, children, width=520 }) {
         {children}
       </div>
     </div>
+  )
+}
+
+export function SkeletonBlock({ w = '100%', h = 16, radius = 8, style }) {
+  return (
+    <div style={{
+      width: typeof w === 'number' ? w : w,
+      height: typeof h === 'number' ? h : h,
+      borderRadius: radius,
+      background: C.border,
+      animation: 'skeletonPulse 1.6s ease-in-out infinite',
+      ...style,
+    }} />
   )
 }
 

@@ -3,7 +3,9 @@ import { C } from '../theme.js'
 import { fmt, getPeriodRange, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { ExportModal } from './ExportModal.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
+import { useToast } from '../context/ToastContext.jsx'
 
 const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today() }
 const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:'', status:'aberto' }
@@ -58,6 +60,7 @@ function getPreviousPeriodRange(period, range) {
 export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const { financialPrivacyMode } = useFinancialPrivacy()
+  const { toast } = useToast()
   const [tab, setTab] = useState(defaultTab)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
@@ -67,6 +70,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [confirmState, setConfirmState] = useState(null)
   const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
   const [showComparative, setShowComparative] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   const range = getPeriodRange(period, customRange)
   const m = buildMetrics(data, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
   const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
@@ -84,6 +88,18 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   useEffect(() => {
     setTab(defaultTab)
   }, [defaultTab])
+
+  // FAB quick-add events
+  useEffect(() => {
+    const onNewExpense = () => { setTab('saidas'); openAdd('expense') }
+    const onNewRevenue = () => { setTab('entradas'); openAdd('extra') }
+    window.addEventListener('new-expense', onNewExpense)
+    window.addEventListener('new-extra-revenue', onNewRevenue)
+    return () => {
+      window.removeEventListener('new-expense', onNewExpense)
+      window.removeEventListener('new-extra-revenue', onNewRevenue)
+    }
+  }, [])
 
   const flowRows = useMemo(() => {
     const grouped = {}
@@ -134,6 +150,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       if (!form.name) return
       setData(current => ({ ...current, liabilities: editing ? current.liabilities.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.liabilities, { ...form, id:uid() }] }))
     }
+    const labels = { extra: 'Receita salva', expense: 'Despesa salva', asset: 'Ativo salvo', liability: 'Passivo salvo' }
+    toast(editing ? `${labels[modalType]} com sucesso.` : `${labels[modalType]} com sucesso.`)
     setShowModal(false)
   }
 
@@ -144,15 +162,18 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     if (item.source === 'consulta') {
       setData(current => ({ ...current, consultations:current.consultations.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
     }
+    toast('Marcado como recebido.')
   }
 
   const markExpenseAsPaid = item => {
     setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:today() } : record) }))
+    toast('Despesa marcada como paga.')
   }
 
   const removeRecord = record => {
     const collection = { extra:'extraRevenues', expense:'expenses', asset:'assets', liability:'liabilities' }[record.type]
     setData(current => ({ ...current, [collection]:current[collection].filter(item => item.id !== record.id) }))
+    toast('Registro removido.', 'warning')
   }
 
   const tabs = [
@@ -222,8 +243,13 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             <div style={{ marginLeft:isMobile ? 0 : 'auto', width:isMobile ? '100%' : 'auto', color:C.textDim, fontSize:12 }}>Período aplicado aos relatórios e demonstrativos.</div>
           </div>
 
-          <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2 }}>
+          <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, alignItems:'center' }}>
             {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} style={{ background:tab === id ? C.card : 'transparent', color:tab === id ? C.text : C.textSub, border:tab === id ? `1px solid ${C.border}` : '1px solid transparent', borderRadius:999, padding:'9px 14px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s', whiteSpace:'nowrap' }}>{label}</button>)}
+            <div style={{ marginLeft:'auto', flexShrink:0 }}>
+              <Btn variant="ghost" onClick={() => setShowExport(true)} style={{ fontSize:12, padding:'8px 14px', display:'flex', alignItems:'center', gap:6 }}>
+                <span>↓</span> Exportar para Contador
+              </Btn>
+            </div>
           </div>
         </div>
       </div>
@@ -262,7 +288,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </div>
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} rows={m.entriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>] }))} emptyMessage="Nenhuma entrada financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={m.entriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma entrada financeira no período." />
       </>}
 
       {tab === 'saidas' && <>
@@ -295,7 +321,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>] }))} emptyMessage="Nenhuma saída financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
       {tab === 'receber' && <><SectionTitle title="Contas a receber" subtitle="Valores ainda não recebidos de cirurgias e consultas." /><RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." /></>}
@@ -406,12 +432,91 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       </Modal>
 
       <ConfirmModal open={!!confirmState} onClose={() => setConfirmState(null)} onConfirm={() => removeRecord(confirmState)} />
+      <ExportModal open={showExport} onClose={() => setShowExport(false)} data={data} />
     </div>
   )
 }
 
-function RecordTable({ columns, rows, emptyMessage }) {
-  return <Card style={{ padding:0, overflow:'hidden' }}><div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}><thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{columns.map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.length === 0 && <tr><td colSpan={columns.length} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</td></tr>}{rows.map(row => <tr key={row.key} style={{ borderBottom:`1px solid ${C.border}` }}>{row.cells.map((cell, index) => <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{cell}</td>)}</tr>)}</tbody></table></div></Card>
+function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
+  const [sortCol, setSortCol] = useState(null)
+  const [sortDir, setSortDir] = useState('asc')
+
+  const handleSort = colIdx => {
+    if (!sortableColumns.includes(colIdx)) return
+    if (sortCol === colIdx) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(colIdx)
+      setSortDir('asc')
+    }
+  }
+
+  const sorted = useMemo(() => {
+    if (sortCol === null) return rows
+    return [...rows].sort((a, b) => {
+      const av = typeof a.cells[sortCol] === 'string' ? a.cells[sortCol] : (a.rawCells?.[sortCol] ?? '')
+      const bv = typeof b.cells[sortCol] === 'string' ? b.cells[sortCol] : (b.rawCells?.[sortCol] ?? '')
+      const cmp = String(av).localeCompare(String(bv), 'pt-BR', { numeric: true })
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [rows, sortCol, sortDir])
+
+  return (
+    <Card style={{ padding:0, overflow:'hidden' }}>
+      <div style={{ overflowX:'auto' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom:`1px solid ${C.border}` }}>
+              {columns.map((header, i) => {
+                const sortable = sortableColumns.includes(i)
+                const active = sortCol === i
+                return (
+                  <th
+                    key={header}
+                    onClick={() => handleSort(i)}
+                    style={{
+                      padding:'14px 18px',
+                      textAlign:'left',
+                      fontSize:11,
+                      color: active ? C.accent : C.textSub,
+                      fontWeight:700,
+                      letterSpacing:'0.08em',
+                      textTransform:'uppercase',
+                      cursor: sortable ? 'pointer' : 'default',
+                      userSelect: 'none',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {header}
+                    {sortable && (
+                      <span style={{ marginLeft:4, opacity: active ? 1 : 0.3, fontSize:10 }}>
+                        {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                      </span>
+                    )}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length === 0 && (
+              <tr><td colSpan={columns.length} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</td></tr>
+            )}
+            {sorted.map(row => (
+              <tr key={row.key} style={{ borderBottom:`1px solid ${C.border}`, transition:'background 0.1s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = C.surface }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                {row.cells.map((cell, index) => (
+                  <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
 }
 
 function BalanceList({ items, color, onEdit, onDelete, emptyMessage, hidden }) {
