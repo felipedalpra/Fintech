@@ -33,9 +33,9 @@ if (typeof document !== 'undefined') {
 
 export function Card({ children, style, glow }) {
   const lightTheme = isLightHexColor(C.bg)
-  const defaultShadow = lightTheme ? '0 8px 24px rgba(15,23,42,0.06)' : '0 2px 16px rgba(0,0,0,0.5)'
+  const defaultShadow = lightTheme ? '0 10px 26px rgba(15,23,42,0.08)' : '0 2px 16px rgba(0,0,0,0.5)'
   const glowShadow = lightTheme
-    ? `0 0 0 1px ${glow}44, 0 10px 24px ${glow}1A`
+    ? `0 0 0 1px ${glow}40, 0 12px 26px rgba(15,23,42,0.08)`
     : `0 0 32px ${glow}`
   return <div style={{ ...base.card, boxShadow: glow ? glowShadow : defaultShadow, ...style }}>{children}</div>
 }
@@ -104,13 +104,14 @@ export function Badge({ color, children, small }) {
 
 export function Modal({ open, onClose, title, children, width=520 }) {
   if (!open) return null
+  const lightTheme = isLightHexColor(C.bg)
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)',
       display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}
       onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:20,
         padding:28, width:'100%', maxWidth:width, maxHeight:'90vh', overflowY:'auto',
-        boxShadow:'0 24px 80px rgba(0,0,0,0.7)' }}>
+        boxShadow: lightTheme ? '0 24px 60px rgba(15,23,42,0.18)' : '0 24px 80px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
           <h3 style={{ margin:0, fontSize:18, fontWeight:700, color:C.text }}>{title}</h3>
           <button onClick={onClose} style={{ background:C.border, border:'none', color:C.textSub,

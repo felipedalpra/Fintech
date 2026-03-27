@@ -12,3 +12,8 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #2A3655; }
 input[type=number]::-webkit-inner-spin-button { opacity: 0.4; }
 select option { background: #0D1220; color: #F1F5F9; }
+
+html[data-theme='light'] ::-webkit-scrollbar-track { background: #DFE7F1; }
+html[data-theme='light'] ::-webkit-scrollbar-thumb { background: #A7B8CC; }
+html[data-theme='light'] ::-webkit-scrollbar-thumb:hover { background: #8EA3BA; }
+html[data-theme='light'] select option { background: #F1F5FA; color: #0B1A2B; }
