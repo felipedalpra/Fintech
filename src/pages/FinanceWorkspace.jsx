@@ -574,6 +574,13 @@ export function FinanceWorkspace() {
     billing?.status === 'trialing' ? `Trial: ${trialDaysLeft} dia(s)` : `Assinatura: ${billing?.status || 'pendente'}`,
   ]
   const quickLinks = NAV_SECTIONS.flatMap(section => section.items).slice(0, 4)
+  const desktopCompactNav = !isMobile
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900
+  const compactForShortHeight = desktopCompactNav && viewportHeight < 860
+  const ultraCompactDesktop = desktopCompactNav && viewportHeight < 760
+  const sidebarStats = isMobile
+    ? sidebarQuickStats
+    : sidebarQuickStats.slice(0, ultraCompactDesktop ? 0 : (compactForShortHeight ? 1 : 2))
 
   if (loading) {
     return (
@@ -645,37 +652,39 @@ export function FinanceWorkspace() {
   }
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh', background:C.bg }}>
+    <div style={{ display:'flex', minHeight:'100vh', height:isMobile ? 'auto' : '100dvh', background:C.bg }}>
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
-      <aside style={{ width:272, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'sticky', left:isMobile ? 0 : 'auto', top:0, height:'100dvh', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease' }}>
-        <div style={{ padding:'24px 20px 18px', borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
+      <aside style={{ width:isMobile ? 272 : 250, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'sticky', left:isMobile ? 0 : 'auto', top:0, height:'100dvh', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease' }}>
+        <div style={{ padding:isMobile ? '24px 20px 18px' : (ultraCompactDesktop ? '10px 12px 8px' : '16px 14px 12px'), borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
           <div>
             <BrandLogo size="sm" />
-            <div style={{ fontSize:11, color:C.textDim, marginTop:4 }}>ERP financeiro para cirurgia plástica</div>
+            {!ultraCompactDesktop && <div style={{ fontSize:isMobile ? 11 : 10, color:C.textDim, marginTop:4 }}>ERP financeiro para cirurgia plástica</div>}
           </div>
           {isMobile && <button onClick={() => setMobileNavOpen(false)} style={iconButton}>✕</button>}
         </div>
 
-        <div style={{ padding:'16px 20px', borderBottom:`1px solid ${C.border}`, background:C.accent+'08' }}>
+        <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '10px 14px'), borderBottom:`1px solid ${C.border}`, background:C.accent+'08' }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Conta ativa</div>
-          <div style={{ fontSize:14, fontWeight:700, color:C.text }}>{user.user_metadata?.name || user.email}</div>
-          <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{user.email}</div>
+          <div style={{ fontSize:isMobile ? 14 : 13, fontWeight:700, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.user_metadata?.name || user.email}</div>
+          {isMobile && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{user.email}</div>}
         </div>
 
-        <div style={{ padding:'16px 20px', borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
+        <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
-          <div style={{ fontSize:24, fontWeight:900, color:C.accent, marginBottom:8 }}>{fmt(summary.cashBalance)}</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {sidebarQuickStats.map(item => <div key={item} style={{ color:C.textDim, fontSize:12 }}>{item}</div>)}
-          </div>
+          <div style={{ fontSize:isMobile ? 24 : (ultraCompactDesktop ? 16 : 18), fontWeight:900, color:C.accent, marginBottom:isMobile ? 8 : (ultraCompactDesktop ? 0 : 6) }}>{fmt(summary.cashBalance)}</div>
+          {!ultraCompactDesktop && (
+            <div style={{ display:'flex', flexDirection:'column', gap:isMobile ? 4 : 2 }}>
+              {sidebarStats.map(item => <div key={item} style={{ color:C.textDim, fontSize:isMobile ? 12 : 11 }}>{item}</div>)}
+            </div>
+          )}
         </div>
 
-        <div style={{ flex:1, overflowY:'auto', padding:'14px 10px 18px' }}>
+        <div style={{ flex:1, overflowY:compactForShortHeight ? 'auto' : 'hidden', padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px') }}>
           {NAV_SECTIONS.map(section => (
-            <div key={section.title} style={{ marginBottom:14 }}>
-              <div style={{ padding:'0 10px 8px', fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{section.title}</div>
-              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+            <div key={section.title} style={{ marginBottom:isMobile ? 14 : (ultraCompactDesktop ? 6 : 8) }}>
+              <div style={{ padding:isMobile ? '0 10px 8px' : (ultraCompactDesktop ? '0 6px 4px' : '0 8px 6px'), fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{section.title}</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:isMobile ? 4 : (ultraCompactDesktop ? 2 : 3) }}>
                 {section.items.map(item => {
                   const active = item.id === page || (item.id === 'finance' && FINANCE_ALIASES.has(page))
                   return (
@@ -684,25 +693,25 @@ export function FinanceWorkspace() {
                       onClick={() => navigate(`/app/${item.id}`)}
                       style={{
                         display:'grid',
-                        gridTemplateColumns:'20px 1fr',
-                        gap:12,
+                        gridTemplateColumns:isMobile ? '20px 1fr' : '16px 1fr',
+                        gap:isMobile ? 12 : (ultraCompactDesktop ? 7 : 9),
                         alignItems:'start',
-                        padding:'12px 14px',
-                        borderRadius:12,
+                        padding:isMobile ? '12px 14px' : (ultraCompactDesktop ? '6px 8px' : '8px 10px'),
+                        borderRadius:isMobile ? 12 : 10,
                         cursor:'pointer',
                         fontFamily:'inherit',
                         background:active ? C.accent+'16' : 'transparent',
                         color:active ? C.text : C.textSub,
-                        fontSize:14,
+                        fontSize:isMobile ? 14 : (ultraCompactDesktop ? 12 : 13),
                         width:'100%',
                         textAlign:'left',
                         border:active ? `1px solid ${C.accent}40` : '1px solid transparent',
                       }}
                     >
-                      <span style={{ fontSize:16, opacity:active ? 1 : 0.5, lineHeight:1.2 }}>{item.icon}</span>
+                      <span style={{ fontSize:isMobile ? 16 : (ultraCompactDesktop ? 12 : 13), opacity:active ? 1 : 0.5, lineHeight:1.2 }}>{item.icon}</span>
                       <span>
                         <span style={{ display:'block', fontWeight:active ? 700 : 600 }}>{item.label}</span>
-                        <span style={{ display:'block', color:active ? C.textSub : C.textDim, fontSize:11, marginTop:3 }}>{item.hint}</span>
+                        {isMobile && <span style={{ display:'block', color:active ? C.textSub : C.textDim, fontSize:11, marginTop:3 }}>{item.hint}</span>}
                       </span>
                     </button>
                   )
@@ -712,12 +721,12 @@ export function FinanceWorkspace() {
           ))}
         </div>
 
-        <div style={{ padding:'12px 10px 14px', borderTop:`1px solid ${C.border}` }}>
-          <button onClick={signOut} style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textDim, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>Sair da conta</button>
+        <div style={{ padding:isMobile ? '12px 10px 14px' : (ultraCompactDesktop ? '6px' : '8px'), borderTop:`1px solid ${C.border}` }}>
+          <button onClick={signOut} style={{ width:'100%', padding:isMobile ? '10px 14px' : (ultraCompactDesktop ? '6px 9px' : '8px 10px'), borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textDim, fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>Sair da conta</button>
         </div>
       </aside>
 
-      <main style={{ flex:1, overflowY:'auto', padding:isMobile ? '20px 16px 56px' : '28px 28px 64px' }}>
+      <main style={{ flex:1, overflowY:'auto', padding:isMobile ? '20px 16px 56px' : '20px 22px 34px' }}>
         <div style={{ marginBottom:22 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>

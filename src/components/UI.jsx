@@ -1,5 +1,20 @@
 import { C, base } from '../theme.js'
 
+function isLightHexColor(hex) {
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return false
+  const raw = hex.slice(1)
+  const normalized = raw.length === 3
+    ? raw.split('').map(char => char + char).join('')
+    : raw
+  if (normalized.length !== 6) return false
+  const r = Number.parseInt(normalized.slice(0, 2), 16)
+  const g = Number.parseInt(normalized.slice(2, 4), 16)
+  const b = Number.parseInt(normalized.slice(4, 6), 16)
+  if ([r, g, b].some(Number.isNaN)) return false
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.72
+}
+
 // Inject skeleton animation once
 if (typeof document !== 'undefined') {
   const id = 'surgimetrics-skeleton-styles'
@@ -17,7 +32,12 @@ if (typeof document !== 'undefined') {
 }
 
 export function Card({ children, style, glow }) {
-  return <div style={{ ...base.card, boxShadow: glow?`0 0 32px ${glow}`:'0 2px 16px rgba(0,0,0,0.5)', ...style }}>{children}</div>
+  const lightTheme = isLightHexColor(C.bg)
+  const defaultShadow = lightTheme ? '0 8px 24px rgba(15,23,42,0.06)' : '0 2px 16px rgba(0,0,0,0.5)'
+  const glowShadow = lightTheme
+    ? `0 0 0 1px ${glow}44, 0 10px 24px ${glow}1A`
+    : `0 0 32px ${glow}`
+  return <div style={{ ...base.card, boxShadow: glow ? glowShadow : defaultShadow, ...style }}>{children}</div>
 }
 
 export function Btn({ children, onClick, variant='primary', disabled, style }) {
@@ -62,11 +82,12 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
 export function Progress({ val, max, color=C.accent, h=7 }) {
   const pct = Math.min(100, max>0?(val/max)*100:0)
   const done = pct>=100
+  const lightTheme = isLightHexColor(C.bg)
   return (
     <div style={{ background:C.border, borderRadius:99, height:h, overflow:'hidden' }}>
       <div style={{ width:`${pct}%`, height:'100%', borderRadius:99, transition:'width 0.6s cubic-bezier(.4,0,.2,1)',
         background: done?`linear-gradient(90deg,${C.green},${C.cyan})`:`linear-gradient(90deg,${color}CC,${color})`,
-        boxShadow:`0 0 8px ${done?C.green:color}88` }} />
+        boxShadow: lightTheme ? 'none' : `0 0 8px ${done?C.green:color}88` }} />
     </div>
   )
 }
