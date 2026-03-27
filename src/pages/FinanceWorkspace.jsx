@@ -537,14 +537,28 @@ export function FinanceWorkspace() {
     if (typeof document === 'undefined') return
     const shouldLockScroll = isMobile && mobileNavOpen
     const previousOverflow = document.body.style.overflow
-    const previousTouchAction = document.body.style.touchAction
+    const previousPosition = document.body.style.position
+    const previousTop = document.body.style.top
+    const previousLeft = document.body.style.left
+    const previousRight = document.body.style.right
+    const previousWidth = document.body.style.width
+    const scrollY = window.scrollY
     if (shouldLockScroll) {
       document.body.style.overflow = 'hidden'
-      document.body.style.touchAction = 'none'
+      document.body.style.position = 'fixed'
+      document.body.style.top = `-${scrollY}px`
+      document.body.style.left = '0'
+      document.body.style.right = '0'
+      document.body.style.width = '100%'
     }
     return () => {
       document.body.style.overflow = previousOverflow
-      document.body.style.touchAction = previousTouchAction
+      document.body.style.position = previousPosition
+      document.body.style.top = previousTop
+      document.body.style.left = previousLeft
+      document.body.style.right = previousRight
+      document.body.style.width = previousWidth
+      if (shouldLockScroll) window.scrollTo(0, scrollY)
     }
   }, [isMobile, mobileNavOpen])
 
@@ -670,7 +684,7 @@ export function FinanceWorkspace() {
     <div style={{ display:'flex', minHeight:'100vh', height:isMobile ? 'auto' : '100dvh', background:C.bg }}>
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
-      <aside style={{ width:isMobile ? 272 : 250, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'sticky', left:isMobile ? 0 : 'auto', top:0, height:'100dvh', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease', touchAction:isMobile ? 'pan-y' : 'auto' }}>
+      <aside style={{ width:isMobile ? 272 : 250, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'sticky', left:isMobile ? 0 : 'auto', top:0, height:'100dvh', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease', touchAction:isMobile ? 'pan-y' : 'auto', overscrollBehavior:'contain' }}>
         <div style={{ padding:isMobile ? '24px 20px 18px' : (ultraCompactDesktop ? '10px 12px 8px' : '16px 14px 12px'), borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
           <div>
             <BrandLogo size="sm" />
@@ -695,7 +709,7 @@ export function FinanceWorkspace() {
           )}
         </div>
 
-        <div style={{ flex:1, overflowY:isMobile ? 'auto' : (compactForShortHeight ? 'auto' : 'hidden'), padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px'), WebkitOverflowScrolling:'touch', overscrollBehavior:'contain', touchAction:'pan-y' }}>
+        <div style={{ flex:1, overflowY:isMobile ? 'scroll' : (compactForShortHeight ? 'auto' : 'hidden'), padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px'), WebkitOverflowScrolling:'touch', overscrollBehavior:'contain', touchAction:'pan-y' }}>
           {NAV_SECTIONS.map(section => (
             <div key={section.title} style={{ marginBottom:isMobile ? 14 : (ultraCompactDesktop ? 6 : 8) }}>
               <div style={{ padding:isMobile ? '0 10px 8px' : (ultraCompactDesktop ? '0 6px 4px' : '0 8px 6px'), fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{section.title}</div>
@@ -741,7 +755,7 @@ export function FinanceWorkspace() {
         </div>
       </aside>
 
-      <main style={{ flex:1, overflowY:isMobile && mobileNavOpen ? 'hidden' : 'auto', padding:isMobile ? '20px 16px 56px' : '20px 22px 34px' }}>
+      <main style={{ flex:1, overflowY:isMobile && mobileNavOpen ? 'hidden' : 'auto', pointerEvents:isMobile && mobileNavOpen ? 'none' : 'auto', padding:isMobile ? '20px 16px 56px' : '20px 22px 34px' }}>
         <div style={{ marginBottom:22 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
