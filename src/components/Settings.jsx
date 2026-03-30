@@ -31,6 +31,7 @@ const EMPTY_PROFILE = {
 export function Settings() {
   const { mode, setTheme } = useTheme()
   const isLight = mode === 'light'
+  const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
   const [profile, setProfile] = useState(EMPTY_PROFILE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -223,6 +224,44 @@ export function Settings() {
             </div>
           </div>
         )}
+      </Card>
+
+      <Card style={{ maxWidth:920 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', gap:20, alignItems:'center', flexWrap:'wrap' }}>
+          <div>
+            <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Suporte</div>
+            <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Ajuda da plataforma</h3>
+            <p style={{ margin:'0 0 10px', color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:680 }}>
+              Use este canal para tirar dúvidas sobre cadastros, lançamentos financeiros, metas, relatórios e rotinas do SurgiMetrics.
+            </p>
+            <p style={{ margin:0, color:C.textDim, fontSize:13, lineHeight:1.7, maxWidth:680 }}>
+              Para agilizar o atendimento, descreva a tela em que está, o que tentou fazer e, se possível, envie um print do erro.
+            </p>
+          </div>
+
+          <a
+            href={whatsappSupportLink}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display:'inline-flex',
+              alignItems:'center',
+              justifyContent:'center',
+              padding:'10px 18px',
+              borderRadius:10,
+              border:'none',
+              background:C.accent,
+              color:'#fff',
+              fontSize:13,
+              fontWeight:600,
+              textDecoration:'none',
+              whiteSpace:'nowrap',
+              fontFamily:'inherit',
+            }}
+          >
+            Falar com o suporte no WhatsApp
+          </a>
+        </div>
       </Card>
     </div>
   )
