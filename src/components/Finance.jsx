@@ -70,6 +70,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [showModal, setShowModal] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
   const [paymentConfirmState, setPaymentConfirmState] = useState(null)
+  const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all' })
   const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
@@ -389,6 +390,86 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const maxExpense = topExpenseCategories.length > 0 ? topExpenseCategories[0].total : 1
   const dueAlerts = useMemo(() => buildDueAlerts(m.accountsPayable, m.accountsReceivable), [m.accountsPayable, m.accountsReceivable])
 
+  const filteredEntriesFinancial = useMemo(() => {
+    const search = String(listFilters.search || '').toLowerCase().trim()
+    return m.entriesFinancial.filter(item => {
+      const launchType = item.origin === 'recorrencia_receita' ? 'fixa' : 'variavel'
+      if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
+      if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
+      if (listFilters.origin !== 'all' && item.origin !== listFilters.origin) return false
+      if (!search) return true
+      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${item.origin || ''}`.toLowerCase()
+      return haystack.includes(search)
+    })
+  }, [m.entriesFinancial, listFilters])
+
+  const filteredExitsFinancial = useMemo(() => {
+    const search = String(listFilters.search || '').toLowerCase().trim()
+    return m.exitsFinancial.filter(item => {
+      const launchType = item.origin === 'recorrencia_despesa' ? 'fixa' : 'variavel'
+      if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
+      if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
+      if (listFilters.origin !== 'all' && item.origin !== listFilters.origin) return false
+      if (!search) return true
+      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${item.origin || ''}`.toLowerCase()
+      return haystack.includes(search)
+    })
+  }, [m.exitsFinancial, listFilters])
+
+  const filteredAccountsReceivable = useMemo(() => {
+    const search = String(listFilters.search || '').toLowerCase().trim()
+    return m.accountsReceivable.filter(item => {
+      const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
+      if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
+      if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
+      if (listFilters.origin !== 'all' && item.source !== listFilters.origin) return false
+      if (listFilters.status !== 'all' && item.status !== listFilters.status) return false
+      if (!search) return true
+      const haystack = `${item.patient || ''} ${item.description || ''} ${item.category || ''} ${item.source || ''} ${item.dueDate || ''}`.toLowerCase()
+      return haystack.includes(search)
+    })
+  }, [m.accountsReceivable, listFilters])
+
+  const filteredAccountsPayable = useMemo(() => {
+    const search = String(listFilters.search || '').toLowerCase().trim()
+    return m.accountsPayable.filter(item => {
+      const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
+      if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
+      if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
+      if (listFilters.origin !== 'all' && item.source !== listFilters.origin) return false
+      if (listFilters.status !== 'all' && item.status !== listFilters.status) return false
+      if (!search) return true
+      const haystack = `${item.supplier || ''} ${item.category || ''} ${item.source || ''} ${item.dueDate || ''}`.toLowerCase()
+      return haystack.includes(search)
+    })
+  }, [m.accountsPayable, listFilters])
+
+  const activeListFilterConfig = useMemo(() => {
+    if (tab === 'entradas') {
+      const categories = [...new Set(m.entriesFinancial.map(item => item.category).filter(Boolean))].sort()
+      const origins = [...new Set(m.entriesFinancial.map(item => item.origin).filter(Boolean))].sort()
+      return { show:true, showStatus:false, categories, origins, statuses:[] }
+    }
+    if (tab === 'saidas') {
+      const categories = [...new Set(m.exitsFinancial.map(item => item.category).filter(Boolean))].sort()
+      const origins = [...new Set(m.exitsFinancial.map(item => item.origin).filter(Boolean))].sort()
+      return { show:true, showStatus:false, categories, origins, statuses:[] }
+    }
+    if (tab === 'receber') {
+      const categories = [...new Set(m.accountsReceivable.map(item => item.category).filter(Boolean))].sort()
+      const origins = [...new Set(m.accountsReceivable.map(item => item.source).filter(Boolean))].sort()
+      const statuses = [...new Set(m.accountsReceivable.map(item => item.status).filter(Boolean))].sort()
+      return { show:true, showStatus:true, categories, origins, statuses }
+    }
+    if (tab === 'pagar') {
+      const categories = [...new Set(m.accountsPayable.map(item => item.category).filter(Boolean))].sort()
+      const origins = [...new Set(m.accountsPayable.map(item => item.source).filter(Boolean))].sort()
+      const statuses = [...new Set(m.accountsPayable.map(item => item.status).filter(Boolean))].sort()
+      return { show:true, showStatus:true, categories, origins, statuses }
+    }
+    return { show:false, showStatus:false, categories:[], origins:[], statuses:[] }
+  }, [tab, m.entriesFinancial, m.exitsFinancial, m.accountsReceivable, m.accountsPayable])
+
   // Revenue by origin totals for entradas tab
   const revenueOrigins = useMemo(() => {
     const cirurgias = m.surgeryRevenue
@@ -465,6 +546,19 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         </Card>
       )}
 
+      {activeListFilterConfig.show && (
+        <Card style={{ padding:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:10, alignItems:'end' }}>
+            <FInput label="Buscar" value={listFilters.search} onChange={value => setListFilters(current => ({ ...current, search:value }))} placeholder="Paciente, descrição, categoria..." />
+            <FInput label="Categoria" value={listFilters.category} onChange={value => setListFilters(current => ({ ...current, category:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.categories.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
+            <FInput label="Origem" value={listFilters.origin} onChange={value => setListFilters(current => ({ ...current, origin:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.origins.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
+            <FInput label="Tipo" value={listFilters.launchType} onChange={value => setListFilters(current => ({ ...current, launchType:value }))} options={[{ v:'all', l:'Todos' }, { v:'fixa', l:'Fixa' }, { v:'variavel', l:'Variável' }]} />
+            {activeListFilterConfig.showStatus && <FInput label="Status" value={listFilters.status} onChange={value => setListFilters(current => ({ ...current, status:value }))} options={[{ v:'all', l:'Todos' }, ...activeListFilterConfig.statuses.map(value => ({ v:value, l:value }))]} />}
+            <Btn variant="ghost" onClick={() => setListFilters({ search:'', category:'all', origin:'all', status:'all', launchType:'all' })}>Limpar filtros</Btn>
+          </div>
+        </Card>
+      )}
+
       {tab === 'entradas' && <>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
           <SectionTitle title="Entradas automáticas e receitas adicionais" subtitle="Cirurgias pagas, consultas recebidas, vendas de produtos e outras receitas." />
@@ -491,7 +585,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </div>
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={m.entriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma entrada financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma entrada financeira no período." />
       </>}
 
       {tab === 'saidas' && <>
@@ -524,7 +618,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, item.origin === 'despesa' ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir saída', message:'Deseja excluir esta saída paga? Essa ação remove o lançamento de despesa vinculado.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Excluir</Btn> : <span style={{ color:C.textSub, fontSize:12 }}>-</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value, item.origin === 'despesa' ? 1 : 0] }))} emptyMessage="Nenhuma saída financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, item.origin === 'despesa' ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir saída', message:'Deseja excluir esta saída paga? Essa ação remove o lançamento de despesa vinculado.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Excluir</Btn> : <span style={{ color:C.textSub, fontSize:12 }}>-</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value, item.origin === 'despesa' ? 1 : 0] }))} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
       {tab === 'receber' && <>
@@ -532,11 +626,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         <MonthlyAccountsSummary
           title="Recebíveis por mês"
           color={C.green}
-          rows={groupAccountsByMonth(m.accountsReceivable)}
+          rows={groupAccountsByMonth(filteredAccountsReceivable)}
           money={money}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -544,11 +638,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         <MonthlyAccountsSummary
           title="Pagáveis por mês"
           color={C.red}
-          rows={groupAccountsByMonth(m.accountsPayable)}
+          rows={groupAccountsByMonth(filteredAccountsPayable)}
           money={money}
           emptyMessage="Sem contas a pagar agrupadas por mês."
         />
-        <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
+        <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
       </>}
 
       {tab === 'dre' && (
