@@ -13,6 +13,7 @@ import { Goals } from '../components/Goals.jsx'
 import { AIAssistant } from '../components/AIAssistant.jsx'
 import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
+import { Recurrences } from '../components/Recurrences.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { FAB } from '../components/FAB.jsx'
@@ -43,6 +44,7 @@ const NAV_SECTIONS = [
       { id:'finance', label:'Financeiro', icon:'◆', hint:'Caixa, DRE e balanço' },
       { id:'impostos', label:'Impostos', icon:'◐', hint:'Carnê-Leão, IRPF e DAS' },
       { id:'goals', label:'Metas', icon:'◉', hint:'Objetivos e acompanhamento' },
+      { id:'recurrences', label:'Recorrências', icon:'◍', hint:'Despesas e receitas fixas' },
       { id:'reports', label:'Relatórios', icon:'◫', hint:'Análises e comparativos' },
       { id:'ai', label:'Assistente', icon:'✦', hint:'Perguntas sobre os dados' },
       { id:'billing', label:'Assinatura', icon:'◌', hint:'Trial, checkout e cobrança' },
@@ -64,6 +66,7 @@ const TITLES = {
   dre:'DRE',
   balance:'Balanço Patrimonial',
   goals:'Metas',
+  recurrences:'Recorrências',
   reports:'Relatórios Analíticos',
   ai:'Central de IA',
   billing:'Assinatura',
@@ -84,6 +87,7 @@ const SUBTITLES = {
   dre:'Resultado do período por competência.',
   balance:'Ativos, passivos e patrimônio da clínica.',
   goals:'Metas financeiras com progresso automático.',
+  recurrences:'Cadastre receitas e despesas fixas com geração automática.',
   reports:'Relatórios analíticos para apoiar decisões.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie trial, plano e status da cobrança.',
@@ -103,6 +107,7 @@ const PAGES = {
   dre:props => <Finance {...props} defaultTab="dre" />,
   balance:props => <Finance {...props} defaultTab="balanco" />,
   goals:Goals,
+  recurrences:Recurrences,
   reports:Reports,
   ai:AIAssistant,
   billing:BillingPage,

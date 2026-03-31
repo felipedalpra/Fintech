@@ -143,6 +143,22 @@ create table if not exists public.goals (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.recorrencias (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  tipo text not null check (tipo in ('receita', 'despesa')),
+  descricao text not null,
+  valor numeric(12,2) not null default 0,
+  categoria text not null default 'outros',
+  frequencia text not null check (frequencia in ('mensal', 'semanal', 'anual')),
+  dia_execucao int not null check (dia_execucao between 1 and 31),
+  data_inicio date not null,
+  data_fim date,
+  auto_mark_as_paid boolean not null default false,
+  ativo boolean not null default true,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
 create or replace view public.entries_financial as
 select s.user_id, s.id, concat('Cirurgia - ', s.patient) as description, 'cirurgia'::text as category, s.total_value as value, coalesce(s.payment_date, s.date) as date, 'cirurgia'::text as origin, s.id as reference_id
 from public.surgeries s
@@ -196,6 +212,202 @@ create or replace view public.cash_flow_entries as
 select user_id, date, 'entrada'::text as type, category, value, origin, reference_id from public.entries_financial
 union all
 select user_id, date, 'saida'::text, category, value, origin, reference_id from public.exits_financial;
+
+create or replace function public.processar_recorrencias(
+  p_reference_date date default (timezone('America/Sao_Paulo', now()))::date,
+  p_user_id uuid default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec record;
+  due_date date;
+  period_unit text;
+  period_anchor date;
+  transacoes_exists boolean;
+  transacoes_has_user_id boolean;
+  transacoes_has_created_at boolean;
+  inserted_count int := 0;
+  skipped_count int := 0;
+  checked_count int := 0;
+  already_exists boolean;
+  month_start date;
+  month_end date;
+  start_of_year date;
+  end_of_year date;
+begin
+  transacoes_exists := to_regclass('public.transacoes') is not null;
+  if not transacoes_exists then
+    return jsonb_build_object(
+      'ok', false,
+      'message', 'Tabela public.transacoes nao encontrada.',
+      'processed', 0,
+      'inserted', 0,
+      'skipped', 0
+    );
+  end if;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'transacoes'
+      and column_name = 'user_id'
+  ) into transacoes_has_user_id;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'transacoes'
+      and column_name = 'created_at'
+  ) into transacoes_has_created_at;
+
+  for rec in
+    select *
+    from public.recorrencias
+    where ativo = true
+      and data_inicio <= p_reference_date
+      and (data_fim is null or data_fim >= p_reference_date)
+      and (p_user_id is null or user_id = p_user_id)
+    order by created_at asc
+  loop
+    checked_count := checked_count + 1;
+
+    if rec.frequencia = 'mensal' then
+      month_start := date_trunc('month', p_reference_date)::date;
+      month_end := (date_trunc('month', p_reference_date) + interval '1 month - 1 day')::date;
+      due_date := (month_start + ((least(greatest(rec.dia_execucao, 1), extract(day from month_end)::int) - 1) * interval '1 day'))::date;
+      period_unit := 'month';
+      period_anchor := month_start;
+    elsif rec.frequencia = 'semanal' then
+      due_date := (date_trunc('week', p_reference_date)::date + ((least(greatest(rec.dia_execucao, 1), 7) - 1) * interval '1 day'))::date;
+      period_unit := 'week';
+      period_anchor := date_trunc('week', due_date)::date;
+    else
+      start_of_year := make_date(extract(year from p_reference_date)::int, 1, 1);
+      end_of_year := make_date(extract(year from p_reference_date)::int, 12, 31);
+      month_end := (date_trunc('month', make_date(extract(year from p_reference_date)::int, extract(month from rec.data_inicio)::int, 1)) + interval '1 month - 1 day')::date;
+      due_date := make_date(
+        extract(year from p_reference_date)::int,
+        extract(month from rec.data_inicio)::int,
+        least(greatest(rec.dia_execucao, 1), extract(day from month_end)::int)
+      );
+      if due_date < start_of_year or due_date > end_of_year then
+        skipped_count := skipped_count + 1;
+        continue;
+      end if;
+      period_unit := 'year';
+      period_anchor := date_trunc('year', due_date)::date;
+    end if;
+
+    if due_date is null or p_reference_date < due_date then
+      skipped_count := skipped_count + 1;
+      continue;
+    end if;
+
+    if rec.data_fim is not null and due_date > rec.data_fim then
+      skipped_count := skipped_count + 1;
+      continue;
+    end if;
+
+    if transacoes_has_user_id then
+      execute format(
+        'select exists (
+          select 1
+          from public.transacoes
+          where user_id = $1
+            and descricao = $2
+            and valor = $3
+            and date_trunc(''%s'', data_pagamento::timestamp) = date_trunc(''%s'', $4::timestamp)
+        )',
+        period_unit,
+        period_unit
+      )
+      into already_exists
+      using rec.user_id, rec.descricao, rec.valor, period_anchor;
+    else
+      execute format(
+        'select exists (
+          select 1
+          from public.transacoes
+          where descricao = $1
+            and valor = $2
+            and date_trunc(''%s'', data_pagamento::timestamp) = date_trunc(''%s'', $3::timestamp)
+        )',
+        period_unit,
+        period_unit
+      )
+      into already_exists
+      using rec.descricao, rec.valor, period_anchor;
+    end if;
+
+    if already_exists then
+      skipped_count := skipped_count + 1;
+      continue;
+    end if;
+
+    if transacoes_has_user_id and transacoes_has_created_at then
+      insert into public.transacoes (user_id, valor, tipo, categoria, descricao, data_pagamento, status, created_at)
+      values (
+        rec.user_id,
+        rec.valor,
+        rec.tipo,
+        rec.categoria,
+        rec.descricao,
+        due_date::timestamp,
+        case when rec.auto_mark_as_paid then 'pago' else 'pendente' end,
+        timezone('utc', now())
+      );
+    elsif transacoes_has_user_id then
+      insert into public.transacoes (user_id, valor, tipo, categoria, descricao, data_pagamento, status)
+      values (
+        rec.user_id,
+        rec.valor,
+        rec.tipo,
+        rec.categoria,
+        rec.descricao,
+        due_date::timestamp,
+        case when rec.auto_mark_as_paid then 'pago' else 'pendente' end
+      );
+    elsif transacoes_has_created_at then
+      insert into public.transacoes (valor, tipo, categoria, descricao, data_pagamento, status, created_at)
+      values (
+        rec.valor,
+        rec.tipo,
+        rec.categoria,
+        rec.descricao,
+        due_date::timestamp,
+        case when rec.auto_mark_as_paid then 'pago' else 'pendente' end,
+        timezone('utc', now())
+      );
+    else
+      insert into public.transacoes (valor, tipo, categoria, descricao, data_pagamento, status)
+      values (
+        rec.valor,
+        rec.tipo,
+        rec.categoria,
+        rec.descricao,
+        due_date::timestamp,
+        case when rec.auto_mark_as_paid then 'pago' else 'pendente' end
+      );
+    end if;
+
+    inserted_count := inserted_count + 1;
+  end loop;
+
+  return jsonb_build_object(
+    'ok', true,
+    'processed', checked_count,
+    'inserted', inserted_count,
+    'skipped', skipped_count,
+    'reference_date', p_reference_date
+  );
+end;
+$$;
 
 create or replace function public.get_financial_analysis(
   start_date timestamptz,
@@ -361,11 +573,12 @@ alter table public.expenses enable row level security;
 alter table public.assets enable row level security;
 alter table public.liabilities enable row level security;
 alter table public.goals enable row level security;
+alter table public.recorrencias enable row level security;
 
 do $$
 declare item text;
 begin
-  foreach item in array array['user_profiles','procedures','products','surgeries','consultations','product_sales','product_purchases','extra_revenues','expenses','assets','liabilities','goals']
+  foreach item in array array['user_profiles','procedures','products','surgeries','consultations','product_sales','product_purchases','extra_revenues','expenses','assets','liabilities','goals','recorrencias']
   loop
     begin
       execute format('create policy "%s own rows" on public.%I for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)', initcap(replace(item, '_', ' ')), item);
@@ -373,3 +586,16 @@ begin
     end;
   end loop;
 end $$;
+
+create index if not exists idx_recorrencias_user_ativo on public.recorrencias(user_id, ativo);
+create index if not exists idx_recorrencias_data_inicio on public.recorrencias(data_inicio);
+
+do $$
+begin
+  if to_regclass('public.transacoes') is not null then
+    execute 'create index if not exists idx_transacoes_user_data on public.transacoes(user_id, data_pagamento)';
+    execute 'create index if not exists idx_transacoes_data on public.transacoes(data_pagamento)';
+  end if;
+end $$;
+
+grant execute on function public.processar_recorrencias(date, uuid) to authenticated;

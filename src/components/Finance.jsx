@@ -11,7 +11,7 @@ const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:
 const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:'', status:'aberto' }
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 
-const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'outros']
+const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
 const SUMMARY_CARDS = [
   ['Caixa realizado', 'cashBalance', C.cyan],
   ['Lucro líquido', 'netProfit', 'dynamic-profit'],
