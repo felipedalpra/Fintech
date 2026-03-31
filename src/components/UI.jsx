@@ -137,13 +137,21 @@ export function SkeletonBlock({ w = '100%', h = 16, radius = 8, style }) {
   )
 }
 
-export function ConfirmModal({ open, onClose, onConfirm, message }) {
+export function ConfirmModal({
+  open,
+  onClose,
+  onConfirm,
+  message,
+  title = 'Confirmar Exclusao',
+  confirmLabel = 'Excluir',
+  confirmVariant = 'danger',
+}) {
   return (
-    <Modal open={open} onClose={onClose} title="Confirmar Exclusão" width={400}>
+    <Modal open={open} onClose={onClose} title={title} width={400}>
       <p style={{ color:C.textSub, marginBottom:24 }}>{message||'Tem certeza? Esta ação não pode ser desfeita.'}</p>
       <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn variant="danger" onClick={()=>{ onConfirm(); onClose() }}>Excluir</Btn>
+        <Btn variant={confirmVariant} onClick={()=>{ onConfirm(); onClose() }}>{confirmLabel}</Btn>
       </div>
     </Modal>
   )

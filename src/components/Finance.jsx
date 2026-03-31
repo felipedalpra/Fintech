@@ -279,6 +279,17 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }
 
   const markExpenseAsPaid = item => {
+    setConfirmState({
+      action:'mark-expense-paid',
+      item,
+      title:'Confirmar pagamento',
+      message:`Confirmar pagamento de ${money(item.value || 0)} em "${item.supplier || item.description || 'despesa'}"?`,
+      confirmLabel:'Marcar como pago',
+      confirmVariant:'success',
+    })
+  }
+
+  const applyMarkExpenseAsPaid = item => {
     if (item.source === 'recorrencia') {
       const exists = data.expenses.some(record => record.description === item.supplier && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.dueDate === item.dueDate)
       if (!exists) {
@@ -307,6 +318,20 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     const collection = { extra:'extraRevenues', expense:'expenses', asset:'assets', liability:'liabilities' }[record.type]
     setData(current => ({ ...current, [collection]:current[collection].filter(item => item.id !== record.id) }))
     toast('Registro removido.', 'warning')
+  }
+
+  const handleConfirmAction = () => {
+    if (!confirmState) return
+    if (confirmState.action === 'mark-expense-paid') {
+      applyMarkExpenseAsPaid(confirmState.item)
+      return
+    }
+    if (confirmState.action === 'delete-expense') {
+      setData(current => ({ ...current, expenses:current.expenses.filter(record => record.id !== confirmState.id) }))
+      toast('Saída removida.', 'warning')
+      return
+    }
+    removeRecord(confirmState)
   }
 
   const tabs = [
@@ -482,7 +507,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma saída financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, item.origin === 'despesa' ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir saída', message:'Deseja excluir esta saída paga? Essa ação remove o lançamento de despesa vinculado.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Excluir</Btn> : <span style={{ color:C.textSub, fontSize:12 }}>-</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value, item.origin === 'despesa' ? 1 : 0] }))} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
       {tab === 'receber' && <>
@@ -672,7 +697,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}
       </Modal>
 
-      <ConfirmModal open={!!confirmState} onClose={() => setConfirmState(null)} onConfirm={() => removeRecord(confirmState)} />
+      <ConfirmModal
+        open={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={handleConfirmAction}
+        title={confirmState?.title}
+        message={confirmState?.message}
+        confirmLabel={confirmState?.confirmLabel}
+        confirmVariant={confirmState?.confirmVariant}
+      />
       <ExportModal open={showExport} onClose={() => setShowExport(false)} data={data} />
     </div>
   )
