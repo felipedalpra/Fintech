@@ -6,9 +6,10 @@ import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { ExportModal } from './ExportModal.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { supabase } from '../lib/supabase.js'
 
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today() }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:'', status:'aberto' }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:'', status:'aberto', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
@@ -133,13 +134,59 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     setShowModal(true)
   }
 
-  const save = () => {
+  const saveFixedRecurrence = async tipo => {
+    const { data:userData, error:userError } = await supabase.auth.getUser()
+    if (userError || !userData?.user) throw new Error('Sessao invalida. Entre novamente.')
+
+    const recurrenceDay = Math.max(1, Math.floor(Number(form.recurrenceDay || 1)))
+    const safeDay = form.recurrenceFrequency === 'semanal' ? Math.min(7, recurrenceDay) : Math.min(31, recurrenceDay)
+
+    const { error } = await supabase.from('recorrencias').insert({
+      user_id:userData.user.id,
+      tipo,
+      descricao:form.description,
+      valor:Number(form.value || 0),
+      categoria:form.category || (tipo === 'despesa' ? 'outros' : 'outras_receitas'),
+      frequencia:form.recurrenceFrequency || 'mensal',
+      dia_execucao:safeDay,
+      data_inicio:form.recurrenceStartDate || today(),
+      data_fim:form.recurrenceEndDate || null,
+      auto_mark_as_paid:Boolean(form.recurrenceAutoMarkAsPaid),
+      ativo:Boolean(form.recurrenceActive),
+    })
+
+    if (error) throw error
+  }
+
+  const save = async () => {
     if (modalType === 'extra') {
       if (!form.description) return
+      if (!editing && form.launchType === 'fixa') {
+        try {
+          await saveFixedRecurrence('receita')
+          toast('Receita fixa recorrente salva com sucesso.')
+          setShowModal(false)
+          return
+        } catch (error) {
+          toast(error.message || 'Nao foi possivel salvar a recorrencia.', 'warning')
+          return
+        }
+      }
       setData(current => ({ ...current, extraRevenues: editing ? current.extraRevenues.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.extraRevenues, { ...form, id:uid() }] }))
     }
     if (modalType === 'expense') {
       if (!form.description) return
+      if (!editing && form.launchType === 'fixa') {
+        try {
+          await saveFixedRecurrence('despesa')
+          toast('Despesa fixa recorrente salva com sucesso.')
+          setShowModal(false)
+          return
+        } catch (error) {
+          toast(error.message || 'Nao foi possivel salvar a recorrencia.', 'warning')
+          return
+        }
+      }
       setData(current => ({ ...current, expenses: editing ? current.expenses.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.expenses, { ...form, id:uid() }] }))
     }
     if (modalType === 'asset') {
@@ -428,8 +475,68 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       {tab === 'fluxo' && <><SectionTitle title="Fluxo de caixa" subtitle="Entradas e saídas efetivamente realizadas, agrupadas por data." /><RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[item.date, <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." /></>}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
-        {modalType === 'extra' && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: retorno pago" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="outras_receitas" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.description} /></div>}
-        {modalType === 'expense' && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: aluguel do consultório" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:item }))} /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Data de vencimento" value={form.dueDate} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" /><FInput label="Status" value={form.status} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'aberto', l:'Aberto' }, { v:'pago', l:'Pago' }]} /><FInput label="Data do pagamento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.description} /></div>}
+        {modalType === 'extra' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {!editing && (
+              <FInput
+                label="Tipo de lançamento"
+                value={form.launchType || 'variavel'}
+                onChange={value => setForm(current => ({ ...current, launchType:value }))}
+                options={[{ v:'variavel', l:'Variável/Pontual' }, { v:'fixa', l:'Fixa (recorrente)' }]}
+              />
+            )}
+            <FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: contrato mensal de consultoria" />
+            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="outras_receitas" />
+            <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
+
+            {(!editing && form.launchType === 'fixa') ? (
+              <>
+                <FInput label="Frequência" value={form.recurrenceFrequency || 'mensal'} onChange={value => setForm(current => ({ ...current, recurrenceFrequency:value }))} options={[{ v:'mensal', l:'Mensal' }, { v:'semanal', l:'Semanal' }, { v:'anual', l:'Anual' }]} />
+                <FInput label={form.recurrenceFrequency === 'semanal' ? 'Dia da semana (1-7)' : 'Dia de execução'} type="number" value={form.recurrenceDay || 1} onChange={value => setForm(current => ({ ...current, recurrenceDay:value }))} />
+                <FInput label="Data início" type="date" value={form.recurrenceStartDate || today()} onChange={value => setForm(current => ({ ...current, recurrenceStartDate:value }))} />
+                <FInput label="Data fim (opcional)" type="date" value={form.recurrenceEndDate || ''} onChange={value => setForm(current => ({ ...current, recurrenceEndDate:value }))} />
+                <FInput label="Criar automaticamente como pago?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
+              </>
+            ) : (
+              <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+            )}
+
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
+          </div>
+        )}
+        {modalType === 'expense' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {!editing && (
+              <FInput
+                label="Tipo de despesa"
+                value={form.launchType || 'variavel'}
+                onChange={value => setForm(current => ({ ...current, launchType:value, category:value === 'variavel' ? 'variaveis' : current.category }))}
+                options={[{ v:'variavel', l:'Variável' }, { v:'fixa', l:'Fixa (recorrente)' }]}
+              />
+            )}
+            <FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: aluguel do consultório" />
+            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:item }))} />
+            <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
+
+            {(!editing && form.launchType === 'fixa') ? (
+              <>
+                <FInput label="Frequência" value={form.recurrenceFrequency || 'mensal'} onChange={value => setForm(current => ({ ...current, recurrenceFrequency:value }))} options={[{ v:'mensal', l:'Mensal' }, { v:'semanal', l:'Semanal' }, { v:'anual', l:'Anual' }]} />
+                <FInput label={form.recurrenceFrequency === 'semanal' ? 'Dia da semana (1-7)' : 'Dia de execução'} type="number" value={form.recurrenceDay || 1} onChange={value => setForm(current => ({ ...current, recurrenceDay:value }))} />
+                <FInput label="Data início" type="date" value={form.recurrenceStartDate || today()} onChange={value => setForm(current => ({ ...current, recurrenceStartDate:value }))} />
+                <FInput label="Data fim (opcional)" type="date" value={form.recurrenceEndDate || ''} onChange={value => setForm(current => ({ ...current, recurrenceEndDate:value }))} />
+                <FInput label="Criar automaticamente como pago?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
+              </>
+            ) : (
+              <>
+                <FInput label="Data de vencimento" value={form.dueDate} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
+                <FInput label="Status" value={form.status} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'aberto', l:'Aberto' }, { v:'pago', l:'Pago' }]} />
+                <FInput label="Data do pagamento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
+              </>
+            )}
+
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
+          </div>
+        )}
         {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}
       </Modal>
 
@@ -601,6 +708,20 @@ function BalanceList({ items, color, onEdit, onDelete, emptyMessage, hidden }) {
 
 function FormActions({ onCancel, onSave, disabled }) {
   return <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn onClick={onSave} disabled={disabled}>Salvar</Btn></div>
+}
+
+function isSaveDisabled(modalType, form, editing) {
+  if (modalType === 'extra') {
+    if (!form.description) return true
+    if (!editing && form.launchType === 'fixa') return !form.recurrenceStartDate
+    return !form.date
+  }
+  if (modalType === 'expense') {
+    if (!form.description || !form.category) return true
+    if (!editing && form.launchType === 'fixa') return !form.recurrenceStartDate
+    return !form.dueDate
+  }
+  return false
 }
 
 function SectionTitle({ title, subtitle, compact = false }) {
