@@ -56,6 +56,7 @@ create table if not exists public.consultations (
   consultation_type text not null,
   value numeric(12,2) not null default 0,
   payment_type text not null,
+  payment_method text,
   insurance text,
   payment_status text not null default 'pendente',
   forecast_payment_date date,

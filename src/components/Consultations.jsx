@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const TYPES = [
   { v:'avaliacao', l:'Avaliação' },
@@ -16,6 +17,24 @@ const PAYMENT_TYPES = [
   { v:'ipe', l:'IPE' },
   { v:'outros_convenios', l:'Outros convênios' },
 ]
+const PAYMENT_METHODS = [
+  { v:'pix', l:'PIX' },
+  { v:'cartao', l:'Cartão' },
+  { v:'dinheiro', l:'Dinheiro' },
+  { v:'boleto', l:'Boleto' },
+  { v:'transferencia', l:'Transferência' },
+]
+const PAYMENT_MODES = [
+  { v:'unico', l:'Único' },
+  { v:'misto', l:'Misto (2 formas)' },
+]
+const PAYMENT_METHOD_LABEL = {
+  pix:'PIX',
+  cartao:'Cartão',
+  dinheiro:'Dinheiro',
+  boleto:'Boleto',
+  transferencia:'Transferência',
+}
 
 const STATUSES = [
   { v:'pago', l:'Pago' },
@@ -33,6 +52,12 @@ export function Consultations({ data, setData }) {
     consultationType:'avaliacao',
     value:0,
     paymentType:'particular',
+    paymentMethod:'pix',
+    paymentMode:'unico',
+    mixMethodA:'pix',
+    mixMethodB:'cartao',
+    mixAmountA:0,
+    mixAmountB:0,
     insurance:'',
     paymentStatus:'pendente',
     forecastPaymentDate:today(),
@@ -46,13 +71,30 @@ export function Consultations({ data, setData }) {
   const [search, setSearch] = useState('')
 
   const openAdd = () => { setForm(empty); setEditing(null); setShowModal(true) }
-  const openEdit = item => { setForm({ ...item }); setEditing(item.id); setShowModal(true) }
+  const openEdit = item => {
+    const payment = decodePaymentMethod(item.paymentMethod)
+    setForm({ ...item, ...payment })
+    setEditing(item.id)
+    setShowModal(true)
+  }
 
   const save = () => {
     if (!form.patient || !form.date) return
+    const paymentMethod = encodePaymentMethod({
+      paymentMode:form.paymentMode,
+      paymentMethod:form.paymentMethod,
+      mixMethodA:form.mixMethodA,
+      mixMethodB:form.mixMethodB,
+      mixAmountA:form.mixAmountA,
+      mixAmountB:form.mixAmountB,
+    })
+    const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
+    if (form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+    const { paymentMode, mixMethodA, mixMethodB, mixAmountA, mixAmountB, ...baseForm } = form
     const nextRecord = {
-      ...form,
+      ...baseForm,
       insurance:form.paymentType === 'particular' ? '' : form.insurance,
+      paymentMethod,
       paymentDate:form.paymentStatus === 'pago' ? (form.paymentDate || form.date) : '',
     }
     setData(current => ({
@@ -80,17 +122,26 @@ export function Consultations({ data, setData }) {
             <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{['Paciente', 'Data', 'Tipo', 'Pagamento', 'Valor', 'Status', 'Ações'].map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={7} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma consulta cadastrada.</td></tr>}
-              {filtered.map(item => (
-                <tr key={item.id} style={{ borderBottom:`1px solid ${C.border}` }}>
-                  <td style={{ padding:'13px 18px', color:C.text, fontWeight:600 }}>{item.patient}</td>
-                  <td style={{ padding:'13px 18px', color:C.textSub }}>{item.date}</td>
-                  <td style={{ padding:'13px 18px', color:C.textSub }}>{item.consultationType}</td>
-                  <td style={{ padding:'13px 18px', color:C.textSub }}>{item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType}</td>
-                  <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>{fmt(item.value)}</td>
-                  <td style={{ padding:'13px 18px' }}><Badge color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} small>{item.paymentStatus}</Badge></td>
-                  <td style={{ padding:'13px 18px' }}><div style={{ display:'flex', gap:8 }}><Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn><Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn></div></td>
-                </tr>
-              ))}
+              {filtered.map(item => {
+                const payment = decodePaymentMethod(item.paymentMethod)
+                const paymentLabel = payment.paymentMode === 'misto'
+                  ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+                  : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
+                return (
+                  <tr key={item.id} style={{ borderBottom:`1px solid ${C.border}` }}>
+                    <td style={{ padding:'13px 18px', color:C.text, fontWeight:600 }}>{item.patient}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}>{item.date}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}>{item.consultationType}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}>
+                      <div>{item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType}</div>
+                      <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{paymentLabel}</div>
+                    </td>
+                    <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>{fmt(item.value)}</td>
+                    <td style={{ padding:'13px 18px' }}><Badge color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} small>{item.paymentStatus}</Badge></td>
+                    <td style={{ padding:'13px 18px' }}><div style={{ display:'flex', gap:8 }}><Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn><Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn></div></td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -99,22 +150,29 @@ export function Consultations({ data, setData }) {
       {isMobile && (
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma consulta cadastrada.</div></Card>}
-          {filtered.map(item => (
-            <Card key={item.id} style={{ padding:14 }}>
-              <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
-              <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
-                <MetricPill label="Data" value={item.date} color={C.textSub} />
-                <MetricPill label="Tipo" value={item.consultationType} color={C.textSub} />
-                <MetricPill label="Pagamento" value={item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType} color={C.textSub} />
-                <MetricPill label="Valor" value={fmt(item.value)} color={C.green} />
-                <MetricPill label="Status" value={item.paymentStatus} color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} />
-              </div>
-              <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
-                <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
-                <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
-              </div>
-            </Card>
-          ))}
+          {filtered.map(item => {
+            const payment = decodePaymentMethod(item.paymentMethod)
+            const paymentLabel = payment.paymentMode === 'misto'
+              ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+              : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
+            return (
+              <Card key={item.id} style={{ padding:14 }}>
+                <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
+                <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
+                  <MetricPill label="Data" value={item.date} color={C.textSub} />
+                  <MetricPill label="Tipo" value={item.consultationType} color={C.textSub} />
+                  <MetricPill label="Convênio" value={item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType} color={C.textSub} />
+                  <MetricPill label="Forma" value={paymentLabel} color={C.textSub} />
+                  <MetricPill label="Valor" value={fmt(item.value)} color={C.green} />
+                  <MetricPill label="Status" value={item.paymentStatus} color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} />
+                </div>
+                <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
+                  <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
+                </div>
+              </Card>
+            )
+          })}
         </div>
       )}
 
@@ -126,6 +184,16 @@ export function Consultations({ data, setData }) {
           <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" placeholder="0" />
           <FInput label="Forma / convênio" value={form.paymentType} onChange={value => setForm(current => ({ ...current, paymentType:value }))} options={PAYMENT_TYPES} />
           <FInput label="Convênio" value={form.insurance} onChange={value => setForm(current => ({ ...current, insurance:value }))} placeholder="Nome do convênio" />
+          <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />
+          {form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentMode === 'misto' && (
+            <>
+              <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />
+              <FInput label="Forma 2" value={form.mixMethodB} onChange={value => setForm(current => ({ ...current, mixMethodB:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor 2" value={form.mixAmountB} onChange={value => setForm(current => ({ ...current, mixAmountB:value }))} type="number" placeholder="0" />
+            </>
+          )}
           <FInput label="Status" value={form.paymentStatus} onChange={value => setForm(current => ({ ...current, paymentStatus:value }))} options={STATUSES} />
           <FInput label="Previsão de pagamento" value={form.forecastPaymentDate} onChange={value => setForm(current => ({ ...current, forecastPaymentDate:value }))} type="date" />
           <FInput label="Data do recebimento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />

@@ -6,6 +6,7 @@ const LOCAL_USERS_KEY = 'startupfinance_users_v1'
 const LOCAL_DATA_PREFIX = 'startupfinance_user_data_v1'
 const MIGRATION_PREFIX = 'startupfinance_migrated_user_v1'
 let relationalBackendAvailable = null
+let consultationsPaymentMethodColumnAvailable = null
 
 const RELATIONAL_TABLES = [
   'procedures',
@@ -46,6 +47,13 @@ async function canUseRelationalBackend() {
   const { error } = await supabase.from('procedures').select('id').limit(1)
   relationalBackendAvailable = !error
   return relationalBackendAvailable
+}
+
+async function canUseConsultationsPaymentMethodColumn() {
+  if (consultationsPaymentMethodColumnAvailable !== null) return consultationsPaymentMethodColumnAvailable
+  const { error } = await supabase.from('consultations').select('payment_method').limit(1)
+  consultationsPaymentMethodColumnAvailable = !error
+  return consultationsPaymentMethodColumnAvailable
 }
 
 async function fetchLegacyPayload(userId) {
@@ -146,6 +154,7 @@ async function fetchRelationalData(userId) {
       consultationType:item.consultation_type || 'avaliacao',
       value:Number(item.value || 0),
       paymentType:item.payment_type || 'particular',
+      paymentMethod:item.payment_method || 'pix',
       insurance:item.insurance || '',
       paymentStatus:item.payment_status || 'pendente',
       forecastPaymentDate:item.forecast_payment_date || '',
@@ -257,7 +266,8 @@ function mapSurgeriesRows(userId, data) {
   }))
 }
 
-function mapConsultationsRows(userId, data) {
+function mapConsultationsRows(userId, data, options = {}) {
+  const includePaymentMethod = options.includePaymentMethod === true
   return data.consultations.map(item => ({
     id:item.id,
     user_id:userId,
@@ -266,6 +276,7 @@ function mapConsultationsRows(userId, data) {
     consultation_type:item.consultationType || 'avaliacao',
     value:item.value || 0,
     payment_type:item.paymentType || 'particular',
+    ...(includePaymentMethod ? { payment_method:item.paymentMethod || null } : {}),
     insurance:item.insurance || null,
     payment_status:item.paymentStatus || 'pendente',
     forecast_payment_date:item.forecastPaymentDate || null,
@@ -406,7 +417,8 @@ export async function saveFinanceData(userId, financeData) {
   await syncTable('procedures', userId, mapProceduresRows(userId, payload))
   await syncTable('products', userId, mapProductsRows(userId, payload))
   await syncTable('surgeries', userId, mapSurgeriesRows(userId, payload))
-  await syncTable('consultations', userId, mapConsultationsRows(userId, payload))
+  const includeConsultationsPaymentMethod = await canUseConsultationsPaymentMethodColumn()
+  await syncTable('consultations', userId, mapConsultationsRows(userId, payload, { includePaymentMethod:includeConsultationsPaymentMethod }))
   await syncTable('product_sales', userId, mapProductSalesRows(userId, payload))
   await syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload))
   await syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload))
