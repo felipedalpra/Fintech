@@ -197,6 +197,158 @@ select user_id, date, 'entrada'::text as type, category, value, origin, referenc
 union all
 select user_id, date, 'saida'::text, category, value, origin, reference_id from public.exits_financial;
 
+create or replace function public.get_financial_analysis(
+  start_date timestamptz,
+  end_date timestamptz,
+  granularity text default 'month'
+)
+returns table (
+  periodo text,
+  receita numeric,
+  despesa numeric,
+  lucro numeric,
+  variacao_receita numeric,
+  variacao_despesa numeric,
+  variacao_lucro numeric,
+  despesa_percent numeric,
+  lucro_percent numeric
+)
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  normalized_granularity text := lower(coalesce(granularity, 'month'));
+  trunc_unit text;
+  step_interval text;
+  source_sql text;
+  transacoes_user_filter text := '';
+begin
+  if start_date is null or end_date is null then
+    raise exception 'start_date and end_date are required';
+  end if;
+  if end_date < start_date then
+    raise exception 'end_date must be greater than or equal to start_date';
+  end if;
+  if normalized_granularity not in ('month', 'quarter', 'year') then
+    raise exception 'granularity must be month, quarter or year';
+  end if;
+
+  trunc_unit := case normalized_granularity
+    when 'quarter' then 'quarter'
+    when 'year' then 'year'
+    else 'month'
+  end;
+
+  step_interval := case normalized_granularity
+    when 'quarter' then '3 months'
+    when 'year' then '1 year'
+    else '1 month'
+  end;
+
+  if to_regclass('public.transacoes') is not null then
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'transacoes'
+        and column_name = 'user_id'
+    ) then
+      transacoes_user_filter := 'and user_id = auth.uid()';
+    end if;
+
+    source_sql := format('
+      select
+        data_pagamento::timestamptz as data_pagamento,
+        valor::numeric as valor,
+        tipo::text as tipo
+      from public.transacoes
+      where 1 = 1
+        %s
+        and data_pagamento >= $1
+        and data_pagamento < $2
+    ', transacoes_user_filter);
+  else
+    source_sql := '
+      select
+        date::timestamptz as data_pagamento,
+        value::numeric as valor,
+        case when type = ''entrada'' then ''receita'' else ''despesa'' end as tipo
+      from public.cash_flow_entries
+      where user_id = auth.uid()
+        and date >= $1::date
+        and date < $2::date
+    ';
+  end if;
+
+  return query execute format($q$
+    with base as (
+      %s
+    ),
+    period_series as (
+      select generate_series(
+        date_trunc(%L, $1),
+        date_trunc(%L, $2),
+        %L::interval
+      ) as period_start
+    ),
+    aggregated as (
+      select
+        date_trunc(%L, data_pagamento) as period_start,
+        sum(case when tipo = 'receita' then valor else 0 end)::numeric as receita,
+        sum(case when tipo = 'despesa' then valor else 0 end)::numeric as despesa
+      from base
+      group by 1
+    ),
+    with_zeros as (
+      select
+        ps.period_start,
+        coalesce(a.receita, 0)::numeric as receita,
+        coalesce(a.despesa, 0)::numeric as despesa
+      from period_series ps
+      left join aggregated a on a.period_start = ps.period_start
+    ),
+    calculated as (
+      select
+        period_start,
+        receita,
+        despesa,
+        (receita - despesa)::numeric as lucro,
+        lag(receita) over (order by period_start) as receita_anterior,
+        lag(despesa) over (order by period_start) as despesa_anterior,
+        lag(receita - despesa) over (order by period_start) as lucro_anterior
+      from with_zeros
+    )
+    select
+      case
+        when %L = 'month' then to_char(period_start, 'YYYY-MM')
+        when %L = 'quarter' then concat(extract(year from period_start)::int, '-Q', extract(quarter from period_start)::int)
+        else to_char(period_start, 'YYYY')
+      end as periodo,
+      receita,
+      despesa,
+      lucro,
+      round(((receita - receita_anterior) / nullif(receita_anterior, 0)) * 100, 2) as variacao_receita,
+      round(((despesa - despesa_anterior) / nullif(despesa_anterior, 0)) * 100, 2) as variacao_despesa,
+      round(((lucro - lucro_anterior) / nullif(lucro_anterior, 0)) * 100, 2) as variacao_lucro,
+      round((despesa / nullif(receita, 0)) * 100, 2) as despesa_percent,
+      round((lucro / nullif(receita, 0)) * 100, 2) as lucro_percent
+    from calculated
+    order by period_start
+  $q$, source_sql, trunc_unit, trunc_unit, step_interval, trunc_unit, normalized_granularity, normalized_granularity)
+  using start_date, end_date + interval '1 day';
+end;
+$$;
+
+grant execute on function public.get_financial_analysis(timestamptz, timestamptz, text) to authenticated;
+
+do $$
+begin
+  if to_regclass('public.transacoes') is not null then
+    execute 'create index if not exists idx_transacoes_data on public.transacoes(data_pagamento)';
+  end if;
+end $$;
+
 alter table public.user_profiles enable row level security;
 alter table public.procedures enable row level security;
 alter table public.products enable row level security;
