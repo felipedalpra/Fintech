@@ -3,6 +3,7 @@ import { C, base } from '../theme.js'
 import { fmt, fmtN, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const PRODUCT_EMPTY = {
   name:'',
@@ -23,6 +24,11 @@ const SALE_EMPTY = {
   totalValue:0,
   saleDate:today(),
   paymentMethod:'pix',
+  paymentMode:'unico',
+  mixMethodA:'pix',
+  mixMethodB:'cartao',
+  mixAmountA:0,
+  mixAmountB:0,
 }
 
 const PURCHASE_EMPTY = {
@@ -49,6 +55,17 @@ const PAYMENT_METHODS = [
   { v:'boleto', l:'Boleto' },
   { v:'transferencia', l:'Transferência' },
 ]
+const PAYMENT_MODES = [
+  { v:'unico', l:'Único' },
+  { v:'misto', l:'Misto (2 formas)' },
+]
+const PAYMENT_METHOD_LABEL = {
+  pix:'PIX',
+  cartao:'Cartão',
+  dinheiro:'Dinheiro',
+  boleto:'Boleto',
+  transferencia:'Transferência',
+}
 
 export function Products({ data, setData }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
@@ -107,12 +124,24 @@ export function Products({ data, setData }) {
       const product = productsById.get(form.productId)
       const unitValue = form.unitValue || product?.salePrice || 0
       const totalValue = form.totalValue || (unitValue * (form.quantity || 0))
+      const paymentMethod = encodePaymentMethod({
+        paymentMode:form.paymentMode,
+        paymentMethod:form.paymentMethod,
+        mixMethodA:form.mixMethodA,
+        mixMethodB:form.mixMethodB,
+        mixAmountA:form.mixAmountA,
+        mixAmountB:form.mixAmountB,
+      })
+      const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
+      if (form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+      const { paymentMode, mixMethodA, mixMethodB, mixAmountA, mixAmountB, ...baseForm } = form
       setData(current => ({
         ...current,
         productSales: [...current.productSales, {
-          ...form,
+          ...baseForm,
           unitValue,
           totalValue,
+          paymentMethod,
           id:uid(),
         }],
       }))
@@ -231,18 +260,24 @@ export function Products({ data, setData }) {
         <LedgerTable
           title="Vendas de produtos"
           columns={['Data', 'Produto', 'Paciente', 'Qtd', 'Valor total', 'Pagamento', 'Ações']}
-          rows={data.productSales.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')).map(item => ({
-            key:item.id,
-            cells:[
-              item.saleDate,
-              productsById.get(item.productId)?.name || 'Produto removido',
-              item.patientName || 'Venda avulsa',
-              fmtN(item.quantity),
-              <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.totalValue)}</span>,
-              item.paymentMethod || 'Nao informado',
-              <Btn variant="danger" onClick={() => setConfirmState({ type:'sale', id:item.id })} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn>,
-            ],
-          }))}
+          rows={data.productSales.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')).map(item => {
+            const payment = decodePaymentMethod(item.paymentMethod)
+            const paymentLabel = payment.paymentMode === 'misto'
+              ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+              : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
+            return {
+              key:item.id,
+              cells:[
+                item.saleDate,
+                productsById.get(item.productId)?.name || 'Produto removido',
+                item.patientName || 'Venda avulsa',
+                fmtN(item.quantity),
+                <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.totalValue)}</span>,
+                paymentLabel,
+                <Btn variant="danger" onClick={() => setConfirmState({ type:'sale', id:item.id })} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn>,
+              ],
+            }
+          })}
           emptyMessage="Nenhuma venda registrada."
         />
       )}
@@ -305,7 +340,19 @@ export function Products({ data, setData }) {
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
           <FInput label="Data da venda" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value }))} type="date" />
-          <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />
+          <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />
+          {form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentMode === 'misto' && (
+            <>
+              <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />
+              <FInput label="Forma 2" value={form.mixMethodB} onChange={value => setForm(current => ({ ...current, mixMethodB:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor 2" value={form.mixAmountB} onChange={value => setForm(current => ({ ...current, mixAmountB:value }))} type="number" placeholder="0" />
+              <div style={{ gridColumn:'1 / -1', marginTop:-6, color:C.textDim, fontSize:12 }}>
+                Preencha manualmente os dois valores (ex.: metade PIX e metade Cartão).
+              </div>
+            </>
+          )}
           <div style={{ gridColumn:'1 / -1' }}><FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" /></div>
           <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId}>Salvar venda</Btn></div>
         </div>

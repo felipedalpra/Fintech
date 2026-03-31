@@ -2,13 +2,26 @@ import { useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
   { v:'cartao', l:'Cartão' },
+  { v:'dinheiro', l:'Dinheiro' },
   { v:'boleto', l:'Boleto' },
   { v:'transferencia', l:'Transferência' },
 ]
+const PAYMENT_MODES = [
+  { v:'unico', l:'Único' },
+  { v:'misto', l:'Misto (2 formas)' },
+]
+const PAYMENT_METHOD_LABEL = {
+  pix:'PIX',
+  cartao:'Cartão',
+  dinheiro:'Dinheiro',
+  boleto:'Boleto',
+  transferencia:'Transferência',
+}
 
 const PAYMENT_STATUS = [
   { v:'pago', l:'Pago' },
@@ -33,6 +46,11 @@ export function Sales({ data, setData }) {
     totalValue:0,
     date:today(),
     paymentMethod:'pix',
+    paymentMode:'unico',
+    mixMethodA:'pix',
+    mixMethodB:'cartao',
+    mixAmountA:0,
+    mixAmountB:0,
     paymentStatus:'pendente',
     surgeon:'',
     hospitalCost:0,
@@ -61,7 +79,8 @@ export function Sales({ data, setData }) {
   }
 
   const openEdit = item => {
-    setForm({ ...item })
+    const payment = decodePaymentMethod(item.paymentMethod)
+    setForm({ ...item, ...payment })
     setEditing(item.id)
     setShowModal(true)
   }
@@ -74,9 +93,21 @@ export function Sales({ data, setData }) {
     const installmentValue = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
       ? resolvedTotal / form.installmentCount
       : 0
+    const paymentMethod = encodePaymentMethod({
+      paymentMode:form.paymentMode,
+      paymentMethod:form.paymentMethod,
+      mixMethodA:form.mixMethodA,
+      mixMethodB:form.mixMethodB,
+      mixAmountA:form.mixAmountA,
+      mixAmountB:form.mixAmountB,
+    })
+    const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
+    if (form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+    const { paymentMode, mixMethodA, mixMethodB, mixAmountA, mixAmountB, ...baseForm } = form
     const nextRecord = {
-      ...form,
+      ...baseForm,
       totalValue:resolvedTotal,
+      paymentMethod,
       paymentDate:form.paymentStatus === 'pago' ? (form.paymentDate || form.date) : '',
       netRevenue:resolvedTotal - totalCosts,
       installmentValue,
@@ -116,7 +147,6 @@ export function Sales({ data, setData }) {
   const installmentValueCalc = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
     ? (form.totalValue || 0) / form.installmentCount
     : 0
-
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
@@ -169,6 +199,7 @@ export function Sales({ data, setData }) {
                 const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
                 const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0))
                 const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
+                const payment = decodePaymentMethod(item.paymentMethod)
                 const instValue = item.paymentStatus === 'parcelado' && item.installmentCount >= 2
                   ? (item.installmentValue || (item.totalValue / item.installmentCount))
                   : null
@@ -186,6 +217,11 @@ export function Sales({ data, setData }) {
                     <td style={{ padding:'13px 18px', color:netRevenue >= 0 ? C.accent : C.red, fontWeight:700 }}>{fmt(netRevenue)}</td>
                     <td style={{ padding:'13px 18px' }}>
                       <Badge color={statusColor} small>{item.paymentStatus}</Badge>
+                      <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>
+                        {payment.paymentMode === 'misto'
+                          ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+                          : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')}
+                      </div>
                       {item.paymentStatus === 'parcelado' && item.installmentCount >= 2 && instValue !== null && (
                         <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>{item.installmentCount}x de {fmt(instValue)}</div>
                       )}
@@ -206,6 +242,7 @@ export function Sales({ data, setData }) {
             const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
             const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0))
             const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
+            const payment = decodePaymentMethod(item.paymentMethod)
             const instValue = item.paymentStatus === 'parcelado' && item.installmentCount >= 2
               ? (item.installmentValue || (item.totalValue / item.installmentCount))
               : null
@@ -220,6 +257,7 @@ export function Sales({ data, setData }) {
                   <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
                   <MetricPill label="Receita líquida" value={fmt(netRevenue)} color={netRevenue >= 0 ? C.accent : C.red} />
                   <MetricPill label="Pagamento" value={item.paymentStatus} color={statusColor} />
+                  <MetricPill label="Forma" value={payment.paymentMode === 'misto' ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}` : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')} color={C.textSub} />
                   {instValue !== null && <MetricPill label="Parcelas" value={`${item.installmentCount}x de ${fmt(instValue)}`} color={C.cyan} />}
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
@@ -239,7 +277,19 @@ export function Sales({ data, setData }) {
           <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
-          <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />
+          <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />
+          {form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentMode === 'misto' && (
+            <>
+              <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />
+              <FInput label="Forma 2" value={form.mixMethodB} onChange={value => setForm(current => ({ ...current, mixMethodB:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor 2" value={form.mixAmountB} onChange={value => setForm(current => ({ ...current, mixAmountB:value }))} type="number" placeholder="0" />
+              <div style={{ gridColumn:'1 / -1', marginTop:-6, color:C.textDim, fontSize:12 }}>
+                Preencha manualmente os dois valores (ex.: metade PIX e metade Cartão).
+              </div>
+            </>
+          )}
           <FInput label="Status do pagamento" value={form.paymentStatus} onChange={value => setForm(current => ({ ...current, paymentStatus:value }))} options={PAYMENT_STATUS} />
           <FInput label="Data do recebimento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
           {form.paymentStatus === 'parcelado' && (
