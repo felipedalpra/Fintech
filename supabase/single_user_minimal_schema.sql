@@ -46,6 +46,7 @@ create table if not exists public.surgeries (
   anesthesia_cost numeric(12,2) not null default 0,
   material_cost numeric(12,2) not null default 0,
   other_costs numeric(12,2) not null default 0,
+  invoice_issuance_percent numeric(5,2) not null default 0,
   notes text,
   created_at timestamptz not null default timezone('utc', now())
 );
@@ -59,6 +60,7 @@ create table if not exists public.consultations (
   value numeric(12,2) not null default 0,
   payment_type text not null,
   payment_method text,
+  invoice_issuance_percent numeric(5,2) not null default 0,
   insurance text,
   payment_status text not null default 'pendente',
   forecast_payment_date date,

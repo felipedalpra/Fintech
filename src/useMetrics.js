@@ -1,8 +1,22 @@
 import { useMemo } from 'react'
 import { inRange, monthKey, onOrBefore, today } from './utils.js'
 
+function resolvePercent(value) {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.min(100, n))
+}
+
+function invoiceIssuanceCost(baseValue, percentValue) {
+  return (baseValue || 0) * (resolvePercent(percentValue) / 100)
+}
+
 function surgeryCosts(item) {
-  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0)
+  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
+}
+
+function consultationCosts(item) {
+  return invoiceIssuanceCost(item.value || 0, item.invoiceIssuancePercent || 0)
 }
 
 function mapProcedureName(procedures, id) {
@@ -51,6 +65,7 @@ export function buildMetrics(rawData, options = {}) {
   const surgeryCostTotal = surgeriesInRange.reduce((acc, item) => acc + surgeryCosts(item), 0)
   const surgeryNetRevenue = surgeryRevenue - surgeryCostTotal
   const consultationRevenue = consultationsInRange.reduce((acc, item) => acc + (item.value || 0), 0)
+  const consultationCostTotal = consultationsInRange.reduce((acc, item) => acc + consultationCosts(item), 0)
   const productSalesRevenue = productSalesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
   const productPurchaseTotal = productPurchasesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
   const extraRevenueTotal = extraRevenuesInRange.reduce((acc, item) => acc + (item.value || 0), 0)
@@ -58,7 +73,7 @@ export function buildMetrics(rawData, options = {}) {
 
   const taxExpenses = expensesInRange.filter(item => item.category === 'impostos').reduce((acc, item) => acc + (item.value || 0), 0)
   const operationalExpenses = expensesInRange.filter(item => item.category !== 'impostos').reduce((acc, item) => acc + (item.value || 0), 0)
-  const operatingProfit = grossRevenue - surgeryCostTotal - productPurchaseTotal - operationalExpenses
+  const operatingProfit = grossRevenue - surgeryCostTotal - consultationCostTotal - productPurchaseTotal - operationalExpenses
   const netProfit = operatingProfit - taxExpenses
 
   const surgeriesCompleted = surgeriesInRange.filter(item => item.paymentStatus !== 'cancelado').length
@@ -73,11 +88,13 @@ export function buildMetrics(rawData, options = {}) {
       entriesFinancial.push({ id:`entry-surgery-${item.id}`, description:`Cirurgia - ${patientLabel(item.patient, item.id)}`, category:'cirurgia', value:item.totalValue || 0, date:item.paymentDate || item.date, origin:'cirurgia', referenceId:item.id })
     }
     if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
+      const surgeryInvoiceCost = invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
       ;[
         ['hospital', item.hospitalCost || 0],
         ['anestesia', item.anesthesiaCost || 0],
         ['material', item.materialCost || 0],
         ['outros', item.otherCosts || 0],
+        ['nota_fiscal_cirurgia', surgeryInvoiceCost],
       ].forEach(([category, value]) => {
         if (value > 0) exitsFinancial.push({ id:`exit-surgery-${item.id}-${category}`, description:`Custo cirúrgico - ${patientLabel(item.patient, item.id)}`, category, value, date:item.date, origin:'custo_cirurgico', referenceId:item.id })
       })
@@ -87,6 +104,12 @@ export function buildMetrics(rawData, options = {}) {
   consultations.forEach(item => {
     if (item.paymentStatus === 'pago' && inRange(item.paymentDate || item.date, startDate, endDate)) {
       entriesFinancial.push({ id:`entry-consultation-${item.id}`, description:`Consulta - ${patientLabel(item.patient, item.id)}`, category:'consulta', value:item.value || 0, date:item.paymentDate || item.date, origin:'consulta', referenceId:item.id })
+    }
+    if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
+      const nfCost = consultationCosts(item)
+      if (nfCost > 0) {
+        exitsFinancial.push({ id:`exit-consultation-${item.id}-nf`, description:`Custo NF consulta - ${patientLabel(item.patient, item.id)}`, category:'nota_fiscal_consulta', value:nfCost, date:item.date, origin:'custo_consulta', referenceId:item.id })
+      }
     }
   })
 
@@ -143,6 +166,12 @@ export function buildMetrics(rawData, options = {}) {
     if (item.anesthesiaCost) cumulativeEntries.push({ type:'saida', value:item.anesthesiaCost })
     if (item.materialCost) cumulativeEntries.push({ type:'saida', value:item.materialCost })
     if (item.otherCosts) cumulativeEntries.push({ type:'saida', value:item.otherCosts })
+    const surgeryInvoiceCost = invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
+    if (surgeryInvoiceCost > 0) cumulativeEntries.push({ type:'saida', value:surgeryInvoiceCost })
+  })
+  consultations.filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).forEach(item => {
+    const consultationInvoiceCost = consultationCosts(item)
+    if (consultationInvoiceCost > 0) cumulativeEntries.push({ type:'saida', value:consultationInvoiceCost })
   })
 
   const cashAsset = cumulativeEntries.reduce((acc, item) => acc + (item.type === 'entrada' ? item.value : -item.value), 0)
@@ -199,6 +228,7 @@ export function buildMetrics(rawData, options = {}) {
     surgeryCostTotal,
     surgeryNetRevenue,
     consultationRevenue,
+    consultationCostTotal,
     productSalesRevenue,
     productPurchaseTotal,
     extraRevenueTotal,

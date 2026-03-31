@@ -55,6 +55,7 @@ export function Consultations({ data, setData }) {
     date:today(),
     consultationType:'avaliacao',
     value:0,
+    invoiceIssuancePercent:0,
     paymentType:'particular',
     paymentMethod:'pix',
     paymentMode:'unico',
@@ -144,6 +145,7 @@ export function Consultations({ data, setData }) {
     } = form
     const nextRecord = {
       ...baseForm,
+      invoiceIssuancePercent:Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0))),
       insurance:form.paymentType === 'particular' ? '' : form.insurance,
       paymentMethod,
       paymentDate:form.paymentStatus === 'pago' ? (form.paymentDate || form.date) : '',
@@ -170,11 +172,12 @@ export function Consultations({ data, setData }) {
       {!isMobile && <Card style={{ padding:0, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{['Paciente', 'Data', 'Tipo', 'Pagamento', 'Valor', 'Status', 'Ações'].map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead>
+            <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{['Paciente', 'Data', 'Tipo', 'Pagamento', 'Valor', 'Líquido', 'Status', 'Ações'].map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={7} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma consulta cadastrada.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={8} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma consulta cadastrada.</td></tr>}
               {filtered.map(item => {
                 const payment = decodePaymentMethod(item.paymentMethod)
+                const netValue = (item.value || 0) - ((item.value || 0) * ((item.invoiceIssuancePercent || 0) / 100))
                 const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
                   ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
                   : payment.paymentMode === 'misto'
@@ -188,8 +191,10 @@ export function Consultations({ data, setData }) {
                     <td style={{ padding:'13px 18px', color:C.textSub }}>
                       <div>{item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType}</div>
                       <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{paymentLabel}</div>
+                      <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>NF {item.invoiceIssuancePercent || 0}%</div>
                     </td>
                     <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>{fmt(item.value)}</td>
+                    <td style={{ padding:'13px 18px', color:netValue >= 0 ? C.accent : C.red, fontWeight:700 }}>{fmt(netValue)}</td>
                     <td style={{ padding:'13px 18px' }}><Badge color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} small>{item.paymentStatus}</Badge></td>
                     <td style={{ padding:'13px 18px' }}><div style={{ display:'flex', gap:8 }}><Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn><Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn></div></td>
                   </tr>
@@ -205,6 +210,7 @@ export function Consultations({ data, setData }) {
           {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma consulta cadastrada.</div></Card>}
           {filtered.map(item => {
             const payment = decodePaymentMethod(item.paymentMethod)
+            const netValue = (item.value || 0) - ((item.value || 0) * ((item.invoiceIssuancePercent || 0) / 100))
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
               ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
               : payment.paymentMode === 'misto'
@@ -218,7 +224,9 @@ export function Consultations({ data, setData }) {
                   <MetricPill label="Tipo" value={item.consultationType} color={C.textSub} />
                   <MetricPill label="Convênio" value={item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType} color={C.textSub} />
                   <MetricPill label="Forma" value={paymentLabel} color={C.textSub} />
+                  <MetricPill label="NF" value={`${item.invoiceIssuancePercent || 0}%`} color={C.textSub} />
                   <MetricPill label="Valor" value={fmt(item.value)} color={C.green} />
+                  <MetricPill label="Líquido" value={fmt(netValue)} color={netValue >= 0 ? C.accent : C.red} />
                   <MetricPill label="Status" value={item.paymentStatus} color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} />
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
@@ -237,6 +245,7 @@ export function Consultations({ data, setData }) {
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
           <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" placeholder="0" />
+          <FInput label="Emissão NF (%)" value={form.invoiceIssuancePercent} onChange={value => setForm(current => ({ ...current, invoiceIssuancePercent:value }))} type="number" placeholder="0" />
           <FInput label="Forma / convênio" value={form.paymentType} onChange={value => setForm(current => ({ ...current, paymentType:value }))} options={PAYMENT_TYPES} />
           <FInput label="Convênio" value={form.insurance} onChange={value => setForm(current => ({ ...current, insurance:value }))} placeholder="Nome do convênio" />
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />

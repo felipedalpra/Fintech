@@ -7,6 +7,8 @@ const LOCAL_DATA_PREFIX = 'startupfinance_user_data_v1'
 const MIGRATION_PREFIX = 'startupfinance_migrated_user_v1'
 let relationalBackendAvailable = null
 let consultationsPaymentMethodColumnAvailable = null
+let surgeriesInvoiceIssuanceColumnAvailable = null
+let consultationsInvoiceIssuanceColumnAvailable = null
 
 const RELATIONAL_TABLES = [
   'procedures',
@@ -54,6 +56,20 @@ async function canUseConsultationsPaymentMethodColumn() {
   const { error } = await supabase.from('consultations').select('payment_method').limit(1)
   consultationsPaymentMethodColumnAvailable = !error
   return consultationsPaymentMethodColumnAvailable
+}
+
+async function canUseSurgeriesInvoiceIssuanceColumn() {
+  if (surgeriesInvoiceIssuanceColumnAvailable !== null) return surgeriesInvoiceIssuanceColumnAvailable
+  const { error } = await supabase.from('surgeries').select('invoice_issuance_percent').limit(1)
+  surgeriesInvoiceIssuanceColumnAvailable = !error
+  return surgeriesInvoiceIssuanceColumnAvailable
+}
+
+async function canUseConsultationsInvoiceIssuanceColumn() {
+  if (consultationsInvoiceIssuanceColumnAvailable !== null) return consultationsInvoiceIssuanceColumnAvailable
+  const { error } = await supabase.from('consultations').select('invoice_issuance_percent').limit(1)
+  consultationsInvoiceIssuanceColumnAvailable = !error
+  return consultationsInvoiceIssuanceColumnAvailable
 }
 
 async function fetchLegacyPayload(userId) {
@@ -145,6 +161,7 @@ async function fetchRelationalData(userId) {
       anesthesiaCost:Number(item.anesthesia_cost || 0),
       materialCost:Number(item.material_cost || 0),
       otherCosts:Number(item.other_costs || 0),
+      invoiceIssuancePercent:Number(item.invoice_issuance_percent || 0),
       notes:item.notes || '',
     })),
     consultations:(consultationsResult.data || []).map(item => ({
@@ -155,6 +172,7 @@ async function fetchRelationalData(userId) {
       value:Number(item.value || 0),
       paymentType:item.payment_type || 'particular',
       paymentMethod:item.payment_method || 'pix',
+      invoiceIssuancePercent:Number(item.invoice_issuance_percent || 0),
       insurance:item.insurance || '',
       paymentStatus:item.payment_status || 'pendente',
       forecastPaymentDate:item.forecast_payment_date || '',
@@ -246,7 +264,8 @@ function mapProductsRows(userId, data) {
   }))
 }
 
-function mapSurgeriesRows(userId, data) {
+function mapSurgeriesRows(userId, data, options = {}) {
+  const includeInvoiceIssuancePercent = options.includeInvoiceIssuancePercent === true
   return data.surgeries.map(item => ({
     id:item.id,
     user_id:userId,
@@ -262,12 +281,14 @@ function mapSurgeriesRows(userId, data) {
     anesthesia_cost:item.anesthesiaCost || 0,
     material_cost:item.materialCost || 0,
     other_costs:item.otherCosts || 0,
+    ...(includeInvoiceIssuancePercent ? { invoice_issuance_percent:item.invoiceIssuancePercent || 0 } : {}),
     notes:item.notes || null,
   }))
 }
 
 function mapConsultationsRows(userId, data, options = {}) {
   const includePaymentMethod = options.includePaymentMethod === true
+  const includeInvoiceIssuancePercent = options.includeInvoiceIssuancePercent === true
   return data.consultations.map(item => ({
     id:item.id,
     user_id:userId,
@@ -277,6 +298,7 @@ function mapConsultationsRows(userId, data, options = {}) {
     value:item.value || 0,
     payment_type:item.paymentType || 'particular',
     ...(includePaymentMethod ? { payment_method:item.paymentMethod || null } : {}),
+    ...(includeInvoiceIssuancePercent ? { invoice_issuance_percent:item.invoiceIssuancePercent || 0 } : {}),
     insurance:item.insurance || null,
     payment_status:item.paymentStatus || 'pendente',
     forecast_payment_date:item.forecastPaymentDate || null,
@@ -416,9 +438,11 @@ export async function saveFinanceData(userId, financeData) {
 
   await syncTable('procedures', userId, mapProceduresRows(userId, payload))
   await syncTable('products', userId, mapProductsRows(userId, payload))
-  await syncTable('surgeries', userId, mapSurgeriesRows(userId, payload))
+  const includeSurgeriesInvoiceIssuancePercent = await canUseSurgeriesInvoiceIssuanceColumn()
+  await syncTable('surgeries', userId, mapSurgeriesRows(userId, payload, { includeInvoiceIssuancePercent:includeSurgeriesInvoiceIssuancePercent }))
   const includeConsultationsPaymentMethod = await canUseConsultationsPaymentMethodColumn()
-  await syncTable('consultations', userId, mapConsultationsRows(userId, payload, { includePaymentMethod:includeConsultationsPaymentMethod }))
+  const includeConsultationsInvoiceIssuancePercent = await canUseConsultationsInvoiceIssuanceColumn()
+  await syncTable('consultations', userId, mapConsultationsRows(userId, payload, { includePaymentMethod:includeConsultationsPaymentMethod, includeInvoiceIssuancePercent:includeConsultationsInvoiceIssuancePercent }))
   await syncTable('product_sales', userId, mapProductSalesRows(userId, payload))
   await syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload))
   await syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload))

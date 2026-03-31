@@ -192,6 +192,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     { label: '(-) Custos de cirurgias', getValue: mx => mx.surgeryCostTotal, color: C.red, bold: false },
     { label: 'Receita líquida de cirurgias', getValue: mx => mx.surgeryRevenue - mx.surgeryCostTotal, color: null, bold: false },
     { label: 'Receita de consultas', getValue: mx => mx.consultationRevenue, color: C.green, bold: false },
+    { label: '(-) Custos de consultas (NF)', getValue: mx => mx.consultationCostTotal, color: C.red, bold: false },
+    { label: 'Receita líquida de consultas', getValue: mx => mx.consultationRevenue - mx.consultationCostTotal, color: null, bold: false },
     { label: 'Receita de produtos', getValue: mx => mx.productSalesRevenue, color: C.green, bold: false },
     { label: 'Outras receitas', getValue: mx => mx.extraRevenueTotal, color: C.green, bold: false },
     { label: '= Receita operacional total', getValue: mx => mx.grossRevenue, color: C.accent, bold: true },

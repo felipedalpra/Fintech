@@ -37,7 +37,8 @@ export function normalizeData(data) {
 
   const surgeries = Array.isArray(data?.surgeries)
     ? data.surgeries.map(item => ({
-        ...item,
+      ...item,
+      invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
         id:normalizeUuid(item.id, 'surgery'),
         procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
       }))
@@ -55,6 +56,7 @@ export function normalizeData(data) {
           anesthesiaCost:sale.anesthesiaCost || 0,
           materialCost:sale.materialCost || 0,
           otherCosts:sale.otherCosts || 0,
+          invoiceIssuancePercent:sale.invoiceIssuancePercent || 0,
           notes:sale.notes || '',
         }))
       : []
@@ -71,6 +73,7 @@ export function normalizeData(data) {
     surgeries,
     consultations: Array.isArray(data?.consultations) ? data.consultations.map(item => ({
       ...item,
+      invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
       id:normalizeUuid(item.id, 'consultation'),
     })) : [],
     products,
