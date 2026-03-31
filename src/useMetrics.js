@@ -37,6 +37,105 @@ function patientLabel(value, fallback = '') {
   return value || fallback || 'Paciente não informado'
 }
 
+function parseDate(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const date = new Date(`${raw}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return null
+  return date
+}
+
+function formatDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function startOfWeek(date) {
+  const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const day = copy.getDay() || 7
+  copy.setDate(copy.getDate() - (day - 1))
+  return copy
+}
+
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate()
+}
+
+function generateRecurringOccurrences(recurrences, fromDate, toDate) {
+  const from = parseDate(fromDate || '1900-01-01')
+  const to = parseDate(toDate || '2999-12-31')
+  if (!from || !to || from > to) return []
+
+  const items = []
+  recurrences.forEach(rec => {
+    if (rec.ativo === false) return
+    const startDate = parseDate(rec.dataInicio)
+    if (!startDate) return
+    const endDate = parseDate(rec.dataFim || '2999-12-31')
+    const execDay = Math.max(1, Number(rec.diaExecucao || 1))
+    const freq = rec.frequencia || 'mensal'
+    const minDate = startDate > from ? startDate : from
+    const maxDate = endDate < to ? endDate : to
+    if (minDate > maxDate) return
+
+    if (freq === 'mensal') {
+      let cursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+      const lastMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)
+      while (cursor <= lastMonth) {
+        const day = Math.min(execDay, daysInMonth(cursor.getFullYear(), cursor.getMonth()))
+        const due = new Date(cursor.getFullYear(), cursor.getMonth(), day)
+        if (due >= minDate && due <= maxDate) {
+          items.push({ ...rec, dueDate:formatDate(due) })
+        }
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+      }
+      return
+    }
+
+    if (freq === 'semanal') {
+      const clampedDay = Math.min(7, execDay)
+      let cursor = startOfWeek(minDate)
+      while (cursor <= maxDate) {
+        const due = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + (clampedDay - 1))
+        if (due >= minDate && due <= maxDate) {
+          items.push({ ...rec, dueDate:formatDate(due) })
+        }
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7)
+      }
+      return
+    }
+
+    let year = minDate.getFullYear()
+    while (year <= maxDate.getFullYear()) {
+      const month = startDate.getMonth()
+      const day = Math.min(execDay, daysInMonth(year, month))
+      const due = new Date(year, month, day)
+      if (due >= minDate && due <= maxDate) {
+        items.push({ ...rec, dueDate:formatDate(due) })
+      }
+      year += 1
+    }
+  })
+
+  return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+}
+
+function matchesRecurringExpense(record, recurring) {
+  return (record.description || '') === (recurring.descricao || '')
+    && (record.category || 'outros') === (recurring.categoria || 'outros')
+    && Number(record.value || 0) === Number(recurring.valor || 0)
+    && (record.dueDate || '') === (recurring.dueDate || '')
+}
+
+function matchesRecurringRevenue(record, recurring) {
+  return (record.description || '') === (recurring.descricao || '')
+    && (record.category || 'outras_receitas') === (recurring.categoria || 'outras_receitas')
+    && Number(record.value || 0) === Number(recurring.valor || 0)
+    && (record.date || '') === (recurring.dueDate || '')
+}
+
 export function buildMetrics(rawData, options = {}) {
   const data = rawData || {}
   const procedures = data.procedures || []
@@ -50,9 +149,13 @@ export function buildMetrics(rawData, options = {}) {
   const assets = data.assets || []
   const liabilities = data.liabilities || []
   const goals = data.goals || []
+  const recurrences = data.recurrences || []
   const startDate = options.startDate || ''
   const endDate = options.endDate || ''
   const balanceDate = options.balanceDate || endDate || today()
+  const recurringRangeStart = startDate || endDate || today()
+  const recurringRangeEnd = endDate || startDate || today()
+  const recurringBalanceStart = startDate || `${new Date().getFullYear()}-01-01`
 
   const surgeriesInRange = surgeries.filter(item => item.date && inRange(item.date, startDate, endDate))
   const consultationsInRange = consultations.filter(item => item.date && inRange(item.date, startDate, endDate))
@@ -60,6 +163,12 @@ export function buildMetrics(rawData, options = {}) {
   const productPurchasesInRange = productPurchases.filter(item => item.purchaseDate && inRange(item.purchaseDate, startDate, endDate))
   const extraRevenuesInRange = extraRevenues.filter(item => item.date && inRange(item.date, startDate, endDate))
   const expensesInRange = expenses.filter(item => item.dueDate && inRange(item.dueDate, startDate, endDate))
+  const recurringInRange = generateRecurringOccurrences(recurrences, recurringRangeStart, recurringRangeEnd)
+  const recurringUntilBalance = generateRecurringOccurrences(recurrences, recurringBalanceStart, balanceDate)
+  const recurringRevenueOpenInRange = recurringInRange.filter(item => item.tipo === 'receita' && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item)))
+  const recurringExpenseOpenInRange = recurringInRange.filter(item => item.tipo === 'despesa' && !expenses.some(entry => matchesRecurringExpense(entry, item)))
+  const recurringRevenueTotal = recurringRevenueOpenInRange.reduce((acc, item) => acc + (Number(item.valor) || 0), 0)
+  const recurringExpenseTotal = recurringExpenseOpenInRange.reduce((acc, item) => acc + (Number(item.valor) || 0), 0)
 
   const surgeryRevenue = surgeriesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
   const surgeryCostTotal = surgeriesInRange.reduce((acc, item) => acc + surgeryCosts(item), 0)
@@ -68,11 +177,11 @@ export function buildMetrics(rawData, options = {}) {
   const consultationCostTotal = consultationsInRange.reduce((acc, item) => acc + consultationCosts(item), 0)
   const productSalesRevenue = productSalesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
   const productPurchaseTotal = productPurchasesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
-  const extraRevenueTotal = extraRevenuesInRange.reduce((acc, item) => acc + (item.value || 0), 0)
+  const extraRevenueTotal = extraRevenuesInRange.reduce((acc, item) => acc + (item.value || 0), 0) + recurringRevenueTotal
   const grossRevenue = surgeryRevenue + consultationRevenue + productSalesRevenue + extraRevenueTotal
 
   const taxExpenses = expensesInRange.filter(item => item.category === 'impostos').reduce((acc, item) => acc + (item.value || 0), 0)
-  const operationalExpenses = expensesInRange.filter(item => item.category !== 'impostos').reduce((acc, item) => acc + (item.value || 0), 0)
+  const operationalExpenses = expensesInRange.filter(item => item.category !== 'impostos').reduce((acc, item) => acc + (item.value || 0), 0) + recurringExpenseTotal
   const operatingProfit = grossRevenue - surgeryCostTotal - consultationCostTotal - productPurchaseTotal - operationalExpenses
   const netProfit = operatingProfit - taxExpenses
 
@@ -139,6 +248,18 @@ export function buildMetrics(rawData, options = {}) {
     }
   })
 
+  recurringInRange.forEach(item => {
+    const value = Number(item.valor || 0)
+    if (value <= 0 || !item.autoMarkAsPaid) return
+    if (item.tipo === 'receita' && extraRevenues.some(entry => matchesRecurringRevenue(entry, item))) return
+    if (item.tipo === 'despesa' && expenses.some(entry => matchesRecurringExpense(entry, item))) return
+    if (item.tipo === 'receita') {
+      entriesFinancial.push({ id:`entry-recurring-${item.id}-${item.dueDate}`, description:item.descricao || 'Receita recorrente', category:item.categoria || 'outras_receitas', value, date:item.dueDate, origin:'recorrencia_receita', referenceId:item.id })
+    } else {
+      exitsFinancial.push({ id:`exit-recurring-${item.id}-${item.dueDate}`, description:item.descricao || 'Despesa recorrente', category:item.categoria || 'outros', value, date:item.dueDate, origin:'recorrencia_despesa', referenceId:item.id })
+    }
+  })
+
   const cashFlowEntries = [...entriesFinancial.map(item => ({ ...item, type:'entrada' })), ...exitsFinancial.map(item => ({ ...item, type:'saida' }))].sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   const cashIn = entriesFinancial.reduce((acc, item) => acc + item.value, 0)
   const cashOut = exitsFinancial.reduce((acc, item) => acc + item.value, 0)
@@ -147,9 +268,13 @@ export function buildMetrics(rawData, options = {}) {
   const accountsReceivable = [
     ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:'cirurgia', value:item.totalValue || 0, dueDate:item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
     ...consultations.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`consultation-${item.id}`, source:'consulta', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:item.paymentType || 'consulta', value:item.value || 0, dueDate:item.forecastPaymentDate || item.date, status:item.paymentStatus, description:item.consultationType })),
+    ...recurringUntilBalance.filter(item => item.tipo === 'receita' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item))).map(item => ({ id:`recurrence-income-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, patient:'Recorrência', category:item.categoria || 'outras_receitas', value:Number(item.valor || 0), dueDate:item.dueDate, status:'pendente', description:item.descricao || 'Receita fixa' })),
   ]
 
-  const accountsPayable = expenses.filter(item => item.status !== 'pago' && item.status !== 'cancelado' && onOrBefore(item.dueDate, balanceDate)).map(item => ({ id:`expense-${item.id}`, source:'despesa', sourceId:item.id, supplier:item.description, category:item.category, value:item.value || 0, dueDate:item.dueDate, status:item.status }))
+  const accountsPayable = [
+    ...expenses.filter(item => item.status !== 'pago' && item.status !== 'cancelado' && onOrBefore(item.dueDate, balanceDate)).map(item => ({ id:`expense-${item.id}`, source:'despesa', sourceId:item.id, supplier:item.description, category:item.category, value:item.value || 0, dueDate:item.dueDate, status:item.status })),
+    ...recurringUntilBalance.filter(item => item.tipo === 'despesa' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !expenses.some(entry => matchesRecurringExpense(entry, item))).map(item => ({ id:`recurrence-expense-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, supplier:item.descricao || 'Despesa fixa', category:item.categoria || 'outros', value:Number(item.valor || 0), dueDate:item.dueDate, status:'pendente' })),
+  ]
 
   const receivablesOpenTotal = accountsReceivable.reduce((acc, item) => acc + item.value, 0)
   const payablesOpenTotal = accountsPayable.reduce((acc, item) => acc + item.value, 0)
@@ -172,6 +297,13 @@ export function buildMetrics(rawData, options = {}) {
   consultations.filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).forEach(item => {
     const consultationInvoiceCost = consultationCosts(item)
     if (consultationInvoiceCost > 0) cumulativeEntries.push({ type:'saida', value:consultationInvoiceCost })
+  })
+  recurringUntilBalance.filter(item => item.autoMarkAsPaid).forEach(item => {
+    const value = Number(item.valor || 0)
+    if (value <= 0) return
+    if (item.tipo === 'receita' && extraRevenues.some(entry => matchesRecurringRevenue(entry, item))) return
+    if (item.tipo === 'despesa' && expenses.some(entry => matchesRecurringExpense(entry, item))) return
+    cumulativeEntries.push({ type:item.tipo === 'receita' ? 'entrada' : 'saida', value })
   })
 
   const cashAsset = cumulativeEntries.reduce((acc, item) => acc + (item.type === 'entrada' ? item.value : -item.value), 0)
@@ -202,6 +334,10 @@ export function buildMetrics(rawData, options = {}) {
     acc[item.category] = (acc[item.category] || 0) + (item.value || 0)
     return acc
   }, {})
+  recurringInRange.filter(item => item.tipo === 'despesa').forEach(item => {
+    const key = item.categoria || 'outros'
+    expensesByCategory[key] = (expensesByCategory[key] || 0) + (Number(item.valor) || 0)
+  })
 
   const surgeriesByMonth = {}
   surgeriesInRange.forEach(item => {

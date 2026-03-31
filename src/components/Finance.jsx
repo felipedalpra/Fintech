@@ -70,10 +70,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [showModal, setShowModal] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
   const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
+  const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const range = getPeriodRange(period, customRange)
-  const m = buildMetrics(data, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
+  const mergedData = useMemo(() => ({ ...data, recurrences }), [data, recurrences])
+  const m = buildMetrics(mergedData, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
   const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
 
   const prevRange = useMemo(() => {
@@ -83,12 +85,38 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   const mPrev = useMemo(() => {
     if (!prevRange.start) return null
-    return buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
-  }, [data, prevRange.start, prevRange.end])
+    return buildMetrics(mergedData, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
+  }, [mergedData, prevRange.start, prevRange.end])
 
   useEffect(() => {
     setTab(defaultTab)
   }, [defaultTab])
+
+  useEffect(() => {
+    let active = true
+    async function loadRecurrences() {
+      const { data:rows, error } = await supabase
+        .from('recorrencias')
+        .select('*')
+      if (!active) return
+      if (error) return
+      setRecurrences((rows || []).map(item => ({
+        id:item.id,
+        tipo:item.tipo || 'despesa',
+        descricao:item.descricao || '',
+        valor:Number(item.valor || 0),
+        categoria:item.categoria || 'outros',
+        frequencia:item.frequencia || 'mensal',
+        diaExecucao:Number(item.dia_execucao || 1),
+        dataInicio:item.data_inicio || '',
+        dataFim:item.data_fim || '',
+        autoMarkAsPaid:Boolean(item.auto_mark_as_paid),
+        ativo:item.ativo !== false,
+      })))
+    }
+    loadRecurrences()
+    return () => { active = false }
+  }, [])
 
   // FAB quick-add events
   useEffect(() => {
@@ -141,7 +169,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     const recurrenceDay = Math.max(1, Math.floor(Number(form.recurrenceDay || 1)))
     const safeDay = form.recurrenceFrequency === 'semanal' ? Math.min(7, recurrenceDay) : Math.min(31, recurrenceDay)
 
-    const { error } = await supabase.from('recorrencias').insert({
+    const payload = {
       user_id:userData.user.id,
       tipo,
       descricao:form.description,
@@ -153,9 +181,27 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       data_fim:form.recurrenceEndDate || null,
       auto_mark_as_paid:Boolean(form.recurrenceAutoMarkAsPaid),
       ativo:Boolean(form.recurrenceActive),
-    })
+    }
+
+    const { data:created, error } = await supabase.from('recorrencias').insert(payload).select('*').single()
 
     if (error) throw error
+
+    if (created) {
+      setRecurrences(current => [...current, {
+        id:created.id,
+        tipo:created.tipo || tipo,
+        descricao:created.descricao || form.description,
+        valor:Number(created.valor || form.value || 0),
+        categoria:created.categoria || form.category || 'outros',
+        frequencia:created.frequencia || form.recurrenceFrequency || 'mensal',
+        diaExecucao:Number(created.dia_execucao || form.recurrenceDay || 1),
+        dataInicio:created.data_inicio || form.recurrenceStartDate || today(),
+        dataFim:created.data_fim || form.recurrenceEndDate || '',
+        autoMarkAsPaid:Boolean(created.auto_mark_as_paid),
+        ativo:created.ativo !== false,
+      }])
+    }
   }
 
   const save = async () => {
@@ -203,6 +249,17 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }
 
   const markReceivableAsPaid = item => {
+    if (item.source === 'recorrencia') {
+      const exists = data.extraRevenues.some(record => record.description === item.description && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.date === item.dueDate)
+      if (!exists) {
+        setData(current => ({
+          ...current,
+          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.dueDate }],
+        }))
+      }
+      toast('Recorrência marcada como recebida.')
+      return
+    }
     if (item.source === 'cirurgia') {
       setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
     }
@@ -212,9 +269,38 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     toast('Marcado como recebido.')
   }
 
+  const markReceivableAsPending = item => {
+    if (item.source !== 'recorrencia') return
+    setData(current => ({
+      ...current,
+      extraRevenues:current.extraRevenues.filter(record => !(record.description === item.description && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.date === item.dueDate)),
+    }))
+    toast('Recorrência marcada como pendente.', 'warning')
+  }
+
   const markExpenseAsPaid = item => {
+    if (item.source === 'recorrencia') {
+      const exists = data.expenses.some(record => record.description === item.supplier && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.dueDate === item.dueDate)
+      if (!exists) {
+        setData(current => ({
+          ...current,
+          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', value:item.value || 0, dueDate:item.dueDate, paymentDate:today(), status:'pago' }],
+        }))
+      }
+      toast('Recorrência marcada como paga.')
+      return
+    }
     setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:today() } : record) }))
     toast('Despesa marcada como paga.')
+  }
+
+  const markExpenseAsPending = item => {
+    if (item.source !== 'recorrencia') return
+    setData(current => ({
+      ...current,
+      expenses:current.expenses.filter(record => !(record.description === item.supplier && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.dueDate === item.dueDate)),
+    }))
+    toast('Recorrência marcada como pendente.', 'warning')
   }
 
   const removeRecord = record => {
@@ -259,6 +345,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }, [m.expensesByCategory])
 
   const maxExpense = topExpenseCategories.length > 0 ? topExpenseCategories[0].total : 1
+  const dueAlerts = useMemo(() => buildDueAlerts(m.accountsPayable, m.accountsReceivable), [m.accountsPayable, m.accountsReceivable])
 
   // Revenue by origin totals for entradas tab
   const revenueOrigins = useMemo(() => {
@@ -310,6 +397,31 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           return <Card key={label} style={{ padding:18 }}><div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{label}</div><div style={{ fontSize:22, fontWeight:800, color:resolvedColor }}>{money(value)}</div></Card>
         })}
       </div>
+
+      {(dueAlerts.overdue.length > 0 || dueAlerts.dueSoon.length > 0) && (
+        <Card style={{ padding:16, border:`1px solid ${C.yellow}55` }}>
+          <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Alertas de vencimento</div>
+            <div style={{ color:C.textSub, fontSize:12 }}>
+              {dueAlerts.overdue.length} vencida(s) · {dueAlerts.dueSoon.length} vencendo em até 3 dias
+            </div>
+          </div>
+          <div style={{ display:'grid', gap:8 }}>
+            {dueAlerts.overdue.slice(0, 4).map(item => (
+              <div key={`overdue-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
+                <span style={{ color:C.red, fontSize:12 }}>Vencida: {item.label} · {item.dueDate}</span>
+                <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
+              </div>
+            ))}
+            {dueAlerts.dueSoon.slice(0, 4).map(item => (
+              <div key={`soon-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
+                <span style={{ color:C.yellow, fontSize:12 }}>A vencer: {item.label} · {item.dueDate} ({item.days} dia(s))</span>
+                <span style={{ color:C.yellow, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {tab === 'entradas' && <>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
@@ -373,9 +485,29 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={m.exitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
-      {tab === 'receber' && <><SectionTitle title="Contas a receber" subtitle="Valores ainda não recebidos de cirurgias e consultas." /><RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." /></>}
+      {tab === 'receber' && <>
+        <SectionTitle title="Contas a receber" subtitle="Valores ainda não recebidos de cirurgias, consultas e recorrências." />
+        <MonthlyAccountsSummary
+          title="Recebíveis por mês"
+          color={C.green}
+          rows={groupAccountsByMonth(m.accountsReceivable)}
+          money={money}
+          emptyMessage="Sem recebíveis agrupados por mês."
+        />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+      </>}
 
-      {tab === 'pagar' && <><SectionTitle title="Contas a pagar" subtitle="Despesas ainda não liquidadas pela clínica." /><RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." /></>}
+      {tab === 'pagar' && <>
+        <SectionTitle title="Contas a pagar" subtitle="Despesas ainda não liquidadas da clínica, incluindo recorrências fixas." />
+        <MonthlyAccountsSummary
+          title="Pagáveis por mês"
+          color={C.red}
+          rows={groupAccountsByMonth(m.accountsPayable)}
+          money={money}
+          emptyMessage="Sem contas a pagar agrupadas por mês."
+        />
+        <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
+      </>}
 
       {tab === 'dre' && (
         <Card>
@@ -704,6 +836,62 @@ function BalanceList({ items, color, onEdit, onDelete, emptyMessage, hidden }) {
       </div>
     </div>
   ))
+}
+
+function groupAccountsByMonth(items) {
+  const grouped = {}
+  items.forEach(item => {
+    const dueDate = String(item.dueDate || '')
+    const key = dueDate.length >= 7 ? dueDate.slice(0, 7) : dueDate
+    if (!key) return
+    if (!grouped[key]) grouped[key] = { month:key, total:0, count:0 }
+    grouped[key].total += Number(item.value || 0)
+    grouped[key].count += 1
+  })
+  return Object.values(grouped).sort((a, b) => a.month.localeCompare(b.month))
+}
+
+function MonthlyAccountsSummary({ title, color, rows, money, emptyMessage }) {
+  return (
+    <Card style={{ padding:16 }}>
+      <div style={{ fontSize:12, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:700, marginBottom:10 }}>{title}</div>
+      {rows.length === 0 ? (
+        <div style={{ color:C.textDim, fontSize:13 }}>{emptyMessage}</div>
+      ) : (
+        <div style={{ display:'grid', gap:8 }}>
+          {rows.map(item => (
+            <div key={item.month} style={{ display:'flex', justifyContent:'space-between', gap:16, alignItems:'center', borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
+              <span style={{ color:C.textSub }}>{item.month} · {item.count} lançamento(s)</span>
+              <span style={{ color, fontWeight:700 }}>{money(item.total)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function buildDueAlerts(accountsPayable, accountsReceivable) {
+  const todayDate = new Date(`${today()}T00:00:00`)
+  const openItems = [
+    ...(accountsPayable || []).map(item => ({ id:`p-${item.id}`, dueDate:item.dueDate, value:item.value || 0, label:item.supplier || 'Conta a pagar' })),
+    ...(accountsReceivable || []).map(item => ({ id:`r-${item.id}`, dueDate:item.dueDate, value:item.value || 0, label:item.description || 'Conta a receber' })),
+  ].filter(item => item.dueDate)
+
+  const overdue = []
+  const dueSoon = []
+
+  openItems.forEach(item => {
+    const due = new Date(`${item.dueDate}T00:00:00`)
+    if (Number.isNaN(due.getTime())) return
+    const days = Math.ceil((due.getTime() - todayDate.getTime()) / 86400000)
+    if (days < 0) overdue.push({ ...item, days })
+    if (days >= 0 && days <= 3) dueSoon.push({ ...item, days })
+  })
+
+  overdue.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  dueSoon.sort((a, b) => a.days - b.days)
+  return { overdue, dueSoon }
 }
 
 function FormActions({ onCancel, onSave, disabled }) {
