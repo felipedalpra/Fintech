@@ -142,6 +142,18 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     return Object.values(grouped).sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   }, [m])
 
+  const flowSummary = useMemo(() => {
+    const totals = m.cashFlowEntries.reduce((acc, item) => {
+      if (item.type === 'entrada') acc.entradas += Number(item.value || 0)
+      if (item.type === 'saida') acc.saidas += Number(item.value || 0)
+      return acc
+    }, { entradas:0, saidas:0 })
+    return {
+      ...totals,
+      resultado:totals.entradas - totals.saidas,
+    }
+  }, [m.cashFlowEntries])
+
   const openAdd = type => {
     const defaults = {
       extra:EXTRA_REVENUE_EMPTY,
@@ -629,7 +641,24 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
       {tab === 'balanco' && <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:16 }}><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Ativos complementares" subtitle="Banco, aplicações e outros ativos fora do caixa operacional." compact /><Btn onClick={() => openAdd('asset')} style={{ padding:'7px 12px' }}>+ Ativo</Btn></div><BalanceList items={data.assets} color={C.green} onEdit={item => openEdit('asset', item)} onDelete={item => setConfirmState({ type:'asset', id:item.id })} emptyMessage="Nenhum ativo complementar." hidden={financialPrivacyMode} /></Card><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Passivos complementares" subtitle="Empréstimos, obrigações e passivos extras." compact /><Btn onClick={() => openAdd('liability')} style={{ padding:'7px 12px' }}>+ Passivo</Btn></div><BalanceList items={data.liabilities} color={C.red} onEdit={item => openEdit('liability', item)} onDelete={item => setConfirmState({ type:'liability', id:item.id })} emptyMessage="Nenhum passivo complementar." hidden={financialPrivacyMode} /></Card><Card style={{ gridColumn:'1 / -1' }}><SectionTitle title="Balanço patrimonial automático" subtitle="Posição financeira consolidada na data selecionada." /><div style={{ marginTop:8 }}>{[['Caixa', m.cashBalance, C.cyan], ['Contas a receber', m.receivablesOpenTotal, C.green], ['Banco e outros ativos', data.assets.reduce((acc, item) => acc + (item.value || 0), 0), C.accent], ['Contas a pagar', m.payablesOpenTotal, C.red], ['Passivos complementares', data.liabilities.reduce((acc, item) => acc + (item.value || 0), 0), C.red], ['Lucros acumulados / patrimônio', m.equity, m.equity >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'12px 0', borderTop:`1px solid ${C.border}22`, alignItems:'center', flexWrap:'wrap' }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{money(value)}</span></div>)}</div></Card></div>}
 
-      {tab === 'fluxo' && <><SectionTitle title="Fluxo de caixa" subtitle="Entradas e saídas efetivamente realizadas, agrupadas por data." /><RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[item.date, <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." /></>}
+      {tab === 'fluxo' && <>
+        <SectionTitle title="Fluxo de caixa" subtitle="Entradas e saídas efetivamente realizadas, agrupadas por data." />
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:12, marginBottom:12 }}>
+          <Card style={{ padding:16 }}>
+            <div style={{ color:C.textSub, fontSize:12, marginBottom:4 }}>Entradas no período</div>
+            <div style={{ color:C.green, fontSize:20, fontWeight:700 }}>{money(flowSummary.entradas)}</div>
+          </Card>
+          <Card style={{ padding:16 }}>
+            <div style={{ color:C.textSub, fontSize:12, marginBottom:4 }}>Saídas no período</div>
+            <div style={{ color:C.red, fontSize:20, fontWeight:700 }}>{money(flowSummary.saidas)}</div>
+          </Card>
+          <Card style={{ padding:16 }}>
+            <div style={{ color:C.textSub, fontSize:12, marginBottom:4 }}>Resultado de caixa do período</div>
+            <div style={{ color:flowSummary.resultado >= 0 ? C.green : C.red, fontSize:20, fontWeight:700 }}>{money(flowSummary.resultado)}</div>
+          </Card>
+        </div>
+        <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[item.date, <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." />
+      </>}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
         {modalType === 'extra' && (
