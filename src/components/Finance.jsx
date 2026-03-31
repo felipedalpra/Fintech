@@ -69,6 +69,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [editing, setEditing] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
+  const [paymentConfirmState, setPaymentConfirmState] = useState(null)
   const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
@@ -291,29 +292,26 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }
 
   const markExpenseAsPaid = item => {
-    setConfirmState({
-      action:'mark-expense-paid',
+    setPaymentConfirmState({
       item,
-      title:'Confirmar pagamento',
-      message:`Confirmar pagamento de ${money(item.value || 0)} em "${item.supplier || item.description || 'despesa'}"?`,
-      confirmLabel:'Marcar como pago',
-      confirmVariant:'success',
+      paidToday:'sim',
+      paymentDate:today(),
     })
   }
 
-  const applyMarkExpenseAsPaid = item => {
+  const applyMarkExpenseAsPaid = (item, paidDate) => {
     if (item.source === 'recorrencia') {
       const exists = data.expenses.some(record => record.description === item.supplier && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.dueDate === item.dueDate)
       if (!exists) {
         setData(current => ({
           ...current,
-          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', value:item.value || 0, dueDate:item.dueDate, paymentDate:today(), status:'pago' }],
+          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', value:item.value || 0, dueDate:item.dueDate, paymentDate:paidDate, status:'pago' }],
         }))
       }
       toast('Recorrência marcada como paga.')
       return
     }
-    setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:today() } : record) }))
+    setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
     toast('Despesa marcada como paga.')
   }
 
@@ -334,16 +332,23 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   const handleConfirmAction = () => {
     if (!confirmState) return
-    if (confirmState.action === 'mark-expense-paid') {
-      applyMarkExpenseAsPaid(confirmState.item)
-      return
-    }
     if (confirmState.action === 'delete-expense') {
       setData(current => ({ ...current, expenses:current.expenses.filter(record => record.id !== confirmState.id) }))
       toast('Saída removida.', 'warning')
       return
     }
     removeRecord(confirmState)
+  }
+
+  const confirmExpensePayment = () => {
+    if (!paymentConfirmState?.item) return
+    const paidDate = paymentConfirmState.paidToday === 'sim' ? today() : paymentConfirmState.paymentDate
+    if (!paidDate) {
+      toast('Informe a data de pagamento.', 'warning')
+      return
+    }
+    applyMarkExpenseAsPaid(paymentConfirmState.item, paidDate)
+    setPaymentConfirmState(null)
   }
 
   const tabs = [
@@ -735,6 +740,31 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         confirmLabel={confirmState?.confirmLabel}
         confirmVariant={confirmState?.confirmVariant}
       />
+      <Modal open={!!paymentConfirmState} onClose={() => setPaymentConfirmState(null)} title="Confirmar pagamento da despesa" width={460}>
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ color:C.textSub, fontSize:13 }}>
+            {paymentConfirmState?.item ? `Pagamento de ${money(paymentConfirmState.item.value || 0)} em "${paymentConfirmState.item.supplier || paymentConfirmState.item.description || 'despesa'}".` : ''}
+          </div>
+          <FInput
+            label="A despesa foi paga hoje?"
+            value={paymentConfirmState?.paidToday || 'sim'}
+            onChange={value => setPaymentConfirmState(current => ({ ...(current || {}), paidToday:value, paymentDate:value === 'sim' ? today() : '' }))}
+            options={[{ v:'sim', l:'Sim' }, { v:'nao', l:'Não' }]}
+          />
+          {paymentConfirmState?.paidToday === 'nao' && (
+            <FInput
+              label="Data real do pagamento"
+              type="date"
+              value={paymentConfirmState?.paymentDate || ''}
+              onChange={value => setPaymentConfirmState(current => ({ ...(current || {}), paymentDate:value }))}
+            />
+          )}
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
+            <Btn variant="ghost" onClick={() => setPaymentConfirmState(null)}>Cancelar</Btn>
+            <Btn variant="success" onClick={confirmExpensePayment}>Confirmar pagamento</Btn>
+          </div>
+        </div>
+      </Modal>
       <ExportModal open={showExport} onClose={() => setShowExport(false)} data={data} />
     </div>
   )
