@@ -143,8 +143,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     return Object.values(grouped).sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   }, [m])
   const dueAlerts = useMemo(() => buildDueAlerts(m.accountsPayable, m.accountsReceivable), [m.accountsPayable, m.accountsReceivable])
-  const monthlyView = useMemo(() => buildMonthlyFinancialView(mergedData, recurrences), [mergedData, recurrences])
-  const selectedMonthRows = useMemo(() => monthlyView.rows.filter(item => monthKey(item.dueDate) === selectedMonth), [monthlyView.rows, selectedMonth])
+  const monthlyView = useMemo(() => {
+    try {
+      return buildMonthlyFinancialView(mergedData, recurrences)
+    } catch (error) {
+      console.error('Falha ao montar visão mensal do financeiro', error)
+      return { months:[], rows:[] }
+    }
+  }, [mergedData, recurrences])
+  const selectedMonthRows = useMemo(() => (monthlyView.rows || []).filter(item => monthKey(item?.dueDate || '') === selectedMonth), [monthlyView.rows, selectedMonth])
   const monthSummary = useMemo(() => summarizeMonthRows(selectedMonthRows), [selectedMonthRows])
 
   useEffect(() => {
