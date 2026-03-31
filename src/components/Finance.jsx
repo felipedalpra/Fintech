@@ -73,7 +73,6 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
   const [showExport, setShowExport] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState(monthKey(today()))
   const range = getPeriodRange(period, customRange)
   const mergedData = useMemo(() => ({ ...data, recurrences }), [data, recurrences])
   const m = buildMetrics(mergedData, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
@@ -142,24 +141,6 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     })
     return Object.values(grouped).sort((a, b) => (a.date || '').localeCompare(b.date || ''))
   }, [m])
-  const dueAlerts = useMemo(() => buildDueAlerts(m.accountsPayable, m.accountsReceivable), [m.accountsPayable, m.accountsReceivable])
-  const monthlyView = useMemo(() => {
-    try {
-      return buildMonthlyFinancialView(mergedData, recurrences)
-    } catch (error) {
-      console.error('Falha ao montar visão mensal do financeiro', error)
-      return { months:[], rows:[] }
-    }
-  }, [mergedData, recurrences])
-  const selectedMonthRows = useMemo(() => (monthlyView.rows || []).filter(item => monthKey(item?.dueDate || '') === selectedMonth), [monthlyView.rows, selectedMonth])
-  const monthSummary = useMemo(() => summarizeMonthRows(selectedMonthRows), [selectedMonthRows])
-
-  useEffect(() => {
-    if (!monthlyView.months.length) return
-    if (!monthlyView.months.some(item => item.key === selectedMonth)) {
-      setSelectedMonth(monthlyView.months[0].key)
-    }
-  }, [monthlyView.months, selectedMonth])
 
   const openAdd = type => {
     const defaults = {
@@ -333,7 +314,6 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     ['saidas', 'Saídas'],
     ['receber', 'Contas a receber'],
     ['pagar', 'Contas a pagar'],
-    ['mensal', 'Visão mensal'],
     ['dre', 'DRE'],
     ['balanco', 'Balanço'],
     ['fluxo', 'Fluxo de caixa'],
@@ -365,6 +345,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }, [m.expensesByCategory])
 
   const maxExpense = topExpenseCategories.length > 0 ? topExpenseCategories[0].total : 1
+  const dueAlerts = useMemo(() => buildDueAlerts(m.accountsPayable, m.accountsReceivable), [m.accountsPayable, m.accountsReceivable])
+
   // Revenue by origin totals for entradas tab
   const revenueOrigins = useMemo(() => {
     const cirurgias = m.surgeryRevenue
@@ -526,69 +508,6 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         />
         <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={m.accountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
       </>}
-
-      {tab === 'mensal' && (
-        <>
-          <SectionTitle title="Visão mensal detalhada" subtitle="Veja mês a mês receitas e despesas fixas/variáveis, com situação de prazo." />
-          <Card style={{ padding:16 }}>
-            <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-              <FInput
-                label="Mês"
-                value={selectedMonth}
-                onChange={setSelectedMonth}
-                options={monthlyView.months.map(item => ({ v:item.key, l:item.label }))}
-              />
-              <div style={{ color:C.textDim, fontSize:12, marginTop:8 }}>
-                {selectedMonthRows.length} lançamento(s) no mês selecionado
-              </div>
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:10, marginTop:12 }}>
-              <div style={monthCardStyle}>
-                <div style={monthCardLabelStyle}>Receitas fixas</div>
-                <div style={{ color:C.green, fontWeight:800 }}>{money(monthSummary.fixedRevenue)}</div>
-              </div>
-              <div style={monthCardStyle}>
-                <div style={monthCardLabelStyle}>Receitas variáveis</div>
-                <div style={{ color:C.green, fontWeight:800 }}>{money(monthSummary.variableRevenue)}</div>
-              </div>
-              <div style={monthCardStyle}>
-                <div style={monthCardLabelStyle}>Despesas fixas</div>
-                <div style={{ color:C.red, fontWeight:800 }}>{money(monthSummary.fixedExpense)}</div>
-              </div>
-              <div style={monthCardStyle}>
-                <div style={monthCardLabelStyle}>Despesas variáveis</div>
-                <div style={{ color:C.red, fontWeight:800 }}>{money(monthSummary.variableExpense)}</div>
-              </div>
-              <div style={monthCardStyle}>
-                <div style={monthCardLabelStyle}>Saldo do mês</div>
-                <div style={{ color:monthSummary.balance >= 0 ? C.green : C.red, fontWeight:800 }}>{money(monthSummary.balance)}</div>
-              </div>
-            </div>
-          </Card>
-
-          <RecordTable
-            columns={['Mês', 'Tipo', 'Natureza', 'Categoria', 'Descrição', 'Vencimento', 'Pagamento', 'Prazo', 'Valor']}
-            sortableColumns={[0, 1, 2, 3, 5]}
-            rows={selectedMonthRows.map(item => ({
-              key:item.id,
-              cells:[
-                formatMonthLabel(item.dueDate),
-                item.kind,
-                item.nature,
-                item.category,
-                item.description,
-                item.dueDate,
-                item.paidDate || '-',
-                <span style={{ color:item.deadlineTone }}>{item.deadlineLabel}</span>,
-                <span style={{ color:item.kind === 'Receita' ? C.green : C.red, fontWeight:700 }}>{money(item.value)}</span>,
-              ],
-              rawCells:[item.dueDate, item.kind, item.nature, item.category, item.description, item.dueDate, item.paidDate || '', item.deadlineLabel, item.value],
-            }))}
-            emptyMessage="Sem lançamentos no mês selecionado."
-          />
-        </>
-      )}
 
       {tab === 'dre' && (
         <Card>
@@ -973,308 +892,6 @@ function buildDueAlerts(accountsPayable, accountsReceivable) {
   overdue.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
   dueSoon.sort((a, b) => a.days - b.days)
   return { overdue, dueSoon }
-}
-
-function buildMonthlyFinancialView(data, recurrences) {
-  const months = new Map()
-  const rows = []
-  const expenseEntries = data.expenses || []
-  const revenueEntries = data.extraRevenues || []
-  const surgeries = data.surgeries || []
-  const consultations = data.consultations || []
-  const productSales = data.productSales || []
-  const recurrenceItems = generateRecurringOccurrencesForView(recurrences || [], currentYearStart(), futureYearEnd())
-
-  const expenseMatched = new Set()
-  const revenueMatched = new Set()
-
-  recurrenceItems.forEach(rec => {
-    const due = rec.dueDate
-    const paidExpenseIndex = expenseEntries.findIndex(item => (
-      item.description === rec.description
-      && (item.category || 'outros') === (rec.category || 'outros')
-      && Number(item.value || 0) === Number(rec.value || 0)
-      && item.dueDate === due
-    ))
-    const paidRevenueIndex = revenueEntries.findIndex(item => (
-      item.description === rec.description
-      && (item.category || 'outras_receitas') === (rec.category || 'outras_receitas')
-      && Number(item.value || 0) === Number(rec.value || 0)
-      && item.date === due
-    ))
-
-    if (rec.kind === 'Despesa' && paidExpenseIndex >= 0) expenseMatched.add(paidExpenseIndex)
-    if (rec.kind === 'Receita' && paidRevenueIndex >= 0) revenueMatched.add(paidRevenueIndex)
-
-    const paidDate = rec.kind === 'Despesa'
-      ? (paidExpenseIndex >= 0 ? (expenseEntries[paidExpenseIndex].paymentDate || due) : '')
-      : (paidRevenueIndex >= 0 ? due : '')
-    const status = computeDeadlineStatus(due, paidDate, rec.kind)
-    pushMonth(months, due)
-    rows.push({
-      id:`rec-${rec.id}-${due}`,
-      kind:rec.kind,
-      nature:'Fixa',
-      category:rec.category,
-      description:rec.description,
-      dueDate:due,
-      paidDate,
-      deadlineLabel:status.label,
-      deadlineTone:status.color,
-      value:Number(rec.value || 0),
-    })
-  })
-
-  expenseEntries.forEach((item, index) => {
-    if (expenseMatched.has(index)) return
-    const dueDate = item.dueDate || ''
-    if (!dueDate) return
-    const paidDate = item.paymentDate || ''
-    const status = computeDeadlineStatus(dueDate, paidDate, 'Despesa')
-    pushMonth(months, dueDate)
-    rows.push({
-      id:`exp-${item.id || index}`,
-      kind:'Despesa',
-      nature:'Variável',
-      category:item.category || 'outros',
-      description:item.description || 'Despesa',
-      dueDate,
-      paidDate,
-      deadlineLabel:status.label,
-      deadlineTone:status.color,
-      value:Number(item.value || 0),
-    })
-  })
-
-  revenueEntries.forEach((item, index) => {
-    if (revenueMatched.has(index)) return
-    const dueDate = item.date || ''
-    if (!dueDate) return
-    const status = computeDeadlineStatus(dueDate, dueDate, 'Receita')
-    pushMonth(months, dueDate)
-    rows.push({
-      id:`rev-${item.id || index}`,
-      kind:'Receita',
-      nature:'Variável',
-      category:item.category || 'outras_receitas',
-      description:item.description || 'Receita',
-      dueDate,
-      paidDate:dueDate,
-      deadlineLabel:status.label,
-      deadlineTone:status.color,
-      value:Number(item.value || 0),
-    })
-  })
-
-  surgeries.forEach(item => {
-    const dueDate = item.date || ''
-    if (!dueDate) return
-    const paidDate = item.paymentStatus === 'pago' ? (item.paymentDate || dueDate) : ''
-    const status = computeDeadlineStatus(dueDate, paidDate, 'Receita')
-    pushMonth(months, dueDate)
-    rows.push({
-      id:`surg-${item.id}`,
-      kind:'Receita',
-      nature:'Variável',
-      category:'cirurgia',
-      description:`Cirurgia - ${item.patient || item.id}`,
-      dueDate,
-      paidDate,
-      deadlineLabel:status.label,
-      deadlineTone:status.color,
-      value:Number(item.totalValue || 0),
-    })
-  })
-
-  consultations.forEach(item => {
-    const dueDate = item.forecastPaymentDate || item.date || ''
-    if (!dueDate) return
-    const paidDate = item.paymentStatus === 'pago' ? (item.paymentDate || dueDate) : ''
-    const status = computeDeadlineStatus(dueDate, paidDate, 'Receita')
-    pushMonth(months, dueDate)
-    rows.push({
-      id:`consult-${item.id}`,
-      kind:'Receita',
-      nature:'Variável',
-      category:'consulta',
-      description:`Consulta - ${item.patient || item.id}`,
-      dueDate,
-      paidDate,
-      deadlineLabel:status.label,
-      deadlineTone:status.color,
-      value:Number(item.value || 0),
-    })
-  })
-
-  productSales.forEach(item => {
-    const dueDate = item.saleDate || ''
-    if (!dueDate) return
-    const status = computeDeadlineStatus(dueDate, dueDate, 'Receita')
-    pushMonth(months, dueDate)
-    rows.push({
-      id:`sale-${item.id}`,
-      kind:'Receita',
-      nature:'Variável',
-      category:'venda_produto',
-      description:`Venda produto${item.patientName ? ` - ${item.patientName}` : ''}`,
-      dueDate,
-      paidDate:dueDate,
-      deadlineLabel:status.label,
-      deadlineTone:status.color,
-      value:Number(item.totalValue || 0),
-    })
-  })
-
-  const monthList = Array.from(months.keys()).sort((a, b) => b.localeCompare(a)).map(key => ({
-    key,
-    label:formatMonthKeyToLabel(key),
-  }))
-  rows.sort((a, b) => `${b.dueDate}${b.id}`.localeCompare(`${a.dueDate}${a.id}`))
-  return { months:monthList, rows }
-}
-
-function generateRecurringOccurrencesForView(recurrences, startDate, endDate) {
-  const start = new Date(`${startDate}T00:00:00`)
-  const end = new Date(`${endDate}T00:00:00`)
-  const out = []
-  recurrences.filter(item => item.ativo !== false).forEach(item => {
-    const recStart = new Date(`${item.dataInicio || startDate}T00:00:00`)
-    const recEnd = item.dataFim ? new Date(`${item.dataFim}T00:00:00`) : end
-    const min = recStart > start ? recStart : start
-    const max = recEnd < end ? recEnd : end
-    if (min > max) return
-    const freq = item.frequencia || 'mensal'
-    const day = Math.max(1, Number(item.diaExecucao || 1))
-
-    if (freq === 'mensal') {
-      let cursor = new Date(min.getFullYear(), min.getMonth(), 1)
-      const last = new Date(max.getFullYear(), max.getMonth(), 1)
-      while (cursor <= last) {
-        const safeDay = Math.min(day, new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate())
-        const due = new Date(cursor.getFullYear(), cursor.getMonth(), safeDay)
-        if (due >= min && due <= max) out.push(recurrenceRow(item, due))
-        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
-      }
-      return
-    }
-
-    if (freq === 'semanal') {
-      const clamped = Math.min(7, day)
-      let cursor = new Date(min.getFullYear(), min.getMonth(), min.getDate())
-      while (cursor <= max) {
-        const dow = cursor.getDay() || 7
-        const diff = clamped - dow
-        const due = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + diff)
-        if (due >= min && due <= max) out.push(recurrenceRow(item, due))
-        cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7)
-      }
-      return
-    }
-
-    const anchor = new Date(`${item.dataInicio || startDate}T00:00:00`)
-    for (let year = min.getFullYear(); year <= max.getFullYear(); year += 1) {
-      const month = anchor.getMonth()
-      const safeDay = Math.min(day, new Date(year, month + 1, 0).getDate())
-      const due = new Date(year, month, safeDay)
-      if (due >= min && due <= max) out.push(recurrenceRow(item, due))
-    }
-  })
-  return out
-}
-
-function recurrenceRow(item, dueDate) {
-  return {
-    id:item.id,
-    kind:item.tipo === 'receita' ? 'Receita' : 'Despesa',
-    category:item.categoria || (item.tipo === 'receita' ? 'outras_receitas' : 'outros'),
-    description:item.descricao || 'Recorrência',
-    value:Number(item.valor || 0),
-    dueDate:toDateString(dueDate),
-  }
-}
-
-function summarizeMonthRows(rows) {
-  const summary = {
-    fixedRevenue:0,
-    variableRevenue:0,
-    fixedExpense:0,
-    variableExpense:0,
-    balance:0,
-  }
-  rows.forEach(item => {
-    const value = Number(item.value || 0)
-    if (item.kind === 'Receita' && item.nature === 'Fixa') summary.fixedRevenue += value
-    if (item.kind === 'Receita' && item.nature === 'Variável') summary.variableRevenue += value
-    if (item.kind === 'Despesa' && item.nature === 'Fixa') summary.fixedExpense += value
-    if (item.kind === 'Despesa' && item.nature === 'Variável') summary.variableExpense += value
-  })
-  summary.balance = summary.fixedRevenue + summary.variableRevenue - summary.fixedExpense - summary.variableExpense
-  return summary
-}
-
-function computeDeadlineStatus(dueDate, paidDate, kind) {
-  if (!dueDate) return { label:'Sem prazo', color:C.textDim }
-  const due = new Date(`${dueDate}T00:00:00`)
-  const now = new Date(`${today()}T00:00:00`)
-  const hasPaid = Boolean(paidDate)
-  if (hasPaid) {
-    const paid = new Date(`${paidDate}T00:00:00`)
-    const diff = Math.ceil((paid.getTime() - due.getTime()) / 86400000)
-    if (diff > 0) return { label:`${kind === 'Receita' ? 'Recebido' : 'Pago'} com atraso (${diff}d)`, color:C.yellow }
-    return { label:`${kind === 'Receita' ? 'Recebido' : 'Pago'} no prazo`, color:C.green }
-  }
-  const openDiff = Math.ceil((due.getTime() - now.getTime()) / 86400000)
-  if (openDiff < 0) return { label:`Em atraso (${Math.abs(openDiff)}d)`, color:C.red }
-  return { label:`Aberto (${openDiff}d)`, color:C.textSub }
-}
-
-function pushMonth(monthsMap, dateString) {
-  const key = monthKey(dateString)
-  if (!key) return
-  monthsMap.set(key, true)
-}
-
-function currentYearStart() {
-  const date = new Date()
-  return `${date.getFullYear()}-01-01`
-}
-
-function futureYearEnd() {
-  const date = new Date()
-  return `${date.getFullYear() + 1}-12-31`
-}
-
-function formatMonthKeyToLabel(key) {
-  const [year, month] = key.split('-').map(Number)
-  if (!year || !month) return key
-  return new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month:'long', year:'numeric' })
-}
-
-function formatMonthLabel(dateString) {
-  const key = monthKey(dateString)
-  return formatMonthKeyToLabel(key)
-}
-
-function toDateString(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-const monthCardStyle = {
-  border:`1px solid ${C.border}55`,
-  borderRadius:12,
-  padding:'10px 12px',
-  background:C.surface,
-}
-
-const monthCardLabelStyle = {
-  color:C.textDim,
-  fontSize:11,
-  textTransform:'uppercase',
-  letterSpacing:'0.06em',
-  marginBottom:6,
 }
 
 function FormActions({ onCancel, onSave, disabled }) {
