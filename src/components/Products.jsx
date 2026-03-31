@@ -25,6 +25,13 @@ const SALE_EMPTY = {
   saleDate:today(),
   paymentMethod:'pix',
   paymentMode:'unico',
+  paymentScheduleMode:'unica',
+  payment1Date:today(),
+  payment1Amount:0,
+  payment1Method:'pix',
+  payment2Date:today(),
+  payment2Amount:0,
+  payment2Method:'cartao',
   mixMethodA:'pix',
   mixMethodB:'cartao',
   mixAmountA:0,
@@ -58,6 +65,10 @@ const PAYMENT_METHODS = [
 const PAYMENT_MODES = [
   { v:'unico', l:'Único' },
   { v:'misto', l:'Misto (2 formas)' },
+]
+const PAYMENT_SCHEDULE_MODES = [
+  { v:'unica', l:'Pagamento em 1 data' },
+  { v:'duas_datas', l:'Pagamento em 2 datas' },
 ]
 const PAYMENT_METHOD_LABEL = {
   pix:'PIX',
@@ -124,6 +135,12 @@ export function Products({ data, setData }) {
       const product = productsById.get(form.productId)
       const unitValue = form.unitValue || product?.salePrice || 0
       const totalValue = form.totalValue || (unitValue * (form.quantity || 0))
+      const payments = form.paymentScheduleMode === 'duas_datas'
+        ? [
+          { date:form.payment1Date, amount:form.payment1Amount, method:form.payment1Method },
+          { date:form.payment2Date, amount:form.payment2Amount, method:form.payment2Method },
+        ]
+        : []
       const paymentMethod = encodePaymentMethod({
         paymentMode:form.paymentMode,
         paymentMethod:form.paymentMethod,
@@ -131,10 +148,33 @@ export function Products({ data, setData }) {
         mixMethodB:form.mixMethodB,
         mixAmountA:form.mixAmountA,
         mixAmountB:form.mixAmountB,
+        payments,
       })
+      const scheduledTotal = (form.payment1Amount || 0) + (form.payment2Amount || 0)
+      if (form.paymentScheduleMode === 'duas_datas' && (
+        !form.payment1Date
+        || !form.payment2Date
+        || !form.payment1Method
+        || !form.payment2Method
+        || scheduledTotal <= 0
+      )) return
       const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
-      if (form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
-      const { paymentMode, mixMethodA, mixMethodB, mixAmountA, mixAmountB, ...baseForm } = form
+      if (form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+      const {
+        paymentMode,
+        paymentScheduleMode,
+        payment1Date,
+        payment1Amount,
+        payment1Method,
+        payment2Date,
+        payment2Amount,
+        payment2Method,
+        mixMethodA,
+        mixMethodB,
+        mixAmountA,
+        mixAmountB,
+        ...baseForm
+      } = form
       setData(current => ({
         ...current,
         productSales: [...current.productSales, {
@@ -262,9 +302,11 @@ export function Products({ data, setData }) {
           columns={['Data', 'Produto', 'Paciente', 'Qtd', 'Valor total', 'Pagamento', 'Ações']}
           rows={data.productSales.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')).map(item => {
             const payment = decodePaymentMethod(item.paymentMethod)
-            const paymentLabel = payment.paymentMode === 'misto'
-              ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
-              : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
+            const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
+              ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+              : payment.paymentMode === 'misto'
+                ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+                : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
             return {
               key:item.id,
               cells:[
@@ -340,9 +382,22 @@ export function Products({ data, setData }) {
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
           <FInput label="Data da venda" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value }))} type="date" />
-          <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />
-          {form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
-          {form.paymentMode === 'misto' && (
+          <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
+          {form.paymentScheduleMode === 'duas_datas' && (
+            <>
+              <FInput label="Data pagamento 1" value={form.payment1Date} onChange={value => setForm(current => ({ ...current, payment1Date:value }))} type="date" />
+              <FInput label="Forma pagamento 1" value={form.payment1Method} onChange={value => setForm(current => ({ ...current, payment1Method:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor pago 1" value={form.payment1Amount} onChange={value => setForm(current => ({ ...current, payment1Amount:value }))} type="number" placeholder="0" />
+              <div />
+              <FInput label="Data pagamento 2" value={form.payment2Date} onChange={value => setForm(current => ({ ...current, payment2Date:value }))} type="date" />
+              <FInput label="Forma pagamento 2" value={form.payment2Method} onChange={value => setForm(current => ({ ...current, payment2Method:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor pago 2" value={form.payment2Amount} onChange={value => setForm(current => ({ ...current, payment2Amount:value }))} type="number" placeholder="0" />
+              <div />
+            </>
+          )}
+          {form.paymentScheduleMode !== 'duas_datas' && <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (
             <>
               <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
               <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />

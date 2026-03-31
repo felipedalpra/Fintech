@@ -15,6 +15,10 @@ const PAYMENT_MODES = [
   { v:'unico', l:'Único' },
   { v:'misto', l:'Misto (2 formas)' },
 ]
+const PAYMENT_SCHEDULE_MODES = [
+  { v:'unica', l:'Pagamento em 1 data' },
+  { v:'duas_datas', l:'Pagamento em 2 datas' },
+]
 const PAYMENT_METHOD_LABEL = {
   pix:'PIX',
   cartao:'Cartão',
@@ -47,6 +51,13 @@ export function Sales({ data, setData }) {
     date:today(),
     paymentMethod:'pix',
     paymentMode:'unico',
+    paymentScheduleMode:'unica',
+    payment1Date:today(),
+    payment1Amount:0,
+    payment1Method:'pix',
+    payment2Date:today(),
+    payment2Amount:0,
+    payment2Method:'cartao',
     mixMethodA:'pix',
     mixMethodB:'cartao',
     mixAmountA:0,
@@ -80,7 +91,18 @@ export function Sales({ data, setData }) {
 
   const openEdit = item => {
     const payment = decodePaymentMethod(item.paymentMethod)
-    setForm({ ...item, ...payment })
+    const payment1 = payment.payments?.[0]
+    const payment2 = payment.payments?.[1]
+    setForm({
+      ...item,
+      ...payment,
+      payment1Date:payment1?.date || item.paymentDate || item.date || today(),
+      payment1Amount:payment1?.amount || 0,
+      payment1Method:payment1?.method || 'pix',
+      payment2Date:payment2?.date || item.paymentDate || item.date || today(),
+      payment2Amount:payment2?.amount || 0,
+      payment2Method:payment2?.method || 'cartao',
+    })
     setEditing(item.id)
     setShowModal(true)
   }
@@ -93,6 +115,12 @@ export function Sales({ data, setData }) {
     const installmentValue = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
       ? resolvedTotal / form.installmentCount
       : 0
+    const payments = form.paymentScheduleMode === 'duas_datas'
+      ? [
+        { date:form.payment1Date, amount:form.payment1Amount, method:form.payment1Method },
+        { date:form.payment2Date, amount:form.payment2Amount, method:form.payment2Method },
+      ]
+      : []
     const paymentMethod = encodePaymentMethod({
       paymentMode:form.paymentMode,
       paymentMethod:form.paymentMethod,
@@ -100,10 +128,33 @@ export function Sales({ data, setData }) {
       mixMethodB:form.mixMethodB,
       mixAmountA:form.mixAmountA,
       mixAmountB:form.mixAmountB,
+      payments,
     })
+    const scheduledTotal = (form.payment1Amount || 0) + (form.payment2Amount || 0)
+    if (form.paymentScheduleMode === 'duas_datas' && (
+      !form.payment1Date
+      || !form.payment2Date
+      || !form.payment1Method
+      || !form.payment2Method
+      || scheduledTotal <= 0
+    )) return
     const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
-    if (form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
-    const { paymentMode, mixMethodA, mixMethodB, mixAmountA, mixAmountB, ...baseForm } = form
+    if (form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+    const {
+      paymentMode,
+      paymentScheduleMode,
+      payment1Date,
+      payment1Amount,
+      payment1Method,
+      payment2Date,
+      payment2Amount,
+      payment2Method,
+      mixMethodA,
+      mixMethodB,
+      mixAmountA,
+      mixAmountB,
+      ...baseForm
+    } = form
     const nextRecord = {
       ...baseForm,
       totalValue:resolvedTotal,
@@ -200,6 +251,11 @@ export function Sales({ data, setData }) {
                 const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0))
                 const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
                 const payment = decodePaymentMethod(item.paymentMethod)
+                const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
+                  ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+                  : payment.paymentMode === 'misto'
+                    ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+                    : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
                 const instValue = item.paymentStatus === 'parcelado' && item.installmentCount >= 2
                   ? (item.installmentValue || (item.totalValue / item.installmentCount))
                   : null
@@ -218,9 +274,7 @@ export function Sales({ data, setData }) {
                     <td style={{ padding:'13px 18px' }}>
                       <Badge color={statusColor} small>{item.paymentStatus}</Badge>
                       <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>
-                        {payment.paymentMode === 'misto'
-                          ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
-                          : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')}
+                        {paymentLabel}
                       </div>
                       {item.paymentStatus === 'parcelado' && item.installmentCount >= 2 && instValue !== null && (
                         <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>{item.installmentCount}x de {fmt(instValue)}</div>
@@ -243,6 +297,11 @@ export function Sales({ data, setData }) {
             const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0))
             const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
             const payment = decodePaymentMethod(item.paymentMethod)
+            const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
+              ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+              : payment.paymentMode === 'misto'
+                ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
+                : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
             const instValue = item.paymentStatus === 'parcelado' && item.installmentCount >= 2
               ? (item.installmentValue || (item.totalValue / item.installmentCount))
               : null
@@ -257,7 +316,7 @@ export function Sales({ data, setData }) {
                   <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
                   <MetricPill label="Receita líquida" value={fmt(netRevenue)} color={netRevenue >= 0 ? C.accent : C.red} />
                   <MetricPill label="Pagamento" value={item.paymentStatus} color={statusColor} />
-                  <MetricPill label="Forma" value={payment.paymentMode === 'misto' ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}` : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')} color={C.textSub} />
+                  <MetricPill label="Forma" value={paymentLabel} color={C.textSub} />
                   {instValue !== null && <MetricPill label="Parcelas" value={`${item.installmentCount}x de ${fmt(instValue)}`} color={C.cyan} />}
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
@@ -277,9 +336,22 @@ export function Sales({ data, setData }) {
           <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
-          <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />
-          {form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
-          {form.paymentMode === 'misto' && (
+          <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
+          {form.paymentScheduleMode === 'duas_datas' && (
+            <>
+              <FInput label="Data pagamento 1" value={form.payment1Date} onChange={value => setForm(current => ({ ...current, payment1Date:value }))} type="date" />
+              <FInput label="Forma pagamento 1" value={form.payment1Method} onChange={value => setForm(current => ({ ...current, payment1Method:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor pago 1" value={form.payment1Amount} onChange={value => setForm(current => ({ ...current, payment1Amount:value }))} type="number" placeholder="0" />
+              <div />
+              <FInput label="Data pagamento 2" value={form.payment2Date} onChange={value => setForm(current => ({ ...current, payment2Date:value }))} type="date" />
+              <FInput label="Forma pagamento 2" value={form.payment2Method} onChange={value => setForm(current => ({ ...current, payment2Method:value }))} options={PAYMENT_METHODS} />
+              <FInput label="Valor pago 2" value={form.payment2Amount} onChange={value => setForm(current => ({ ...current, payment2Amount:value }))} type="number" placeholder="0" />
+              <div />
+            </>
+          )}
+          {form.paymentScheduleMode !== 'duas_datas' && <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (
             <>
               <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
               <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />
