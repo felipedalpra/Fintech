@@ -79,6 +79,16 @@ export function getPeriodRange(period, custom = {}) {
     }
   }
 
+  if (period === 'semester') {
+    const semesterStartMonth = month < 6 ? 0 : 6
+    const start = new Date(year, semesterStartMonth, 1)
+    const end = new Date(year, semesterStartMonth + 6, 0)
+    return {
+      start:`${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,
+      end:`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`,
+    }
+  }
+
   if (period === 'year') {
     return { start:`${year}-01-01`, end:`${year}-12-31` }
   }

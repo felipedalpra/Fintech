@@ -5,14 +5,61 @@ import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
-function prevMonthRange() {
-  const d = new Date()
-  d.setMonth(d.getMonth() - 1)
-  const y = d.getFullYear(), mo = d.getMonth()
-  return {
-    start: new Date(y, mo, 1).toISOString().split('T')[0],
-    end: new Date(y, mo + 1, 0).toISOString().split('T')[0],
+const PERIOD_OPTIONS = [
+  { value:'day', label:'Dia' },
+  { value:'month', label:'Mês' },
+  { value:'quarter', label:'Trimestre' },
+  { value:'semester', label:'Semestre' },
+  { value:'year', label:'Ano' },
+]
+
+function formatDateInput(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getPreviousPeriodRange(period, range) {
+  if (!range.start || !range.end) return { start:'', end:'' }
+  const start = new Date(`${range.start}T00:00:00`)
+  const end = new Date(`${range.end}T00:00:00`)
+
+  if (period === 'day') {
+    const prev = new Date(start)
+    prev.setDate(prev.getDate() - 1)
+    const date = formatDateInput(prev)
+    return { start:date, end:date }
   }
+
+  if (period === 'month') {
+    const prevMonthStart = new Date(start.getFullYear(), start.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(start.getFullYear(), start.getMonth(), 0)
+    return { start:formatDateInput(prevMonthStart), end:formatDateInput(prevMonthEnd) }
+  }
+
+  if (period === 'quarter') {
+    const prevQuarterEnd = new Date(start.getFullYear(), start.getMonth(), 0)
+    const prevQuarterStart = new Date(prevQuarterEnd.getFullYear(), Math.floor(prevQuarterEnd.getMonth() / 3) * 3, 1)
+    return { start:formatDateInput(prevQuarterStart), end:formatDateInput(prevQuarterEnd) }
+  }
+
+  if (period === 'semester') {
+    const prevSemesterEnd = new Date(start.getFullYear(), start.getMonth(), 0)
+    const prevSemesterStartMonth = prevSemesterEnd.getMonth() < 6 ? 0 : 6
+    const prevSemesterStart = new Date(prevSemesterEnd.getFullYear(), prevSemesterStartMonth, 1)
+    return { start:formatDateInput(prevSemesterStart), end:formatDateInput(prevSemesterEnd) }
+  }
+
+  if (period === 'year') {
+    const prevYear = start.getFullYear() - 1
+    return { start:`${prevYear}-01-01`, end:`${prevYear}-12-31` }
+  }
+
+  const diff = end.getTime() - start.getTime()
+  const prevEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000)
+  const prevStart = new Date(prevEnd.getTime() - diff)
+  return { start:formatDateInput(prevStart), end:formatDateInput(prevEnd) }
 }
 
 function Sparkline({ values, color }) {
@@ -61,11 +108,12 @@ export function Dashboard({ data, saveError }) {
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
   const [showComparison, setShowComparison] = useState(false)
+  const [period, setPeriod] = useState('month')
 
-  const monthRange = getPeriodRange('month')
-  const m = buildMetrics(data, { startDate: monthRange.start, endDate: monthRange.end, balanceDate: monthRange.end })
+  const periodRange = getPeriodRange(period)
+  const m = buildMetrics(data, { startDate: periodRange.start, endDate: periodRange.end, balanceDate: periodRange.end })
 
-  const prevRange = prevMonthRange()
+  const prevRange = getPreviousPeriodRange(period, periodRange)
   const pm = buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
 
   const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
@@ -179,11 +227,35 @@ export function Dashboard({ data, saveError }) {
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', width:isMobile ? '100%' : 'auto' }}>
+          <select
+            value={period}
+            onChange={event => setPeriod(event.target.value)}
+            style={{
+              minWidth:136,
+              borderRadius:999,
+              border:`1px solid ${C.border}`,
+              background:'transparent',
+              color:C.textSub,
+              padding:'9px 12px',
+              fontFamily:'inherit',
+              fontSize:12,
+              fontWeight:700,
+              textTransform:'uppercase',
+              letterSpacing:'0.06em',
+            }}
+          >
+            {PERIOD_OPTIONS.map(option => (
+              <option key={option.value} value={option.value} style={{ color:'#0B1020' }}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
           {/* Comparison toggle */}
           <button
             onClick={() => setShowComparison(v => !v)}
             aria-pressed={showComparison}
-            title="Comparar com o mês anterior"
+            title="Comparar com o período anterior"
             style={{
               display:'inline-flex',
               alignItems:'center',
@@ -199,7 +271,7 @@ export function Dashboard({ data, saveError }) {
               fontWeight:700,
             }}
           >
-            vs. mês anterior
+            vs. período anterior
           </button>
 
           {/* Privacy toggle */}
@@ -270,7 +342,7 @@ export function Dashboard({ data, saveError }) {
 
       <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1.25fr 1fr', gap:16 }}>
         <Card>
-          <h3 style={{ margin:'0 0 20px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Entradas x saídas por mês</h3>
+          <h3 style={{ margin:'0 0 20px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Entradas x saídas no período</h3>
           {monthKeys.length === 0 ? <p style={{ color:C.textDim, fontSize:13 }}>Ainda não há movimentações suficientes para montar o fluxo.</p> : (
             <>
               <div style={{ display:'flex', gap:isMobile ? 4 : 8, alignItems:'flex-end', height:160, overflowX:isMobile ? 'auto' : 'visible', paddingBottom:isMobile ? 8 : 0 }}>
