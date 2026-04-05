@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { C } from '../theme.js'
-import { fmt, fmtN, getPeriodRange } from '../utils.js'
+import { fmt, fmtN, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
@@ -20,46 +20,69 @@ function formatDateInput(date) {
   return `${year}-${month}-${day}`
 }
 
-function getPreviousPeriodRange(period, range) {
-  if (!range.start || !range.end) return { start:'', end:'' }
-  const start = new Date(`${range.start}T00:00:00`)
-  const end = new Date(`${range.end}T00:00:00`)
+function getDashboardPeriodRange(period) {
+  const base = new Date(`${today()}T00:00:00`)
+  const end = new Date(base.getFullYear(), base.getMonth(), base.getDate())
 
   if (period === 'day') {
-    const prev = new Date(start)
-    prev.setDate(prev.getDate() - 1)
-    const date = formatDateInput(prev)
+    const date = formatDateInput(end)
     return { start:date, end:date }
   }
 
   if (period === 'month') {
-    const prevMonthStart = new Date(start.getFullYear(), start.getMonth() - 1, 1)
-    const prevMonthEnd = new Date(start.getFullYear(), start.getMonth(), 0)
-    return { start:formatDateInput(prevMonthStart), end:formatDateInput(prevMonthEnd) }
+    const start = new Date(end.getFullYear(), end.getMonth(), 1)
+    return { start:formatDateInput(start), end:formatDateInput(end) }
   }
 
   if (period === 'quarter') {
-    const prevQuarterEnd = new Date(start.getFullYear(), start.getMonth(), 0)
-    const prevQuarterStart = new Date(prevQuarterEnd.getFullYear(), Math.floor(prevQuarterEnd.getMonth() / 3) * 3, 1)
-    return { start:formatDateInput(prevQuarterStart), end:formatDateInput(prevQuarterEnd) }
+    const start = new Date(end.getFullYear(), end.getMonth() - 2, 1)
+    return { start:formatDateInput(start), end:formatDateInput(end) }
   }
 
   if (period === 'semester') {
-    const prevSemesterEnd = new Date(start.getFullYear(), start.getMonth(), 0)
-    const prevSemesterStartMonth = prevSemesterEnd.getMonth() < 6 ? 0 : 6
-    const prevSemesterStart = new Date(prevSemesterEnd.getFullYear(), prevSemesterStartMonth, 1)
-    return { start:formatDateInput(prevSemesterStart), end:formatDateInput(prevSemesterEnd) }
+    const start = new Date(end.getFullYear(), end.getMonth() - 5, 1)
+    return { start:formatDateInput(start), end:formatDateInput(end) }
   }
 
   if (period === 'year') {
-    const prevYear = start.getFullYear() - 1
-    return { start:`${prevYear}-01-01`, end:`${prevYear}-12-31` }
+    const start = new Date(end.getFullYear(), end.getMonth() - 11, 1)
+    return { start:formatDateInput(start), end:formatDateInput(end) }
   }
 
-  const diff = end.getTime() - start.getTime()
+  return { start:'', end:'' }
+}
+
+function getPreviousPeriodRange(period, range) {
+  if (!range.start || !range.end) return { start:'', end:'' }
+  const start = new Date(`${range.start}T00:00:00`)
   const prevEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000)
-  const prevStart = new Date(prevEnd.getTime() - diff)
-  return { start:formatDateInput(prevStart), end:formatDateInput(prevEnd) }
+
+  if (period === 'day') {
+    const date = formatDateInput(prevEnd)
+    return { start:date, end:date }
+  }
+
+  if (period === 'month') {
+    const prevStart = new Date(prevEnd.getFullYear(), prevEnd.getMonth(), 1)
+    return { start:formatDateInput(prevStart), end:formatDateInput(prevEnd) }
+  }
+
+  if (period === 'quarter') {
+    const prevStart = new Date(prevEnd.getFullYear(), prevEnd.getMonth() - 2, 1)
+    return { start:formatDateInput(prevStart), end:formatDateInput(prevEnd) }
+  }
+
+  if (period === 'semester') {
+    const prevStart = new Date(prevEnd.getFullYear(), prevEnd.getMonth() - 5, 1)
+    return { start:formatDateInput(prevStart), end:formatDateInput(prevEnd) }
+  }
+
+  if (period === 'year') {
+    const prevStart = new Date(prevEnd.getFullYear(), prevEnd.getMonth() - 11, 1)
+    return { start:formatDateInput(prevStart), end:formatDateInput(prevEnd) }
+  }
+
+  return { start:'', end:'' }
 }
 
 function Sparkline({ values, color }) {
@@ -110,7 +133,7 @@ export function Dashboard({ data, saveError }) {
   const [showComparison, setShowComparison] = useState(false)
   const [period, setPeriod] = useState('month')
 
-  const periodRange = getPeriodRange(period)
+  const periodRange = getDashboardPeriodRange(period)
   const m = buildMetrics(data, { startDate: periodRange.start, endDate: periodRange.end, balanceDate: periodRange.end })
 
   const prevRange = getPreviousPeriodRange(period, periodRange)
