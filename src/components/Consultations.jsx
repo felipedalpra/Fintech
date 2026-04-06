@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { C, base } from '../theme.js'
-import { fmt, today, uid } from '../utils.js'
+import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
@@ -179,14 +179,14 @@ export function Consultations({ data, setData }) {
                 const payment = decodePaymentMethod(item.paymentMethod)
                 const netValue = (item.value || 0) - ((item.value || 0) * ((item.invoiceIssuancePercent || 0) / 100))
                 const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
-                  ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+                  ? payment.payments.map(entry => `${formatDateBR(entry.date)} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
                   : payment.paymentMode === 'misto'
                     ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
                     : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
                 return (
                   <tr key={item.id} style={{ borderBottom:`1px solid ${C.border}` }}>
                     <td style={{ padding:'13px 18px', color:C.text, fontWeight:600 }}>{item.patient}</td>
-                    <td style={{ padding:'13px 18px', color:C.textSub }}>{item.date}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}>{formatDateBR(item.date)}</td>
                     <td style={{ padding:'13px 18px', color:C.textSub }}>{item.consultationType}</td>
                     <td style={{ padding:'13px 18px', color:C.textSub }}>
                       <div>{item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType}</div>
@@ -212,7 +212,7 @@ export function Consultations({ data, setData }) {
             const payment = decodePaymentMethod(item.paymentMethod)
             const netValue = (item.value || 0) - ((item.value || 0) * ((item.invoiceIssuancePercent || 0) / 100))
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
-              ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+              ? payment.payments.map(entry => `${formatDateBR(entry.date)} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
               : payment.paymentMode === 'misto'
                 ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
                 : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
@@ -220,7 +220,7 @@ export function Consultations({ data, setData }) {
               <Card key={item.id} style={{ padding:14 }}>
                 <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
                 <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
-                  <MetricPill label="Data" value={item.date} color={C.textSub} />
+                  <MetricPill label="Data" value={formatDateBR(item.date)} color={C.textSub} />
                   <MetricPill label="Tipo" value={item.consultationType} color={C.textSub} />
                   <MetricPill label="Convênio" value={item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType} color={C.textSub} />
                   <MetricPill label="Forma" value={paymentLabel} color={C.textSub} />

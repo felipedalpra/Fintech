@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { C, base } from '../theme.js'
-import { fmt, today, uid } from '../utils.js'
+import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
@@ -256,7 +256,7 @@ export function Sales({ data, setData }) {
                 const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
                 const payment = decodePaymentMethod(item.paymentMethod)
                 const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
-                  ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+                  ? payment.payments.map(entry => `${formatDateBR(entry.date)} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
                   : payment.paymentMode === 'misto'
                     ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
                     : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
@@ -272,7 +272,7 @@ export function Sales({ data, setData }) {
                       )}
                     </td>
                     <td style={{ padding:'13px 18px' }}><Badge color={procedure?.color || C.textDim} small>{procedure?.name || 'Sem procedimento'}</Badge></td>
-                    <td style={{ padding:'13px 18px', color:C.textSub }}>{item.date}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}>{formatDateBR(item.date)}</td>
                     <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>{fmt(item.totalValue)}</td>
                     <td style={{ padding:'13px 18px', color:netRevenue >= 0 ? C.accent : C.red, fontWeight:700 }}>{fmt(netRevenue)}</td>
                     <td style={{ padding:'13px 18px' }}>
@@ -302,7 +302,7 @@ export function Sales({ data, setData }) {
             const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
             const payment = decodePaymentMethod(item.paymentMethod)
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
-              ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+              ? payment.payments.map(entry => `${formatDateBR(entry.date)} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
               : payment.paymentMode === 'misto'
                 ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
                 : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
@@ -316,7 +316,7 @@ export function Sales({ data, setData }) {
                 {item.referredBy && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>via {item.referredBy}</div>}
                 <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
                   <MetricPill label="Procedimento" value={procedure?.name || 'Sem procedimento'} color={procedure?.color || C.textSub} />
-                  <MetricPill label="Data" value={item.date} color={C.textSub} />
+                  <MetricPill label="Data" value={formatDateBR(item.date)} color={C.textSub} />
                   <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
                   <MetricPill label="Receita líquida" value={fmt(netRevenue)} color={netRevenue >= 0 ? C.accent : C.red} />
                   <MetricPill label="Pagamento" value={item.paymentStatus} color={statusColor} />
