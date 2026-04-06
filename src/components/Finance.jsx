@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
-import { fmt, getPeriodRange, today, uid } from '../utils.js'
+import { fmt, formatDateBR, getPeriodRange, isIsoDateString, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { ExportModal } from './ExportModal.jsx'
@@ -532,13 +532,13 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           <div style={{ display:'grid', gap:8 }}>
             {dueAlerts.overdue.slice(0, 4).map(item => (
               <div key={`overdue-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
-                <span style={{ color:C.red, fontSize:12 }}>Vencida: {item.label} · {item.dueDate}</span>
+                <span style={{ color:C.red, fontSize:12 }}>Vencida: {item.label} · {formatDateBR(item.dueDate)}</span>
                 <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
               </div>
             ))}
             {dueAlerts.dueSoon.slice(0, 4).map(item => (
               <div key={`soon-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
-                <span style={{ color:C.yellow, fontSize:12 }}>A vencer: {item.label} · {item.dueDate} ({item.days} dia(s))</span>
+                <span style={{ color:C.yellow, fontSize:12 }}>A vencer: {item.label} · {formatDateBR(item.dueDate)} ({item.days} dia(s))</span>
                 <span style={{ color:C.yellow, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
               </div>
             ))}
@@ -585,7 +585,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </div>
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma entrada financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => ({ key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma entrada financeira no período." />
       </>}
 
       {tab === 'saidas' && <>
@@ -618,7 +618,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => ({ key:item.id, cells:[item.date, item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, item.origin === 'despesa' ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir saída', message:'Deseja excluir esta saída paga? Essa ação remove o lançamento de despesa vinculado.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Excluir</Btn> : <span style={{ color:C.textSub, fontSize:12 }}>-</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value, item.origin === 'despesa' ? 1 : 0] }))} emptyMessage="Nenhuma saída financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => ({ key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, item.origin === 'despesa' ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir saída', message:'Deseja excluir esta saída paga? Essa ação remove o lançamento de despesa vinculado.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Excluir</Btn> : <span style={{ color:C.textSub, fontSize:12 }}>-</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value, item.origin === 'despesa' ? 1 : 0] }))} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
       {tab === 'receber' && <>
@@ -630,7 +630,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           money={money}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, item.dueDate, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -642,7 +642,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           money={money}
           emptyMessage="Sem contas a pagar agrupadas por mês."
         />
-        <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, item.dueDate, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
+        <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
       </>}
 
       {tab === 'dre' && (
@@ -756,7 +756,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             <div style={{ color:flowSummary.resultado >= 0 ? C.green : C.red, fontSize:20, fontWeight:700 }}>{money(flowSummary.resultado)}</div>
           </Card>
         </div>
-        <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[item.date, <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." />
+        <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[formatDateBR(item.date), <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." />
       </>}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
@@ -935,7 +935,7 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
                 {row.cells.map((cell, index) => (
                   <div key={index} style={{ display:'flex', flexDirection:'column', gap:4, borderTop:index === 0 ? 'none' : `1px solid ${C.border}33`, paddingTop:index === 0 ? 0 : 8 }}>
                     <span style={{ fontSize:10, color:C.textDim, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>{columns[index]}</span>
-                    <span style={{ color:C.textSub, fontSize:13, lineHeight:1.45 }}>{cell}</span>
+                    <span style={{ color:C.textSub, fontSize:13, lineHeight:1.45 }}>{formatRecordTableCell(cell)}</span>
                   </div>
                 ))}
               </div>
@@ -993,7 +993,7 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
                 {row.cells.map((cell, index) => (
-                  <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{cell}</td>
+                  <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{formatRecordTableCell(cell)}</td>
                 ))}
               </tr>
             ))}
@@ -1082,6 +1082,11 @@ function buildDueAlerts(accountsPayable, accountsReceivable) {
 
 function FormActions({ onCancel, onSave, disabled }) {
   return <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn onClick={onSave} disabled={disabled}>Salvar</Btn></div>
+}
+
+function formatRecordTableCell(cell) {
+  if (!isIsoDateString(cell)) return cell
+  return formatDateBR(cell)
 }
 
 function isSaveDisabled(modalType, form, editing) {

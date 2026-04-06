@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { C, base } from '../theme.js'
-import { fmt, fmtN, today, uid } from '../utils.js'
+import { fmt, fmtN, formatDateBR, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
@@ -303,14 +303,14 @@ export function Products({ data, setData }) {
           rows={data.productSales.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')).map(item => {
             const payment = decodePaymentMethod(item.paymentMethod)
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
-              ? payment.payments.map(entry => `${entry.date} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
+              ? payment.payments.map(entry => `${formatDateBR(entry.date)} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
               : payment.paymentMode === 'misto'
                 ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
                 : (PAYMENT_METHOD_LABEL[payment.paymentMethod] || payment.paymentMethod || 'Nao informado')
             return {
               key:item.id,
               cells:[
-                item.saleDate,
+                formatDateBR(item.saleDate),
                 productsById.get(item.productId)?.name || 'Produto removido',
                 item.patientName || 'Venda avulsa',
                 fmtN(item.quantity),
@@ -331,7 +331,7 @@ export function Products({ data, setData }) {
           rows={data.productPurchases.slice().sort((a, b) => (b.purchaseDate || '').localeCompare(a.purchaseDate || '')).map(item => ({
             key:item.id,
             cells:[
-              item.purchaseDate,
+              formatDateBR(item.purchaseDate),
               productsById.get(item.productId)?.name || 'Produto removido',
               item.supplier || 'Nao informado',
               fmtN(item.quantity),

@@ -1,6 +1,25 @@
 export const fmt = v => new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(v || 0)
 export const fmtN = v => new Intl.NumberFormat('pt-BR').format(v || 0)
 export const today = () => new Date().toISOString().split('T')[0]
+
+export function formatDateBR(value) {
+  if (!value) return ''
+  if (typeof value !== 'string') return String(value)
+  const clean = value.trim()
+  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return clean
+  const year = Number(match[1])
+  const month = Number(match[2]) - 1
+  const day = Number(match[3])
+  const date = new Date(year, month, day)
+  if (Number.isNaN(date.getTime())) return clean
+  if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return clean
+  return date.toLocaleDateString('pt-BR')
+}
+
+export function isIsoDateString(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+}
 export const uid = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
