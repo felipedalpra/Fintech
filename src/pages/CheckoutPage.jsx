@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Btn, Card, FInput } from '../components/UI.jsx'
+import { BrandLogo } from '../components/BrandLogo.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { C } from '../theme.js'
 
@@ -43,7 +44,9 @@ export function CheckoutPage() {
     <div style={{ minHeight:'100vh', background:'linear-gradient(180deg, #050B12 0%, #08111B 100%)', color:C.text }}>
       <div style={{ maxWidth:1180, margin:'0 auto', padding:'28px 24px 64px' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:16, marginBottom:28, flexWrap:'wrap' }}>
-          <Link to="/" style={{ textDecoration:'none', color:C.text }}><span style={{ color:'#67E8F9' }}>▲</span> SurgiMetrics</Link>
+          <Link to="/" style={{ textDecoration:'none', color:C.text, display:'inline-flex', alignItems:'center' }}>
+            <BrandLogo size="sm" />
+          </Link>
           <Link to="/login" style={{ textDecoration:'none', color:'#A9BCC5', fontSize:14 }}>Já tem conta? Entrar</Link>
         </div>
 
