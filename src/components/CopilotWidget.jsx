@@ -51,19 +51,22 @@ export function CopilotWidget({ data }) {
           width:62,
           height:62,
           borderRadius:20,
-          border:`1px solid ${C.accent}55`,
-          background:`linear-gradient(180deg, ${C.accent}, ${C.cyan})`,
-          color:'#fff',
+          border:`1px solid ${C.borderBright}`,
+          background:C.surface,
           display:'grid',
           placeItems:'center',
-          fontSize:24,
+          padding:6,
           cursor:'pointer',
           boxShadow:'0 18px 45px rgba(15, 23, 42, 0.35)',
           zIndex:60,
         }}
         title={open ? 'Fechar copiloto' : 'Abrir copiloto'}
       >
-        ✦
+        <img
+          src="/assets/coruja-analitica.png"
+          alt="Coruja analítica SurgiMetrics"
+          style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:14 }}
+        />
       </button>
 
       {open && (
@@ -133,19 +136,12 @@ export function CopilotWidget({ data }) {
 
 function AssistantPortrait() {
   return (
-    <div style={{ width:84, height:84, borderRadius:22, position:'relative', overflow:'hidden', border:`1px solid ${C.borderBright}`, background:'linear-gradient(180deg, rgba(109, 190, 203, 0.22), rgba(19, 36, 64, 0.95))', boxShadow:'inset 0 1px 0 rgba(255,255,255,0.08)' }}>
-      <div style={{ position:'absolute', inset:0, background:'radial-gradient(circle at center, rgba(255,255,255,0.22), transparent 65%)' }} />
-      <div style={{ position:'absolute', top:14, left:18, width:48, height:48, borderRadius:'50%', background:'#C8A98C', boxShadow:'0 0 0 6px rgba(255,255,255,0.06)' }} />
-      <div style={{ position:'absolute', top:10, left:10, width:20, height:20, transform:'rotate(-26deg)', borderRadius:'4px 16px 4px 16px', background:'#5C4437' }} />
-      <div style={{ position:'absolute', top:10, right:10, width:20, height:20, transform:'rotate(26deg)', borderRadius:'16px 4px 16px 4px', background:'#5C4437' }} />
-      <div style={{ position:'absolute', top:28, left:21, width:15, height:15, borderRadius:'50%', background:'#EFD56E', boxShadow:'0 0 0 3px #244872' }} />
-      <div style={{ position:'absolute', top:28, right:21, width:15, height:15, borderRadius:'50%', background:'#EFD56E', boxShadow:'0 0 0 3px #244872' }} />
-      <div style={{ position:'absolute', top:33, left:27, width:5, height:5, borderRadius:'50%', background:'#0A1220' }} />
-      <div style={{ position:'absolute', top:33, right:27, width:5, height:5, borderRadius:'50%', background:'#0A1220' }} />
-      <div style={{ position:'absolute', top:40, left:30, width:24, height:6, borderRadius:999, border:'2px solid rgba(219,232,243,0.75)' }} />
-      <div style={{ position:'absolute', top:44, left:38, width:8, height:12, clipPath:'polygon(50% 0%, 100% 100%, 0% 100%)', background:'#223A44' }} />
-      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:28, background:'linear-gradient(180deg, #16345B, #102440)' }} />
-      <div style={{ position:'absolute', bottom:0, left:28, width:18, height:28, background:'linear-gradient(180deg, #36C0C4, #1D9DA8)', clipPath:'polygon(50% 0%, 100% 0, 78% 100%, 22% 100%, 0 0)' }} />
+    <div style={{ width:84, height:84, borderRadius:22, position:'relative', overflow:'hidden', border:`1px solid ${C.borderBright}`, background:C.surface, boxShadow:'inset 0 1px 0 rgba(255,255,255,0.08)' }}>
+      <img
+        src="/assets/coruja-analitica.png"
+        alt="Coruja analítica SurgiMetrics"
+        style={{ width:'100%', height:'100%', objectFit:'cover' }}
+      />
     </div>
   )
 }
