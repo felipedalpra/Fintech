@@ -54,21 +54,45 @@ async function canUseRelationalBackend() {
 async function canUseConsultationsPaymentMethodColumn() {
   if (consultationsPaymentMethodColumnAvailable !== null) return consultationsPaymentMethodColumnAvailable
   const { error } = await supabase.from('consultations').select('payment_method').limit(1)
-  consultationsPaymentMethodColumnAvailable = !error
+  if (!error) {
+    consultationsPaymentMethodColumnAvailable = true
+    return true
+  }
+  if (isMissingColumnError(error, 'payment_method')) {
+    consultationsPaymentMethodColumnAvailable = false
+    return false
+  }
+  consultationsPaymentMethodColumnAvailable = true
   return consultationsPaymentMethodColumnAvailable
 }
 
 async function canUseSurgeriesInvoiceIssuanceColumn() {
   if (surgeriesInvoiceIssuanceColumnAvailable !== null) return surgeriesInvoiceIssuanceColumnAvailable
   const { error } = await supabase.from('surgeries').select('invoice_issuance_percent').limit(1)
-  surgeriesInvoiceIssuanceColumnAvailable = !error
+  if (!error) {
+    surgeriesInvoiceIssuanceColumnAvailable = true
+    return true
+  }
+  if (isMissingColumnError(error, 'invoice_issuance_percent')) {
+    surgeriesInvoiceIssuanceColumnAvailable = false
+    return false
+  }
+  surgeriesInvoiceIssuanceColumnAvailable = true
   return surgeriesInvoiceIssuanceColumnAvailable
 }
 
 async function canUseConsultationsInvoiceIssuanceColumn() {
   if (consultationsInvoiceIssuanceColumnAvailable !== null) return consultationsInvoiceIssuanceColumnAvailable
   const { error } = await supabase.from('consultations').select('invoice_issuance_percent').limit(1)
-  consultationsInvoiceIssuanceColumnAvailable = !error
+  if (!error) {
+    consultationsInvoiceIssuanceColumnAvailable = true
+    return true
+  }
+  if (isMissingColumnError(error, 'invoice_issuance_percent')) {
+    consultationsInvoiceIssuanceColumnAvailable = false
+    return false
+  }
+  consultationsInvoiceIssuanceColumnAvailable = true
   return consultationsInvoiceIssuanceColumnAvailable
 }
 
@@ -493,4 +517,16 @@ function isIgnorableAuditLogError(error) {
     || code === 'PGRST204'
     || message.includes('audit_logs')
     || message.includes('schema cache')
+}
+
+function isMissingColumnError(error, columnName) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  const details = String(error?.details || '').toLowerCase()
+  const hint = String(error?.hint || '').toLowerCase()
+  const column = String(columnName || '').toLowerCase()
+  const text = `${message} ${details} ${hint}`
+  if (code === '42703') return true
+  if (code === 'PGRST204' && text.includes(column)) return true
+  return text.includes('does not exist') && text.includes(column)
 }
