@@ -9,7 +9,7 @@ import { useToast } from '../context/ToastContext.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:'', status:'aberto', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
@@ -247,7 +247,22 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           return
         }
       }
-      setData(current => ({ ...current, expenses: editing ? current.expenses.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.expenses, { ...form, id:uid() }] }))
+      const expenseDate = form.dueDate || form.paymentDate || today()
+      const normalizedExpense = {
+        ...form,
+        dueDate:expenseDate,
+        paymentDate:expenseDate,
+        status:'pago',
+      }
+      setConfirmState({
+        action:'confirm-expense-save',
+        title:editing ? 'Confirmar atualização da saída' : 'Confirmar lançamento da saída',
+        message:`Confirma lançar ${money(Number(normalizedExpense.value || 0))} em "${normalizedExpense.description || 'despesa'}"?`,
+        confirmLabel:editing ? 'Confirmar e atualizar' : 'Confirmar e lançar',
+        confirmVariant:'success',
+        payload:{ expense:normalizedExpense, editing },
+      })
+      return
     }
     if (modalType === 'asset') {
       if (!form.name) return
@@ -336,9 +351,29 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     if (confirmState.action === 'delete-expense') {
       setData(current => ({ ...current, expenses:current.expenses.filter(record => record.id !== confirmState.id) }))
       toast('Saída removida.', 'warning')
+      setConfirmState(null)
+      return
+    }
+    if (confirmState.action === 'confirm-expense-save') {
+      const payload = confirmState.payload?.expense
+      if (!payload) {
+        setConfirmState(null)
+        return
+      }
+      const editingId = confirmState.payload?.editing
+      setData(current => ({
+        ...current,
+        expenses:editingId
+          ? current.expenses.map(record => record.id === editingId ? { ...payload, id:editingId } : record)
+          : [...current.expenses, { ...payload, id:uid() }],
+      }))
+      toast(editingId ? 'Saída atualizada com sucesso.' : 'Saída lançada com sucesso.')
+      setShowModal(false)
+      setConfirmState(null)
       return
     }
     removeRecord(confirmState)
+    setConfirmState(null)
   }
 
   const confirmExpensePayment = () => {
@@ -813,9 +848,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               </>
             ) : (
               <>
-                <FInput label="Data de vencimento" value={form.dueDate} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
-                <FInput label="Status" value={form.status} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'aberto', l:'Aberto' }, { v:'pago', l:'Pago' }]} />
-                <FInput label="Data do pagamento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
+                <FInput
+                  label="Data da saída"
+                  value={form.dueDate}
+                  onChange={value => setForm(current => ({ ...current, dueDate:value, paymentDate:value, status:'pago' }))}
+                  type="date"
+                />
               </>
             )}
 
