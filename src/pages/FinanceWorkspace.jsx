@@ -23,6 +23,7 @@ import { Calendar } from '../components/Calendar.jsx'
 import { TaxCalculator } from '../components/TaxCalculator.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
+import { useTheme } from '../context/ThemeContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
 
@@ -48,7 +49,7 @@ const NAV_SECTIONS = [
       { id:'reports', label:'Relatórios', icon:'◫', hint:'Análises e comparativos' },
       { id:'ai', label:'Assistente', icon:'✦', hint:'Perguntas sobre os dados' },
       { id:'billing', label:'Assinatura', icon:'◌', hint:'Trial, checkout e cobrança' },
-      { id:'settings', label:'Configurações', icon:'⚙', hint:'Tema e preferências' },
+      { id:'settings', label:'Configurações', icon:'⚙', hint:'Perfil e preferências' },
     ],
   },
 ]
@@ -91,7 +92,7 @@ const SUBTITLES = {
   reports:'Relatórios analíticos para apoiar decisões.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie trial, plano e status da cobrança.',
-  settings:'Ajuste visualização e preferências da plataforma.',
+  settings:'Ajuste perfil e preferências da plataforma.',
 }
 
 const PAGES = {
@@ -471,6 +472,8 @@ export function FinanceWorkspace() {
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
+  const { mode, toggleTheme } = useTheme()
+  const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState('')
@@ -775,6 +778,27 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+              <button
+                onClick={toggleTheme}
+                title={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
+                aria-label={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
+                aria-pressed={isLightMode}
+                style={{
+                  ...chipButton,
+                  width:34,
+                  height:34,
+                  padding:0,
+                  borderRadius:999,
+                  border:`1px solid ${isLightMode ? C.accent : C.border}`,
+                  background:isLightMode ? `${C.accent}1F` : 'transparent',
+                  color:isLightMode ? C.accent : C.textSub,
+                  display:'grid',
+                  placeItems:'center',
+                  fontSize:15,
+                }}
+              >
+                {isLightMode ? '☾' : '☀'}
+              </button>
               {/* Quick search chip */}
               <button
                 onClick={() => setQuickSearchOpen(true)}

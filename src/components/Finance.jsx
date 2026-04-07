@@ -7,6 +7,7 @@ import { ExportModal } from './ExportModal.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { supabase } from '../lib/supabase.js'
+import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
@@ -293,7 +294,37 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
     }
     if (item.source === 'consulta') {
-      setData(current => ({ ...current, consultations:current.consultations.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
+      setData(current => ({
+        ...current,
+        consultations:current.consultations.map(record => {
+          if (record.id !== item.sourceId) return record
+          const decoded = decodePaymentMethod(record.paymentMethod)
+          const scheduledPayments = decoded.paymentScheduleMode === 'duas_datas'
+            ? (decoded.payments || [])
+              .map(entry => ({ date:String(entry?.date || '').trim(), amount:Number(entry?.amount || 0) }))
+              .filter(entry => entry.date && entry.amount > 0)
+              .sort((a, b) => a.date.localeCompare(b.date))
+            : []
+          if (scheduledPayments.length === 0) {
+            return { ...record, paymentStatus:'pago', paymentDate:today() }
+          }
+          const currentCutoff = String(record.paymentDate || '').trim()
+          const paidCount = currentCutoff
+            ? scheduledPayments.filter(entry => entry.date <= currentCutoff).length
+            : 0
+          const installmentToReceive = scheduledPayments.find(entry => entry.date === item.dueDate) || scheduledPayments[Math.min(paidCount, scheduledPayments.length - 1)]
+          if (!installmentToReceive) return record
+          const nextPaymentDate = currentCutoff && currentCutoff > installmentToReceive.date ? currentCutoff : installmentToReceive.date
+          const allPaid = scheduledPayments.every(entry => entry.date <= nextPaymentDate)
+          return {
+            ...record,
+            paymentDate:nextPaymentDate,
+            paymentStatus:allPaid ? 'pago' : 'pendente',
+          }
+        }),
+      }))
+      toast('Parcela marcada como recebida.')
+      return
     }
     toast('Marcado como recebido.')
   }

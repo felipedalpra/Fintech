@@ -103,10 +103,17 @@ export function Consultations({ data, setData }) {
 
   const save = () => {
     if (!form.patient || !form.date) return
+    const totalValue = Math.max(0, Number(form.value || 0))
+    let payment1Amount = Math.max(0, Number(form.payment1Amount || 0))
+    let payment2Amount = Math.max(0, Number(form.payment2Amount || 0))
+    if (form.paymentScheduleMode === 'duas_datas' && totalValue > 0) {
+      if (payment1Amount > 0 && payment2Amount <= 0 && totalValue > payment1Amount) payment2Amount = totalValue - payment1Amount
+      if (payment2Amount > 0 && payment1Amount <= 0 && totalValue > payment2Amount) payment1Amount = totalValue - payment2Amount
+    }
     const payments = form.paymentScheduleMode === 'duas_datas'
       ? [
-        { date:form.payment1Date, amount:form.payment1Amount, method:form.payment1Method },
-        { date:form.payment2Date, amount:form.payment2Amount, method:form.payment2Method },
+        { date:form.payment1Date, amount:payment1Amount, method:form.payment1Method },
+        { date:form.payment2Date, amount:payment2Amount, method:form.payment2Method },
       ]
       : []
     const paymentMethod = encodePaymentMethod({
@@ -118,12 +125,14 @@ export function Consultations({ data, setData }) {
       mixAmountB:form.mixAmountB,
       payments,
     })
-    const scheduledTotal = (form.payment1Amount || 0) + (form.payment2Amount || 0)
+    const scheduledTotal = payment1Amount + payment2Amount
     if (form.paymentScheduleMode === 'duas_datas' && (
       !form.payment1Date
       || !form.payment2Date
       || !form.payment1Method
       || !form.payment2Method
+      || payment1Amount <= 0
+      || payment2Amount <= 0
       || scheduledTotal <= 0
     )) return
     const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
@@ -132,10 +141,10 @@ export function Consultations({ data, setData }) {
       paymentMode,
       paymentScheduleMode,
       payment1Date,
-      payment1Amount,
+      payment1Amount:_payment1Amount,
       payment1Method,
       payment2Date,
-      payment2Amount,
+      payment2Amount:_payment2Amount,
       payment2Method,
       mixMethodA,
       mixMethodB,
@@ -148,7 +157,9 @@ export function Consultations({ data, setData }) {
       invoiceIssuancePercent:Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0))),
       insurance:form.paymentType === 'particular' ? '' : form.insurance,
       paymentMethod,
-      paymentDate:form.paymentStatus === 'pago' ? (form.paymentDate || form.date) : '',
+      paymentDate:form.paymentStatus === 'pago'
+        ? (form.paymentDate || (form.paymentScheduleMode === 'duas_datas' ? [form.payment1Date, form.payment2Date].filter(Boolean).sort().slice(-1)[0] : form.date))
+        : '',
     }
     setData(current => ({
       ...current,

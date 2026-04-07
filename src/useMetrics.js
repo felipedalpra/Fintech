@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { inRange, monthKey, onOrBefore, today } from './utils.js'
+import { decodePaymentMethod } from './lib/paymentMethodCodec.js'
 
 function resolvePercent(value) {
   const n = Number(value || 0)
@@ -35,6 +36,69 @@ function accumulateByMonth(target, date, value) {
 
 function patientLabel(value, fallback = '') {
   return value || fallback || 'Paciente não informado'
+}
+
+function consultationPaymentFlow(item, balanceDate) {
+  const totalValue = Math.max(0, Number(item?.value || 0))
+  const decoded = decodePaymentMethod(item?.paymentMethod)
+  const schedule = decoded.paymentScheduleMode === 'duas_datas' && Array.isArray(decoded.payments)
+    ? decoded.payments
+      .map((entry, index) => ({
+        index,
+        date:String(entry?.date || '').trim(),
+        amount:Math.max(0, Number(entry?.amount || 0)),
+      }))
+      .filter(entry => entry.date && entry.amount > 0)
+      .sort((a, b) => a.date.localeCompare(b.date))
+    : []
+
+  if (schedule.length === 0) {
+    const paid = item?.paymentStatus === 'pago'
+    return {
+      hasSchedule:false,
+      installments:[],
+      paidInstallments:paid ? [{ index:0, date:item?.paymentDate || item?.date, amount:totalValue }] : [],
+      openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:item?.forecastPaymentDate || item?.date, amount:totalValue }],
+      paidAmount:paid ? totalValue : 0,
+      openAmount:paid ? 0 : totalValue,
+    }
+  }
+
+  let remaining = totalValue
+  const installments = schedule
+    .map(entry => {
+      const amount = Math.min(entry.amount, remaining)
+      remaining = Math.max(0, remaining - amount)
+      return { ...entry, amount }
+    })
+    .filter(entry => entry.amount > 0)
+
+  if (remaining > 0) {
+    installments.push({
+      index:installments.length,
+      date:item?.forecastPaymentDate || installments[installments.length - 1]?.date || item?.date,
+      amount:remaining,
+    })
+    remaining = 0
+  }
+
+  const paymentDateCutoff = String(item?.paymentDate || '').trim()
+  const paidByDate = item?.paymentStatus === 'pago'
+    ? installments
+    : (paymentDateCutoff ? installments.filter(entry => onOrBefore(entry.date, paymentDateCutoff)) : [])
+  const paidIndexes = new Set(paidByDate.map(entry => entry.index))
+  const openInstallments = installments.filter(entry => !paidIndexes.has(entry.index))
+  const paidAmount = Math.min(totalValue, paidByDate.reduce((acc, entry) => acc + entry.amount, 0))
+  const openAmount = Math.max(0, totalValue - paidAmount)
+
+  return {
+    hasSchedule:true,
+    installments,
+    paidInstallments:paidByDate,
+    openInstallments,
+    paidAmount,
+    openAmount,
+  }
 }
 
 function parseDate(value) {
@@ -211,9 +275,21 @@ export function buildMetrics(rawData, options = {}) {
   })
 
   consultations.forEach(item => {
-    if (item.paymentStatus === 'pago' && inRange(item.paymentDate || item.date, startDate, endDate)) {
-      entriesFinancial.push({ id:`entry-consultation-${item.id}`, description:`Consulta - ${patientLabel(item.patient, item.id)}`, category:'consulta', value:item.value || 0, date:item.paymentDate || item.date, origin:'consulta', referenceId:item.id })
-    }
+    const flow = consultationPaymentFlow(item, balanceDate)
+    flow.paidInstallments.forEach((payment, index) => {
+      if (!payment.date || !inRange(payment.date, startDate, endDate)) return
+      entriesFinancial.push({
+        id:`entry-consultation-${item.id}-${index}`,
+        description:flow.hasSchedule
+          ? `Consulta - ${patientLabel(item.patient, item.id)} (pagamento ${index + 1}/${flow.installments.length})`
+          : `Consulta - ${patientLabel(item.patient, item.id)}`,
+        category:'consulta',
+        value:payment.amount || 0,
+        date:payment.date,
+        origin:'consulta',
+        referenceId:item.id,
+      })
+    })
     if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
       const nfCost = consultationCosts(item)
       if (nfCost > 0) {
@@ -267,7 +343,27 @@ export function buildMetrics(rawData, options = {}) {
 
   const accountsReceivable = [
     ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:'cirurgia', value:item.totalValue || 0, dueDate:item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
-    ...consultations.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`consultation-${item.id}`, source:'consulta', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:item.paymentType || 'consulta', value:item.value || 0, dueDate:item.forecastPaymentDate || item.date, status:item.paymentStatus, description:item.consultationType })),
+    ...consultations
+      .filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate))
+      .flatMap(item => {
+        const flow = consultationPaymentFlow(item, balanceDate)
+        if (flow.openAmount <= 0) return []
+        const pendingDates = flow.openInstallments.map(entry => entry.date).filter(Boolean)
+        const scheduleSummary = flow.hasSchedule
+          ? `2 datas: ${flow.installments.map(entry => entry.date).join(' / ')} · recebido ${flow.paidInstallments.length}/${flow.installments.length}`
+          : item.consultationType
+        return [{
+          id:`consultation-${item.id}`,
+          source:'consulta',
+          sourceId:item.id,
+          patient:patientLabel(item.patient, item.id),
+          category:item.paymentType || 'consulta',
+          value:flow.openAmount,
+          dueDate:pendingDates[0] || item.forecastPaymentDate || item.date,
+          status:item.paymentStatus,
+          description:flow.hasSchedule ? `${item.consultationType} (${scheduleSummary})` : item.consultationType,
+        }]
+      }),
     ...recurringUntilBalance.filter(item => item.tipo === 'receita' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item))).map(item => ({ id:`recurrence-income-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, patient:'Recorrência', category:item.categoria || 'outras_receitas', value:Number(item.valor || 0), dueDate:item.dueDate, status:'pendente', description:item.descricao || 'Receita fixa' })),
   ]
 
@@ -281,7 +377,12 @@ export function buildMetrics(rawData, options = {}) {
 
   const cumulativeEntries = []
   surgeries.filter(item => item.paymentStatus === 'pago' && onOrBefore(item.paymentDate || item.date, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.totalValue || 0 }))
-  consultations.filter(item => item.paymentStatus === 'pago' && onOrBefore(item.paymentDate || item.date, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.value || 0 }))
+  consultations.forEach(item => {
+    const flow = consultationPaymentFlow(item, balanceDate)
+    flow.paidInstallments.filter(payment => onOrBefore(payment.date, balanceDate)).forEach(payment => {
+      cumulativeEntries.push({ type:'entrada', value:payment.amount || 0 })
+    })
+  })
   productSales.filter(item => onOrBefore(item.saleDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.totalValue || 0 }))
   extraRevenues.filter(item => onOrBefore(item.date, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.value || 0 }))
   expenses.filter(item => item.status === 'pago' && onOrBefore(item.paymentDate || item.dueDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'saida', value:item.value || 0 }))
