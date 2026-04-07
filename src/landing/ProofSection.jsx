@@ -1,54 +1,108 @@
-import { C } from '../theme.js'
+import { useEffect, useMemo, useState } from 'react'
 
-const METRICS = [
-  ['Mais clareza', 'Sobre lucro e caixa'],
-  ['Mais autoridade', 'Na gestão da clínica'],
-  ['Mais previsibilidade', 'Para crescer com segurança'],
-  ['Menos ruído', 'No dia a dia financeiro'],
+const STATS = [
+  { label:'Clínicas ativas', value:320, suffix:'+' },
+  { label:'Horas poupadas/mês', value:42, suffix:'h' },
+  { label:'Melhora média de margem', value:17, suffix:'%' },
 ]
 
 const TESTIMONIALS = [
   {
-    quote:'Antes eu sentia que trabalhava muito, mas não enxergava com precisão o resultado. Hoje tenho confiança no número que guia minhas decisões.',
+    quote:'Em duas semanas eu já conseguia mostrar margem por procedimento em reunião de equipe.',
     author:'Dra. Mariana Ribeiro',
     role:'Cirurgiã plástica',
   },
   {
-    quote:'A clínica ganhou postura de empresa. O financeiro deixou de ser improvisado e passou a ser uma ferramenta de crescimento.',
+    quote:'A sensação é de sair da planilha para um cockpit de gestão real.',
     author:'Clínica Lumina',
     role:'Gestão administrativa',
   },
   {
-    quote:'O mais valioso é a sensação de controle. Você entende onde está ganhando, onde está vazando dinheiro e o que precisa ajustar.',
+    quote:'Paramos de decidir por intuição. Agora temos base diária de caixa e lucro.',
     author:'Dr. Paulo Siqueira',
     role:'Cirurgião plástico',
   },
 ]
 
 export function ProofSection() {
+  const [active, setActive] = useState(0)
+
+  useEffect(() => {
+    const id = window.setInterval(() => setActive(current => (current + 1) % TESTIMONIALS.length), 5000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const testimonial = useMemo(() => TESTIMONIALS[active], [active])
+
   return (
     <section style={{ padding:'10px 0 82px' }}>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap:24, alignItems:'start' }}>
-        <div style={{ animation:'fadeUp 0.8s ease both' }}>
-          <div style={{ fontSize:12, color:'#6EE7B7', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Valor percebido</div>
-          <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text }}>A clínica cresce melhor quando o financeiro transmite segurança</h2>
-          <p style={{ margin:'0 0 22px', color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:580 }}>
-            O SurgiMetrics não vende só controle. Ele vende tranquilidade para decidir, inteligência para crescer e uma operação financeira à altura da sua imagem profissional.
-          </p>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))', gap:14 }}>
-            {METRICS.map(([label, value], index) => <div key={label} style={{ padding:18, borderRadius:20, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', animation:'fadeUp 0.8s ease both', animationDelay:`${0.08 * index}s` }}><div style={{ fontSize:11, color:'#7F98A3', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{label}</div><div style={{ fontSize:24, color:C.text, fontWeight:900, letterSpacing:'-0.04em', lineHeight:1.2 }}>{value}</div></div>)}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap:18, alignItems:'start' }}>
+        <div className="reveal">
+          <div style={{ fontSize:12, color:'#67E8F9', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Prova social</div>
+          <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.04, letterSpacing:'-0.04em', color:'#F4FCFF' }}>
+            Números e relatos para reduzir incerteza
+          </h2>
+
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))', gap:10 }}>
+            {STATS.map((item, index) => (
+              <article key={item.label} className="reveal" style={{ padding:14, borderRadius:16, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.12)' }}>
+                <div style={{ fontSize:11, color:'#8CA6B2', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:5 }}>{item.label}</div>
+                <div style={{ fontSize:31, lineHeight:1, color:'#E8F8FF', fontWeight:900, letterSpacing:'-0.04em' }}>
+                  <CountUp to={item.value} delay={index * 120} />{item.suffix}
+                </div>
+              </article>
+            ))}
           </div>
         </div>
-        <div style={{ display:'grid', gap:14 }}>
-          {TESTIMONIALS.map((item, index) => (
-            <article key={item.author} style={{ padding:24, borderRadius:24, background:'linear-gradient(140deg, rgba(17,24,39,0.96), rgba(8,16,28,0.96))', border:'1px solid rgba(255,255,255,0.1)', animation:'fadeUp 0.85s ease both', animationDelay:`${0.1 + index * 0.08}s` }}>
-              <p style={{ margin:'0 0 16px', color:C.text, fontSize:17, lineHeight:1.75 }}>&ldquo;{item.quote}&rdquo;</p>
-              <div style={{ color:'#D9E8EE', fontSize:13, fontWeight:700 }}>{item.author}</div>
-              <div style={{ color:'#7F98A3', fontSize:12, marginTop:4 }}>{item.role}</div>
-            </article>
-          ))}
+
+        <div className="reveal" style={{ padding:'24px clamp(18px, 3vw, 24px)', borderRadius:22, border:'1px solid rgba(255,255,255,0.12)', background:'linear-gradient(145deg, rgba(18,22,38,0.88), rgba(8,20,36,0.9))' }}>
+          <p style={{ margin:'0 0 14px', color:'#F2FBFF', fontSize:20, lineHeight:1.5 }}>&ldquo;{testimonial.quote}&rdquo;</p>
+          <div style={{ color:'#D4EAF4', fontSize:13, fontWeight:700 }}>{testimonial.author}</div>
+          <div style={{ color:'#8DA6B2', fontSize:12, marginTop:3 }}>{testimonial.role}</div>
+          <div style={{ display:'flex', gap:8, marginTop:15 }}>
+            {TESTIMONIALS.map((item, index) => (
+              <button
+                key={item.author}
+                type="button"
+                onClick={() => setActive(index)}
+                aria-label={`Depoimento ${index + 1}`}
+                style={{
+                  width:index === active ? 24 : 10,
+                  height:10,
+                  borderRadius:999,
+                  border:'none',
+                  background:index === active ? '#67E8F9' : 'rgba(255,255,255,0.28)',
+                  cursor:'pointer',
+                  transition:'all 0.22s ease',
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </section>
   )
+}
+
+function CountUp({ to, delay = 0 }) {
+  const [value, setValue] = useState(0)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const started = performance.now()
+      const duration = 920
+      let raf = 0
+      const step = now => {
+        const p = Math.min(1, (now - started) / duration)
+        setValue(Math.round(to * p))
+        if (p < 1) raf = window.requestAnimationFrame(step)
+      }
+      raf = window.requestAnimationFrame(step)
+      return () => window.cancelAnimationFrame(raf)
+    }, delay)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [to, delay])
+
+  return value
 }

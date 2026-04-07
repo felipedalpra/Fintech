@@ -1,47 +1,63 @@
 import { Link } from 'react-router-dom'
-import { C } from '../theme.js'
 import { Btn } from '../components/UI.jsx'
 import { BILLING_CYCLES, FREE_TRIAL_DAYS, buildCheckoutUrl } from '../billing/plans.js'
 
 export function Pricing() {
   return (
-    <section style={{ padding:'10px 0 82px' }}>
-      <div style={{ marginBottom:24, animation:'fadeUp 0.8s ease both' }}>
-        <div style={{ fontSize:12, color:'#FCD34D', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Oferta</div>
-        <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text }}>Um único plano, com liberdade para escolher o ciclo ideal</h2>
-        <p style={{ margin:'0 0 14px', color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:760 }}>Todo cirurgião começa com {FREE_TRIAL_DAYS} dias grátis, sem cadastrar cartão. Depois do trial, o acesso continua somente com assinatura ativa.</p>
-        <div style={{ display:'inline-flex', padding:'8px 14px', borderRadius:999, background:'rgba(16,185,129,0.16)', color:'#6EE7B7', fontSize:13, fontWeight:700 }}>{FREE_TRIAL_DAYS} dias grátis sem cartão</div>
+    <section style={{ padding:'12px 0 82px' }}>
+      <div className="reveal" style={{ marginBottom:20 }}>
+        <div style={{ fontSize:12, color:'#FDE68A', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Planos</div>
+        <h2 style={{ margin:'0 0 8px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.04, letterSpacing:'-0.04em', color:'#F3FBFF' }}>
+          Um produto, ciclos diferentes para encaixar no seu caixa
+        </h2>
+        <p style={{ margin:0, color:'#A8C1CC', fontSize:16, lineHeight:1.65, maxWidth:720 }}>
+          {FREE_TRIAL_DAYS} dias grátis, sem cartão. Depois, você mantém acesso no ciclo que preferir.
+        </p>
       </div>
 
-      <div style={{ padding:'28px clamp(22px, 4vw, 34px)', borderRadius:30, background:'linear-gradient(155deg, rgba(17,24,39,0.98), rgba(10,16,27,0.98))', border:'1px solid rgba(255,255,255,0.1)', boxShadow:'0 32px 90px rgba(0,0,0,0.24)' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap:22, alignItems:'start' }}>
-          <div style={{ animation:'fadeUp 0.85s ease both' }}>
-            <div style={{ fontSize:24, color:C.text, fontWeight:900, letterSpacing:'-0.04em', marginBottom:10 }}>SurgiMetrics Premium</div>
-            <p style={{ margin:'0 0 16px', color:'#A9BCC5', fontSize:15, lineHeight:1.8 }}>Cirurgias, consultas, produtos, fluxo de caixa, DRE, balanço, metas e IA em uma única assinatura.</p>
-            <div style={{ display:'grid', gap:10, color:'#D3E2EA', fontSize:14 }}>
-              <span>• Dashboard financeiro completo</span>
-              <span>• Gestão de cirurgias e consultas</span>
-              <span>• Produtos, modeladores e estoque</span>
-              <span>• Contas a pagar e receber</span>
-              <span>• Fluxo de caixa, DRE e balanço</span>
-              <span>• Metas financeiras e assistente IA</span>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))', gap:14, alignItems:'stretch' }}>
+        {BILLING_CYCLES.map((cycle, index) => (
+          <article
+            key={cycle.id}
+            className="reveal"
+            style={{
+              padding:20,
+              borderRadius:20,
+              background:index === 2 ? 'linear-gradient(140deg, rgba(15, 50, 68, 0.82), rgba(8, 24, 40, 0.9))' : 'rgba(255,255,255,0.03)',
+              border:index === 2 ? '1px solid rgba(125,211,252,0.5)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow:index === 2 ? '0 18px 46px rgba(56,189,248,0.22)' : 'none',
+              display:'flex',
+              flexDirection:'column',
+              minHeight:312,
+            }}
+          >
+            <div style={{ minHeight:26, marginBottom:8 }}>
+              {cycle.badge && <div style={{ display:'inline-flex', padding:'5px 10px', borderRadius:999, background:'rgba(255,255,255,0.12)', color:'#D8F3FF', fontSize:11, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em' }}>{cycle.badge}</div>}
             </div>
-          </div>
 
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(210px, 1fr))', gap:16 }}>
-            {BILLING_CYCLES.map((cycle, index) => (
-              <article key={cycle.id} style={{ padding:22, borderRadius:24, background:index === 2 ? 'linear-gradient(155deg, rgba(59,130,246,0.18), rgba(17,24,39,0.96))' : 'rgba(255,255,255,0.03)', border:index === 2 ? '1px solid rgba(125,211,252,0.45)' : '1px solid rgba(255,255,255,0.08)', animation:'fadeUp 0.85s ease both', animationDelay:`${0.06 * index}s` }}>
-                {cycle.badge && <div style={{ display:'inline-flex', padding:'6px 10px', borderRadius:999, background:'rgba(255,255,255,0.08)', color:'#D8F3FF', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>{cycle.badge}</div>}
-                <div style={{ color:C.text, fontSize:22, fontWeight:800, marginBottom:8 }}>{cycle.label}</div>
-                <div style={{ display:'flex', alignItems:'baseline', gap:4, marginBottom:4 }}><span style={{ fontSize:36, fontWeight:900, color:C.text }}>{cycle.headline}</span><span style={{ color:'#8198A3', fontSize:13 }}>{cycle.periodLabel}</span></div>
-                <p style={{ margin:'0 0 6px', color:'#D2E4EB', fontSize:13, fontWeight:700 }}>{cycle.cadenceLabel}</p>
-                <p style={{ margin:'0 0 12px', color:'#A9BCC5', fontSize:14, lineHeight:1.7 }}>{cycle.note}</p>
-                <p style={{ margin:'0 0 18px', color:'#6EE7B7', fontSize:13, fontWeight:700 }}>{FREE_TRIAL_DAYS} dias grátis agora. Pagamento só depois do trial.</p>
-                <Link to={buildCheckoutUrl(cycle.id)} style={{ textDecoration:'none' }}><Btn variant={index === 2 ? 'primary' : 'ghost'} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'13px 18px' }}>Começar teste grátis</Btn></Link>
-              </article>
-            ))}
-          </div>
-        </div>
+            <div style={{ color:'#F2FBFF', fontSize:20, fontWeight:800, marginBottom:6, whiteSpace:'nowrap' }}>{cycle.label}</div>
+            <div style={{ display:'flex', alignItems:'baseline', gap:4, marginBottom:6, flexWrap:'nowrap' }}>
+              <span style={{ fontSize:34, fontWeight:900, color:'#F4FCFF', letterSpacing:'-0.03em', whiteSpace:'nowrap' }}>{cycle.headline}</span>
+              <span style={{ color:'#8CA6B2', fontSize:13, whiteSpace:'nowrap' }}>{cycle.periodLabel}</span>
+            </div>
+
+            <p style={{ margin:'0 0 8px', color:'#D1E6EF', fontSize:13, fontWeight:700, whiteSpace:'nowrap' }}>
+              {cycle.id === 'semestral' ? 'Cobrança a cada 6 meses' : cycle.id === 'anual' ? 'Cobrança anual' : cycle.cadenceLabel}
+            </p>
+            <p style={{ margin:'0 0 12px', color:'#A4BCC7', fontSize:14, lineHeight:1.5, minHeight:42 }}>
+              {cycle.note}
+            </p>
+            <p style={{ margin:'0 0 16px', color:'#86EFAC', fontSize:12, fontWeight:800 }}>
+              {FREE_TRIAL_DAYS} dias grátis. Cancele quando quiser.
+            </p>
+
+            <Link to={buildCheckoutUrl(cycle.id)} style={{ textDecoration:'none', display:'block', marginTop:'auto' }}>
+              <Btn variant={index === 2 ? 'primary' : 'ghost'} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'12px 16px' }}>
+                Iniciar trial
+              </Btn>
+            </Link>
+          </article>
+        ))}
       </div>
     </section>
   )

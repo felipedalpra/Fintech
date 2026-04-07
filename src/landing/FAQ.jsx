@@ -1,39 +1,53 @@
-import { C } from '../theme.js'
+import { useState } from 'react'
 
 const ITEMS = [
   {
-    q:'O SurgiMetrics é só para controle financeiro?',
-    a:'Ele foi pensado para entregar visão gerencial do negócio. Você acompanha cirurgias, consultas, receitas, despesas e entende o resultado financeiro real da clínica.',
+    q:'Serve para clínica pequena?',
+    a:'Sim. O ganho vem cedo: você organiza caixa, custos e margem antes do crescimento ficar caótico.',
   },
   {
-    q:'Preciso continuar usando planilhas?',
-    a:'Não. A ideia é justamente substituir controles soltos por uma experiência mais profissional, clara e centralizada.',
+    q:'Preciso manter planilhas?',
+    a:'Não. O objetivo é centralizar operação financeira e reduzir controle paralelo.',
   },
   {
-    q:'Isso serve para clínica pequena também?',
-    a:'Sim. Quanto antes a gestão financeira ganha organização, mais fácil fica crescer sem perder margem e sem aumentar o caos operacional.',
+    q:'Posso começar sem cartão?',
+    a:'Sim. Você entra em trial grátis e só decide sobre assinatura depois de validar o uso.',
   },
   {
-    q:'O sistema passa uma imagem mais profissional para a clínica?',
-    a:'Sim. Além do ganho de controle, o SurgiMetrics posiciona a operação com um nível de gestão compatível com clínicas premium.',
+    q:'Tem suporte para implantação?',
+    a:'Sim. Você recebe orientação para configurar rotina e acelerar adoção na clínica.',
   },
 ]
 
 export function FAQ() {
+  const [open, setOpen] = useState(0)
+
   return (
-    <section style={{ padding:'10px 0 82px' }}>
-      <div style={{ marginBottom:24, animation:'fadeUp 0.8s ease both' }}>
-        <div style={{ fontSize:12, color:'#C4B5FD', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Perguntas frequentes</div>
-        <h2 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.02, letterSpacing:'-0.04em', color:C.text }}>Respostas para quem quer crescer com mais controle</h2>
-        <p style={{ margin:0, color:'#9FB2BC', fontSize:17, lineHeight:1.8, maxWidth:740 }}>A seção foi ajustada para reduzir objeção comercial, não para explicar arquitetura do sistema.</p>
+    <section style={{ padding:'12px 0 82px' }}>
+      <div className="reveal" style={{ marginBottom:20 }}>
+        <div style={{ fontSize:12, color:'#C4B5FD', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>FAQ</div>
+        <h2 style={{ margin:'0 0 10px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.04, letterSpacing:'-0.04em', color:'#F4FCFF' }}>
+          Perguntas rápidas antes de começar
+        </h2>
       </div>
-      <div style={{ display:'grid', gap:14 }}>
-        {ITEMS.map((item, index) => (
-          <article key={item.q} style={{ padding:24, borderRadius:22, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', animation:'fadeUp 0.85s ease both', animationDelay:`${0.06 * index}s` }}>
-            <h3 style={{ margin:'0 0 10px', color:C.text, fontSize:19 }}>{item.q}</h3>
-            <p style={{ margin:0, color:'#A9BCC5', fontSize:15, lineHeight:1.8 }}>{item.a}</p>
-          </article>
-        ))}
+
+      <div style={{ display:'grid', gap:10 }}>
+        {ITEMS.map((item, index) => {
+          const expanded = index === open
+          return (
+            <article key={item.q} className="reveal" style={{ borderRadius:16, border:'1px solid rgba(255,255,255,0.12)', background:'rgba(255,255,255,0.03)', overflow:'hidden' }}>
+              <button
+                type="button"
+                onClick={() => setOpen(expanded ? -1 : index)}
+                style={{ width:'100%', textAlign:'left', padding:'16px 18px', background:'transparent', border:'none', color:'#F2FBFF', fontSize:18, fontWeight:700, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}
+              >
+                <span>{item.q}</span>
+                <span style={{ color:'#A9C2CD' }}>{expanded ? '−' : '+'}</span>
+              </button>
+              {expanded && <p style={{ margin:0, padding:'0 18px 16px', color:'#A6BFCA', fontSize:15, lineHeight:1.65 }}>{item.a}</p>}
+            </article>
+          )
+        })}
       </div>
     </section>
   )
