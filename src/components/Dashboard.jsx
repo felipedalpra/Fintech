@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
 import { fmt, fmtN, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
@@ -126,18 +126,35 @@ function DeltaBadge({ current, previous, isPositiveGood = true }) {
   )
 }
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024)
+  useEffect(() => {
+    function handleResize() { setWidth(window.innerWidth) }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  return width
+}
+
 export function Dashboard({ data, saveError }) {
-  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
-  const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
+  const windowWidth = useWindowWidth()
+  const isMobile = windowWidth < 900
+  const isNarrow = windowWidth < 380
   const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
   const [showComparison, setShowComparison] = useState(false)
   const [period, setPeriod] = useState('month')
 
-  const periodRange = getDashboardPeriodRange(period)
-  const m = buildMetrics(data, { startDate: periodRange.start, endDate: periodRange.end, balanceDate: periodRange.end })
+  const periodRange = useMemo(() => getDashboardPeriodRange(period), [period])
+  const prevRange = useMemo(() => getPreviousPeriodRange(period, periodRange), [period, periodRange])
 
-  const prevRange = getPreviousPeriodRange(period, periodRange)
-  const pm = buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
+  const m = useMemo(
+    () => buildMetrics(data, { startDate: periodRange.start, endDate: periodRange.end, balanceDate: periodRange.end }),
+    [data, periodRange]
+  )
+  const pm = useMemo(
+    () => buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end }),
+    [data, prevRange]
+  )
 
   const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
   const maxBar = Math.max(...monthKeys.map(key => Math.max(m.revenueByMonth[key] || 0, m.expenseByMonth[key] || 0)), 1)

@@ -148,7 +148,13 @@ function normalizeUuid(value, namespace = 'id', cacheMap = null) {
 }
 
 function stableUuid(seed) {
-  const hex = [hashHex(`${seed}:a`), hashHex(`${seed}:b`), hashHex(`${seed}:c`), hashHex(`${seed}:d`)].join('').slice(0, 32)
+  const raw = [hashHex(`${seed}:a`), hashHex(`${seed}:b`), hashHex(`${seed}:c`), hashHex(`${seed}:d`)].join('').slice(0, 32)
+  const chars = raw.split('')
+  // Version 4: nibble at position 12 must be '4'
+  chars[12] = '4'
+  // Variant: nibble at position 16 must be '8', '9', 'a', or 'b'
+  chars[16] = '89ab'[parseInt(chars[16], 16) & 3]
+  const hex = chars.join('')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
 }
 

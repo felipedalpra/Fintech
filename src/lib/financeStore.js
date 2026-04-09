@@ -6,9 +6,6 @@ const LOCAL_USERS_KEY = 'startupfinance_users_v1'
 const LOCAL_DATA_PREFIX = 'startupfinance_user_data_v1'
 const MIGRATION_PREFIX = 'startupfinance_migrated_user_v1'
 let relationalBackendAvailable = null
-let consultationsPaymentMethodColumnAvailable = null
-let surgeriesInvoiceIssuanceColumnAvailable = null
-let consultationsInvoiceIssuanceColumnAvailable = null
 
 const RELATIONAL_TABLES = [
   'procedures',
@@ -51,50 +48,6 @@ async function canUseRelationalBackend() {
   return relationalBackendAvailable
 }
 
-async function canUseConsultationsPaymentMethodColumn() {
-  if (consultationsPaymentMethodColumnAvailable !== null) return consultationsPaymentMethodColumnAvailable
-  const { error } = await supabase.from('consultations').select('payment_method').limit(1)
-  if (!error) {
-    consultationsPaymentMethodColumnAvailable = true
-    return true
-  }
-  if (isMissingColumnError(error, 'payment_method')) {
-    consultationsPaymentMethodColumnAvailable = false
-    return false
-  }
-  consultationsPaymentMethodColumnAvailable = true
-  return consultationsPaymentMethodColumnAvailable
-}
-
-async function canUseSurgeriesInvoiceIssuanceColumn() {
-  if (surgeriesInvoiceIssuanceColumnAvailable !== null) return surgeriesInvoiceIssuanceColumnAvailable
-  const { error } = await supabase.from('surgeries').select('invoice_issuance_percent').limit(1)
-  if (!error) {
-    surgeriesInvoiceIssuanceColumnAvailable = true
-    return true
-  }
-  if (isMissingColumnError(error, 'invoice_issuance_percent')) {
-    surgeriesInvoiceIssuanceColumnAvailable = false
-    return false
-  }
-  surgeriesInvoiceIssuanceColumnAvailable = true
-  return surgeriesInvoiceIssuanceColumnAvailable
-}
-
-async function canUseConsultationsInvoiceIssuanceColumn() {
-  if (consultationsInvoiceIssuanceColumnAvailable !== null) return consultationsInvoiceIssuanceColumnAvailable
-  const { error } = await supabase.from('consultations').select('invoice_issuance_percent').limit(1)
-  if (!error) {
-    consultationsInvoiceIssuanceColumnAvailable = true
-    return true
-  }
-  if (isMissingColumnError(error, 'invoice_issuance_percent')) {
-    consultationsInvoiceIssuanceColumnAvailable = false
-    return false
-  }
-  consultationsInvoiceIssuanceColumnAvailable = true
-  return consultationsInvoiceIssuanceColumnAvailable
-}
 
 async function fetchLegacyPayload(userId) {
   const { data, error } = await supabase
@@ -288,8 +241,7 @@ function mapProductsRows(userId, data) {
   }))
 }
 
-function mapSurgeriesRows(userId, data, options = {}) {
-  const includeInvoiceIssuancePercent = options.includeInvoiceIssuancePercent === true
+function mapSurgeriesRows(userId, data) {
   return data.surgeries.map(item => ({
     id:item.id,
     user_id:userId,
@@ -305,14 +257,12 @@ function mapSurgeriesRows(userId, data, options = {}) {
     anesthesia_cost:item.anesthesiaCost || 0,
     material_cost:item.materialCost || 0,
     other_costs:item.otherCosts || 0,
-    ...(includeInvoiceIssuancePercent ? { invoice_issuance_percent:item.invoiceIssuancePercent || 0 } : {}),
+    invoice_issuance_percent:item.invoiceIssuancePercent || 0,
     notes:item.notes || null,
   }))
 }
 
-function mapConsultationsRows(userId, data, options = {}) {
-  const includePaymentMethod = options.includePaymentMethod === true
-  const includeInvoiceIssuancePercent = options.includeInvoiceIssuancePercent === true
+function mapConsultationsRows(userId, data) {
   return data.consultations.map(item => ({
     id:item.id,
     user_id:userId,
@@ -321,8 +271,8 @@ function mapConsultationsRows(userId, data, options = {}) {
     consultation_type:item.consultationType || 'avaliacao',
     value:item.value || 0,
     payment_type:item.paymentType || 'particular',
-    ...(includePaymentMethod ? { payment_method:item.paymentMethod || null } : {}),
-    ...(includeInvoiceIssuancePercent ? { invoice_issuance_percent:item.invoiceIssuancePercent || 0 } : {}),
+    payment_method:item.paymentMethod || null,
+    invoice_issuance_percent:item.invoiceIssuancePercent || 0,
     insurance:item.insurance || null,
     payment_status:item.paymentStatus || 'pendente',
     forecast_payment_date:item.forecastPaymentDate || null,
@@ -460,20 +410,19 @@ export async function saveFinanceData(userId, financeData) {
     return
   }
 
-  await syncTable('procedures', userId, mapProceduresRows(userId, payload))
-  await syncTable('products', userId, mapProductsRows(userId, payload))
-  const includeSurgeriesInvoiceIssuancePercent = await canUseSurgeriesInvoiceIssuanceColumn()
-  await syncTable('surgeries', userId, mapSurgeriesRows(userId, payload, { includeInvoiceIssuancePercent:includeSurgeriesInvoiceIssuancePercent }))
-  const includeConsultationsPaymentMethod = await canUseConsultationsPaymentMethodColumn()
-  const includeConsultationsInvoiceIssuancePercent = await canUseConsultationsInvoiceIssuanceColumn()
-  await syncTable('consultations', userId, mapConsultationsRows(userId, payload, { includePaymentMethod:includeConsultationsPaymentMethod, includeInvoiceIssuancePercent:includeConsultationsInvoiceIssuancePercent }))
-  await syncTable('product_sales', userId, mapProductSalesRows(userId, payload))
-  await syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload))
-  await syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload))
-  await syncTable('expenses', userId, mapExpensesRows(userId, payload))
-  await syncTable('assets', userId, mapBalanceRows(userId, payload.assets))
-  await syncTable('liabilities', userId, mapBalanceRows(userId, payload.liabilities))
-  await syncTable('goals', userId, mapGoalsRows(userId, payload))
+  await Promise.all([
+    syncTable('procedures', userId, mapProceduresRows(userId, payload)),
+    syncTable('products', userId, mapProductsRows(userId, payload)),
+    syncTable('surgeries', userId, mapSurgeriesRows(userId, payload)),
+    syncTable('consultations', userId, mapConsultationsRows(userId, payload)),
+    syncTable('product_sales', userId, mapProductSalesRows(userId, payload)),
+    syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload)),
+    syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload)),
+    syncTable('expenses', userId, mapExpensesRows(userId, payload)),
+    syncTable('assets', userId, mapBalanceRows(userId, payload.assets)),
+    syncTable('liabilities', userId, mapBalanceRows(userId, payload.liabilities)),
+    syncTable('goals', userId, mapGoalsRows(userId, payload)),
+  ])
   await insertAuditLog(userId, 'sync_finance_data', { records:RELATIONAL_TABLES.length })
 }
 
@@ -519,14 +468,3 @@ function isIgnorableAuditLogError(error) {
     || message.includes('schema cache')
 }
 
-function isMissingColumnError(error, columnName) {
-  const code = String(error?.code || '')
-  const message = String(error?.message || '').toLowerCase()
-  const details = String(error?.details || '').toLowerCase()
-  const hint = String(error?.hint || '').toLowerCase()
-  const column = String(columnName || '').toLowerCase()
-  const text = `${message} ${details} ${hint}`
-  if (code === '42703') return true
-  if (code === 'PGRST204' && text.includes(column)) return true
-  return text.includes('does not exist') && text.includes(column)
-}
