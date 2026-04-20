@@ -46,14 +46,6 @@ export function LoginPage({ initialMode = 'login' }) {
     }
   }, [searchParams])
 
-  if (!hasSupabaseEnv) {
-    return <SupabaseSetupScreen />
-  }
-
-  if (!loading && user) {
-    return <Navigate to={location.state?.from || '/app/dashboard'} replace />
-  }
-
   const isRegister = mode === 'register'
   const passwordChecks = useMemo(() => ({
     length:form.password.length >= PASSWORD_POLICY.minLength,
@@ -63,6 +55,14 @@ export function LoginPage({ initialMode = 'login' }) {
     special:PASSWORD_POLICY.special.test(form.password),
   }), [form.password])
   const passwordValid = Object.values(passwordChecks).every(Boolean)
+
+  if (!hasSupabaseEnv) {
+    return <SupabaseSetupScreen />
+  }
+
+  if (!loading && user) {
+    return <Navigate to={location.state?.from || '/app/dashboard'} replace />
+  }
 
   const onChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
