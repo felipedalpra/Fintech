@@ -1,4 +1,4 @@
-import { getStripe, readRawBody, findBillingAccountByStripeCustomer, upsertBillingAccount } from './_lib.js'
+import { getStripe, readRawBody, findBillingAccountByStripeCustomer, findBillingAccountByUser, upsertBillingAccount } from './_lib.js'
 
 export const config = {
   api: {
@@ -51,6 +51,9 @@ export default async function handler(req, res) {
 async function handleCheckoutCompleted(session) {
   const userId = session.client_reference_id || session.metadata?.user_id
   if (!userId) return
+
+  const existing = await findBillingAccountByUser(userId)
+  if (existing?.stripe_checkout_session_id === session.id) return
 
   await upsertBillingAccount(userId, {
     stripe_customer_id:session.customer || null,

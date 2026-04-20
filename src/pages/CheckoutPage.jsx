@@ -18,7 +18,7 @@ export function CheckoutPage() {
   const cycle = searchParams.get('cycle') || 'mensal'
   const selected = OPTIONS[cycle] || OPTIONS.mensal
   const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState({ fullName:'', email:'', cardName:'', cardNumber:'', cardExpiry:'', cardCvv:'' })
+  const [form, setForm] = useState({ fullName:'', email:'' })
 
   const summary = useMemo(() => ({
     trialDays:7,
@@ -86,16 +86,6 @@ export function CheckoutPage() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:18 }}>
               <FInput label="Nome completo" value={form.fullName} onChange={value => setForm(current => ({ ...current, fullName:value }))} placeholder="Seu nome" required />
               <FInput label="E-mail" value={form.email} onChange={value => setForm(current => ({ ...current, email:value }))} placeholder="voce@clinica.com" required />
-            </div>
-
-            <div style={{ padding:18, borderRadius:20, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.08)', marginBottom:18 }}>
-              <div style={{ fontSize:11, color:'#7F98A3', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>Dados do cartão</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-                <div style={{ gridColumn:'1 / -1' }}><FInput label="Nome no cartão" value={form.cardName} onChange={value => setForm(current => ({ ...current, cardName:value }))} placeholder="Nome impresso" /></div>
-                <div style={{ gridColumn:'1 / -1' }}><FInput label="Número do cartão" value={form.cardNumber} onChange={value => setForm(current => ({ ...current, cardNumber:value }))} placeholder="0000 0000 0000 0000" /></div>
-                <FInput label="Validade" value={form.cardExpiry} onChange={value => setForm(current => ({ ...current, cardExpiry:value }))} placeholder="MM/AA" />
-                <FInput label="CVV" value={form.cardCvv} onChange={value => setForm(current => ({ ...current, cardCvv:value }))} placeholder="123" />
-              </div>
             </div>
 
             <div style={{ padding:18, borderRadius:20, background:'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(255,111,60,0.08))', border:'1px solid rgba(255,255,255,0.08)', marginBottom:18 }}>

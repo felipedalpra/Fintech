@@ -13,24 +13,31 @@ export function BillingProvider({ children }) {
   useEffect(() => {
     let active = true
 
-    async function bootstrap() {
+    async function bootstrap(attempt = 0) {
       if (!user?.id) {
         setBilling(null)
         setLoading(false)
         return
       }
 
-      setLoading(true)
-      setError('')
+      if (attempt === 0) {
+        setLoading(true)
+        setError('')
+      }
+
       try {
         const account = await ensureBillingAccount(user)
         if (!active) return
         setBilling(account)
+        if (active) setLoading(false)
       } catch (nextError) {
         if (!active) return
+        if (attempt < 2) {
+          setTimeout(() => bootstrap(attempt + 1), 1000 * Math.pow(2, attempt))
+          return
+        }
         setError(nextError.message || 'Nao foi possivel carregar o billing da conta.')
-      } finally {
-        if (active) setLoading(false)
+        setLoading(false)
       }
     }
 

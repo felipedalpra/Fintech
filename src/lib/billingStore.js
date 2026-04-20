@@ -74,7 +74,10 @@ export function hasActiveAccess(account) {
   const periodEnd = account.current_period_end ? new Date(account.current_period_end).getTime() : 0
 
   if (account.status === 'trialing') return trialEndsAt > now
-  if (account.status === 'active') return Math.max(accessExpiresAt, periodEnd, now + 1) > now
+  if (account.status === 'active') {
+    if (!accessExpiresAt && !periodEnd) return true // webhook ainda não chegou
+    return Math.max(accessExpiresAt, periodEnd) > now
+  }
   return accessExpiresAt > now
 }
 

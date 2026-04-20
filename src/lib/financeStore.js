@@ -6,6 +6,8 @@ const LOCAL_USERS_KEY = 'startupfinance_users_v1'
 const LOCAL_DATA_PREFIX = 'startupfinance_user_data_v1'
 const MIGRATION_PREFIX = 'startupfinance_migrated_user_v1'
 let relationalBackendAvailable = null
+let relationalBackendCheckedAt = 0
+const RELATIONAL_BACKEND_TTL = 5 * 60 * 1000 // 5 min
 
 const RELATIONAL_TABLES = [
   'procedures',
@@ -42,9 +44,13 @@ function getLocalUserDataByEmail(email) {
 }
 
 async function canUseRelationalBackend() {
-  if (relationalBackendAvailable !== null) return relationalBackendAvailable
+  const now = Date.now()
+  if (relationalBackendAvailable !== null && (now - relationalBackendCheckedAt) < RELATIONAL_BACKEND_TTL) {
+    return relationalBackendAvailable
+  }
   const { error } = await supabase.from('procedures').select('id').limit(1)
   relationalBackendAvailable = !error
+  relationalBackendCheckedAt = now
   return relationalBackendAvailable
 }
 
@@ -410,19 +416,25 @@ export async function saveFinanceData(userId, financeData) {
     return
   }
 
-  await Promise.all([
-    syncTable('procedures', userId, mapProceduresRows(userId, payload)),
-    syncTable('products', userId, mapProductsRows(userId, payload)),
-    syncTable('surgeries', userId, mapSurgeriesRows(userId, payload)),
-    syncTable('consultations', userId, mapConsultationsRows(userId, payload)),
-    syncTable('product_sales', userId, mapProductSalesRows(userId, payload)),
-    syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload)),
-    syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload)),
-    syncTable('expenses', userId, mapExpensesRows(userId, payload)),
-    syncTable('assets', userId, mapBalanceRows(userId, payload.assets)),
-    syncTable('liabilities', userId, mapBalanceRows(userId, payload.liabilities)),
-    syncTable('goals', userId, mapGoalsRows(userId, payload)),
-  ])
+  try {
+    await Promise.all([
+      syncTable('procedures', userId, mapProceduresRows(userId, payload)),
+      syncTable('products', userId, mapProductsRows(userId, payload)),
+      syncTable('surgeries', userId, mapSurgeriesRows(userId, payload)),
+      syncTable('consultations', userId, mapConsultationsRows(userId, payload)),
+      syncTable('product_sales', userId, mapProductSalesRows(userId, payload)),
+      syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload)),
+      syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload)),
+      syncTable('expenses', userId, mapExpensesRows(userId, payload)),
+      syncTable('assets', userId, mapBalanceRows(userId, payload.assets)),
+      syncTable('liabilities', userId, mapBalanceRows(userId, payload.liabilities)),
+      syncTable('goals', userId, mapGoalsRows(userId, payload)),
+    ])
+  } catch (syncError) {
+    relationalBackendAvailable = null
+    relationalBackendCheckedAt = 0
+    throw syncError
+  }
   await insertAuditLog(userId, 'sync_finance_data', { records:RELATIONAL_TABLES.length })
 }
 

@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
-import { fmt, fmtN, today } from '../utils.js'
+import { fmt, fmtN, today, getPeriodRange } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
 const PERIOD_OPTIONS = [
-  { value:'day', label:'Dia' },
-  { value:'month', label:'Mês' },
+  { value:'day', label:'Hoje' },
+  { value:'month', label:'Este mês' },
   { value:'quarter', label:'Trimestre' },
   { value:'semester', label:'Semestre' },
-  { value:'year', label:'Ano' },
+  { value:'year', label:'Este ano' },
+  { value:'custom', label:'Personalizado' },
 ]
 
 function formatDateInput(date) {
@@ -20,7 +21,9 @@ function formatDateInput(date) {
   return `${year}-${month}-${day}`
 }
 
-function getDashboardPeriodRange(period) {
+function getDashboardPeriodRange(period, customRange = { start:'', end:'' }) {
+  if (period === 'custom') return { start:customRange.start || '', end:customRange.end || '' }
+
   const base = new Date(`${today()}T00:00:00`)
   const end = new Date(base.getFullYear(), base.getMonth(), base.getDate())
 
@@ -52,8 +55,30 @@ function getDashboardPeriodRange(period) {
   return { start:'', end:'' }
 }
 
+function formatPeriodLabel(period, range) {
+  if (!range.start) return ''
+  const locale = 'pt-BR'
+  const start = new Date(`${range.start}T00:00:00`)
+  if (period === 'day') return start.toLocaleDateString(locale, { day:'numeric', month:'long', year:'numeric' })
+  if (period === 'month') return start.toLocaleDateString(locale, { month:'long', year:'numeric' })
+  if (!range.end) return start.toLocaleDateString(locale, { day:'numeric', month:'short', year:'numeric' })
+  const end = new Date(`${range.end}T00:00:00`)
+  const fmtShort = d => d.toLocaleDateString(locale, { day:'numeric', month:'short' })
+  const sameYear = start.getFullYear() === end.getFullYear()
+  return `${fmtShort(start)} – ${fmtShort(end)}${sameYear ? ` ${end.getFullYear()}` : ` ${end.getFullYear()}`}`
+}
+
 function getPreviousPeriodRange(period, range) {
   if (!range.start || !range.end) return { start:'', end:'' }
+  if (period === 'custom') {
+    const startD = new Date(`${range.start}T00:00:00`)
+    const endD = new Date(`${range.end}T00:00:00`)
+    const diff = endD.getTime() - startD.getTime()
+    const prevEnd = new Date(startD.getTime() - 24 * 60 * 60 * 1000)
+    const prevStart = new Date(prevEnd.getTime() - diff)
+    const f = d => d.toISOString().split('T')[0]
+    return { start:f(prevStart), end:f(prevEnd) }
+  }
   const start = new Date(`${range.start}T00:00:00`)
   const prevEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000)
 
@@ -143,9 +168,11 @@ export function Dashboard({ data, saveError }) {
   const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
   const [showComparison, setShowComparison] = useState(false)
   const [period, setPeriod] = useState('month')
+  const [customRange, setCustomRange] = useState({ start:'', end:'' })
 
-  const periodRange = useMemo(() => getDashboardPeriodRange(period), [period])
+  const periodRange = useMemo(() => getDashboardPeriodRange(period, customRange), [period, customRange])
   const prevRange = useMemo(() => getPreviousPeriodRange(period, periodRange), [period, periodRange])
+  const periodLabel = useMemo(() => formatPeriodLabel(period, periodRange), [period, periodRange])
 
   const m = useMemo(
     () => buildMetrics(data, { startDate: periodRange.start, endDate: periodRange.end, balanceDate: periodRange.end }),
@@ -226,7 +253,7 @@ export function Dashboard({ data, saveError }) {
       sparkColor: C.yellow,
     },
     {
-      label: 'Fluxo de caixa',
+      label: 'Saldo do caixa',
       value: m.cashBalance,
       prevValue: pm.cashBalance,
       isPositiveGood: true,
@@ -240,7 +267,7 @@ export function Dashboard({ data, saveError }) {
       sparkColor: m.cashBalance >= 0 ? C.green : C.red,
     },
     {
-      label: 'Contas em aberto',
+      label: 'A receber',
       value: m.receivablesOpenTotal,
       prevValue: pm.receivablesOpenTotal,
       isPositiveGood: true,
@@ -255,106 +282,139 @@ export function Dashboard({ data, saveError }) {
     },
   ]
 
+  const computedGoals = useMemo(() => (data.goals || []).map(goal => {
+    if (goal.metric === 'reducao_custo') {
+      const currentRange = getPeriodRange('month')
+      const nowDate = new Date()
+      const prevMonthDate = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1)
+      const prevYear = prevMonthDate.getFullYear()
+      const prevMonth = String(prevMonthDate.getMonth() + 1).padStart(2, '0')
+      const prevStart = `${prevYear}-${prevMonth}-01`
+      const lastDay = new Date(prevYear, prevMonthDate.getMonth() + 1, 0).getDate()
+      const prevEnd = `${prevYear}-${prevMonth}-${String(lastDay).padStart(2, '0')}`
+      const curM = buildMetrics(data, { startDate:currentRange.start, endDate:currentRange.end, balanceDate:currentRange.end })
+      const preM = buildMetrics(data, { startDate:prevStart, endDate:prevEnd, balanceDate:prevEnd })
+      const reduction = (preM.operationalExpenses + preM.taxExpenses + preM.surgeryCostTotal + preM.productPurchaseTotal) - (curM.operationalExpenses + curM.taxExpenses + curM.surgeryCostTotal + curM.productPurchaseTotal)
+      return { ...goal, current:reduction }
+    }
+    const range = getPeriodRange(
+      goal.period === 'mensal' ? 'month' : goal.period === 'trimestral' ? 'quarter' : goal.period === 'anual' ? 'year' : 'custom',
+      goal.period === 'personalizado' ? { start:today().slice(0, 7) + '-01', end:goal.dueDate } : {}
+    )
+    const metrics = buildMetrics(data, { startDate:range.start, endDate:range.end || goal.dueDate, balanceDate:goal.dueDate })
+    const current = { faturamento:metrics.grossRevenue, cirurgias:metrics.surgeriesCompleted, consultas:metrics.consultationsCompleted, lucro:metrics.netProfit, ticket_medio:metrics.averageTicket, fluxo_caixa:metrics.cashBalance }[goal.metric] || 0
+    return { ...goal, current }
+  }), [data])
+
+  const topGoals = useMemo(() => [...computedGoals].sort((a, b) => {
+    const pctA = a.target > 0 ? a.current / a.target : 0
+    const pctB = b.target > 0 ? b.current / b.target : 0
+    return pctB - pctA
+  }).slice(0, 4), [computedGoals])
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
 
-      {/* Top bar: privacy toggle + comparison toggle + sync status */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+      {/* Seletor de período */}
+      <div style={{ background:'linear-gradient(180deg, rgba(7,11,18,0.98), rgba(7,11,18,0.92))', border:`1px solid ${C.border}66`, borderRadius:18, padding:isMobile ? 14 : 18, backdropFilter:'blur(12px)' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:12 }}>
           <div>
-            <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Privacidade financeira</div>
-            {!isMobile && <div style={{ color:C.textDim, fontSize:13, marginTop:4 }}>Oculte valores ao compartilhar a tela ou usar o sistema em público.</div>}
+            <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Período analisado</div>
+            {periodLabel && <div style={{ fontSize:12, color:C.textSub, marginTop:2 }}>{periodLabel}</div>}
+          </div>
+          <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+            {/* Comparison toggle */}
+            <button
+              onClick={() => setShowComparison(v => !v)}
+              aria-pressed={showComparison}
+              title="Comparar com o período anterior"
+              style={{
+                display:'inline-flex', alignItems:'center', gap:6,
+                padding:'8px 12px', borderRadius:999,
+                border:`1px solid ${showComparison ? C.cyan + '55' : C.border}`,
+                background: showComparison ? C.cyan + '14' : 'transparent',
+                color: showComparison ? C.cyan : C.textSub,
+                cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700,
+              }}
+            >
+              ↕ Comparar períodos
+            </button>
+            {/* Privacy toggle */}
+            <button
+              onClick={toggleFinancialPrivacy}
+              aria-label={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
+              style={{
+                display:'inline-flex', alignItems:'center', gap:6,
+                padding:'8px 12px', borderRadius:999,
+                border:`1px solid ${financialPrivacyMode ? C.accent + '55' : C.border}`,
+                background: financialPrivacyMode ? C.accent + '14' : 'transparent',
+                color: financialPrivacyMode ? C.accentLight : C.textSub,
+                cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700,
+              }}
+            >
+              <EyeIcon off={financialPrivacyMode} />
+              {financialPrivacyMode ? 'Mostrar' : 'Ocultar'}
+            </button>
+            {/* Sync status */}
+            <span style={{
+              display:'inline-flex', alignItems:'center', gap:5,
+              padding:'6px 10px', borderRadius:999, fontSize:11, fontWeight:700,
+              background: saveError ? C.red + '18' : C.green + '18',
+              color: saveError ? C.red : C.green,
+              border: `1px solid ${saveError ? C.red + '44' : C.green + '44'}`,
+              userSelect:'none',
+            }}>
+              {saveError ? '⚠ Erro' : '● Atualizado'}
+            </span>
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', width:isMobile ? '100%' : 'auto' }}>
-          <select
-            value={period}
-            onChange={event => setPeriod(event.target.value)}
-            style={{
-              minWidth:136,
-              borderRadius:999,
-              border:`1px solid ${C.border}`,
-              background:'transparent',
-              color:C.textSub,
-              padding:'9px 12px',
-              fontFamily:'inherit',
-              fontSize:12,
-              fontWeight:700,
-              textTransform:'uppercase',
-              letterSpacing:'0.06em',
-            }}
-          >
-            {PERIOD_OPTIONS.map(option => (
-              <option key={option.value} value={option.value} style={{ color:'#0B1020' }}>
+
+        {/* Period pills */}
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          {PERIOD_OPTIONS.map(option => {
+            const active = period === option.value
+            return (
+              <button
+                key={option.value}
+                onClick={() => setPeriod(option.value)}
+                style={{
+                  padding:'8px 14px', borderRadius:999, cursor:'pointer',
+                  fontFamily:'inherit', fontSize:12, fontWeight:active ? 700 : 600,
+                  border: active ? `1px solid ${C.accent}66` : `1px solid ${C.border}`,
+                  background: active ? C.accent + '20' : 'transparent',
+                  color: active ? C.accentLight : C.textSub,
+                  transition:'all 0.15s',
+                }}
+              >
                 {option.label}
-              </option>
-            ))}
-          </select>
-
-          {/* Comparison toggle */}
-          <button
-            onClick={() => setShowComparison(v => !v)}
-            aria-pressed={showComparison}
-            title="Comparar com o período anterior"
-            style={{
-              display:'inline-flex',
-              alignItems:'center',
-              gap:8,
-              padding:'10px 14px',
-              borderRadius:999,
-              border:`1px solid ${showComparison ? C.cyan + '55' : C.border}`,
-              background: showComparison ? C.cyan + '14' : 'transparent',
-              color: showComparison ? C.cyan : C.textSub,
-              cursor:'pointer',
-              fontFamily:'inherit',
-              fontSize:13,
-              fontWeight:700,
-            }}
-          >
-            vs. período anterior
-          </button>
-
-          {/* Privacy toggle */}
-          <button
-            onClick={toggleFinancialPrivacy}
-            aria-label={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
-            title={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
-            style={{
-              display:'inline-flex',
-              alignItems:'center',
-              gap:8,
-              padding:'10px 14px',
-              borderRadius:999,
-              border:`1px solid ${financialPrivacyMode ? C.accent + '55' : C.border}`,
-              background: financialPrivacyMode ? C.accent + '14' : 'transparent',
-              color: financialPrivacyMode ? C.accentLight : C.textSub,
-              cursor:'pointer',
-              fontFamily:'inherit',
-              fontSize:13,
-              fontWeight:700,
-            }}
-          >
-            <EyeIcon off={financialPrivacyMode} />
-            {financialPrivacyMode ? 'Mostrar valores' : 'Ocultar valores'}
-          </button>
-
-          {/* Sync status pill */}
-          <span style={{
-            display:'inline-flex',
-            alignItems:'center',
-            gap:6,
-            padding:'6px 12px',
-            borderRadius:999,
-            fontSize:12,
-            fontWeight:700,
-            background: saveError ? C.red + '18' : C.green + '18',
-            color: saveError ? C.red : C.green,
-            border: `1px solid ${saveError ? C.red + '44' : C.green + '44'}`,
-            userSelect:'none',
-          }}>
-            {saveError ? '⚠ Erro ao salvar' : '● Dados atualizados'}
-          </span>
+              </button>
+            )
+          })}
         </div>
+
+        {/* Custom date range inputs */}
+        {period === 'custom' && (
+          <div style={{ display:'flex', gap:10, marginTop:12, flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+              <label style={{ fontSize:11, color:C.textDim, fontWeight:600 }}>Data inicial</label>
+              <input
+                type="date"
+                value={customRange.start}
+                onChange={e => setCustomRange(current => ({ ...current, start:e.target.value }))}
+                style={{ padding:'8px 12px', borderRadius:8, border:`1px solid ${C.border}`, background:'transparent', color:C.text, fontFamily:'inherit', fontSize:13 }}
+              />
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+              <label style={{ fontSize:11, color:C.textDim, fontWeight:600 }}>Data final</label>
+              <input
+                type="date"
+                value={customRange.end}
+                onChange={e => setCustomRange(current => ({ ...current, end:e.target.value }))}
+                style={{ padding:'8px 12px', borderRadius:8, border:`1px solid ${C.border}`, background:'transparent', color:C.text, fontFamily:'inherit', fontSize:13 }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* KPI cards */}
@@ -379,6 +439,49 @@ export function Dashboard({ data, saveError }) {
           </Card>
         ))}
       </div>
+
+      {/* Goals widget */}
+      {topGoals.length > 0 && (
+        <Card>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+            <h3 style={{ margin:0, fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Progresso das metas</h3>
+            <span style={{ fontSize:11, color:C.textDim }}>{topGoals.length} de {computedGoals.length} meta{computedGoals.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'repeat(auto-fill, minmax(260px, 1fr))', gap:16 }}>
+            {topGoals.map(goal => {
+              const pct = goal.target > 0 ? Math.min(100, (goal.current / goal.target) * 100) : 0
+              const done = goal.current >= goal.target
+              const color = done ? C.green : pct >= 70 ? C.cyan : pct >= 40 ? C.accent : C.yellow
+              const isCountMetric = goal.metric === 'cirurgias' || goal.metric === 'consultas'
+              const displayVal = v => maskFinancialValue(v, financialPrivacyMode, isCountMetric ? fmtN : fmt)
+              const dueDate = goal.dueDate ? new Date(`${goal.dueDate}T00:00:00`) : null
+              const nowMidnight = new Date(); nowMidnight.setHours(0,0,0,0)
+              const daysLeft = dueDate ? Math.floor((dueDate.getTime() - nowMidnight.getTime()) / (1000*60*60*24)) : null
+              const daysColor = daysLeft === null ? C.textDim : daysLeft < 0 ? C.red : daysLeft <= 7 ? C.yellow : C.textDim
+              const daysLabel = daysLeft === null ? '' : daysLeft < 0 ? 'Vencida' : daysLeft === 0 ? 'Vence hoje' : `${daysLeft}d restantes`
+              return (
+                <div key={goal.id} style={{ padding:'14px 16px', borderRadius:12, background:color+'0d', border:`1px solid ${color}33` }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:C.text, flex:1, paddingRight:8, lineHeight:1.35 }}>{goal.name}</div>
+                    {done && <span style={{ fontSize:11, fontWeight:700, color:C.green, whiteSpace:'nowrap' }}>🎯 Atingida</span>}
+                  </div>
+                  <Progress val={pct} max={100} color={color} h={8} />
+                  <div style={{ display:'flex', justifyContent:'space-between', marginTop:8, alignItems:'center' }}>
+                    <div>
+                      <span style={{ fontSize:13, fontWeight:800, color }}>{displayVal(goal.current)}</span>
+                      <span style={{ fontSize:11, color:C.textDim }}> / {displayVal(goal.target)}</span>
+                    </div>
+                    <div style={{ textAlign:'right' }}>
+                      <span style={{ fontSize:12, fontWeight:700, color }}>{pct.toFixed(0)}%</span>
+                      {daysLabel && <div style={{ fontSize:10, color:daysColor, fontWeight:600 }}>{daysLabel}</div>}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1.25fr 1fr', gap:16 }}>
         <Card>

@@ -9,7 +9,8 @@ function resolvePercent(value) {
 }
 
 function invoiceIssuanceCost(baseValue, percentValue) {
-  return (baseValue || 0) * (resolvePercent(percentValue) / 100)
+  const base = Number.isFinite(Number(baseValue)) ? Number(baseValue) : 0
+  return base * (resolvePercent(percentValue) / 100)
 }
 
 function surgeryCosts(item) {

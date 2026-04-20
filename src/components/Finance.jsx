@@ -15,11 +15,50 @@ const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
 const SUMMARY_CARDS = [
-  ['Caixa realizado', 'cashBalance', C.cyan],
+  ['Recebido no período', 'cashBalance', C.cyan],
   ['Lucro líquido', 'netProfit', 'dynamic-profit'],
-  ['Contas a receber', 'receivablesOpenTotal', C.accent],
-  ['Contas a pagar', 'payablesOpenTotal', C.yellow],
+  ['A receber', 'receivablesOpenTotal', C.accent],
+  ['A pagar', 'payablesOpenTotal', C.yellow],
 ]
+
+const PERIOD_PILLS = [
+  { value:'day', label:'Hoje' },
+  { value:'week', label:'Semana' },
+  { value:'month', label:'Este mês' },
+  { value:'quarter', label:'Trimestre' },
+  { value:'year', label:'Este ano' },
+  { value:'custom', label:'Personalizado' },
+]
+
+const EXPENSE_CATEGORY_LABELS = {
+  aluguel:'Aluguel',
+  salarios:'Salários',
+  marketing:'Marketing',
+  hospital:'Hospital',
+  anestesia:'Anestesia',
+  equipamentos:'Equipamentos',
+  softwares:'Softwares',
+  impostos:'Impostos',
+  variaveis:'Variáveis',
+  outros:'Outros',
+}
+
+function formatFinancePeriodLabel(period, range) {
+  if (!range.start) return ''
+  const locale = 'pt-BR'
+  const start = new Date(`${range.start}T00:00:00`)
+  if (period === 'day') return start.toLocaleDateString(locale, { day:'numeric', month:'long', year:'numeric' })
+  if (period === 'month') return start.toLocaleDateString(locale, { month:'long', year:'numeric' })
+  if (period === 'week') {
+    if (!range.end) return start.toLocaleDateString(locale, { day:'numeric', month:'short', year:'numeric' })
+    const end = new Date(`${range.end}T00:00:00`)
+    return `${start.toLocaleDateString(locale, { day:'numeric', month:'short' })} – ${end.toLocaleDateString(locale, { day:'numeric', month:'short', year:'numeric' })}`
+  }
+  if (!range.end) return start.toLocaleDateString(locale, { day:'numeric', month:'short', year:'numeric' })
+  const end = new Date(`${range.end}T00:00:00`)
+  const fmtShort = d => d.toLocaleDateString(locale, { day:'numeric', month:'short' })
+  return `${fmtShort(start)} – ${fmtShort(end)} ${end.getFullYear()}`
+}
 
 function getPreviousPeriodRange(period, range) {
   if (period === 'month') {
@@ -76,9 +115,14 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [formError, setFormError] = useState('')
   const range = getPeriodRange(period, customRange)
+  const periodLabel = useMemo(() => formatFinancePeriodLabel(period, range), [period, range])
   const mergedData = useMemo(() => ({ ...data, recurrences }), [data, recurrences])
-  const m = buildMetrics(mergedData, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() })
+  const m = useMemo(
+    () => buildMetrics(mergedData, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() }),
+    [mergedData, range.start, range.end],
+  )
   const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
 
   const prevRange = useMemo(() => {
@@ -102,7 +146,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         .from('recorrencias')
         .select('*')
       if (!active) return
-      if (error) return
+      if (error) {
+        toast('Não foi possível carregar as recorrências. Tente recarregar a página.', 'warning')
+        return
+      }
       setRecurrences((rows || []).map(item => ({
         id:item.id,
         tipo:item.tipo || 'despesa',
@@ -167,6 +214,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     setModalType(type)
     setForm(defaults)
     setEditing(null)
+    setFormError('')
     setShowModal(true)
   }
 
@@ -174,6 +222,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     setModalType(type)
     setForm({ ...item })
     setEditing(item.id)
+    setFormError('')
     setShowModal(true)
   }
 
@@ -221,7 +270,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   const save = async () => {
     if (modalType === 'extra') {
-      if (!form.description) return
+      if (!form.description) {
+        setFormError('Informe uma descrição para a receita.')
+        return
+      }
+      setFormError('')
       if (!editing && form.launchType === 'fixa') {
         try {
           await saveFixedRecurrence('receita')
@@ -236,7 +289,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       setData(current => ({ ...current, extraRevenues: editing ? current.extraRevenues.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.extraRevenues, { ...form, id:uid() }] }))
     }
     if (modalType === 'expense') {
-      if (!form.description) return
+      if (!form.description) {
+        setFormError('Informe uma descrição para a despesa.')
+        return
+      }
+      setFormError('')
       if (!editing && form.launchType === 'fixa') {
         try {
           await saveFixedRecurrence('despesa')
@@ -421,8 +478,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const tabs = [
     ['entradas', 'Entradas'],
     ['saidas', 'Saídas'],
-    ['receber', 'Contas a receber'],
-    ['pagar', 'Contas a pagar'],
+    ['receber', 'A receber'],
+    ['pagar', 'A pagar'],
+    ['inadimplencia', 'Inadimplência'],
+    ['pacientes', 'Por paciente'],
     ['dre', 'DRE'],
     ['balanco', 'Balanço'],
     ['fluxo', 'Fluxo de caixa'],
@@ -536,6 +595,63 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     return { show:false, showStatus:false, categories:[], origins:[], statuses:[] }
   }, [tab, m.entriesFinancial, m.exitsFinancial, m.accountsReceivable, m.accountsPayable])
 
+  const overdueReceivables = useMemo(() => {
+    const todayStr = today()
+    return m.accountsReceivable
+      .filter(item => item.status !== 'pago' && item.dueDate && item.dueDate < todayStr)
+      .map(item => {
+        const diff = Math.floor((new Date() - new Date(`${item.dueDate}T00:00:00`)) / (1000 * 60 * 60 * 24))
+        return { ...item, daysOverdue:diff }
+      })
+      .sort((a, b) => b.daysOverdue - a.daysOverdue)
+  }, [m.accountsReceivable])
+
+  const patientSummaries = useMemo(() => {
+    const map = new Map()
+    data.surgeries.forEach(s => {
+      const name = s.patient || 'Não informado'
+      if (!map.has(name)) map.set(name, { name, surgeries:0, consultations:0, totalRevenue:0, totalPaid:0, totalPending:0 })
+      const p = map.get(name)
+      p.surgeries++
+      p.totalRevenue += s.totalValue || 0
+      if (s.paymentStatus === 'pago') p.totalPaid += s.totalValue || 0
+      else p.totalPending += s.totalValue || 0
+    })
+    data.consultations.forEach(c => {
+      const name = c.patient || 'Não informado'
+      if (!map.has(name)) map.set(name, { name, surgeries:0, consultations:0, totalRevenue:0, totalPaid:0, totalPending:0 })
+      const p = map.get(name)
+      p.consultations++
+      p.totalRevenue += c.value || 0
+      if (c.paymentStatus === 'pago') p.totalPaid += c.value || 0
+      else p.totalPending += c.value || 0
+    })
+    return [...map.values()].sort((a, b) => b.totalRevenue - a.totalRevenue)
+  }, [data.surgeries, data.consultations])
+
+  const cashFlowProjection = useMemo(() => {
+    const base = new Date()
+    return [1, 2, 3].map(offset => {
+      const d = new Date(base.getFullYear(), base.getMonth() + offset, 1)
+      const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+      const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      const end = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+      const mx = buildMetrics(mergedData, { startDate:start, endDate:end, balanceDate:end })
+      const label = d.toLocaleDateString('pt-BR', { month:'long', year:'numeric' })
+      const expectedRevenue = mx.grossRevenue
+      const expectedExpenses = mx.operationalExpenses + mx.taxExpenses + mx.surgeryCostTotal + mx.productPurchaseTotal
+      return { label, expectedRevenue, expectedExpenses, net:expectedRevenue - expectedExpenses }
+    })
+  }, [mergedData])
+
+  const nextDueItem = useMemo(() => {
+    const todayStr = today()
+    return [...m.accountsReceivable, ...m.accountsPayable]
+      .filter(item => item.status !== 'pago' && item.dueDate && item.dueDate >= todayStr)
+      .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
+      [0] || null
+  }, [m.accountsReceivable, m.accountsPayable])
+
   // Revenue by origin totals for entradas tab
   const revenueOrigins = useMemo(() => {
     const cirurgias = m.surgeryRevenue
@@ -555,17 +671,45 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ position:'sticky', top:0, zIndex:5, marginBottom:2 }}>
         <div style={{ background:'linear-gradient(180deg, rgba(7,11,18,0.98), rgba(7,11,18,0.92))', border:`1px solid ${C.border}66`, borderRadius:18, padding:16, backdropFilter:'blur(12px)' }}>
-          <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center', marginBottom:14 }}>
-            <select value={period} onChange={e => setPeriod(e.target.value)} style={{ minWidth:isMobile ? '100%' : 180, flex:isMobile ? '1 1 100%' : '0 0 auto' }}>
-              <option value="day">Dia</option>
-              <option value="week">Semana</option>
-              <option value="month">Mês</option>
-              <option value="quarter">Trimestre</option>
-              <option value="year">Ano</option>
-              <option value="custom">Personalizado</option>
-            </select>
-            {period === 'custom' && <><input type="date" value={customRange.start} onChange={e => setCustomRange(current => ({ ...current, start:e.target.value }))} style={{ flex:isMobile ? '1 1 100%' : '0 0 auto' }} /><input type="date" value={customRange.end} onChange={e => setCustomRange(current => ({ ...current, end:e.target.value }))} style={{ flex:isMobile ? '1 1 100%' : '0 0 auto' }} /></>}
-            <div style={{ marginLeft:isMobile ? 0 : 'auto', width:isMobile ? '100%' : 'auto', color:C.textDim, fontSize:12 }}>Período aplicado aos relatórios e demonstrativos.</div>
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:8 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:C.textSub }}>
+                Período{periodLabel ? <span style={{ fontWeight:400, color:C.textDim, marginLeft:6 }}>{periodLabel}</span> : ''}
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {PERIOD_PILLS.map(option => {
+                const active = period === option.value
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => setPeriod(option.value)}
+                    style={{
+                      padding:'7px 13px', borderRadius:999, cursor:'pointer',
+                      fontFamily:'inherit', fontSize:12, fontWeight:active ? 700 : 500,
+                      border: active ? `1px solid ${C.accent}66` : `1px solid ${C.border}`,
+                      background: active ? C.accent + '20' : 'transparent',
+                      color: active ? C.accentLight : C.textSub,
+                      transition:'all 0.15s',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+            {period === 'custom' && (
+              <div style={{ display:'flex', gap:10, marginTop:10, flexWrap:'wrap', alignItems:'center' }}>
+                <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                  <label style={{ fontSize:11, color:C.textDim, fontWeight:600 }}>Data inicial</label>
+                  <input type="date" value={customRange.start} onChange={e => setCustomRange(current => ({ ...current, start:e.target.value }))} style={{ padding:'7px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:'transparent', color:C.text, fontFamily:'inherit', fontSize:13 }} />
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+                  <label style={{ fontSize:11, color:C.textDim, fontWeight:600 }}>Data final</label>
+                  <input type="date" value={customRange.end} onChange={e => setCustomRange(current => ({ ...current, end:e.target.value }))} style={{ padding:'7px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:'transparent', color:C.text, fontFamily:'inherit', fontSize:13 }} />
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, alignItems:'center' }}>
@@ -579,13 +723,34 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:14 }}>
+      {/* Resumo rápido */}
+      <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap:12 }}>
         {SUMMARY_CARDS.map(([label, key, color]) => {
           const value = m[key]
           const resolvedColor = color === 'dynamic-profit' ? (value >= 0 ? C.green : C.red) : color
-          return <Card key={label} style={{ padding:18 }}><div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>{label}</div><div style={{ fontSize:22, fontWeight:800, color:resolvedColor }}>{money(value)}</div></Card>
+          return (
+            <Card key={label} style={{ padding:isMobile ? 14 : 18, background:`linear-gradient(135deg, ${resolvedColor}0A, transparent)`, border:`1px solid ${resolvedColor}22` }}>
+              <div style={{ fontSize:10, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>{label}</div>
+              <div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color:resolvedColor, letterSpacing:'-0.02em' }}>{money(value)}</div>
+            </Card>
+          )
         })}
       </div>
+
+      {nextDueItem && (
+        <Card style={{ padding:'12px 18px', border:`1px solid ${C.yellow}44`, background:`${C.yellow}08`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <span style={{ fontSize:16 }}>⏰</span>
+            <div>
+              <div style={{ fontSize:11, color:C.yellow, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>Próximo vencimento</div>
+              <div style={{ fontSize:13, color:C.text, fontWeight:600, marginTop:2 }}>
+                {nextDueItem.patient || nextDueItem.supplier || nextDueItem.description || '—'} · {formatDateBR(nextDueItem.dueDate)}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize:16, fontWeight:800, color:C.yellow }}>{money(nextDueItem.value)}</div>
+        </Card>
+      )}
 
       {(dueAlerts.overdue.length > 0 || dueAlerts.dueSoon.length > 0) && (
         <Card style={{ padding:16, border:`1px solid ${C.yellow}55` }}>
@@ -806,6 +971,82 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
       {tab === 'balanco' && <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:16 }}><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Ativos complementares" subtitle="Banco, aplicações e outros ativos fora do caixa operacional." compact /><Btn onClick={() => openAdd('asset')} style={{ padding:'7px 12px' }}>+ Ativo</Btn></div><BalanceList items={data.assets} color={C.green} onEdit={item => openEdit('asset', item)} onDelete={item => setConfirmState({ type:'asset', id:item.id })} emptyMessage="Nenhum ativo complementar." hidden={financialPrivacyMode} /></Card><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Passivos complementares" subtitle="Empréstimos, obrigações e passivos extras." compact /><Btn onClick={() => openAdd('liability')} style={{ padding:'7px 12px' }}>+ Passivo</Btn></div><BalanceList items={data.liabilities} color={C.red} onEdit={item => openEdit('liability', item)} onDelete={item => setConfirmState({ type:'liability', id:item.id })} emptyMessage="Nenhum passivo complementar." hidden={financialPrivacyMode} /></Card><Card style={{ gridColumn:'1 / -1' }}><SectionTitle title="Balanço patrimonial automático" subtitle="Posição financeira consolidada na data selecionada." /><div style={{ marginTop:8 }}>{[['Caixa', m.cashBalance, C.cyan], ['Contas a receber', m.receivablesOpenTotal, C.green], ['Banco e outros ativos', data.assets.reduce((acc, item) => acc + (item.value || 0), 0), C.accent], ['Contas a pagar', m.payablesOpenTotal, C.red], ['Passivos complementares', data.liabilities.reduce((acc, item) => acc + (item.value || 0), 0), C.red], ['Lucros acumulados / patrimônio', m.equity, m.equity >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'12px 0', borderTop:`1px solid ${C.border}22`, alignItems:'center', flexWrap:'wrap' }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{money(value)}</span></div>)}</div></Card></div>}
 
+      {tab === 'inadimplencia' && <>
+        <SectionTitle
+          title="Inadimplência"
+          subtitle="Recebimentos com vencimento passado e pagamento pendente."
+        />
+        {overdueReceivables.length === 0 ? (
+          <Card><p style={{ textAlign:'center', color:C.green, padding:'32px 0', fontSize:14 }}>Nenhuma inadimplência registrada. 🎉</p></Card>
+        ) : (
+          <>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))', gap:12 }}>
+              <Card style={{ padding:16, border:`1px solid ${C.red}33`, background:`${C.red}08` }}>
+                <div style={{ fontSize:11, color:C.red, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Total em atraso</div>
+                <div style={{ fontSize:22, fontWeight:800, color:C.red }}>{money(overdueReceivables.reduce((acc, item) => acc + item.value, 0))}</div>
+              </Card>
+              <Card style={{ padding:16, border:`1px solid ${C.yellow}33` }}>
+                <div style={{ fontSize:11, color:C.yellow, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Registros em atraso</div>
+                <div style={{ fontSize:22, fontWeight:800, color:C.yellow }}>{overdueReceivables.length}</div>
+              </Card>
+            </div>
+            <RecordTable
+              columns={['Paciente', 'Descrição', 'Vencimento', 'Dias em atraso', 'Valor', 'Ações']}
+              rows={overdueReceivables.map(item => ({
+                key:item.id,
+                cells:[
+                  item.patient,
+                  item.description,
+                  formatDateBR(item.dueDate),
+                  <span style={{ color:C.red, fontWeight:700 }}>{item.daysOverdue}d</span>,
+                  <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>,
+                  <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>,
+                ],
+                rawCells:[item.patient, item.description, item.dueDate, item.daysOverdue, item.value, 0],
+              }))}
+              sortableColumns={[0, 3, 4]}
+              emptyMessage="Nenhuma inadimplência."
+            />
+          </>
+        )}
+      </>}
+
+      {tab === 'pacientes' && <>
+        <SectionTitle
+          title="Histórico por paciente"
+          subtitle="Visão consolidada de cirurgias, consultas e valores por paciente."
+        />
+        {patientSummaries.length === 0 ? (
+          <Card><p style={{ textAlign:'center', color:C.textDim, padding:'32px 0', fontSize:14 }}>Nenhum paciente cadastrado ainda.</p></Card>
+        ) : (
+          <Card style={{ padding:0, overflow:'hidden' }}>
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom:`1px solid ${C.border}` }}>
+                    {['Paciente', 'Cirurgias', 'Consultas', 'Total faturado', 'Recebido', 'Pendente'].map(h => (
+                      <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {patientSummaries.map((p, idx) => (
+                    <tr key={p.name} style={{ borderBottom:`1px solid ${C.border}22`, background:idx % 2 === 0 ? 'transparent' : `${C.border}08` }}>
+                      <td style={{ padding:'12px 16px', fontSize:13, color:C.text, fontWeight:600 }}>{p.name}</td>
+                      <td style={{ padding:'12px 16px', fontSize:13, color:C.textSub }}>{p.surgeries}</td>
+                      <td style={{ padding:'12px 16px', fontSize:13, color:C.textSub }}>{p.consultations}</td>
+                      <td style={{ padding:'12px 16px', fontSize:13, color:C.text, fontWeight:700 }}>{money(p.totalRevenue)}</td>
+                      <td style={{ padding:'12px 16px', fontSize:13, color:C.green, fontWeight:700 }}>{money(p.totalPaid)}</td>
+                      <td style={{ padding:'12px 16px', fontSize:13, color:p.totalPending > 0 ? C.yellow : C.textDim, fontWeight:700 }}>{money(p.totalPending)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </>}
+
       {tab === 'fluxo' && <>
         <SectionTitle title="Fluxo de caixa" subtitle="Entradas e saídas efetivamente realizadas, agrupadas por data." />
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:12, marginBottom:12 }}>
@@ -823,6 +1064,32 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </Card>
         </div>
         <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[formatDateBR(item.date), <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." />
+
+        <div style={{ marginTop:8 }}>
+          <SectionTitle title="Projeção — próximos 3 meses" subtitle="Estimativa baseada nas recorrências cadastradas e cirurgias/consultas agendadas." />
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:12, marginTop:12 }}>
+            {cashFlowProjection.map(month => (
+              <Card key={month.label} style={{ padding:18 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:C.textSub, textTransform:'capitalize', marginBottom:10 }}>{month.label}</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between' }}>
+                    <span style={{ fontSize:12, color:C.textDim }}>Entradas prev.</span>
+                    <span style={{ fontSize:13, color:C.green, fontWeight:700 }}>{money(month.expectedRevenue)}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between' }}>
+                    <span style={{ fontSize:12, color:C.textDim }}>Saídas prev.</span>
+                    <span style={{ fontSize:13, color:C.red, fontWeight:700 }}>{money(month.expectedExpenses)}</span>
+                  </div>
+                  <div style={{ borderTop:`1px solid ${C.border}44`, paddingTop:8, display:'flex', justifyContent:'space-between' }}>
+                    <span style={{ fontSize:12, color:C.textDim, fontWeight:700 }}>Resultado prev.</span>
+                    <span style={{ fontSize:14, color:month.net >= 0 ? C.green : C.red, fontWeight:800 }}>{money(month.net)}</span>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <div style={{ marginTop:8, fontSize:11, color:C.textDim }}>* Projeção baseada em recorrências ativas. Valores reais podem variar.</div>
+        </div>
       </>}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
@@ -830,65 +1097,69 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {!editing && (
               <FInput
-                label="Tipo de lançamento"
+                label="Como é esse lançamento?"
                 value={form.launchType || 'variavel'}
                 onChange={value => setForm(current => ({ ...current, launchType:value }))}
-                options={[{ v:'variavel', l:'Variável/Pontual' }, { v:'fixa', l:'Fixa (recorrente)' }]}
+                options={[{ v:'variavel', l:'Única vez' }, { v:'fixa', l:'Todo mês (recorrente)' }]}
               />
             )}
-            <FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: contrato mensal de consultoria" />
-            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="outras_receitas" />
-            <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
+            <div>
+              <FInput label="Descrição" required value={form.description} onChange={value => { setFormError(''); setForm(current => ({ ...current, description:value })) }} placeholder="Ex: contrato mensal de consultoria" />
+              {formError && modalType === 'extra' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
+            </div>
+            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />
+            <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
               <>
                 <FInput label="Frequência" value={form.recurrenceFrequency || 'mensal'} onChange={value => setForm(current => ({ ...current, recurrenceFrequency:value }))} options={[{ v:'mensal', l:'Mensal' }, { v:'semanal', l:'Semanal' }, { v:'anual', l:'Anual' }]} />
-                <FInput label={form.recurrenceFrequency === 'semanal' ? 'Dia da semana (1-7)' : 'Dia de execução'} type="number" value={form.recurrenceDay || 1} onChange={value => setForm(current => ({ ...current, recurrenceDay:value }))} />
-                <FInput label="Data início" type="date" value={form.recurrenceStartDate || today()} onChange={value => setForm(current => ({ ...current, recurrenceStartDate:value }))} />
-                <FInput label="Data fim (opcional)" type="date" value={form.recurrenceEndDate || ''} onChange={value => setForm(current => ({ ...current, recurrenceEndDate:value }))} />
-                <FInput label="Criar automaticamente como pago?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
+                <FInput label={form.recurrenceFrequency === 'semanal' ? 'Dia da semana (1=seg, 7=dom)' : 'Dia do mês (1–31)'} type="number" value={form.recurrenceDay || 1} onChange={value => setForm(current => ({ ...current, recurrenceDay:value }))} />
+                <FInput label="A partir de" type="date" value={form.recurrenceStartDate || today()} onChange={value => setForm(current => ({ ...current, recurrenceStartDate:value }))} />
+                <FInput label="Encerrar em (opcional)" type="date" value={form.recurrenceEndDate || ''} onChange={value => setForm(current => ({ ...current, recurrenceEndDate:value }))} />
+                <FInput label="Marcar como recebido automaticamente?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
               </>
             ) : (
-              <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+              <FInput label="Data do recebimento" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
             )}
 
-            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
+            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
           </div>
         )}
         {modalType === 'expense' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {!editing && (
               <FInput
-                label="Tipo de despesa"
+                label="Como é essa despesa?"
                 value={form.launchType || 'variavel'}
                 onChange={value => setForm(current => ({ ...current, launchType:value, category:value === 'variavel' ? 'variaveis' : current.category }))}
-                options={[{ v:'variavel', l:'Variável' }, { v:'fixa', l:'Fixa (recorrente)' }]}
+                options={[{ v:'variavel', l:'Única vez' }, { v:'fixa', l:'Todo mês (recorrente)' }]}
               />
             )}
-            <FInput label="Descrição" required value={form.description} onChange={value => setForm(current => ({ ...current, description:value }))} placeholder="Ex: aluguel do consultório" />
-            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:item }))} />
-            <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
+            <div>
+              <FInput label="Descrição" required value={form.description} onChange={value => { setFormError(''); setForm(current => ({ ...current, description:value })) }} placeholder="Ex: aluguel do consultório" />
+              {formError && modalType === 'expense' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
+            </div>
+            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />
+            <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
               <>
                 <FInput label="Frequência" value={form.recurrenceFrequency || 'mensal'} onChange={value => setForm(current => ({ ...current, recurrenceFrequency:value }))} options={[{ v:'mensal', l:'Mensal' }, { v:'semanal', l:'Semanal' }, { v:'anual', l:'Anual' }]} />
-                <FInput label={form.recurrenceFrequency === 'semanal' ? 'Dia da semana (1-7)' : 'Dia de execução'} type="number" value={form.recurrenceDay || 1} onChange={value => setForm(current => ({ ...current, recurrenceDay:value }))} />
-                <FInput label="Data início" type="date" value={form.recurrenceStartDate || today()} onChange={value => setForm(current => ({ ...current, recurrenceStartDate:value }))} />
-                <FInput label="Data fim (opcional)" type="date" value={form.recurrenceEndDate || ''} onChange={value => setForm(current => ({ ...current, recurrenceEndDate:value }))} />
-                <FInput label="Criar automaticamente como pago?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
+                <FInput label={form.recurrenceFrequency === 'semanal' ? 'Dia da semana (1=seg, 7=dom)' : 'Dia do mês (1–31)'} type="number" value={form.recurrenceDay || 1} onChange={value => setForm(current => ({ ...current, recurrenceDay:value }))} />
+                <FInput label="A partir de" type="date" value={form.recurrenceStartDate || today()} onChange={value => setForm(current => ({ ...current, recurrenceStartDate:value }))} />
+                <FInput label="Encerrar em (opcional)" type="date" value={form.recurrenceEndDate || ''} onChange={value => setForm(current => ({ ...current, recurrenceEndDate:value }))} />
+                <FInput label="Marcar como pago automaticamente?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
               </>
             ) : (
-              <>
-                <FInput
-                  label="Data da saída"
-                  value={form.dueDate}
-                  onChange={value => setForm(current => ({ ...current, dueDate:value, paymentDate:value, status:'pago' }))}
-                  type="date"
-                />
-              </>
+              <FInput
+                label="Data do pagamento"
+                value={form.dueDate}
+                onChange={value => setForm(current => ({ ...current, dueDate:value, paymentDate:value, status:'pago' }))}
+                type="date"
+              />
             )}
 
-            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
+            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
           </div>
         )}
         {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}
