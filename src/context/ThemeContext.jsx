@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import { applyTheme, getStoredTheme } from '../theme.js'
 
 const ThemeContext = createContext(null)
@@ -6,16 +6,17 @@ const ThemeContext = createContext(null)
 export function ThemeProvider({ children }) {
   const [mode, setMode] = useState(getStoredTheme())
 
-  useEffect(() => {
-    applyTheme(mode)
-  }, [mode])
-
   const value = useMemo(() => ({
     mode,
-    isLight:mode === 'light',
-    setTheme:setMode,
+    isLight: mode === 'light',
+    setTheme(next) {
+      applyTheme(next)
+      setMode(next)
+    },
     toggleTheme() {
-      setMode(current => current === 'light' ? 'dark' : 'light')
+      const next = mode === 'light' ? 'dark' : 'light'
+      applyTheme(next)
+      setMode(next)
     },
   }), [mode])
 

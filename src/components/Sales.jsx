@@ -34,16 +34,15 @@ const PAYMENT_STATUS = [
   { v:'cancelado', l:'Cancelado' },
 ]
 
-const STATUS_COLORS = {
-  pago: C.green,
-  pendente: C.yellow,
-  parcelado: C.cyan,
-  cancelado: C.red,
-}
-
 export function Sales({ data, setData }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
+  const STATUS_COLORS = {
+    pago: C.green,
+    pendente: C.yellow,
+    parcelado: C.cyan,
+    cancelado: C.red,
+  }
   const empty = {
     patient:'',
     procedureId:data.procedures[0]?.id || '',

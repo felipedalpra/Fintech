@@ -199,7 +199,7 @@ export function Recurrences() {
       <Card>
         <div style={{ display:'flex', justifyContent:'space-between', gap:10, alignItems:'center', flexWrap:'wrap' }}>
           <div>
-            <h3 style={titleStyle}>Despesas e Receitas Recorrentes</h3>
+            <h3 style={getTitleStyle()}>Despesas e Receitas Recorrentes</h3>
             <p style={{ margin:'6px 0 0', color:C.textDim, fontSize:13 }}>
               Cadastre valores fixos e gere lancamentos automaticos sem duplicacao.
             </p>
@@ -222,7 +222,7 @@ export function Recurrences() {
               <thead>
                 <tr>
                   {['Descricao', 'Tipo', 'Valor', 'Frequencia', 'Proxima execucao', 'Status', 'Auto pago', 'Acoes'].map(label => (
-                    <th key={label} style={thStyle}>{label}</th>
+                    <th key={label} style={getThStyle()}>{label}</th>
                   ))}
                 </tr>
               </thead>
@@ -232,14 +232,14 @@ export function Recurrences() {
                   const distance = nextDate ? daysUntil(nextDate) : null
                   return (
                     <tr key={item.id} style={{ borderTop:`1px solid ${C.border}55` }}>
-                      <td style={tdStyle}>
+                      <td style={getTdStyle()}>
                         <div style={{ color:C.text, fontWeight:600 }}>{item.descricao}</div>
                         <div style={{ color:C.textDim, fontSize:12 }}>{labelize(item.categoria || 'outros')}</div>
                       </td>
-                      <td style={tdStyle}><Badge color={item.tipo === 'receita' ? C.green : C.red}>{item.tipo}</Badge></td>
-                      <td style={tdStyle}>{fmt(item.valor || 0)}</td>
-                      <td style={tdStyle}>{labelize(item.frequencia || '')}</td>
-                      <td style={tdStyle}>
+                      <td style={getTdStyle()}><Badge color={item.tipo === 'receita' ? C.green : C.red}>{item.tipo}</Badge></td>
+                      <td style={getTdStyle()}>{fmt(item.valor || 0)}</td>
+                      <td style={getTdStyle()}>{labelize(item.frequencia || '')}</td>
+                      <td style={getTdStyle()}>
                         {nextDate ? (
                           <>
                             <div style={{ color:C.text }}>{nextDate}</div>
@@ -249,9 +249,9 @@ export function Recurrences() {
                           <span style={{ color:C.textDim }}>Sem proxima execucao</span>
                         )}
                       </td>
-                      <td style={tdStyle}><Badge color={item.ativo ? C.green : C.textDim}>{item.ativo ? 'ativo' : 'inativo'}</Badge></td>
-                      <td style={tdStyle}>{item.auto_mark_as_paid ? 'Sim' : 'Nao'}</td>
-                      <td style={tdStyle}>
+                      <td style={getTdStyle()}><Badge color={item.ativo ? C.green : C.textDim}>{item.ativo ? 'ativo' : 'inativo'}</Badge></td>
+                      <td style={getTdStyle()}>{item.auto_mark_as_paid ? 'Sim' : 'Nao'}</td>
+                      <td style={getTdStyle()}>
                         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                           <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'6px 10px', fontSize:12 }}>Editar</Btn>
                           <Btn variant={item.ativo ? 'warn' : 'success'} onClick={() => toggleActive(item, !item.ativo)} style={{ padding:'6px 10px', fontSize:12 }}>
@@ -282,11 +282,11 @@ export function Recurrences() {
         </div>
 
         <div style={{ marginTop:14, display:'flex', flexDirection:'column', gap:8 }}>
-          <label style={checkLabelStyle}>
+          <label style={getCheckLabelStyle()}>
             <input type="checkbox" checked={Boolean(form.auto_mark_as_paid)} onChange={event => setForm(current => ({ ...current, auto_mark_as_paid:event.target.checked }))} />
             Criar automaticamente como pago
           </label>
-          <label style={checkLabelStyle}>
+          <label style={getCheckLabelStyle()}>
             <input type="checkbox" checked={Boolean(form.ativo)} onChange={event => setForm(current => ({ ...current, ativo:event.target.checked }))} />
             Recorrencia ativa
           </label>
@@ -398,32 +398,7 @@ function labelize(value) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-const titleStyle = {
-  margin:'0',
-  fontSize:15,
-  color:C.text,
-}
-
-const thStyle = {
-  textAlign:'left',
-  padding:'10px 12px',
-  color:C.textSub,
-  fontSize:11,
-  letterSpacing:'0.08em',
-  textTransform:'uppercase',
-}
-
-const tdStyle = {
-  padding:'10px 12px',
-  color:C.text,
-  fontSize:13,
-  whiteSpace:'nowrap',
-}
-
-const checkLabelStyle = {
-  display:'inline-flex',
-  alignItems:'center',
-  gap:8,
-  color:C.textSub,
-  fontSize:13,
-}
+function getTitleStyle() { return { margin:'0', fontSize:15, color:C.text } }
+function getThStyle() { return { textAlign:'left', padding:'10px 12px', color:C.textSub, fontSize:11, letterSpacing:'0.08em', textTransform:'uppercase' } }
+function getTdStyle() { return { padding:'10px 12px', color:C.text, fontSize:13, whiteSpace:'nowrap' } }
+function getCheckLabelStyle() { return { display:'inline-flex', alignItems:'center', gap:8, color:C.textSub, fontSize:13 } }

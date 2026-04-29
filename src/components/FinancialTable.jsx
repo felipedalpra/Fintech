@@ -6,6 +6,22 @@ export function FinancialTable({ rows }) {
     return <div style={{ color:C.textDim, fontSize:13 }}>Nenhum dado para exibir na tabela.</div>
   }
 
+  const thStyle = {
+    textAlign:'left',
+    padding:'10px 12px',
+    color:C.textSub,
+    fontSize:11,
+    letterSpacing:'0.08em',
+    textTransform:'uppercase',
+  }
+
+  const tdStyle = {
+    padding:'10px 12px',
+    color:C.text,
+    fontSize:13,
+    whiteSpace:'nowrap',
+  }
+
   return (
     <div style={{ overflowX:'auto' }}>
       <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
@@ -55,18 +71,3 @@ function formatPercent(value) {
   return `${Number(value).toFixed(2)}%`
 }
 
-const thStyle = {
-  textAlign:'left',
-  padding:'10px 12px',
-  color:C.textSub,
-  fontSize:11,
-  letterSpacing:'0.08em',
-  textTransform:'uppercase',
-}
-
-const tdStyle = {
-  padding:'10px 12px',
-  color:C.text,
-  fontSize:13,
-  whiteSpace:'nowrap',
-}

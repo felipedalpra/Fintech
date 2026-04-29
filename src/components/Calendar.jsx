@@ -28,6 +28,7 @@ export function Calendar({ data }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
+  const navBtn = { background:'transparent', border:`1px solid ${C.border}`, color:C.textSub, width:36, height:36, borderRadius:10, cursor:'pointer', fontSize:22, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit', lineHeight:1 }
   const [popover, setPopover] = useState(null) // { day, events, rect }
   const popoverRef = useRef(null)
 
@@ -311,20 +312,4 @@ export function Calendar({ data }) {
       )}
     </div>
   )
-}
-
-const navBtn = {
-  background:'transparent',
-  border:`1px solid ${C.border}`,
-  color:C.textSub,
-  width:36,
-  height:36,
-  borderRadius:10,
-  cursor:'pointer',
-  fontSize:22,
-  display:'flex',
-  alignItems:'center',
-  justifyContent:'center',
-  fontFamily:'inherit',
-  lineHeight:1,
 }

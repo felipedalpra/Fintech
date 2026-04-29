@@ -216,7 +216,7 @@ function QuickSearchModal({ open, onClose, navigate }) {
               fontFamily:'inherit',
             }}
           />
-          <kbd style={kbdSmall}>Esc</kbd>
+          <kbd style={getKbdSmall()}>Esc</kbd>
         </div>
 
         {/* Results */}
@@ -266,9 +266,9 @@ function QuickSearchModal({ open, onClose, navigate }) {
           fontSize:11,
           color:C.textDim,
         }}>
-          <span><kbd style={kbdSmall}>↑↓</kbd> navegar</span>
-          <span><kbd style={kbdSmall}>↵</kbd> selecionar</span>
-          <span><kbd style={kbdSmall}>Esc</kbd> fechar</span>
+          <span><kbd style={getKbdSmall()}>↑↓</kbd> navegar</span>
+          <span><kbd style={getKbdSmall()}>↵</kbd> selecionar</span>
+          <span><kbd style={getKbdSmall()}>Esc</kbd> fechar</span>
         </div>
       </div>
     </div>
@@ -698,7 +698,7 @@ export function FinanceWorkspace() {
             <BrandLogo size="sm" />
             {!ultraCompactDesktop && <div style={{ fontSize:isMobile ? 11 : 10, color:C.textDim, marginTop:4 }}>ERP financeiro para cirurgia plástica</div>}
           </div>
-          {isMobile && <button onClick={() => setMobileNavOpen(false)} style={iconButton}>✕</button>}
+          {isMobile && <button onClick={() => setMobileNavOpen(false)} style={getIconButton()}>✕</button>}
         </div>
 
         <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '10px 14px'), borderBottom:`1px solid ${C.border}`, background:C.accent+'08' }}>
@@ -767,7 +767,7 @@ export function FinanceWorkspace() {
         <div style={{ marginBottom:22 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
-              {isMobile && <button onClick={() => setMobileNavOpen(true)} style={iconButton}>☰</button>}
+              {isMobile && <button onClick={() => setMobileNavOpen(true)} style={getIconButton()}>☰</button>}
               <div>
                 <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', alignItems:isMobile ? 'flex-start' : 'center', gap:8, marginBottom:2 }}>
                   <h1 style={{ margin:0, fontSize:isMobile ? 24 : 28, fontWeight:900, letterSpacing:'-0.03em', color:C.text }}>{TITLES[page]}</h1>
@@ -784,7 +784,7 @@ export function FinanceWorkspace() {
                 aria-label={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
                 aria-pressed={isLightMode}
                 style={{
-                  ...chipButton,
+                  ...getChipButton(),
                   width:34,
                   height:34,
                   padding:0,
@@ -804,7 +804,7 @@ export function FinanceWorkspace() {
                 onClick={() => setQuickSearchOpen(true)}
                 title="Busca rápida (Cmd+K)"
                 style={{
-                  ...chipButton,
+                  ...getChipButton(),
                   border:`1px solid ${C.border}`,
                   display:'flex',
                   alignItems:'center',
@@ -815,11 +815,11 @@ export function FinanceWorkspace() {
               >
                 <span style={{ fontSize:13 }}>⌕</span>
                 <span>Busca</span>
-                {!isMobile && <kbd style={kbdSmall}>⌘K</kbd>}
+                {!isMobile && <kbd style={getKbdSmall()}>⌘K</kbd>}
               </button>
               {!isMobile && quickLinks.map(item => {
                 const active = item.id === page
-                return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...chipButton, border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
+                return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...getChipButton(), border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
               })}
             </div>
           </div>
@@ -838,7 +838,7 @@ export function FinanceWorkspace() {
                     key={item.id}
                     onClick={() => navigate(`/app/${item.id}`)}
                     style={{
-                      ...chipButton,
+                      ...getChipButton(),
                       border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`,
                       background:active ? C.accent+'14' : 'transparent',
                       color:active ? C.accentLight : C.textSub,
@@ -885,35 +885,41 @@ export function FinanceWorkspace() {
   )
 }
 
-const iconButton = {
-  width:38,
-  height:38,
-  borderRadius:10,
-  border:`1px solid ${C.border}`,
-  background:'transparent',
-  color:C.textSub,
-  cursor:'pointer',
-  fontSize:16,
-  fontFamily:'inherit',
-  flexShrink:0,
+function getIconButton() {
+  return {
+    width:38,
+    height:38,
+    borderRadius:10,
+    border:`1px solid ${C.border}`,
+    background:'transparent',
+    color:C.textSub,
+    cursor:'pointer',
+    fontSize:16,
+    fontFamily:'inherit',
+    flexShrink:0,
+  }
 }
 
-const chipButton = {
-  padding:'8px 12px',
-  borderRadius:999,
-  background:'transparent',
-  color:C.textSub,
-  fontSize:12,
-  cursor:'pointer',
-  fontFamily:'inherit',
+function getChipButton() {
+  return {
+    padding:'8px 12px',
+    borderRadius:999,
+    background:'transparent',
+    color:C.textSub,
+    fontSize:12,
+    cursor:'pointer',
+    fontFamily:'inherit',
+  }
 }
 
-const kbdSmall = {
-  background:C.border,
-  color:C.textDim,
-  borderRadius:4,
-  padding:'1px 5px',
-  fontSize:10,
-  fontFamily:'inherit',
-  letterSpacing:'0.02em',
+function getKbdSmall() {
+  return {
+    background:C.border,
+    color:C.textDim,
+    borderRadius:4,
+    padding:'1px 5px',
+    fontSize:10,
+    fontFamily:'inherit',
+    letterSpacing:'0.02em',
+  }
 }

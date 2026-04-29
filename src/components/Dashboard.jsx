@@ -316,7 +316,7 @@ export function Dashboard({ data, saveError }) {
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
 
       {/* Seletor de período */}
-      <div style={{ background:'linear-gradient(180deg, rgba(7,11,18,0.98), rgba(7,11,18,0.92))', border:`1px solid ${C.border}66`, borderRadius:18, padding:isMobile ? 14 : 18, backdropFilter:'blur(12px)' }}>
+      <div style={{ background:`linear-gradient(180deg, ${C.bg}FA, ${C.bg}EB)`, border:`1px solid ${C.border}66`, borderRadius:18, padding:isMobile ? 14 : 18, backdropFilter:'blur(12px)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:12 }}>
           <div>
             <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Período analisado</div>

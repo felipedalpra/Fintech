@@ -1,6 +1,25 @@
 import { C } from '../theme.js'
 
 export function FinancialPeriodFilter({ periodPreset, onPeriodPresetChange, customRange, onCustomRangeChange, granularity, onGranularityChange }) {
+  const labelStyle = {
+    fontSize:11,
+    fontWeight:700,
+    color:C.textSub,
+    letterSpacing:'0.08em',
+    textTransform:'uppercase',
+    marginBottom:6,
+  }
+
+  const inputStyle = {
+    background:C.surface,
+    border:`1px solid ${C.border}`,
+    borderRadius:10,
+    padding:'9px 12px',
+    color:C.text,
+    fontFamily:'inherit',
+    fontSize:13,
+  }
+
   return (
     <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'end' }}>
       <div style={{ display:'flex', flexDirection:'column', minWidth:160 }}>
@@ -48,21 +67,3 @@ export function FinancialPeriodFilter({ periodPreset, onPeriodPresetChange, cust
   )
 }
 
-const labelStyle = {
-  fontSize:11,
-  fontWeight:700,
-  color:C.textSub,
-  letterSpacing:'0.08em',
-  textTransform:'uppercase',
-  marginBottom:6,
-}
-
-const inputStyle = {
-  background:C.surface,
-  border:`1px solid ${C.border}`,
-  borderRadius:10,
-  padding:'9px 12px',
-  color:C.text,
-  fontFamily:'inherit',
-  fontSize:13,
-}

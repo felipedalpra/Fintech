@@ -1,12 +1,12 @@
 import { C } from '../theme.js'
 
-const SERIES = [
-  { key:'receita', label:'Receita', color:C.green },
-  { key:'despesa', label:'Despesa', color:C.red },
-  { key:'lucro', label:'Lucro', color:C.accent },
-]
-
 export function FinancialChart({ rows }) {
+  const SERIES = [
+    { key:'receita', label:'Receita', color:C.green },
+    { key:'despesa', label:'Despesa', color:C.red },
+    { key:'lucro', label:'Lucro', color:C.accent },
+  ]
+
   if (!rows.length) {
     return <div style={{ color:C.textDim, fontSize:13 }}>Sem dados para gerar gráfico no período.</div>
   }

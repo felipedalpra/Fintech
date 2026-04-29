@@ -88,11 +88,11 @@ export function Reports() {
       {!isCustomIncomplete && !loading && !error && rows.length > 0 && (
         <>
           <Card>
-            <h3 style={titleStyle}>Evolução Financeira</h3>
+            <h3 style={{ margin:'0 0 14px', fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Evolução Financeira</h3>
             <FinancialChart rows={rows} />
           </Card>
           <Card>
-            <h3 style={titleStyle}>Análise Horizontal e Vertical</h3>
+            <h3 style={{ margin:'0 0 14px', fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Análise Horizontal e Vertical</h3>
             <FinancialTable rows={rows} />
           </Card>
         </>
@@ -148,11 +148,3 @@ function LoadingState() {
   )
 }
 
-const titleStyle = {
-  margin:'0 0 14px',
-  fontSize:13,
-  fontWeight:700,
-  color:C.textSub,
-  textTransform:'uppercase',
-  letterSpacing:'0.08em',
-}

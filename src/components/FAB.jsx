@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 
-const ACTIONS = [
-  { label: 'Nova cirurgia',     icon: '◈', page: 'sales',         event: 'new-surgery',       color: C.accent },
-  { label: 'Nova consulta',     icon: '◎', page: 'consultations',  event: 'new-consultation',  color: C.cyan },
-  { label: 'Nova despesa',      icon: '↓', page: 'finance',        event: 'new-expense',       color: C.red },
-  { label: 'Nova receita',      icon: '↑', page: 'finance',        event: 'new-extra-revenue', color: C.green },
-]
-
 export function FAB({ currentPage }) {
+  const ACTIONS = [
+    { label: 'Nova cirurgia',     icon: '◈', page: 'sales',         event: 'new-surgery',       color: C.accent },
+    { label: 'Nova consulta',     icon: '◎', page: 'consultations',  event: 'new-consultation',  color: C.cyan },
+    { label: 'Nova despesa',      icon: '↓', page: 'finance',        event: 'new-expense',       color: C.red },
+    { label: 'Nova receita',      icon: '↑', page: 'finance',        event: 'new-extra-revenue', color: C.green },
+  ]
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
   const ref = useRef(null)

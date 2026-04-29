@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
-import { fmt, formatDateBR, getPeriodRange, isIsoDateString, today, uid } from '../utils.js'
+import { fmt, formatDateBR, getPeriodRange, inRange, isIsoDateString, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { ExportModal } from './ExportModal.jsx'
@@ -14,12 +14,6 @@ const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:toda
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
-const SUMMARY_CARDS = [
-  ['Recebido no período', 'cashBalance', C.cyan],
-  ['Lucro líquido', 'netProfit', 'dynamic-profit'],
-  ['A receber', 'receivablesOpenTotal', C.accent],
-  ['A pagar', 'payablesOpenTotal', C.yellow],
-]
 
 const PERIOD_PILLS = [
   { value:'day', label:'Hoje' },
@@ -100,6 +94,12 @@ function getPreviousPeriodRange(period, range) {
 
 export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const SUMMARY_CARDS = [
+    ['Recebido no período', 'cashBalance', C.cyan],
+    ['Lucro líquido', 'netProfit', 'dynamic-profit'],
+    ['A receber', 'receivablesOpenTotal', C.accent],
+    ['A pagar', 'payablesOpenTotal', C.yellow],
+  ]
   const { financialPrivacyMode } = useFinancialPrivacy()
   const { toast } = useToast()
   const [tab, setTab] = useState(defaultTab)
@@ -608,26 +608,30 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   const patientSummaries = useMemo(() => {
     const map = new Map()
-    data.surgeries.forEach(s => {
-      const name = s.patient || 'Não informado'
-      if (!map.has(name)) map.set(name, { name, surgeries:0, consultations:0, totalRevenue:0, totalPaid:0, totalPending:0 })
-      const p = map.get(name)
-      p.surgeries++
-      p.totalRevenue += s.totalValue || 0
-      if (s.paymentStatus === 'pago') p.totalPaid += s.totalValue || 0
-      else p.totalPending += s.totalValue || 0
-    })
-    data.consultations.forEach(c => {
-      const name = c.patient || 'Não informado'
-      if (!map.has(name)) map.set(name, { name, surgeries:0, consultations:0, totalRevenue:0, totalPaid:0, totalPending:0 })
-      const p = map.get(name)
-      p.consultations++
-      p.totalRevenue += c.value || 0
-      if (c.paymentStatus === 'pago') p.totalPaid += c.value || 0
-      else p.totalPending += c.value || 0
-    })
+    data.surgeries
+      .filter(s => inRange(s.date, range.start, range.end))
+      .forEach(s => {
+        const name = s.patient || 'Não informado'
+        if (!map.has(name)) map.set(name, { name, surgeries:0, consultations:0, totalRevenue:0, totalPaid:0, totalPending:0 })
+        const p = map.get(name)
+        p.surgeries++
+        p.totalRevenue += s.totalValue || 0
+        if (s.paymentStatus === 'pago') p.totalPaid += s.totalValue || 0
+        else p.totalPending += s.totalValue || 0
+      })
+    data.consultations
+      .filter(c => inRange(c.date, range.start, range.end))
+      .forEach(c => {
+        const name = c.patient || 'Não informado'
+        if (!map.has(name)) map.set(name, { name, surgeries:0, consultations:0, totalRevenue:0, totalPaid:0, totalPending:0 })
+        const p = map.get(name)
+        p.consultations++
+        p.totalRevenue += c.value || 0
+        if (c.paymentStatus === 'pago') p.totalPaid += c.value || 0
+        else p.totalPending += c.value || 0
+      })
     return [...map.values()].sort((a, b) => b.totalRevenue - a.totalRevenue)
-  }, [data.surgeries, data.consultations])
+  }, [data.surgeries, data.consultations, range.start, range.end])
 
   const cashFlowProjection = useMemo(() => {
     const base = new Date()
@@ -653,7 +657,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }, [m.accountsReceivable, m.accountsPayable])
 
   // Revenue by origin totals for entradas tab
-  const revenueOrigins = useMemo(() => {
+  const revenueOrigins = (() => {
     const cirurgias = m.surgeryRevenue
     const consultas = m.consultationRevenue
     const produtos = m.productSalesRevenue
@@ -665,12 +669,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       { label: 'Produtos', value: produtos, color: C.yellow },
       { label: 'Outras receitas', value: outras, color: C.purple },
     ].map(item => ({ ...item, pct: total > 0 ? item.value / total * 100 : 0, total }))
-  }, [m])
+  })()
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <div style={{ position:'sticky', top:0, zIndex:5, marginBottom:2 }}>
-        <div style={{ background:'linear-gradient(180deg, rgba(7,11,18,0.98), rgba(7,11,18,0.92))', border:`1px solid ${C.border}66`, borderRadius:18, padding:16, backdropFilter:'blur(12px)' }}>
+        <div style={{ background:`linear-gradient(180deg, ${C.bg}FA, ${C.bg}EB)`, border:`1px solid ${C.border}66`, borderRadius:18, padding:16, backdropFilter:'blur(12px)' }}>
           <div style={{ marginBottom:12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:8 }}>
               <div style={{ fontSize:12, fontWeight:700, color:C.textSub }}>
