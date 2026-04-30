@@ -16,6 +16,7 @@ export function BillingPage() {
   const selectedPlan = useMemo(() => getBillingCycle(billing?.selected_plan || 'mensal'), [billing])
   const isTrialing = billing?.status === 'trialing'
   const isActive = billing?.status === 'active'
+  const isTrialEnded = isTrialing && trialDaysLeft === 0
   const params = new URLSearchParams(location.search)
   const checkoutState = params.get('checkout')
 
@@ -49,8 +50,8 @@ export function BillingPage() {
   const statusText = isActive
     ? 'Assinatura ativa'
     : isTrialing
-      ? `Trial ativo: ${trialDaysLeft} dia(s) restantes`
-      : 'Acesso bloqueado até regularizar a assinatura'
+      ? (isTrialEnded ? 'Trial encerrado (beta): acesso liberado' : `Trial ativo: ${trialDaysLeft} dia(s) restantes`)
+      : 'Acesso liberado'
 
   if (billingLoading) {
     return <Card><div style={{ color:C.textSub }}>Carregando billing...</div></Card>
@@ -64,7 +65,7 @@ export function BillingPage() {
             <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Billing</div>
             <h2 style={{ margin:'0 0 10px', color:C.text, fontSize:28 }}>Assinatura SurgiMetrics</h2>
             <p style={{ margin:0, color:C.textDim, lineHeight:1.7, maxWidth:720 }}>
-              Todo usuário entra com {FREE_TRIAL_DAYS} dias grátis sem cartão. Após esse período, o acesso ao ERP fica condicionado a uma assinatura ativa.
+              Todo usuário entra com {FREE_TRIAL_DAYS} dias grátis sem cartão. Para beta testers, mesmo após o término do trial o acesso ao ERP continua liberado.
             </p>
           </div>
           <Badge color={hasAppAccess ? C.green : C.red}>{statusText}</Badge>

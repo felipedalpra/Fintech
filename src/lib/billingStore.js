@@ -69,16 +69,16 @@ export function hasActiveAccess(account) {
   if (BLOCKED_STATUSES.has(account.status)) return false
 
   const now = Date.now()
-  const trialEndsAt = account.trial_ends_at ? new Date(account.trial_ends_at).getTime() : 0
   const accessExpiresAt = account.access_expires_at ? new Date(account.access_expires_at).getTime() : 0
   const periodEnd = account.current_period_end ? new Date(account.current_period_end).getTime() : 0
 
-  if (account.status === 'trialing') return trialEndsAt > now
+  // Beta testers continuam com acesso mesmo após o fim do trial.
+  if (account.status === 'trialing') return true
   if (account.status === 'active') {
     if (!accessExpiresAt && !periodEnd) return true // webhook ainda não chegou
     return Math.max(accessExpiresAt, periodEnd) > now
   }
-  return accessExpiresAt > now
+  return true
 }
 
 export function getTrialDaysLeft(account) {
