@@ -3,6 +3,7 @@ import { C } from '../theme.js'
 import { fmt, getPeriodRange, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Modal, Btn, FInput } from './UI.jsx'
+import { exportDRE, exportFluxoCaixa, exportBalanco } from '../lib/xlsxExport.js'
 
 // ─── CSV helpers ─────────────────────────────────────────────────────────────
 
@@ -130,7 +131,7 @@ export function ExportModal({ open, onClose, data }) {
 
   const toggle = key => setSelected(prev => ({ ...prev, [key]: !prev[key] }))
 
-  const exportAll = () => {
+  const exportAllCSV = () => {
     if (selected.entradas) downloadCSV(`Entradas_${periodLabel}.csv`, buildEntradas(m))
     if (selected.saidas) downloadCSV(`Saidas_${periodLabel}.csv`, buildSaidas(m))
     if (selected.livroCaixa) downloadCSV(`LivroCaixa_${periodLabel}.csv`, buildLivroCaixa(m))
@@ -140,11 +141,34 @@ export function ExportModal({ open, onClose, data }) {
   }
 
   const anySelected = Object.values(selected).some(Boolean)
-
   const grossRevenue = m.surgeryRevenue + m.consultationRevenue + m.productSalesRevenue + m.extraRevenueTotal
 
+  const EXCEL_TEMPLATES = [
+    {
+      key: 'xlsx_dre',
+      label: 'DRE — Excel',
+      desc: 'Demonstração de Resultado com cabeçalho, subtotais e formatação R$',
+      color: C.green,
+      action: () => { exportDRE(m, periodLabel); onClose() },
+    },
+    {
+      key: 'xlsx_fluxo',
+      label: 'Fluxo de Caixa — Excel',
+      desc: 'Entradas, saídas e saldo acumulado por data com layout profissional',
+      color: C.cyan,
+      action: () => { exportFluxoCaixa(m, periodLabel); onClose() },
+    },
+    {
+      key: 'xlsx_balanco',
+      label: 'Balanço Patrimonial — Excel',
+      desc: 'Ativo, passivo e patrimônio líquido com formatação contábil',
+      color: C.accent,
+      action: () => { exportBalanco(data, range.end || today()); onClose() },
+    },
+  ]
+
   return (
-    <Modal open={open} onClose={onClose} title="Exportar para Contador" width={560}>
+    <Modal open={open} onClose={onClose} title="Exportar relatórios" width={580}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* Period selector */}
@@ -178,8 +202,8 @@ export function ExportModal({ open, onClose, data }) {
             {[
               ['Receita bruta', grossRevenue, C.green],
               ['Despesas', m.operationalExpenses, C.red],
-              ['Lucro operacional', m.operatingProfit, m.operatingProfit >= 0 ? C.green : C.red],
-              ['Entradas no caixa', m.cashFlowEntries.filter(e => e.type === 'entrada').reduce((acc, i) => acc + i.value, 0), C.cyan],
+              ['Lucro líquido', m.netProfit, m.netProfit >= 0 ? C.green : C.red],
+              ['Saldo do caixa', m.cashBalance, m.cashBalance >= 0 ? C.green : C.red],
             ].map(([label, value, color]) => (
               <div key={label} style={{ background: C.card, borderRadius: 8, padding: '10px 12px' }}>
                 <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>{label}</div>
@@ -189,16 +213,47 @@ export function ExportModal({ open, onClose, data }) {
           </div>
         </div>
 
-        {/* File selection */}
+        {/* Excel templates */}
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: C.textSub, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>Arquivos a exportar (CSV)</label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: C.textSub, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>
+            Planilhas Excel com template
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {EXCEL_TEMPLATES.map(t => (
+              <button
+                key={t.key}
+                onClick={t.action}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+                  borderRadius: 10, border: `1px solid ${t.color}44`,
+                  background: t.color + '0C', cursor: 'pointer', fontFamily: 'inherit',
+                  textAlign: 'left', width: '100%', transition: 'all 0.12s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = t.color + '1A' }}
+                onMouseLeave={e => { e.currentTarget.style.background = t.color + '0C' }}
+              >
+                <span style={{ fontSize: 18, flexShrink: 0 }}>⬇</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.color }}>{t.label}</div>
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>{t.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* CSV section */}
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: C.textSub, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>
+            Dados brutos em CSV (para contador / sistema)
+          </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[
               ['entradas', 'Entradas financeiras', 'Todas as receitas recebidas no período'],
               ['saidas', 'Saídas financeiras', 'Todos os custos e despesas pagos'],
               ['livroCaixa', 'Livro Caixa', 'Histórico cronológico com saldo acumulado'],
-              ['dre', 'DRE (Resultado)', 'Demonstração de resultado por competência'],
-              ['fluxo', 'Fluxo de Caixa', 'Entradas e saídas agrupadas por data'],
+              ['dre', 'DRE (CSV)', 'Demonstração de resultado por competência'],
+              ['fluxo', 'Fluxo de Caixa (CSV)', 'Entradas e saídas agrupadas por data'],
             ].map(([key, label, desc]) => (
               <div
                 key={key}
@@ -228,14 +283,10 @@ export function ExportModal({ open, onClose, data }) {
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4, borderTop: `1px solid ${C.border}` }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={exportAll} disabled={!anySelected}>
-            ↓ Baixar {Object.values(selected).filter(Boolean).length} arquivo(s)
+          <Btn onClick={exportAllCSV} disabled={!anySelected}>
+            ↓ Baixar {Object.values(selected).filter(Boolean).length} CSV
           </Btn>
         </div>
-
-        <p style={{ margin: 0, fontSize: 11, color: C.textDim, lineHeight: 1.6 }}>
-          Os arquivos CSV são compatíveis com Excel, Google Sheets e sistemas contábeis. O separador utilizado é ponto-e-vírgula (;) com codificação UTF-8.
-        </p>
       </div>
     </Modal>
   )

@@ -449,7 +449,10 @@ export function buildMetrics(rawData, options = {}) {
 
   const consultationsByInsurance = consultationsInRange.reduce((acc, item) => {
     const key = item.paymentType === 'particular' ? 'Particular' : item.insurance || 'Outros convênios'
-    acc[key] = (acc[key] || 0) + 1
+    if (!acc[key]) acc[key] = { count: 0, revenue: 0, cost: 0 }
+    acc[key].count++
+    acc[key].revenue += item.value || 0
+    acc[key].cost += consultationCosts(item)
     return acc
   }, {})
 

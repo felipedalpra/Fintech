@@ -4,6 +4,8 @@ import { fmt, fmtN, today, getPeriodRange } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
+import { CompareModal } from './CompareModal.jsx'
+import { InsuranceBreakdown } from './InsuranceBreakdown.jsx'
 
 const PERIOD_OPTIONS = [
   { value:'day', label:'Hoje' },
@@ -166,7 +168,7 @@ export function Dashboard({ data, saveError }) {
   const isMobile = windowWidth < 900
   const isNarrow = windowWidth < 380
   const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
-  const [showComparison, setShowComparison] = useState(false)
+  const [showCompareModal, setShowCompareModal] = useState(false)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
 
@@ -189,71 +191,61 @@ export function Dashboard({ data, saveError }) {
   const topProduct = m.productsByPerformance[0]
   const formatMoney = value => maskFinancialValue(value, financialPrivacyMode, fmt)
 
-  // Build sparkline data from last 6 months of revenue and expense keys
   const allMonthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
   const revenueSparkValues = allMonthKeys.map(k => m.revenueByMonth[k] || 0)
-  const cashSparkKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
-  const cashSparkValues = cashSparkKeys.map(k => (m.revenueByMonth[k] || 0) - (m.expenseByMonth[k] || 0))
+  const cashSparkValues = allMonthKeys.map(k => (m.revenueByMonth[k] || 0) - (m.expenseByMonth[k] || 0))
+
+  const totalExpenses = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal + m.operationalExpenses + m.taxExpenses
+  const prevTotalExpenses = pm.surgeryCostTotal + pm.consultationCostTotal + pm.productPurchaseTotal + pm.operationalExpenses + pm.taxExpenses
+  const netMargin = m.grossRevenue > 0 ? ((m.netProfit / m.grossRevenue) * 100).toFixed(1) + '%' : '—'
+  const netProfitColor = m.netProfit >= 0 ? C.green : C.red
+  const cashColor = m.cashBalance >= 0 ? C.green : C.red
 
   const kpis = [
     {
-      label: 'Receita do mês',
+      label: 'Faturamento bruto',
       value: m.grossRevenue,
       prevValue: pm.grossRevenue,
       isPositiveGood: true,
       isCurrency: true,
-      subLabel: 'Lucro líquido',
-      subValue: m.netProfit,
-      subIsCurrency: true,
+      subLabel: 'Margem líquida',
+      subValue: null,
+      subCustom: netMargin,
       color: C.green,
       glow: C.green + '22',
       sparkline: revenueSparkValues,
       sparkColor: C.green,
     },
     {
-      label: 'Cirurgias realizadas',
-      value: m.surgeriesCompleted,
-      prevValue: pm.surgeriesCompleted,
-      isPositiveGood: true,
-      isCurrency: false,
-      subLabel: 'Ticket médio',
-      subValue: m.averageTicket,
-      subIsCurrency: true,
-      color: C.accent,
-      glow: C.accent + '22',
-      sparkline: null,
-      sparkColor: C.accent,
-    },
-    {
-      label: 'Consultas realizadas',
-      value: m.consultationsCompleted,
-      prevValue: pm.consultationsCompleted,
-      isPositiveGood: true,
-      isCurrency: false,
-      subLabel: 'Receita de consultas',
-      subValue: m.consultationRevenue,
-      subIsCurrency: true,
-      color: C.cyan,
-      glow: C.cyan + '22',
-      sparkline: null,
-      sparkColor: C.cyan,
-    },
-    {
-      label: 'Produtos vendidos',
-      value: m.productSalesRevenue,
-      prevValue: pm.productSalesRevenue,
+      label: 'Lucro líquido',
+      value: m.netProfit,
+      prevValue: pm.netProfit,
       isPositiveGood: true,
       isCurrency: true,
-      subLabel: 'Compras de estoque',
-      subValue: m.productPurchaseTotal,
+      subLabel: 'Impostos',
+      subValue: m.taxExpenses,
       subIsCurrency: true,
-      color: C.yellow,
-      glow: C.yellow + '22',
+      color: netProfitColor,
+      glow: netProfitColor + '22',
       sparkline: null,
-      sparkColor: C.yellow,
+      sparkColor: netProfitColor,
     },
     {
-      label: 'Saldo do caixa',
+      label: 'Total de despesas',
+      value: totalExpenses,
+      prevValue: prevTotalExpenses,
+      isPositiveGood: false,
+      isCurrency: true,
+      subLabel: 'Operacional',
+      subValue: m.operationalExpenses,
+      subIsCurrency: true,
+      color: C.red,
+      glow: C.red + '22',
+      sparkline: null,
+      sparkColor: C.red,
+    },
+    {
+      label: 'Caixa atual',
       value: m.cashBalance,
       prevValue: pm.cashBalance,
       isPositiveGood: true,
@@ -261,24 +253,10 @@ export function Dashboard({ data, saveError }) {
       subLabel: 'Previsão',
       subValue: m.prediction,
       subIsCurrency: true,
-      color: m.cashBalance >= 0 ? C.green : C.red,
-      glow: (m.cashBalance >= 0 ? C.green : C.red) + '22',
+      color: cashColor,
+      glow: cashColor + '22',
       sparkline: cashSparkValues,
-      sparkColor: m.cashBalance >= 0 ? C.green : C.red,
-    },
-    {
-      label: 'A receber',
-      value: m.receivablesOpenTotal,
-      prevValue: pm.receivablesOpenTotal,
-      isPositiveGood: true,
-      isCurrency: true,
-      subLabel: 'A pagar',
-      subValue: m.payablesOpenTotal,
-      subIsCurrency: true,
-      color: C.purple,
-      glow: C.purple + '22',
-      sparkline: null,
-      sparkColor: C.purple,
+      sparkColor: cashColor,
     },
   ]
 
@@ -313,6 +291,8 @@ export function Dashboard({ data, saveError }) {
   }).slice(0, 4), [computedGoals])
 
   return (
+    <>
+    {showCompareModal && <CompareModal data={data} onClose={() => setShowCompareModal(false)} />}
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
 
       {/* Seletor de período */}
@@ -323,17 +303,16 @@ export function Dashboard({ data, saveError }) {
             {periodLabel && <div style={{ fontSize:12, color:C.textSub, marginTop:2 }}>{periodLabel}</div>}
           </div>
           <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-            {/* Comparison toggle */}
+            {/* Comparison button */}
             <button
-              onClick={() => setShowComparison(v => !v)}
-              aria-pressed={showComparison}
-              title="Comparar com o período anterior"
+              onClick={() => setShowCompareModal(true)}
+              title="Abrir análise comparativa"
               style={{
                 display:'inline-flex', alignItems:'center', gap:6,
                 padding:'8px 12px', borderRadius:999,
-                border:`1px solid ${showComparison ? C.cyan + '55' : C.border}`,
-                background: showComparison ? C.cyan + '14' : 'transparent',
-                color: showComparison ? C.cyan : C.textSub,
+                border:`1px solid ${C.border}`,
+                background: 'transparent',
+                color: C.textSub,
                 cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700,
               }}
             >
@@ -429,12 +408,9 @@ export function Dashboard({ data, saveError }) {
             </div>
             <div style={{ fontSize:isMobile ? 20 : 26, fontWeight:800, color:item.color, letterSpacing:'-0.02em', display:'flex', alignItems:'baseline', flexWrap:'wrap', lineHeight:1.2 }}>
               {item.isCurrency ? formatMoney(item.value) : fmtN(item.value)}
-              {showComparison && !financialPrivacyMode && (
-                <DeltaBadge current={item.value} previous={item.prevValue} isPositiveGood={item.isPositiveGood} />
-              )}
             </div>
             <div style={{ fontSize:isMobile ? 11 : 12, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
-              {item.subLabel}: {item.subIsCurrency ? formatMoney(item.subValue) : fmtN(item.subValue)}
+              {item.subLabel}: {item.subCustom != null ? item.subCustom : item.subIsCurrency ? formatMoney(item.subValue) : fmtN(item.subValue)}
             </div>
           </Card>
         ))}
@@ -526,7 +502,19 @@ export function Dashboard({ data, saveError }) {
           </div>
         </Card>
       </div>
+
+      {/* Rentabilidade por convênio */}
+      {Object.keys(m.consultationsByInsurance).length > 0 && (
+        <Card>
+          <h3 style={{ margin:'0 0 16px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Rentabilidade por convênio</h3>
+          <div style={{ overflowX:'auto' }}>
+            <InsuranceBreakdown consultationsByInsurance={m.consultationsByInsurance} />
+          </div>
+        </Card>
+      )}
+
     </div>
+    </>
   )
 }
 

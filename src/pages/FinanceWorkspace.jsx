@@ -18,6 +18,8 @@ import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { FAB } from '../components/FAB.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
+import { NavIcon } from '../components/NavIcon.jsx'
+import { AlertsBell } from '../components/AlertsBell.jsx'
 import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
 import { TaxCalculator } from '../components/TaxCalculator.jsx'
@@ -31,25 +33,25 @@ const NAV_SECTIONS = [
   {
     title:'Operação',
     items:[
-      { id:'dashboard', label:'Dashboard', icon:'⬡', hint:'Visão geral da clínica' },
-      { id:'plans', label:'Procedimentos', icon:'◇', hint:'Catálogo cirúrgico' },
-      { id:'sales', label:'Cirurgias', icon:'◈', hint:'Agenda e resultados' },
-      { id:'consultations', label:'Consultas', icon:'◎', hint:'Atendimentos e convênios' },
-      { id:'calendar', label:'Agenda', icon:'◷', hint:'Calendário de cirurgias e consultas' },
-      { id:'products', label:'Produtos', icon:'▣', hint:'Modeladores e estoque' },
+      { id:'dashboard',     label:'Dashboard',     icon:'dashboard',     hint:'Visão geral da clínica' },
+      { id:'plans',         label:'Procedimentos', icon:'procedures',    hint:'Catálogo cirúrgico' },
+      { id:'sales',         label:'Cirurgias',     icon:'surgery',       hint:'Agenda e resultados' },
+      { id:'consultations', label:'Consultas',     icon:'consultations', hint:'Atendimentos e convênios' },
+      { id:'calendar',      label:'Agenda',        icon:'calendar',      hint:'Calendário de cirurgias e consultas' },
+      { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
     ],
   },
   {
     title:'Gestão',
     items:[
-      { id:'finance', label:'Financeiro', icon:'◆', hint:'Caixa, DRE e balanço' },
-      { id:'impostos', label:'Impostos', icon:'◐', hint:'Carnê-Leão, IRPF e DAS' },
-      { id:'goals', label:'Metas', icon:'◉', hint:'Objetivos e acompanhamento' },
-      { id:'recurrences', label:'Recorrências', icon:'◍', hint:'Despesas e receitas fixas' },
-      { id:'reports', label:'Relatórios', icon:'◫', hint:'Análises e comparativos' },
-      { id:'ai', label:'Assistente', icon:'✦', hint:'Perguntas sobre os dados' },
-      { id:'billing', label:'Assinatura', icon:'◌', hint:'Trial, checkout e cobrança' },
-      { id:'settings', label:'Configurações', icon:'⚙', hint:'Perfil e preferências' },
+      { id:'finance',     label:'Financeiro',     icon:'finance',     hint:'Caixa, DRE e balanço' },
+      { id:'impostos',    label:'Impostos',       icon:'taxes',       hint:'Carnê-Leão, IRPF e DAS' },
+      { id:'goals',       label:'Metas',          icon:'goals',       hint:'Objetivos e acompanhamento' },
+      { id:'recurrences', label:'Recorrências',   icon:'recurrences', hint:'Despesas e receitas fixas' },
+      { id:'reports',     label:'Relatórios',     icon:'reports',     hint:'Análises e comparativos' },
+      { id:'ai',          label:'Assistente',     icon:'ai',          hint:'Perguntas sobre os dados' },
+      { id:'billing',     label:'Assinatura',     icon:'billing',     hint:'Trial, checkout e cobrança' },
+      { id:'settings',    label:'Configurações',  icon:'settings',    hint:'Perfil e preferências' },
     ],
   },
 ]
@@ -248,7 +250,9 @@ function QuickSearchModal({ open, onClose, navigate }) {
                 transition:'background 0.1s',
               }}
             >
-              <span style={{ fontSize:16, opacity:0.7 }}>{item.icon}</span>
+              <span style={{ display:'flex', alignItems:'center', justifyContent:'center', opacity:0.7 }}>
+                <NavIcon name={item.icon} size={16} />
+              </span>
               <span>
                 <span style={{ display:'block', fontWeight:idx === activeIdx ? 700 : 500 }}>{item.label}</span>
                 <span style={{ display:'block', fontSize:11, color:C.textDim, marginTop:2 }}>{item.hint}</span>
@@ -745,7 +749,9 @@ export function FinanceWorkspace() {
                         border:active ? `1px solid ${C.accent}40` : '1px solid transparent',
                       }}
                     >
-                      <span style={{ fontSize:isMobile ? 16 : (ultraCompactDesktop ? 12 : 13), opacity:active ? 1 : 0.5, lineHeight:1.2 }}>{item.icon}</span>
+                      <span style={{ display:'flex', alignItems:'center', justifyContent:'center', opacity:active ? 1 : 0.5, marginTop:1 }}>
+                        <NavIcon name={item.icon} size={isMobile ? 16 : (ultraCompactDesktop ? 13 : 15)} />
+                      </span>
                       <span>
                         <span style={{ display:'block', fontWeight:active ? 700 : 600 }}>{item.label}</span>
                         {isMobile && <span style={{ display:'block', color:active ? C.textSub : C.textDim, fontSize:11, marginTop:3 }}>{item.hint}</span>}
@@ -778,6 +784,7 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+              <AlertsBell data={data} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
               <button
                 onClick={toggleTheme}
                 title={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
