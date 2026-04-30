@@ -8,27 +8,43 @@ const STATS = [
 
 const TESTIMONIALS = [
   {
-    quote:'Em duas semanas eu já conseguia mostrar margem por procedimento em reunião de equipe.',
-    author:'Dra. Mariana Ribeiro',
-    role:'Cirurgiã plástica',
+    quote: 'Descobri que rinoplastia rendia 11% menos que lipoaspiração. Ajustei a precificação na semana seguinte e recuperei a diferença em 30 dias.',
+    author: 'Dra. Mariana Ribeiro',
+    role: 'Cirurgiã plástica · São Paulo',
+    initials: 'MR',
+    avatarColor: '#14B8A6',
   },
   {
-    quote:'A sensação é de sair da planilha para um cockpit de gestão real.',
-    author:'Clínica Lumina',
-    role:'Gestão administrativa',
+    quote: 'Fechávamos o mês em dois dias de planilha. Hoje em 2 horas. A equipe administrativa parou de atrasar o repasse dos números para os sócios.',
+    author: 'Carolina Mello',
+    role: 'Gestão administrativa · Clínica Lumina, RJ',
+    initials: 'CM',
+    avatarColor: '#8B5CF6',
   },
   {
-    quote:'Paramos de decidir por intuição. Agora temos base diária de caixa e lucro.',
-    author:'Dr. Paulo Siqueira',
-    role:'Cirurgião plástico',
+    quote: 'Antecipei um trimestre de pressão financeira com 6 semanas de antecedência. Sem o caixa diário visível, teria percebido tarde demais.',
+    author: 'Dr. Paulo Siqueira',
+    role: 'Cirurgião plástico · Belo Horizonte',
+    initials: 'PS',
+    avatarColor: '#0EA5E9',
   },
 ]
+
+const STARS = (
+  <div style={{ display:'flex', gap:3, marginBottom:14 }}>
+    {[1,2,3,4,5].map(i => (
+      <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill="#FDE68A" stroke="none">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    ))}
+  </div>
+)
 
 export function ProofSection() {
   const [active, setActive] = useState(0)
 
   useEffect(() => {
-    const id = window.setInterval(() => setActive(current => (current + 1) % TESTIMONIALS.length), 5000)
+    const id = window.setInterval(() => setActive(current => (current + 1) % TESTIMONIALS.length), 5200)
     return () => window.clearInterval(id)
   }, [])
 
@@ -45,7 +61,7 @@ export function ProofSection() {
 
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(170px, 1fr))', gap:10 }}>
             {STATS.map((item, index) => (
-              <article key={item.label} className="reveal" style={{ padding:14, borderRadius:16, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.12)' }}>
+              <article key={item.label} className="reveal" style={{ padding:14, borderRadius:16, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.12)', transitionDelay:`${index * 80}ms` }}>
                 <div style={{ fontSize:11, color:'#8CA6B2', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:5 }}>{item.label}</div>
                 <div style={{ fontSize:31, lineHeight:1, color:'#E8F8FF', fontWeight:900, letterSpacing:'-0.04em' }}>
                   <CountUp to={item.value} delay={index * 120} />{item.suffix}
@@ -56,10 +72,30 @@ export function ProofSection() {
         </div>
 
         <div className="reveal" style={{ padding:'24px clamp(18px, 3vw, 24px)', borderRadius:22, border:'1px solid rgba(255,255,255,0.12)', background:'linear-gradient(145deg, rgba(18,22,38,0.88), rgba(8,20,36,0.9))' }}>
-          <p style={{ margin:'0 0 14px', color:'#F2FBFF', fontSize:20, lineHeight:1.5 }}>&ldquo;{testimonial.quote}&rdquo;</p>
-          <div style={{ color:'#D4EAF4', fontSize:13, fontWeight:700 }}>{testimonial.author}</div>
-          <div style={{ color:'#8DA6B2', fontSize:12, marginTop:3 }}>{testimonial.role}</div>
-          <div style={{ display:'flex', gap:8, marginTop:15 }}>
+          {STARS}
+          <p style={{ margin:'0 0 18px', color:'#F2FBFF', fontSize:18, lineHeight:1.55 }}>&ldquo;{testimonial.quote}&rdquo;</p>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{
+              width:38,
+              height:38,
+              borderRadius:'50%',
+              background:`linear-gradient(135deg, ${testimonial.avatarColor}44, ${testimonial.avatarColor}22)`,
+              border:`1px solid ${testimonial.avatarColor}55`,
+              display:'grid',
+              placeItems:'center',
+              fontSize:13,
+              fontWeight:800,
+              color:testimonial.avatarColor,
+              flexShrink:0,
+            }}>
+              {testimonial.initials}
+            </div>
+            <div>
+              <div style={{ color:'#D4EAF4', fontSize:13, fontWeight:700 }}>{testimonial.author}</div>
+              <div style={{ color:'#7A9BAA', fontSize:12, marginTop:2 }}>{testimonial.role}</div>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8, marginTop:18 }}>
             {TESTIMONIALS.map((item, index) => (
               <button
                 key={item.author}

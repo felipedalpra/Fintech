@@ -184,6 +184,8 @@ export function Dashboard({ data, saveError }) {
     () => buildMetrics(data, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end }),
     [data, prevRange]
   )
+  const allTimeM = useMemo(() => buildMetrics(data), [data])
+  const prevAllTimeM = useMemo(() => buildMetrics(data, { endDate: prevRange.end }), [data, prevRange])
 
   const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
   const maxBar = Math.max(...monthKeys.map(key => Math.max(m.revenueByMonth[key] || 0, m.expenseByMonth[key] || 0)), 1)
@@ -199,7 +201,7 @@ export function Dashboard({ data, saveError }) {
   const prevTotalExpenses = pm.surgeryCostTotal + pm.consultationCostTotal + pm.productPurchaseTotal + pm.operationalExpenses + pm.taxExpenses
   const netMargin = m.grossRevenue > 0 ? ((m.netProfit / m.grossRevenue) * 100).toFixed(1) + '%' : '—'
   const netProfitColor = m.netProfit >= 0 ? C.green : C.red
-  const cashColor = m.cashBalance >= 0 ? C.green : C.red
+  const cashColor = allTimeM.cashBalance >= 0 ? C.green : C.red
 
   const kpis = [
     {
@@ -246,8 +248,8 @@ export function Dashboard({ data, saveError }) {
     },
     {
       label: 'Caixa atual',
-      value: m.cashBalance,
-      prevValue: pm.cashBalance,
+      value: allTimeM.cashBalance,
+      prevValue: prevAllTimeM.cashBalance,
       isPositiveGood: true,
       isCurrency: true,
       subLabel: 'Previsão',

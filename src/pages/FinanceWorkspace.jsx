@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { C } from '../theme.js'
-import { fmt } from '../utils.js'
+import { fmt, startOfMonth, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, SkeletonBlock } from '../components/UI.jsx'
 import { Dashboard } from '../components/Dashboard.jsx'
@@ -492,6 +492,7 @@ export function FinanceWorkspace() {
   const hydratedRef = useRef(false)
   const safeData = useMemo(() => normalizeData(data || createEmptyData()), [data])
   const summary = useMemo(() => buildMetrics(safeData), [safeData])
+  const summaryMonth = useMemo(() => buildMetrics(safeData, { startDate: startOfMonth(), endDate: today() }), [safeData])
 
   useEffect(() => {
     let active = true
@@ -610,7 +611,6 @@ export function FinanceWorkspace() {
   const Page = PAGES[page]
   const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
   const sidebarQuickStats = [
-    `Caixa ${fmt(summary.cashBalance)}`,
     `${summary.surgeriesCompleted} cirurgia(s)`,
     `${summary.consultationsCompleted} consulta(s)`,
     billing?.status === 'trialing' ? `Trial: ${trialDaysLeft} dia(s)` : `Assinatura: ${billing?.status || 'pendente'}`,
@@ -714,9 +714,20 @@ export function FinanceWorkspace() {
 
         <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
-          <div style={{ fontSize:isMobile ? 24 : (ultraCompactDesktop ? 16 : 18), fontWeight:900, color:C.accent, marginBottom:isMobile ? 8 : (ultraCompactDesktop ? 0 : 6) }}>{fmt(summary.cashBalance)}</div>
-          {!ultraCompactDesktop && (
-            <div style={{ display:'flex', flexDirection:'column', gap:isMobile ? 4 : 2 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:ultraCompactDesktop ? 2 : 4 }}>
+            <div>
+              <div style={{ fontSize:9, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:1 }}>Caixa hoje</div>
+              <div style={{ fontSize:isMobile ? 20 : (ultraCompactDesktop ? 14 : 16), fontWeight:900, color:C.accent, lineHeight:1.1 }}>{fmt(summary.cashBalance)}</div>
+            </div>
+            {!ultraCompactDesktop && (
+              <div>
+                <div style={{ fontSize:9, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:1 }}>Lucro líq. mês</div>
+                <div style={{ fontSize:isMobile ? 14 : 12, fontWeight:700, color:summaryMonth.netProfit >= 0 ? C.green : C.red, lineHeight:1.1 }}>{fmt(summaryMonth.netProfit)}</div>
+              </div>
+            )}
+          </div>
+          {!ultraCompactDesktop && sidebarStats.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:isMobile ? 4 : 2, marginTop:isMobile ? 6 : 4 }}>
               {sidebarStats.map(item => <div key={item} style={{ color:C.textDim, fontSize:isMobile ? 12 : 11 }}>{item}</div>)}
             </div>
           )}

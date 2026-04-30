@@ -12,6 +12,8 @@ import { BrandLogo } from '../components/BrandLogo.jsx'
 import { SectionCTA } from './SectionCTA.jsx'
 import { ComparisonSection } from './ComparisonSection.jsx'
 import { SimulatorSection } from './SimulatorSection.jsx'
+import { HowItWorks } from './HowItWorks.jsx'
+import { LogoWall } from './LogoWall.jsx'
 
 export function LandingPage() {
   const { user, loading } = useAuth()
@@ -81,6 +83,14 @@ export function LandingPage() {
           0%, 100% { transform: translate3d(0, 0, 0); }
           50% { transform: translate3d(0, -18px, 0); }
         }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        @keyframes marqueeScroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
         html { scroll-behavior: smooth; }
         .reveal {
           opacity: 0;
@@ -146,8 +156,10 @@ export function LandingPage() {
           <Hero />
           <div className="landing-divider" style={{ height:1, background:'linear-gradient(90deg, transparent, rgba(255,255,255,0.24), transparent)', animation:'pulseLine 4s ease-in-out infinite' }} />
 
+          <HowItWorks />
           <div id="beneficios"><Benefits /></div>
           <div id="social"><ProofSection /></div>
+          <LogoWall />
           <SectionCTA tone="blue" />
           <div id="funcionalidades"><Features /></div>
           <div id="comparativo"><ComparisonSection /></div>
