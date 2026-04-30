@@ -4,6 +4,8 @@ import { buildMetrics } from '../useMetrics.js'
 import { fmt, getPeriodRange, today } from '../utils.js'
 
 function computeAlerts(data, summary) {
+  const safeData = data || {}
+  const safeSummary = summary || {}
   const alerts = []
   const now = new Date()
   const todayStr = today()
@@ -11,11 +13,11 @@ function computeAlerts(data, summary) {
   in7.setDate(in7.getDate() + 7)
   const in7Str = in7.toISOString().split('T')[0]
 
-  if (summary.cashBalance < 0) {
-    alerts.push({ level: 'danger', title: 'Caixa negativo', body: `Saldo atual: ${fmt(summary.cashBalance)}`, link: 'finance' })
+  if (Number(safeSummary.cashBalance || 0) < 0) {
+    alerts.push({ level: 'danger', title: 'Caixa negativo', body: `Saldo atual: ${fmt(safeSummary.cashBalance || 0)}`, link: 'finance' })
   }
 
-  const payables = summary.accountsPayable || []
+  const payables = safeSummary.accountsPayable || []
   const overdue = payables.filter(i => i.dueDate && i.dueDate < todayStr)
   if (overdue.length > 0) {
     const total = overdue.reduce((s, i) => s + (i.value || 0), 0)
@@ -28,7 +30,7 @@ function computeAlerts(data, summary) {
     alerts.push({ level: 'warning', title: `${dueSoon.length} conta(s) vencem em 7 dias`, body: `Total: ${fmt(total)}`, link: 'finance' })
   }
 
-  const goals = data.goals || []
+  const goals = safeData.goals || []
   if (goals.length > 0) {
     const range = getPeriodRange('month')
     const m = buildMetrics(data, { startDate: range.start, endDate: range.end, balanceDate: range.end })
@@ -130,7 +132,7 @@ export function AlertsBell({ data, summary, onNavigate }) {
               {alerts.map((alert, i) => (
                 <div
                   key={i}
-                  onClick={() => { if (alert.link) { onNavigate(alert.link); setOpen(false) } }}
+                  onClick={() => { if (alert.link && typeof onNavigate === 'function') { onNavigate(alert.link); setOpen(false) } }}
                   style={{
                     padding: '12px 16px',
                     borderBottom: i < alerts.length - 1 ? `1px solid ${C.border}22` : 'none',

@@ -490,7 +490,8 @@ export function FinanceWorkspace() {
     typeof window !== 'undefined' ? window.localStorage.getItem('surgimetrics_onboarded') !== 'true' : false
   )
   const hydratedRef = useRef(false)
-  const summary = useMemo(() => buildMetrics(data), [data])
+  const safeData = useMemo(() => normalizeData(data || createEmptyData()), [data])
+  const summary = useMemo(() => buildMetrics(safeData), [safeData])
 
   useEffect(() => {
     let active = true
@@ -602,7 +603,7 @@ export function FinanceWorkspace() {
   }, [page])
 
   const setData = updater => setRaw(prev => normalizeData(typeof updater === 'function' ? updater(prev) : updater))
-  const hasData = useMemo(() => data.procedures.length || data.surgeries.length || data.consultations.length || data.products.length || data.productSales.length || data.productPurchases.length || data.extraRevenues.length || data.expenses.length || data.assets.length || data.liabilities.length || data.goals.length, [data])
+  const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
   if (!PAGES[page]) return <Navigate to="/app/dashboard" replace />
 
@@ -784,7 +785,7 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-              <AlertsBell data={data} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
+              <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
               <button
                 onClick={toggleTheme}
                 title={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
@@ -872,8 +873,8 @@ export function FinanceWorkspace() {
           </Card>
         )}
         {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
-        <Page data={data} setData={setData} saveError={saveError} />
-        <CopilotWidget data={data} />
+        <Page data={safeData} setData={setData} saveError={saveError} />
+        <CopilotWidget data={safeData} />
         <FAB currentPage={page} />
       </main>
 
