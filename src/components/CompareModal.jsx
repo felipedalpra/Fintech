@@ -4,14 +4,20 @@ import { fmt, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
-const PERIOD_OPTIONS = [
+const PERIOD_OPTIONS_A = [
   { value: 'month', label: 'Este mês' },
-  { value: 'prev_month', label: 'Mês anterior' },
   { value: 'quarter', label: 'Trimestre' },
   { value: 'semester', label: 'Semestre' },
   { value: 'year', label: 'Este ano' },
   { value: 'custom', label: 'Personalizado' },
 ]
+
+const PREV_PERIOD_LABELS = {
+  month: 'Mês anterior',
+  quarter: 'Trimestre anterior',
+  semester: 'Semestre anterior',
+  year: 'Ano anterior',
+}
 
 const VIEWS = [
   { value: 'dre', label: 'DRE' },
@@ -22,6 +28,29 @@ const VIEWS = [
 
 function formatDateInput(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function getPreviousPeriodRange(period) {
+  if (period === 'custom') return { start: '', end: '' }
+  const now = new Date(`${today()}T00:00:00`)
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (period === 'month') {
+    const prevEnd = new Date(end.getFullYear(), end.getMonth(), 0)
+    return { start: formatDateInput(new Date(prevEnd.getFullYear(), prevEnd.getMonth(), 1)), end: formatDateInput(prevEnd) }
+  }
+  if (period === 'quarter') {
+    const prevEnd = new Date(end.getFullYear(), end.getMonth() - 2, 0)
+    return { start: formatDateInput(new Date(prevEnd.getFullYear(), prevEnd.getMonth() - 2, 1)), end: formatDateInput(prevEnd) }
+  }
+  if (period === 'semester') {
+    const prevEnd = new Date(end.getFullYear(), end.getMonth() - 5, 0)
+    return { start: formatDateInput(new Date(prevEnd.getFullYear(), prevEnd.getMonth() - 5, 1)), end: formatDateInput(prevEnd) }
+  }
+  if (period === 'year') {
+    const prevEnd = new Date(end.getFullYear(), end.getMonth() - 11, 0)
+    return { start: formatDateInput(new Date(prevEnd.getFullYear(), prevEnd.getMonth() - 11, 1)), end: formatDateInput(prevEnd) }
+  }
+  return { start: '', end: '' }
 }
 
 function getPeriodRange(period, custom = { start: '', end: '' }) {
@@ -59,12 +88,14 @@ function formatPeriodLabel(period, range) {
   return `${s(start)} – ${s(end)} ${end.getFullYear()}`
 }
 
+const DATE_INPUT_STYLE = { padding: '6px 10px', borderRadius: 7, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontFamily: 'inherit', fontSize: 12 }
+
 function PeriodSelector({ label, period, setPeriod, custom, setCustom, accent }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: accent, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {PERIOD_OPTIONS.map(opt => {
+        {PERIOD_OPTIONS_A.map(opt => {
           const active = period === opt.value
           return (
             <button
@@ -88,21 +119,44 @@ function PeriodSelector({ label, period, setPeriod, custom, setCustom, accent })
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <label style={{ fontSize: 10, color: C.textDim, fontWeight: 600 }}>Início</label>
-            <input
-              type="date"
-              value={custom.start}
-              onChange={e => setCustom(c => ({ ...c, start: e.target.value }))}
-              style={{ padding: '6px 10px', borderRadius: 7, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontFamily: 'inherit', fontSize: 12 }}
-            />
+            <input type="date" value={custom.start} onChange={e => setCustom(c => ({ ...c, start: e.target.value }))} style={DATE_INPUT_STYLE} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <label style={{ fontSize: 10, color: C.textDim, fontWeight: 600 }}>Fim</label>
-            <input
-              type="date"
-              value={custom.end}
-              onChange={e => setCustom(c => ({ ...c, end: e.target.value }))}
-              style={{ padding: '6px 10px', borderRadius: 7, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontFamily: 'inherit', fontSize: 12 }}
-            />
+            <input type="date" value={custom.end} onChange={e => setCustom(c => ({ ...c, end: e.target.value }))} style={DATE_INPUT_STYLE} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PeriodBDisplay({ periodA, rangeB, labelB, customB, setCustomB }) {
+  const autoLabel = PREV_PERIOD_LABELS[periodA]
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.cyan, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Período B</div>
+        {autoLabel && (
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: C.cyan + '18', color: C.cyan, fontWeight: 600 }}>automático</span>
+        )}
+      </div>
+      {periodA !== 'custom' ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ padding: '6px 14px', borderRadius: 999, border: `1px solid ${C.cyan}55`, background: C.cyan + '18', color: C.cyan, fontSize: 12, fontWeight: 700 }}>
+            {autoLabel}
+          </div>
+          <div style={{ fontSize: 12, color: C.textDim }}>{labelB}</div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <label style={{ fontSize: 10, color: C.textDim, fontWeight: 600 }}>Início</label>
+            <input type="date" value={customB.start} onChange={e => setCustomB(c => ({ ...c, start: e.target.value }))} style={DATE_INPUT_STYLE} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <label style={{ fontSize: 10, color: C.textDim, fontWeight: 600 }}>Fim</label>
+            <input type="date" value={customB.end} onChange={e => setCustomB(c => ({ ...c, end: e.target.value }))} style={DATE_INPUT_STYLE} />
           </div>
         </div>
       )}
@@ -229,17 +283,16 @@ export function CompareModal({ data, onClose }) {
   const [view, setView] = useState('dre')
   const [periodA, setPeriodA] = useState('month')
   const [customA, setCustomA] = useState({ start: '', end: '' })
-  const [periodB, setPeriodB] = useState('prev_month')
   const [customB, setCustomB] = useState({ start: '', end: '' })
 
   const rangeA = useMemo(() => getPeriodRange(periodA, customA), [periodA, customA])
-  const rangeB = useMemo(() => getPeriodRange(periodB, customB), [periodB, customB])
+  const rangeB = useMemo(() => periodA === 'custom' ? customB : getPreviousPeriodRange(periodA), [periodA, customB])
 
   const mA = useMemo(() => buildMetrics(data, { startDate: rangeA.start, endDate: rangeA.end, balanceDate: rangeA.end }), [data, rangeA])
   const mB = useMemo(() => buildMetrics(data, { startDate: rangeB.start, endDate: rangeB.end, balanceDate: rangeB.end }), [data, rangeB])
 
   const labelA = formatPeriodLabel(periodA, rangeA)
-  const labelB = formatPeriodLabel(periodB, rangeB)
+  const labelB = formatPeriodLabel(periodA === 'custom' ? 'custom' : 'prev_month', rangeB)
 
   const formatMoney = v => maskFinancialValue(v, financialPrivacyMode, fmt)
 
@@ -293,13 +346,12 @@ export function CompareModal({ data, onClose }) {
             accent={C.accent}
           />
           <div style={{ width: 1, background: C.border + '44', alignSelf: 'stretch', flexShrink: 0 }} />
-          <PeriodSelector
-            label="Período B"
-            period={periodB}
-            setPeriod={setPeriodB}
-            custom={customB}
-            setCustom={setCustomB}
-            accent={C.cyan}
+          <PeriodBDisplay
+            periodA={periodA}
+            rangeB={rangeB}
+            labelB={labelB}
+            customB={customB}
+            setCustomB={setCustomB}
           />
         </div>
 
