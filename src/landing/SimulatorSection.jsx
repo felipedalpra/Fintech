@@ -47,9 +47,9 @@ export function SimulatorSection() {
       <div className="reveal" style={{ borderRadius:26, border:'1px solid rgba(255,255,255,0.12)', background:'linear-gradient(145deg, rgba(17,16,31,0.84), rgba(10,25,38,0.88))', padding:isMobile ? '20px 16px' : 'clamp(18px, 3vw, 28px)' }}>
 
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap:isMobile ? 18 : 14 }}>
-          <Input label="Cirurgias por mês" value={surgeries} min={1} max={60} step={1} onChange={setSurgeries} isMobile={isMobile} />
-          <Input label="Ticket médio (R$)" value={ticket} min={5000} max={100000} step={500} onChange={setTicket} isMobile={isMobile} />
-          <Input label="Custo operacional (%)" value={costRate} min={10} max={85} step={1} onChange={setCostRate} isMobile={isMobile} />
+          <Input label="Cirurgias por mês" value={surgeries} min={1} max={60} step={1} onChange={setSurgeries} isMobile={isMobile} format="number" />
+          <Input label="Ticket médio (R$)" value={ticket} min={5000} max={100000} step={500} onChange={setTicket} isMobile={isMobile} format="currency" />
+          <Input label="Custo operacional (%)" value={costRate} min={10} max={85} step={1} onChange={setCostRate} isMobile={isMobile} format="percent" />
         </div>
 
         <div style={{ marginTop:20, display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:10 }}>
@@ -108,7 +108,8 @@ export function SimulatorSection() {
   )
 }
 
-function Input({ label, value, min, max, step, onChange, isMobile }) {
+function Input({ label, value, min, max, step, onChange, isMobile, format = 'number' }) {
+  const formattedValue = format === 'percent' ? `${value}%` : format === 'currency' ? money(value) : value
   return (
     <label style={{ display:'grid', gap:8 }}>
       <span style={{ fontSize:isMobile ? 11 : 12, color:'#9FB8C5', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>{label}</span>
@@ -122,7 +123,7 @@ function Input({ label, value, min, max, step, onChange, isMobile }) {
         style={{ width:'100%', cursor:'pointer' }}
       />
       <div style={{ color:'#F1FAFF', fontSize:isMobile ? 20 : 18, fontWeight:800, letterSpacing:'-0.02em' }}>
-        {label.includes('%') ? `${value}%` : label.includes('Ticket') ? money(value) : value}
+        {formattedValue}
       </div>
     </label>
   )

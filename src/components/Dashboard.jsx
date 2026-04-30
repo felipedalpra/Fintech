@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
-import { fmt, fmtN, today, getPeriodRange } from '../utils.js'
+import { fmt, fmtN, today, getPeriodRange, formatDateInput } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
@@ -15,13 +15,6 @@ const PERIOD_OPTIONS = [
   { value:'year', label:'Este ano' },
   { value:'custom', label:'Personalizado' },
 ]
-
-function formatDateInput(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
 function getDashboardPeriodRange(period, customRange = { start:'', end:'' }) {
   if (period === 'custom') return { start:customRange.start || '', end:customRange.end || '' }
@@ -66,8 +59,7 @@ function formatPeriodLabel(period, range) {
   if (!range.end) return start.toLocaleDateString(locale, { day:'numeric', month:'short', year:'numeric' })
   const end = new Date(`${range.end}T00:00:00`)
   const fmtShort = d => d.toLocaleDateString(locale, { day:'numeric', month:'short' })
-  const sameYear = start.getFullYear() === end.getFullYear()
-  return `${fmtShort(start)} – ${fmtShort(end)}${sameYear ? ` ${end.getFullYear()}` : ` ${end.getFullYear()}`}`
+  return `${fmtShort(start)} – ${fmtShort(end)} ${end.getFullYear()}`
 }
 
 function getPreviousPeriodRange(period, range) {
@@ -193,9 +185,8 @@ export function Dashboard({ data, saveError }) {
   const topProduct = m.productsByPerformance[0]
   const formatMoney = value => maskFinancialValue(value, financialPrivacyMode, fmt)
 
-  const allMonthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
-  const revenueSparkValues = allMonthKeys.map(k => m.revenueByMonth[k] || 0)
-  const cashSparkValues = allMonthKeys.map(k => (m.revenueByMonth[k] || 0) - (m.expenseByMonth[k] || 0))
+  const revenueSparkValues = monthKeys.map(k => m.revenueByMonth[k] || 0)
+  const cashSparkValues = monthKeys.map(k => (m.revenueByMonth[k] || 0) - (m.expenseByMonth[k] || 0))
 
   const totalExpenses = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal + m.operationalExpenses + m.taxExpenses
   const prevTotalExpenses = pm.surgeryCostTotal + pm.consultationCostTotal + pm.productPurchaseTotal + pm.operationalExpenses + pm.taxExpenses

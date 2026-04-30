@@ -124,9 +124,9 @@ export function Hero() {
             </div>
 
             <div style={{ display:'flex', gap:6, marginBottom:14 }}>
-              {TABS.map((tab, i) => (
+              {TABS.map((tabLabel, i) => (
                 <button
-                  key={tab}
+                  key={tabLabel}
                   type="button"
                   onClick={() => setActiveTab(i)}
                   style={{
@@ -142,7 +142,7 @@ export function Hero() {
                     letterSpacing:'0.04em',
                   }}
                 >
-                  {tab}
+                  {tabLabel}
                 </button>
               ))}
             </div>

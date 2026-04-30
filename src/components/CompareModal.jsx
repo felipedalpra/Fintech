@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { C } from '../theme.js'
-import { fmt, today } from '../utils.js'
+import { fmt, today, formatDateInput } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 
@@ -25,10 +25,6 @@ const VIEWS = [
   { value: 'revenue', label: 'Faturamento' },
   { value: 'expenses', label: 'Despesas' },
 ]
-
-function formatDateInput(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
 
 function getPreviousPeriodRange(period) {
   if (period === 'custom') return { start: '', end: '' }
@@ -60,10 +56,6 @@ function getPeriodRange(period, custom = { start: '', end: '' }) {
   if (period === 'month') {
     return { start: formatDateInput(new Date(end.getFullYear(), end.getMonth(), 1)), end: formatDateInput(end) }
   }
-  if (period === 'prev_month') {
-    const prevEnd = new Date(end.getFullYear(), end.getMonth(), 0)
-    return { start: formatDateInput(new Date(prevEnd.getFullYear(), prevEnd.getMonth(), 1)), end: formatDateInput(prevEnd) }
-  }
   if (period === 'quarter') {
     return { start: formatDateInput(new Date(end.getFullYear(), end.getMonth() - 2, 1)), end: formatDateInput(end) }
   }
@@ -80,7 +72,7 @@ function formatPeriodLabel(period, range) {
   if (!range.start) return '—'
   const locale = 'pt-BR'
   const start = new Date(`${range.start}T00:00:00`)
-  if (period === 'month' || period === 'prev_month')
+  if (period === 'month')
     return start.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
   if (!range.end) return start.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
   const end = new Date(`${range.end}T00:00:00`)
@@ -292,7 +284,7 @@ export function CompareModal({ data, onClose }) {
   const mB = useMemo(() => buildMetrics(data, { startDate: rangeB.start, endDate: rangeB.end, balanceDate: rangeB.end }), [data, rangeB])
 
   const labelA = formatPeriodLabel(periodA, rangeA)
-  const labelB = formatPeriodLabel(periodA === 'custom' ? 'custom' : 'prev_month', rangeB)
+  const labelB = formatPeriodLabel(periodA, rangeB)
 
   const formatMoney = v => maskFinancialValue(v, financialPrivacyMode, fmt)
 

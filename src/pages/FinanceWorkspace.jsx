@@ -491,8 +491,13 @@ export function FinanceWorkspace() {
   )
   const hydratedRef = useRef(false)
   const safeData = useMemo(() => normalizeData(data || createEmptyData()), [data])
+  const todayDate = today()
+  const monthStartDate = startOfMonth(todayDate)
   const summary = useMemo(() => buildMetrics(safeData), [safeData])
-  const summaryMonth = useMemo(() => buildMetrics(safeData, { startDate: startOfMonth(), endDate: today() }), [safeData])
+  const summaryMonth = useMemo(
+    () => buildMetrics(safeData, { startDate: monthStartDate, endDate: todayDate }),
+    [safeData, monthStartDate, todayDate]
+  )
 
   useEffect(() => {
     let active = true
