@@ -485,6 +485,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     ['dre', 'DRE'],
     ['balanco', 'Balanço'],
     ['fluxo', 'Fluxo de caixa'],
+    ['indicadores', 'Indicadores'],
   ]
 
   // DRE rows definition
@@ -1096,6 +1097,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         </div>
       </>}
 
+      {tab === 'indicadores' && <IndicadoresTab m={m} data={data} money={money} />}
+
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
         {modalType === 'extra' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
@@ -1204,6 +1207,184 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         </div>
       </Modal>
       <ExportModal open={showExport} onClose={() => setShowExport(false)} data={data} />
+    </div>
+  )
+}
+
+function IndicadoresTab({ m, data, money }) {
+  const assetsExtra = (data.assets || []).reduce((acc, x) => acc + (x.value || 0), 0)
+  const liabExtra = (data.liabilities || []).reduce((acc, x) => acc + (x.value || 0), 0)
+
+  const directCosts = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal
+  const grossProfit = m.grossRevenue - directCosts
+  const totalCosts = directCosts + m.operationalExpenses + m.taxExpenses
+  const totalAtivo = m.cashBalance + m.receivablesOpenTotal + assetsExtra
+  const ativoCirculante = m.cashBalance + m.receivablesOpenTotal
+  const passivoCirculante = m.payablesOpenTotal
+  const totalPassivo = passivoCirculante + liabExtra
+
+  const estoqueValor = (m.productsByPerformance || []).reduce((acc, p) => {
+    const prod = (data.products || []).find(x => x.id === p.id)
+    return acc + (p.stock > 0 ? p.stock * (prod?.purchasePrice || 0) : 0)
+  }, 0)
+
+  const pct = (n, d) => (d !== 0 ? (n / d) * 100 : null)
+  const rat = (n, d) => (d !== 0 ? n / d : null)
+
+  const margemBruta = pct(grossProfit, m.grossRevenue)
+  const margemLiquida = pct(m.netProfit, m.grossRevenue)
+  const margemOperacional = pct(m.operatingProfit, m.grossRevenue)
+  const roi = pct(m.netProfit, totalCosts)
+  const roe = m.equity !== 0 ? pct(m.netProfit, m.equity) : null
+  const roa = pct(m.netProfit, totalAtivo)
+
+  const liquidezCorrente = rat(ativoCirculante, passivoCirculante)
+  const liquidezSeca = rat(ativoCirculante - estoqueValor, passivoCirculante)
+  const liquidezGeral = rat(ativoCirculante + assetsExtra, totalPassivo)
+
+  const composicaoEndividamento = pct(passivoCirculante, totalPassivo)
+  const dividaLiquida = totalPassivo - m.cashBalance
+  const alavancagem = m.operatingProfit > 0 ? rat(dividaLiquida, m.operatingProfit) : null
+
+  const margemContribuicao = m.grossRevenue - directCosts
+  const margemContribuicaoPct = pct(margemContribuicao, m.grossRevenue)
+  const custosFixos = m.operationalExpenses + m.taxExpenses
+  const pontoEquilibrio = margemContribuicao > 0 ? custosFixos / (margemContribuicao / m.grossRevenue) : null
+
+  function statusPct(value, goodThreshold, warnThreshold, invertedScale = false) {
+    if (value === null || value === undefined) return 'dim'
+    if (!invertedScale) {
+      if (value >= goodThreshold) return 'green'
+      if (value >= warnThreshold) return 'yellow'
+      return 'red'
+    }
+    if (value <= goodThreshold) return 'green'
+    if (value <= warnThreshold) return 'yellow'
+    return 'red'
+  }
+
+  function statusRat(value, goodThreshold, warnThreshold, invertedScale = false) {
+    if (value === null || value === undefined) return 'dim'
+    if (!invertedScale) {
+      if (value >= goodThreshold) return 'green'
+      if (value >= warnThreshold) return 'yellow'
+      return 'red'
+    }
+    if (value <= goodThreshold) return 'green'
+    if (value <= warnThreshold) return 'yellow'
+    return 'red'
+  }
+
+  const statusColor = s => s === 'green' ? C.green : s === 'yellow' ? C.yellow : s === 'red' ? C.red : C.textDim
+
+  function IndRow({ label, value, status, hint, format = 'pct' }) {
+    const color = statusColor(status)
+    const display = value === null || value === undefined
+      ? <span style={{ color:C.textDim, fontSize:12 }}>—</span>
+      : format === 'pct'
+        ? <span style={{ color, fontWeight:700, fontSize:14 }}>{value.toFixed(1)}%</span>
+        : format === 'ratio'
+          ? <span style={{ color, fontWeight:700, fontSize:14 }}>{value.toFixed(2)}x</span>
+          : <span style={{ color, fontWeight:700, fontSize:14 }}>{money(value)}</span>
+
+    return (
+      <div
+        title={hint}
+        style={{
+          display:'flex',
+          justifyContent:'space-between',
+          alignItems:'center',
+          padding:'9px 0',
+          borderTop:`1px solid ${C.border}22`,
+          gap:8,
+          cursor: hint ? 'help' : 'default',
+        }}
+      >
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ width:6, height:6, borderRadius:99, background:color, flexShrink:0, display:'inline-block' }} />
+          <span style={{ fontSize:12, color:C.textSub }}>{label}</span>
+        </div>
+        {display}
+      </div>
+    )
+  }
+
+  function IndCard({ title, icon, children }) {
+    return (
+      <Card style={{ padding:'16px 20px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:4 }}>
+          <span style={{ fontSize:15 }}>{icon}</span>
+          <span style={{ fontSize:12, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.09em' }}>{title}</span>
+        </div>
+        {children}
+      </Card>
+    )
+  }
+
+  const noRevenue = m.grossRevenue === 0
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      <SectionTitle
+        title="Indicadores financeiros"
+        subtitle={`Métricas calculadas automaticamente para o período selecionado.${noRevenue ? ' Sem receita no período — adicione cirurgias, consultas ou entradas para ver os indicadores.' : ''}`}
+      />
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:12 }}>
+
+        <IndCard title="Rentabilidade" icon="📈">
+          <IndRow label="Margem Bruta" value={margemBruta} status={statusPct(margemBruta, 40, 20)} hint="(Receita − Custos diretos) / Receita × 100" />
+          <IndRow label="Margem Operacional" value={margemOperacional} status={statusPct(margemOperacional, 20, 5)} hint="Lucro operacional / Receita × 100" />
+          <IndRow label="Margem Líquida" value={margemLiquida} status={statusPct(margemLiquida, 15, 5)} hint="Lucro líquido / Receita × 100" />
+          <IndRow label="ROI" value={roi} status={statusPct(roi, 20, 5)} hint="Lucro líquido / Total de custos × 100" />
+          <IndRow label="ROE" value={roe} status={statusPct(roe, 15, 5)} hint="Lucro líquido / Patrimônio líquido × 100" />
+          <IndRow label="ROA" value={roa} status={statusPct(roa, 10, 3)} hint="Lucro líquido / Total de ativos × 100" />
+        </IndCard>
+
+        <IndCard title="Liquidez" icon="💧">
+          <IndRow label="Liquidez Corrente" value={liquidezCorrente} status={statusRat(liquidezCorrente, 1.5, 1)} format="ratio" hint="Ativo circulante / Passivo circulante" />
+          <IndRow label="Liquidez Seca" value={liquidezSeca} status={statusRat(liquidezSeca, 1, 0.5)} format="ratio" hint="(Ativo circulante − Estoques) / Passivo circulante" />
+          <IndRow label="Liquidez Geral" value={liquidezGeral} status={statusRat(liquidezGeral, 1, 0.5)} format="ratio" hint="(Ativo circ. + Realizável LP) / (Passivo circ. + Não circulante)" />
+          <div style={{ marginTop:10, padding:'8px 10px', background:`${C.accent}08`, borderRadius:8 }}>
+            <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
+              <strong style={{ color:C.textSub }}>Ativo circ.:</strong> {money(ativoCirculante)} &nbsp;|&nbsp;
+              <strong style={{ color:C.textSub }}>Passivo circ.:</strong> {money(passivoCirculante)}
+            </div>
+          </div>
+        </IndCard>
+
+        <IndCard title="Endividamento" icon="⚖️">
+          <IndRow label="Comp. do Endividamento" value={composicaoEndividamento} status={statusPct(composicaoEndividamento, 50, 70, true)} hint="Passivo circulante / Passivo total × 100 — menor é melhor" />
+          <IndRow
+            label="Alavancagem (Dív.Líq/EBITDA)"
+            value={alavancagem}
+            status={statusRat(alavancagem, 2, 4, true)}
+            format="ratio"
+            hint="Dívida líquida / EBITDA — menor é melhor"
+          />
+          <div style={{ marginTop:10, padding:'8px 10px', background:`${C.accent}08`, borderRadius:8 }}>
+            <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
+              <strong style={{ color:C.textSub }}>Dívida líquida:</strong> {money(dividaLiquida)} &nbsp;|&nbsp;
+              <strong style={{ color:C.textSub }}>Patrimônio:</strong> {money(m.equity)}
+            </div>
+          </div>
+        </IndCard>
+
+        <IndCard title="Eficiência" icon="⚙️">
+          <IndRow label="Margem de Contribuição %" value={margemContribuicaoPct} status={statusPct(margemContribuicaoPct, 40, 20)} hint="(Receita − Custos variáveis) / Receita × 100" />
+          <IndRow label="Margem de Contribuição R$" value={margemContribuicao} status={margemContribuicao >= 0 ? 'green' : 'red'} format="money" hint="Receita total − (Custos variáveis + Despesas variáveis)" />
+          <IndRow label="Ponto de Equilíbrio" value={pontoEquilibrio} status={pontoEquilibrio !== null && m.grossRevenue >= pontoEquilibrio ? 'green' : pontoEquilibrio !== null ? 'red' : 'dim'} format="money" hint="Custos fixos / Margem de contribuição % — faturamento mínimo para cobrir os custos" />
+          <div style={{ marginTop:10, padding:'8px 10px', background:`${C.accent}08`, borderRadius:8 }}>
+            <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
+              <strong style={{ color:C.textSub }}>Custos fixos:</strong> {money(custosFixos)} &nbsp;|&nbsp;
+              <strong style={{ color:C.textSub }}>Receita bruta:</strong> {money(m.grossRevenue)}
+            </div>
+          </div>
+        </IndCard>
+
+      </div>
+      <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
+        Passe o cursor sobre o nome de cada indicador para ver a fórmula. Pontos verdes = saudável · amarelos = atenção · vermelhos = crítico. Benchmarks baseados em médias de clínicas de serviços.
+      </div>
     </div>
   )
 }
