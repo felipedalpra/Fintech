@@ -93,7 +93,7 @@ const SUBTITLES = {
   recurrences:'Cadastre receitas e despesas fixas com geração automática.',
   reports:'Relatórios analíticos para apoiar decisões.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
-  billing:'Gerencie trial, plano e status da cobrança.',
+  billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
 }
 
@@ -515,13 +515,12 @@ export function FinanceWorkspace() {
       const draftKey = user?.id ? getDraftStorageKey(user.id) : ''
       let draftData = null
       if (typeof window !== 'undefined' && draftKey) {
-        const rawDraft = window.localStorage.getItem(draftKey) || window.sessionStorage.getItem(draftKey)
+        const rawDraft = window.sessionStorage.getItem(draftKey)
         if (rawDraft) {
           try {
             draftData = normalizeData(JSON.parse(rawDraft))
             setRaw(draftData)
           } catch {
-            window.localStorage.removeItem(draftKey)
             window.sessionStorage.removeItem(draftKey)
           }
         }
@@ -563,9 +562,7 @@ export function FinanceWorkspace() {
     if (typeof window === 'undefined') return
     if (!user?.id || !hydratedRef.current) return
     const draftKey = getDraftStorageKey(user.id)
-    const payload = JSON.stringify(data)
-    window.localStorage.setItem(draftKey, payload)
-    window.sessionStorage.setItem(draftKey, payload)
+    window.sessionStorage.setItem(draftKey, JSON.stringify(data))
   }, [data, user])
 
   useEffect(() => {
@@ -586,7 +583,6 @@ export function FinanceWorkspace() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!PAGES[page]) return
-    window.localStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
     window.sessionStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
   }, [location.pathname, page])
 

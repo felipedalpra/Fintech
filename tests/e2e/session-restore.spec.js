@@ -52,3 +52,23 @@ test('mantem e restaura rascunho da sessao no workspace', async ({ page }) => {
   expect(storedDraft?.expenses?.length).toBe(1)
   expect(storedDraft?.expenses?.[0]?.description).toBe('Despesa de rascunho E2E')
 })
+
+test('restaura modal aberto com digitacao apos reload', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('surgimetrics_onboarded', 'true')
+  })
+
+  await page.goto('/app/finance')
+  await expect(page).toHaveURL(/\/app\/finance$/)
+
+  await page.getByRole('button', { name:/Outra receita/i }).click()
+  await expect(page.getByRole('heading', { name:'Novo registro' })).toBeVisible()
+
+  const descriptionInput = page.getByPlaceholder('Ex: contrato mensal de consultoria')
+  await descriptionInput.fill('Receita modal persistida E2E')
+  await page.reload()
+
+  await expect(page).toHaveURL(/\/app\/finance$/)
+  await expect(page.getByRole('heading', { name:'Novo registro' })).toBeVisible()
+  await expect(page.getByPlaceholder('Ex: contrato mensal de consultoria')).toHaveValue('Receita modal persistida E2E')
+})
