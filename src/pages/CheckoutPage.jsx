@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Btn, Card, FInput } from '../components/UI.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
@@ -19,6 +19,12 @@ export function CheckoutPage() {
   const selected = OPTIONS[cycle] || OPTIONS.mensal
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ fullName:'', email:'' })
+
+  useEffect(() => {
+    const email = searchParams.get('email')
+    if (!email) return
+    setForm(current => (current.email === email ? current : { ...current, email }))
+  }, [searchParams])
 
   const summary = useMemo(() => ({
     trialDays:7,

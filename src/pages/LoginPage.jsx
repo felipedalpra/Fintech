@@ -71,6 +71,13 @@ export function LoginPage({ initialMode = 'login' }) {
   }
 
   const submit = async () => {
+    if (isRegister && !searchParams.get('cycle')) {
+      const checkoutParams = new URLSearchParams()
+      if (form.email) checkoutParams.set('email', form.email)
+      navigate(`/checkout${checkoutParams.toString() ? `?${checkoutParams.toString()}` : ''}`)
+      return
+    }
+
     if (isRegister && !passwordValid) {
       setError('A senha precisa ter no mínimo 8 caracteres, com 1 letra maiúscula, 1 minúscula, 1 número e 1 caractere especial.')
       return
@@ -207,7 +214,7 @@ export function LoginPage({ initialMode = 'login' }) {
               {isRegister ? 'Ja tem acesso?' : 'Ainda nao tem conta?'}
             </span>
             <Link
-              to={isRegister ? '/login' : `/signup${location.search}`}
+              to={isRegister ? '/login' : '/checkout'}
               style={{ color:C.accentLight, textDecoration:'none', fontSize:13, fontWeight:700 }}
             >
               {isRegister ? 'Fazer login' : 'Criar conta'}
