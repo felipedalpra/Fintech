@@ -137,9 +137,6 @@ export function LandingPage() {
               <a href="#simulador" style={navLink}>Simulador</a>
               <a href="#planos" style={navLink}>Planos</a>
               <a href="#faq" style={navLink}>FAQ</a>
-              <a href={whatsappSalesLink} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp" style={{ ...navLink, width:40, height:40, padding:0, border:'1px solid rgba(37, 211, 102, 0.5)', borderRadius:'50%', color:'#ddffe9', background:'rgba(37, 211, 102, 0.12)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
-                <WhatsAppIcon size={20} />
-              </a>
               <Link to="/login" style={{ ...navLink, padding:'9px 13px', border:'1px solid rgba(255,255,255,0.16)', borderRadius:999, color:'#EAF5FA' }}>Login</Link>
               <a href="#planos" style={{ ...navLink, padding:'9px 13px', border:'1px solid rgba(255,255,255,0.2)', borderRadius:999, color:'#EAFAFF' }}>Teste grátis</a>
             </nav>
@@ -156,10 +153,6 @@ export function LandingPage() {
               <a href="#simulador" onClick={() => setMenuOpen(false)} style={mobileNavLink}>Simulador</a>
               <a href="#planos" onClick={() => setMenuOpen(false)} style={mobileNavLink}>Planos</a>
               <a href="#faq" onClick={() => setMenuOpen(false)} style={mobileNavLink}>FAQ</a>
-              <a href={whatsappSalesLink} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp" onClick={() => setMenuOpen(false)} style={{ ...mobileNavLink, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, textAlign:'center', border:'1px solid rgba(37, 211, 102, 0.5)', borderRadius:12, color:'#ddffe9', background:'rgba(37, 211, 102, 0.12)' }}>
-                <WhatsAppIcon size={18} />
-                WhatsApp
-              </a>
               <Link to="/login" onClick={() => setMenuOpen(false)} style={{ ...mobileNavLink, textAlign:'center', border:'1px solid rgba(255,255,255,0.16)', borderRadius:12, color:'#EAF5FA' }}>Login</Link>
               <a href="#planos" onClick={() => setMenuOpen(false)} style={{ ...mobileNavLink, textAlign:'center', border:'1px solid rgba(255,255,255,0.2)', borderRadius:12, color:'#EAF8FF' }}>Teste grátis</a>
             </nav>
