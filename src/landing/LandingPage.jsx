@@ -15,10 +15,22 @@ import { SimulatorSection } from './SimulatorSection.jsx'
 import { HowItWorks } from './HowItWorks.jsx'
 import { LogoWall } from './LogoWall.jsx'
 
+function WhatsAppIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3.2A8.8 8.8 0 0 0 4.47 16.56L3.2 20.8l4.35-1.2A8.8 8.8 0 1 0 12 3.2Zm0 15.95c-1.44 0-2.84-.4-4.05-1.17l-.3-.19-2.58.71.75-2.5-.2-.32a7.2 7.2 0 1 1 6.38 3.47Zm3.95-5.37c-.22-.11-1.3-.64-1.5-.71-.2-.07-.35-.11-.5.11-.15.22-.57.71-.7.86-.13.15-.26.16-.48.05a5.9 5.9 0 0 1-1.73-1.07 6.5 6.5 0 0 1-1.2-1.49c-.12-.22-.01-.34.1-.45.11-.11.22-.26.33-.39.11-.13.15-.22.22-.37.07-.15.03-.28-.02-.39-.06-.11-.5-1.2-.69-1.64-.18-.43-.36-.37-.5-.38h-.42c-.15 0-.39.06-.6.28-.2.22-.79.77-.79 1.88s.8 2.18.9 2.33c.11.15 1.56 2.38 3.78 3.34.53.23.95.37 1.28.47.54.17 1.03.14 1.42.09.43-.06 1.3-.53 1.49-1.04.18-.51.18-.95.13-1.04-.06-.09-.2-.14-.42-.25Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 export function LandingPage() {
   const { user, loading } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 900 : false)
+  const whatsappSalesLink = `https://wa.me/5551991897471?text=${encodeURIComponent('Oi! Tenho dúvidas sobre a plataforma SurgiMetrics e queria entender melhor como funciona.')}`
 
   useEffect(() => {
     function onResize() {
@@ -125,6 +137,9 @@ export function LandingPage() {
               <a href="#simulador" style={navLink}>Simulador</a>
               <a href="#planos" style={navLink}>Planos</a>
               <a href="#faq" style={navLink}>FAQ</a>
+              <a href={whatsappSalesLink} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp" style={{ ...navLink, width:40, height:40, padding:0, border:'1px solid rgba(37, 211, 102, 0.5)', borderRadius:'50%', color:'#ddffe9', background:'rgba(37, 211, 102, 0.12)', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
+                <WhatsAppIcon size={20} />
+              </a>
               <Link to="/login" style={{ ...navLink, padding:'9px 13px', border:'1px solid rgba(255,255,255,0.16)', borderRadius:999, color:'#EAF5FA' }}>Login</Link>
               <a href="#planos" style={{ ...navLink, padding:'9px 13px', border:'1px solid rgba(255,255,255,0.2)', borderRadius:999, color:'#EAFAFF' }}>Teste grátis</a>
             </nav>
@@ -141,6 +156,10 @@ export function LandingPage() {
               <a href="#simulador" onClick={() => setMenuOpen(false)} style={mobileNavLink}>Simulador</a>
               <a href="#planos" onClick={() => setMenuOpen(false)} style={mobileNavLink}>Planos</a>
               <a href="#faq" onClick={() => setMenuOpen(false)} style={mobileNavLink}>FAQ</a>
+              <a href={whatsappSalesLink} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp" onClick={() => setMenuOpen(false)} style={{ ...mobileNavLink, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, textAlign:'center', border:'1px solid rgba(37, 211, 102, 0.5)', borderRadius:12, color:'#ddffe9', background:'rgba(37, 211, 102, 0.12)' }}>
+                <WhatsAppIcon size={18} />
+                WhatsApp
+              </a>
               <Link to="/login" onClick={() => setMenuOpen(false)} style={{ ...mobileNavLink, textAlign:'center', border:'1px solid rgba(255,255,255,0.16)', borderRadius:12, color:'#EAF5FA' }}>Login</Link>
               <a href="#planos" onClick={() => setMenuOpen(false)} style={{ ...mobileNavLink, textAlign:'center', border:'1px solid rgba(255,255,255,0.2)', borderRadius:12, color:'#EAF8FF' }}>Teste grátis</a>
             </nav>
@@ -171,6 +190,36 @@ export function LandingPage() {
           <CTA />
         </div>
       </main>
+
+      <a
+        href={whatsappSalesLink}
+        target="_blank"
+        rel="noreferrer"
+        className="floating-cta"
+        aria-label="Falar no WhatsApp"
+        style={{
+          position:'fixed',
+          right:22,
+          bottom:22,
+          zIndex:45,
+          display:'inline-flex',
+          alignItems:'center',
+          justifyContent:'center',
+          width:56,
+          height:56,
+          padding:0,
+          borderRadius:'50%',
+          border:'1px solid rgba(37, 211, 102, 0.55)',
+          background:'linear-gradient(140deg, #1faa58 0%, #25d366 100%)',
+          color:'#ffffff',
+          textDecoration:'none',
+          fontWeight:800,
+          fontSize:13,
+          boxShadow:'0 12px 26px rgba(0,0,0,0.34)',
+        }}
+      >
+        <WhatsAppIcon size={28} />
+      </a>
     </div>
   )
 }
