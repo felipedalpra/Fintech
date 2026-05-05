@@ -60,10 +60,23 @@ export function AuthProvider({ children }) {
     bootstrap()
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      setSession(nextSession ?? null)
-      setUser(resolveVerifiedUser(nextSession))
       setIsRecoveryMode(event === 'PASSWORD_RECOVERY')
       setLoading(false)
+
+      if (event === 'SIGNED_OUT') {
+        setSession(null)
+        setUser(null)
+        return
+      }
+
+      if (!nextSession) {
+        // Evita desmontagem por estados transitórios ao trocar de aba.
+        return
+      }
+
+      setSession(nextSession)
+      const verifiedUser = resolveVerifiedUser(nextSession)
+      setUser(prevUser => verifiedUser || prevUser || null)
     })
 
     return () => {
