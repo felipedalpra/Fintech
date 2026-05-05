@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { getAppOrigin, hasSupabaseEnv, supabase } from '../lib/supabase.js'
 
 const AuthContext = createContext(null)
+const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 
 function mapAuthError(error, fallback) {
   return error?.message || fallback
@@ -20,6 +21,21 @@ export function AuthProvider({ children }) {
   const [isRecoveryMode, setIsRecoveryMode] = useState(false)
 
   useEffect(() => {
+    if (E2E_BYPASS_AUTH) {
+      const mockSession = {
+        user:{
+          id:'e2e-user-id',
+          email:'e2e@surgimetrics.local',
+          email_confirmed_at:'2026-01-01T00:00:00.000Z',
+          user_metadata:{ name:'E2E User' },
+        },
+      }
+      setSession(mockSession)
+      setUser(mockSession.user)
+      setLoading(false)
+      return
+    }
+
     if (!hasSupabaseEnv) {
       setLoading(false)
       return

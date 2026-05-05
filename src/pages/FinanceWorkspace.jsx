@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { C } from '../theme.js'
 import { fmt, startOfMonth, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
@@ -118,6 +118,12 @@ const PAGES = {
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
+const LAST_APP_PATH_KEY = 'surgimetrics_last_app_path'
+const DRAFT_STORAGE_PREFIX = 'surgimetrics_workspace_draft_'
+
+function getDraftStorageKey(userId) {
+  return `${DRAFT_STORAGE_PREFIX}${userId}`
+}
 
 // ---- QuickSearchModal ----
 function QuickSearchModal({ open, onClose, navigate }) {
@@ -473,6 +479,7 @@ function SyncStatus({ saveError }) {
 // ---- FinanceWorkspace ----
 export function FinanceWorkspace() {
   const { page = 'dashboard' } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
@@ -505,15 +512,29 @@ export function FinanceWorkspace() {
       setLoading(true)
       setLoadError('')
       hydratedRef.current = false
+      const draftKey = user?.id ? getDraftStorageKey(user.id) : ''
+      let draftData = null
+      if (typeof window !== 'undefined' && draftKey) {
+        const rawDraft = window.sessionStorage.getItem(draftKey)
+        if (rawDraft) {
+          try {
+            draftData = normalizeData(JSON.parse(rawDraft))
+            setRaw(draftData)
+          } catch {
+            window.sessionStorage.removeItem(draftKey)
+          }
+        }
+      }
       try {
         const nextData = await importLegacyDataIfNeeded(user)
         if (!active) return
-        setRaw(nextData)
+        setRaw(draftData || nextData)
         hydratedRef.current = true
       } catch (error) {
         if (!active) return
         setLoadError(error.message || 'Nao foi possivel carregar os dados remotos.')
-        setRaw(createEmptyData())
+        setRaw(draftData || createEmptyData())
+        hydratedRef.current = true
       } finally {
         if (active) setLoading(false)
       }
@@ -538,6 +559,13 @@ export function FinanceWorkspace() {
   }, [data, user])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!user?.id || !hydratedRef.current) return
+    const draftKey = getDraftStorageKey(user.id)
+    window.sessionStorage.setItem(draftKey, JSON.stringify(data))
+  }, [data, user])
+
+  useEffect(() => {
     function onResize() {
       const nextMobile = window.innerWidth < 1024
       setIsMobile(nextMobile)
@@ -551,6 +579,12 @@ export function FinanceWorkspace() {
   useEffect(() => {
     setMobileNavOpen(false)
   }, [page])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!PAGES[page]) return
+    window.sessionStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
+  }, [location.pathname, page])
 
   useEffect(() => {
     if (typeof document === 'undefined') return

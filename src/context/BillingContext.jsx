@@ -3,6 +3,7 @@ import { getTrialDaysLeft, hasActiveAccess, ensureBillingAccount, updateSelected
 import { useAuth } from './AuthContext.jsx'
 
 const BillingContext = createContext(null)
+const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 
 export function BillingProvider({ children }) {
   const { user } = useAuth()
@@ -11,6 +12,17 @@ export function BillingProvider({ children }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (E2E_BYPASS_AUTH) {
+      setBilling({
+        status:'active',
+        selected_plan:'mensal',
+        trial_ends_at:null,
+      })
+      setLoading(false)
+      setError('')
+      return
+    }
+
     let active = true
 
     async function bootstrap(attempt = 0) {
