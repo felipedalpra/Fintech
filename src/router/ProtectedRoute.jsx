@@ -6,10 +6,12 @@ import { C } from '../theme.js'
 
 export function ProtectedRoute() {
   const { user, loading } = useAuth()
-  const { hasAppAccess, billingLoading } = useBilling()
+  const { billing, hasAppAccess, billingLoading } = useBilling()
   const location = useLocation()
 
-  if (loading || billingLoading) {
+  const shouldBlockByLoading = loading || (billingLoading && !billing)
+
+  if (shouldBlockByLoading) {
     return (
       <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:C.bg }}>
         <Card style={{ width:'min(420px, calc(100vw - 32px))', textAlign:'center' }}>

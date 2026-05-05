@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { getTrialDaysLeft, hasActiveAccess, ensureBillingAccount, updateSelectedPlan } from '../lib/billingStore.js'
 import { useAuth } from './AuthContext.jsx'
 
@@ -10,6 +10,7 @@ export function BillingProvider({ children }) {
   const [billing, setBilling] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const lastUserIdRef = useRef(null)
 
   useEffect(() => {
     if (E2E_BYPASS_AUTH) {
@@ -29,11 +30,13 @@ export function BillingProvider({ children }) {
       if (!user?.id) {
         setBilling(null)
         setLoading(false)
+        lastUserIdRef.current = null
         return
       }
 
       if (attempt === 0) {
-        setLoading(true)
+        const isSameUser = lastUserIdRef.current === user.id
+        if (!isSameUser) setLoading(true)
         setError('')
       }
 
@@ -41,6 +44,7 @@ export function BillingProvider({ children }) {
         const account = await ensureBillingAccount(user)
         if (!active) return
         setBilling(account)
+        lastUserIdRef.current = user.id
         if (active) setLoading(false)
       } catch (nextError) {
         if (!active) return
