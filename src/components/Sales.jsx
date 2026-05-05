@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
@@ -33,6 +33,18 @@ const PAYMENT_STATUS = [
   { v:'parcelado', l:'Parcelado' },
   { v:'cancelado', l:'Cancelado' },
 ]
+const SALES_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_sales'
+
+function readDraft() {
+  if (typeof window === 'undefined') return null
+  const raw = window.localStorage.getItem(SALES_MODAL_DRAFT_KEY) || window.sessionStorage.getItem(SALES_MODAL_DRAFT_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || !parsed.form || typeof parsed.form !== 'object') return null
+    return parsed
+  } catch { return null }
+}
 
 export function Sales({ data, setData }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
@@ -76,12 +88,27 @@ export function Sales({ data, setData }) {
     firstInstallmentDate:'',
   }
 
-  const [form, setForm] = useState(empty)
-  const [editing, setEditing] = useState(null)
-  const [showModal, setShowModal] = useState(false)
+  const [form, setForm] = useState(() => {
+    const draft = readDraft()
+    return draft?.form ? { ...empty, ...draft.form } : empty
+  })
+  const [editing, setEditing] = useState(() => readDraft()?.editing || null)
+  const [showModal, setShowModal] = useState(() => Boolean(readDraft()?.showModal))
   const [confirmId, setConfirmId] = useState(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!showModal) {
+      window.localStorage.removeItem(SALES_MODAL_DRAFT_KEY)
+      window.sessionStorage.removeItem(SALES_MODAL_DRAFT_KEY)
+      return
+    }
+    const payload = JSON.stringify({ showModal, editing, form })
+    window.localStorage.setItem(SALES_MODAL_DRAFT_KEY, payload)
+    window.sessionStorage.setItem(SALES_MODAL_DRAFT_KEY, payload)
+  }, [showModal, editing, form])
 
   const openAdd = () => {
     setForm({ ...empty, procedureId:data.procedures[0]?.id || '' })

@@ -12,6 +12,8 @@ import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
+const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
+const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
 
@@ -35,6 +37,21 @@ const EXPENSE_CATEGORY_LABELS = {
   impostos:'Impostos',
   variaveis:'Variáveis',
   outros:'Outros',
+}
+
+function readModalDraft() {
+  if (typeof window === 'undefined') return null
+  const raw = window.localStorage.getItem(FINANCE_MODAL_DRAFT_KEY) || window.sessionStorage.getItem(FINANCE_MODAL_DRAFT_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (!FINANCE_MODAL_TYPES.has(parsed.modalType)) return null
+    if (!parsed.form || typeof parsed.form !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
 }
 
 function formatFinancePeriodLabel(period, range) {
@@ -105,13 +122,19 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [tab, setTab] = useState(defaultTab)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
-  const [modalType, setModalType] = useState(null)
-  const [editing, setEditing] = useState(null)
-  const [showModal, setShowModal] = useState(false)
+  const [modalType, setModalType] = useState(() => readModalDraft()?.modalType || null)
+  const [editing, setEditing] = useState(() => readModalDraft()?.editing || null)
+  const [showModal, setShowModal] = useState(() => {
+    const draft = readModalDraft()
+    return Boolean(draft?.showModal && draft?.modalType && draft?.form)
+  })
   const [confirmState, setConfirmState] = useState(null)
   const [paymentConfirmState, setPaymentConfirmState] = useState(null)
   const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all' })
-  const [form, setForm] = useState(EXTRA_REVENUE_EMPTY)
+  const [form, setForm] = useState(() => {
+    const draft = readModalDraft()
+    return draft?.form ? { ...EXTRA_REVENUE_EMPTY, ...draft.form } : EXTRA_REVENUE_EMPTY
+  })
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
   const [showExport, setShowExport] = useState(false)
@@ -138,6 +161,18 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   useEffect(() => {
     setTab(defaultTab)
   }, [defaultTab])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!showModal) {
+      window.localStorage.removeItem(FINANCE_MODAL_DRAFT_KEY)
+      window.sessionStorage.removeItem(FINANCE_MODAL_DRAFT_KEY)
+      return
+    }
+    const payload = JSON.stringify({ showModal, modalType, editing, form })
+    window.localStorage.setItem(FINANCE_MODAL_DRAFT_KEY, payload)
+    window.sessionStorage.setItem(FINANCE_MODAL_DRAFT_KEY, payload)
+  }, [showModal, modalType, editing, form])
 
   useEffect(() => {
     let active = true

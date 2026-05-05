@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
@@ -46,6 +46,18 @@ const STATUSES = [
   { v:'glosado', l:'Glosado' },
   { v:'cancelado', l:'Cancelado' },
 ]
+const CONSULTATIONS_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_consultations'
+
+function readDraft() {
+  if (typeof window === 'undefined') return null
+  const raw = window.localStorage.getItem(CONSULTATIONS_MODAL_DRAFT_KEY) || window.sessionStorage.getItem(CONSULTATIONS_MODAL_DRAFT_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || !parsed.form || typeof parsed.form !== 'object') return null
+    return parsed
+  } catch { return null }
+}
 
 export function Consultations({ data, setData }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
@@ -76,11 +88,26 @@ export function Consultations({ data, setData }) {
     paymentDate:'',
   }
 
-  const [form, setForm] = useState(empty)
-  const [editing, setEditing] = useState(null)
-  const [showModal, setShowModal] = useState(false)
+  const [form, setForm] = useState(() => {
+    const draft = readDraft()
+    return draft?.form ? { ...empty, ...draft.form } : empty
+  })
+  const [editing, setEditing] = useState(() => readDraft()?.editing || null)
+  const [showModal, setShowModal] = useState(() => Boolean(readDraft()?.showModal))
   const [confirmId, setConfirmId] = useState(null)
   const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!showModal) {
+      window.localStorage.removeItem(CONSULTATIONS_MODAL_DRAFT_KEY)
+      window.sessionStorage.removeItem(CONSULTATIONS_MODAL_DRAFT_KEY)
+      return
+    }
+    const payload = JSON.stringify({ showModal, editing, form })
+    window.localStorage.setItem(CONSULTATIONS_MODAL_DRAFT_KEY, payload)
+    window.sessionStorage.setItem(CONSULTATIONS_MODAL_DRAFT_KEY, payload)
+  }, [showModal, editing, form])
 
   const openAdd = () => { setForm(empty); setEditing(null); setShowModal(true) }
   const openEdit = item => {

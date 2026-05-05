@@ -19,7 +19,7 @@ function AppEntryRedirect() {
   if (typeof window === 'undefined') {
     return <Navigate to="/app/dashboard" replace />
   }
-  const lastPath = window.sessionStorage.getItem(LAST_APP_PATH_KEY)
+  const lastPath = window.localStorage.getItem(LAST_APP_PATH_KEY) || window.sessionStorage.getItem(LAST_APP_PATH_KEY)
   const nextPath = lastPath?.startsWith('/app/') ? lastPath : '/app/dashboard'
   return <Navigate to={nextPath} replace />
 }
