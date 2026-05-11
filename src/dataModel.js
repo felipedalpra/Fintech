@@ -11,6 +11,8 @@ export function createEmptyData() {
     assets: [],
     liabilities: [],
     goals: [],
+    indicatorInputs: {},
+    indicatorInputsByPeriod: {},
   }
 }
 
@@ -114,6 +116,12 @@ export function normalizeData(data) {
       ...item,
       id:normalizeUuid(item.id, 'goal'),
     })) : [],
+    indicatorInputs: data?.indicatorInputs && typeof data.indicatorInputs === 'object'
+      ? { ...data.indicatorInputs }
+      : {},
+    indicatorInputsByPeriod: data?.indicatorInputsByPeriod && typeof data.indicatorInputsByPeriod === 'object'
+      ? { ...data.indicatorInputsByPeriod }
+      : {},
   }
 }
 
@@ -130,6 +138,8 @@ export function isDataEmpty(data) {
     && normalized.assets.length === 0
     && normalized.liabilities.length === 0
     && normalized.goals.length === 0
+    && Object.keys(normalized.indicatorInputs || {}).length === 0
+    && Object.keys(normalized.indicatorInputsByPeriod || {}).length === 0
 }
 
 function normalizeRelatedId(value, namespace, map) {

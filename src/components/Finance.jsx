@@ -15,7 +15,7 @@ const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 
-const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'variaveis', 'outros']
+const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'marketing_vendas', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'juros', 'depreciacao', 'amortizacao', 'fornecedores', 'variaveis', 'outros']
 
 const PERIOD_PILLS = [
   { value:'day', label:'Hoje' },
@@ -30,11 +30,16 @@ const EXPENSE_CATEGORY_LABELS = {
   aluguel:'Aluguel',
   salarios:'Salários',
   marketing:'Marketing',
+  marketing_vendas:'Marketing e Vendas',
   hospital:'Hospital',
   anestesia:'Anestesia',
   equipamentos:'Equipamentos',
   softwares:'Softwares',
   impostos:'Impostos',
+  juros:'Juros/Despesa Financeira',
+  depreciacao:'Depreciação',
+  amortizacao:'Amortização',
+  fornecedores:'Fornecedores',
   variaveis:'Variáveis',
   outros:'Outros',
 }
@@ -109,6 +114,13 @@ function getPreviousPeriodRange(period, range) {
   return { start: '', end: '' }
 }
 
+function buildIndicatorPeriodKey(range) {
+  if (range?.start && range?.end) return `${range.start}:${range.end}`
+  if (range?.start) return `${range.start}:${range.start}`
+  const t = today()
+  return `${t}:${t}`
+}
+
 export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const SUMMARY_CARDS = [
@@ -140,6 +152,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [showExport, setShowExport] = useState(false)
   const [formError, setFormError] = useState('')
   const range = getPeriodRange(period, customRange)
+  const indicatorPeriodKey = useMemo(() => buildIndicatorPeriodKey(range), [range.start, range.end])
   const periodLabel = useMemo(() => formatFinancePeriodLabel(period, range), [period, range])
   const mergedData = useMemo(() => ({ ...data, recurrences }), [data, recurrences])
   const m = useMemo(
@@ -1132,7 +1145,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         </div>
       </>}
 
-      {tab === 'indicadores' && <IndicadoresTab m={m} data={data} money={money} />}
+      {tab === 'indicadores' && <IndicadoresTab m={m} data={data} money={money} setData={setData} indicatorPeriodKey={indicatorPeriodKey} />}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
         {modalType === 'extra' && (
@@ -1246,12 +1259,52 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   )
 }
 
-function IndicadoresTab({ m, data, money }) {
+function IndicadoresTab({ m, data, money, setData, indicatorPeriodKey }) {
+  const [periodStart, periodEnd] = String(indicatorPeriodKey || '').split(':')
+  const periodLabel = periodStart && periodEnd
+    ? `${formatDateBR(periodStart)} — ${formatDateBR(periodEnd)}`
+    : 'Período atual'
+  const indicatorInputsByPeriod = data.indicatorInputsByPeriod || {}
+  const indicatorInputs = indicatorInputsByPeriod[indicatorPeriodKey] || data.indicatorInputs || {}
+  const inputNumber = key => {
+    const value = Number(indicatorInputs[key] || 0)
+    return Number.isFinite(value) ? value : 0
+  }
+  const setIndicatorInput = (key, value) => {
+    const parsed = Number(value || 0)
+    setData(current => ({
+      ...current,
+      indicatorInputsByPeriod:{
+        ...(current.indicatorInputsByPeriod || {}),
+        [indicatorPeriodKey]:{
+          ...((current.indicatorInputsByPeriod || {})[indicatorPeriodKey] || {}),
+          [key]:Number.isFinite(parsed) ? parsed : 0,
+        },
+      },
+      indicatorInputs:{
+        ...(current.indicatorInputs || {}),
+        [key]:Number.isFinite(parsed) ? parsed : 0,
+      },
+    }))
+  }
+
   const assetsExtra = (data.assets || []).reduce((acc, x) => acc + (x.value || 0), 0)
   const liabExtra = (data.liabilities || []).reduce((acc, x) => acc + (x.value || 0), 0)
-
   const directCosts = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal
   const grossProfit = m.grossRevenue - directCosts
+  const depreciation = inputNumber('depreciation')
+  const amortization = inputNumber('amortization')
+  const financialExpense = inputNumber('financialExpense')
+  const investment = inputNumber('investment')
+  const profitObtained = inputNumber('profitObtained') || m.netProfit
+  const cogs = inputNumber('cogs') || m.productPurchaseTotal
+  const inventoryAvg = inputNumber('inventoryAvg')
+  const receivablesOperational = inputNumber('receivablesOperational') || m.receivablesOpenTotal
+  const suppliers = inputNumber('suppliers')
+  const purchases = inputNumber('purchases') || m.productPurchaseTotal
+  const availableFunds = inputNumber('availableFunds') || (m.cashBalance + assetsExtra)
+  const currentCash = inputNumber('currentCash') || availableFunds
+  const burnRateManual = inputNumber('burnRateManual')
   const totalCosts = directCosts + m.operationalExpenses + m.taxExpenses
   const totalAtivo = m.cashBalance + m.receivablesOpenTotal + assetsExtra
   const ativoCirculante = m.cashBalance + m.receivablesOpenTotal
@@ -1269,22 +1322,34 @@ function IndicadoresTab({ m, data, money }) {
   const margemBruta = pct(grossProfit, m.grossRevenue)
   const margemLiquida = pct(m.netProfit, m.grossRevenue)
   const margemOperacional = pct(m.operatingProfit, m.grossRevenue)
-  const roi = pct(m.netProfit, totalCosts)
+  const ebitda = m.operatingProfit + depreciation + amortization
+  const roi = pct(profitObtained, investment || totalCosts)
   const roe = m.equity !== 0 ? pct(m.netProfit, m.equity) : null
   const roa = pct(m.netProfit, totalAtivo)
 
+  const cgl = ativoCirculante - passivoCirculante
   const liquidezCorrente = rat(ativoCirculante, passivoCirculante)
   const liquidezSeca = rat(ativoCirculante - estoqueValor, passivoCirculante)
-  const liquidezGeral = rat(ativoCirculante + assetsExtra, totalPassivo)
+  const liquidezImediata = rat(availableFunds, passivoCirculante)
+  const ncg = receivablesOperational + estoqueValor - suppliers
+  const saldoTesouraria = cgl - ncg
 
+  const endividamentoGeral = pct(totalPassivo, totalAtivo)
   const composicaoEndividamento = pct(passivoCirculante, totalPassivo)
-  const dividaLiquida = totalPassivo - m.cashBalance
-  const alavancagem = m.operatingProfit > 0 ? rat(dividaLiquida, m.operatingProfit) : null
+  const gaf = rat(roe, roa)
+  const coberturaJuros = rat(m.operatingProfit, financialExpense)
 
-  const margemContribuicao = m.grossRevenue - directCosts
-  const margemContribuicaoPct = pct(margemContribuicao, m.grossRevenue)
-  const custosFixos = m.operationalExpenses + m.taxExpenses
-  const pontoEquilibrio = margemContribuicao > 0 ? custosFixos / (margemContribuicao / m.grossRevenue) : null
+  const giroAtivo = rat(m.grossRevenue, totalAtivo)
+  const giroEstoque = rat(cogs, inventoryAvg)
+  const pme = inventoryAvg > 0 ? (inventoryAvg / Math.max(cogs, 1)) * 360 : null
+  const pmr = receivablesOperational > 0 ? (receivablesOperational / Math.max(m.grossRevenue, 1)) * 360 : null
+  const pmp = suppliers > 0 ? (suppliers / Math.max(purchases, 1)) * 360 : null
+  const cicloOperacional = pme !== null && pmr !== null ? pme + pmr : null
+  const cicloFinanceiro = pme !== null && pmr !== null && pmp !== null ? pme + pmr - pmp : null
+
+  const fco = m.cashIn - m.cashOut
+  const burnRate = burnRateManual > 0 ? burnRateManual : Math.max(0, -fco)
+  const runway = burnRate > 0 ? currentCash / burnRate : null
 
   function statusPct(value, goodThreshold, warnThreshold, invertedScale = false) {
     if (value === null || value === undefined) return 'dim'
@@ -1320,7 +1385,9 @@ function IndicadoresTab({ m, data, money }) {
         ? <span style={{ color, fontWeight:700, fontSize:14 }}>{value.toFixed(1)}%</span>
         : format === 'ratio'
           ? <span style={{ color, fontWeight:700, fontSize:14 }}>{value.toFixed(2)}x</span>
-          : <span style={{ color, fontWeight:700, fontSize:14 }}>{money(value)}</span>
+          : format === 'days'
+            ? <span style={{ color, fontWeight:700, fontSize:14 }}>{value.toFixed(1)} dias</span>
+            : <span style={{ color, fontWeight:700, fontSize:14 }}>{money(value)}</span>
 
     return (
       <div
@@ -1366,57 +1433,71 @@ function IndicadoresTab({ m, data, money }) {
       />
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:12 }}>
 
+        <IndCard title="Liquidez e Giro" icon="💧">
+          <IndRow label="Capital de Giro Líquido (CGL)" value={cgl} status={cgl >= 0 ? 'green' : 'red'} format="money" hint="Ativo circulante − Passivo circulante" />
+          <IndRow label="Liquidez Corrente" value={liquidezCorrente} status={statusRat(liquidezCorrente, 1.5, 1)} format="ratio" hint="Ativo circulante / Passivo circulante" />
+          <IndRow label="Liquidez Seca" value={liquidezSeca} status={statusRat(liquidezSeca, 1, 0.5)} format="ratio" hint="(Ativo circulante − Estoques) / Passivo circulante" />
+          <IndRow label="Liquidez Imediata" value={liquidezImediata} status={statusRat(liquidezImediata, 0.5, 0.2)} format="ratio" hint="Disponibilidades / Passivo circulante" />
+          <IndRow label="Necessidade de Capital de Giro (NCG)" value={ncg} status={ncg <= cgl ? 'green' : 'yellow'} format="money" hint="Contas a receber + estoques − fornecedores" />
+          <IndRow label="Saldo de Tesouraria" value={saldoTesouraria} status={saldoTesouraria >= 0 ? 'green' : 'red'} format="money" hint="CGL − NCG" />
+        </IndCard>
+
         <IndCard title="Rentabilidade" icon="📈">
           <IndRow label="Margem Bruta" value={margemBruta} status={statusPct(margemBruta, 40, 20)} hint="(Receita − Custos diretos) / Receita × 100" />
           <IndRow label="Margem Operacional" value={margemOperacional} status={statusPct(margemOperacional, 20, 5)} hint="Lucro operacional / Receita × 100" />
           <IndRow label="Margem Líquida" value={margemLiquida} status={statusPct(margemLiquida, 15, 5)} hint="Lucro líquido / Receita × 100" />
+          <IndRow label="EBITDA" value={ebitda} status={ebitda >= 0 ? 'green' : 'red'} format="money" hint="Lucro operacional + depreciação + amortização" />
           <IndRow label="ROI" value={roi} status={statusPct(roi, 20, 5)} hint="Lucro líquido / Total de custos × 100" />
           <IndRow label="ROE" value={roe} status={statusPct(roe, 15, 5)} hint="Lucro líquido / Patrimônio líquido × 100" />
           <IndRow label="ROA" value={roa} status={statusPct(roa, 10, 3)} hint="Lucro líquido / Total de ativos × 100" />
         </IndCard>
 
-        <IndCard title="Liquidez" icon="💧">
-          <IndRow label="Liquidez Corrente" value={liquidezCorrente} status={statusRat(liquidezCorrente, 1.5, 1)} format="ratio" hint="Ativo circulante / Passivo circulante" />
-          <IndRow label="Liquidez Seca" value={liquidezSeca} status={statusRat(liquidezSeca, 1, 0.5)} format="ratio" hint="(Ativo circulante − Estoques) / Passivo circulante" />
-          <IndRow label="Liquidez Geral" value={liquidezGeral} status={statusRat(liquidezGeral, 1, 0.5)} format="ratio" hint="(Ativo circ. + Realizável LP) / (Passivo circ. + Não circulante)" />
-          <div style={{ marginTop:10, padding:'8px 10px', background:`${C.accent}08`, borderRadius:8 }}>
-            <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
-              <strong style={{ color:C.textSub }}>Ativo circ.:</strong> {money(ativoCirculante)} &nbsp;|&nbsp;
-              <strong style={{ color:C.textSub }}>Passivo circ.:</strong> {money(passivoCirculante)}
-            </div>
-          </div>
-        </IndCard>
-
         <IndCard title="Endividamento" icon="⚖️">
+          <IndRow label="Endividamento Geral" value={endividamentoGeral} status={statusPct(endividamentoGeral, 50, 70, true)} hint="Passivo total / Ativo total × 100 — menor é melhor" />
           <IndRow label="Comp. do Endividamento" value={composicaoEndividamento} status={statusPct(composicaoEndividamento, 50, 70, true)} hint="Passivo circulante / Passivo total × 100 — menor é melhor" />
-          <IndRow
-            label="Alavancagem (Dív.Líq/EBITDA)"
-            value={alavancagem}
-            status={statusRat(alavancagem, 2, 4, true)}
-            format="ratio"
-            hint="Dívida líquida / EBITDA — menor é melhor"
-          />
-          <div style={{ marginTop:10, padding:'8px 10px', background:`${C.accent}08`, borderRadius:8 }}>
-            <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
-              <strong style={{ color:C.textSub }}>Dívida líquida:</strong> {money(dividaLiquida)} &nbsp;|&nbsp;
-              <strong style={{ color:C.textSub }}>Patrimônio:</strong> {money(m.equity)}
-            </div>
-          </div>
+          <IndRow label="GAF" value={gaf} status={statusRat(gaf, 2, 3, true)} format="ratio" hint="ROE / ROA" />
+          <IndRow label="Cobertura de Juros" value={coberturaJuros} status={statusRat(coberturaJuros, 3, 1.5)} format="ratio" hint="EBIT / Despesa financeira" />
         </IndCard>
 
         <IndCard title="Eficiência" icon="⚙️">
-          <IndRow label="Margem de Contribuição %" value={margemContribuicaoPct} status={statusPct(margemContribuicaoPct, 40, 20)} hint="(Receita − Custos variáveis) / Receita × 100" />
-          <IndRow label="Margem de Contribuição R$" value={margemContribuicao} status={margemContribuicao >= 0 ? 'green' : 'red'} format="money" hint="Receita total − (Custos variáveis + Despesas variáveis)" />
-          <IndRow label="Ponto de Equilíbrio" value={pontoEquilibrio} status={pontoEquilibrio !== null && m.grossRevenue >= pontoEquilibrio ? 'green' : pontoEquilibrio !== null ? 'red' : 'dim'} format="money" hint="Custos fixos / Margem de contribuição % — faturamento mínimo para cobrir os custos" />
-          <div style={{ marginTop:10, padding:'8px 10px', background:`${C.accent}08`, borderRadius:8 }}>
-            <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
-              <strong style={{ color:C.textSub }}>Custos fixos:</strong> {money(custosFixos)} &nbsp;|&nbsp;
-              <strong style={{ color:C.textSub }}>Receita bruta:</strong> {money(m.grossRevenue)}
-            </div>
-          </div>
+          <IndRow label="Giro do Ativo" value={giroAtivo} status={statusRat(giroAtivo, 1, 0.5)} format="ratio" hint="Receita líquida / Ativo total" />
+          <IndRow label="Giro de Estoque" value={giroEstoque} status={statusRat(giroEstoque, 4, 2)} format="ratio" hint="CMV / Estoque médio" />
+          <IndRow label="PME" value={pme} status={statusRat(pme, 45, 75, true)} format="days" hint="Estoque médio / CMV × 360" />
+          <IndRow label="PMR" value={pmr} status={statusRat(pmr, 45, 75, true)} format="days" hint="Contas a receber / Receita líquida × 360" />
+          <IndRow label="PMP" value={pmp} status={statusRat(pmp, 60, 45)} format="days" hint="Fornecedores / Compras × 360" />
+        </IndCard>
+
+        <IndCard title="Ciclos e Caixa" icon="🔁">
+          <IndRow label="Ciclo Operacional" value={cicloOperacional} status={statusRat(cicloOperacional, 70, 110, true)} format="days" hint="PME + PMR" />
+          <IndRow label="Ciclo Financeiro" value={cicloFinanceiro} status={statusRat(cicloFinanceiro, 30, 60, true)} format="days" hint="PME + PMR − PMP" />
+          <IndRow label="Fluxo de Caixa Operacional" value={fco} status={fco >= 0 ? 'green' : 'red'} format="money" hint="Entradas operacionais − saídas operacionais" />
+          <IndRow label="Burn Rate" value={burnRate} status={burnRate <= 0 ? 'green' : 'yellow'} format="money" hint="Caixa consumido por mês" />
+          <IndRow label="Runway (meses)" value={runway} status={statusRat(runway, 12, 6)} format="ratio" hint="Caixa atual / Burn rate" />
         </IndCard>
 
       </div>
+      <Card style={{ padding:'16px 20px' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.09em' }}>
+            Insumos para cálculos avançados
+          </div>
+          <div style={{ fontSize:11, color:C.textDim }}>
+            Insumos do período: <strong style={{ color:C.textSub }}>{periodLabel}</strong>
+          </div>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:10 }}>
+          <FInput label="Disponibilidades" type="number" value={inputNumber('availableFunds')} onChange={v => setIndicatorInput('availableFunds', v)} />
+          <FInput label="Fornecedores" type="number" value={inputNumber('suppliers')} onChange={v => setIndicatorInput('suppliers', v)} />
+          <FInput label="Compras do período" type="number" value={inputNumber('purchases')} onChange={v => setIndicatorInput('purchases', v)} />
+          <FInput label="Estoque médio" type="number" value={inputNumber('inventoryAvg')} onChange={v => setIndicatorInput('inventoryAvg', v)} />
+          <FInput label="Depreciação" type="number" value={inputNumber('depreciation')} onChange={v => setIndicatorInput('depreciation', v)} />
+          <FInput label="Amortização" type="number" value={inputNumber('amortization')} onChange={v => setIndicatorInput('amortization', v)} />
+          <FInput label="Despesa financeira" type="number" value={inputNumber('financialExpense')} onChange={v => setIndicatorInput('financialExpense', v)} />
+          <FInput label="Investimento (ROI)" type="number" value={inputNumber('investment')} onChange={v => setIndicatorInput('investment', v)} />
+          <FInput label="Caixa atual" type="number" value={inputNumber('currentCash')} onChange={v => setIndicatorInput('currentCash', v)} />
+          <FInput label="Burn rate manual" type="number" value={inputNumber('burnRateManual')} onChange={v => setIndicatorInput('burnRateManual', v)} />
+        </div>
+      </Card>
       <div style={{ fontSize:11, color:C.textDim, lineHeight:1.6 }}>
         Passe o cursor sobre o nome de cada indicador para ver a fórmula. Pontos verdes = saudável · amarelos = atenção · vermelhos = crítico. Benchmarks baseados em médias de clínicas de serviços.
       </div>
