@@ -33,4 +33,4 @@ Antes de concluir uma tarefa, o agente deve confirmar:
 - Conformidade com `SYSTEM_RULES.md`.
 - Justificativa técnica objetiva das mudanças.
 - Impacto esperado em usuário, dados e fluxos críticos.
-- Registro no `CHANGELOG.md` quando aplicável.
+- Registro no `CHANGELOG.md` (obrigatório em toda alteração).

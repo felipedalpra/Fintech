@@ -25,7 +25,12 @@
 - Antes de implementar, revisar contexto, decisões e regras do projeto.
 - Em caso de conflito, `PROJECT_MEMORY.md` é referência obrigatória junto destas regras.
 
+7. **Sempre preencher o `CHANGELOG.md`**
+- Toda alteração no código (feature, ajuste ou correção), feita por agente de desenvolvimento ou dev humano, deve ser registrada no `CHANGELOG.md` no mesmo commit/PR.
+- Usar as categorias `Added`, `Changed` e `Fixed`, descrevendo o que mudou, a causa (em correções) e os arquivos principais afetados.
+- Alteração sem entrada no changelog não deve ser considerada concluída.
+
 ## Critérios obrigatórios antes de concluir alterações
 - Nenhuma rota principal deve regressar (`/`, `/login`, `/signup`, `/app/*`).
 - Fluxos críticos (autenticação, persistência e financeiro) devem permanecer íntegros.
-- Mudanças devem ser documentadas no `CHANGELOG.md` quando aplicável.
+- Mudanças devem ser documentadas no `CHANGELOG.md` (obrigatório, ver regra 7).
