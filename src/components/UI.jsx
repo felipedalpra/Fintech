@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 
 function isLightHexColor(hex) {
@@ -102,24 +103,75 @@ export function Badge({ color, children, small }) {
   )
 }
 
-export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=false }) {
+export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=true }) {
+  const [dirty, setDirty] = useState(false)
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setDirty(false)
+      setConfirmingDiscard(false)
+    }
+  }, [open])
+
   if (!open) return null
   const lightTheme = isLightHexColor(C.bg)
+
+  // Fechar de forma "cancelada" (x, fundo, botao Cancelar) pede confirmacao se o usuario ja digitou algo.
+  // Salvar fecha pelo onClose do pai, sem passar por aqui.
+  function requestClose() {
+    if (dirty) setConfirmingDiscard(true)
+    else onClose()
+  }
+
+  function discard() {
+    setConfirmingDiscard(false)
+    setDirty(false)
+    onClose()
+  }
+
+  function interceptCancel(e) {
+    if (!dirty) return
+    const button = e.target.closest?.('button')
+    if (button && button.textContent.trim() === 'Cancelar') {
+      e.preventDefault()
+      e.stopPropagation()
+      setConfirmingDiscard(true)
+    }
+  }
+
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)',
       display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}
-      onClick={e=>closeOnBackdrop&&e.target===e.currentTarget&&onClose()}>
-      <div style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:20,
+      onClick={e=>closeOnBackdrop&&e.target===e.currentTarget&&requestClose()}>
+      <div onInput={()=>setDirty(true)} onChange={()=>setDirty(true)} onClickCapture={interceptCancel}
+        style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:20,
         padding:28, width:'100%', maxWidth:width, maxHeight:'90vh', overflowY:'auto',
         boxShadow: lightTheme ? '0 24px 60px rgba(15,23,42,0.18)' : '0 24px 80px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
           <h3 style={{ margin:0, fontSize:18, fontWeight:700, color:C.text }}>{title}</h3>
-          <button onClick={onClose} style={{ background:C.border, border:'none', color:C.textSub,
+          <button onClick={requestClose} style={{ background:C.border, border:'none', color:C.textSub,
             width:32, height:32, borderRadius:8, cursor:'pointer', fontSize:18,
             display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
         </div>
         {children}
       </div>
+      {confirmingDiscard && (
+        <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.5)', display:'flex',
+          alignItems:'center', justifyContent:'center', padding:20, zIndex:1 }}>
+          <div style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:16,
+            padding:24, width:'100%', maxWidth:380 }}>
+            <h3 style={{ margin:'0 0 8px', fontSize:16, fontWeight:700, color:C.text }}>Descartar alterações?</h3>
+            <p style={{ color:C.textSub, fontSize:13, margin:'0 0 20px' }}>
+              Você preencheu informações que ainda não foram salvas. Se sair agora, elas serão perdidas.
+            </p>
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end', flexWrap:'wrap' }}>
+              <Btn variant="ghost" onClick={()=>setConfirmingDiscard(false)}>Continuar editando</Btn>
+              <Btn variant="danger" onClick={discard}>Descartar</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -147,7 +199,7 @@ export function ConfirmModal({
   confirmVariant = 'danger',
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={title} width={400} closeOnBackdrop>
+    <Modal open={open} onClose={onClose} title={title} width={400}>
       <p style={{ color:C.textSub, marginBottom:24 }}>{message||'Tem certeza? Esta ação não pode ser desfeita.'}</p>
       <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
