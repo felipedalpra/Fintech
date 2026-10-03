@@ -102,13 +102,13 @@ export function Badge({ color, children, small }) {
   )
 }
 
-export function Modal({ open, onClose, title, children, width=520 }) {
+export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=false }) {
   if (!open) return null
   const lightTheme = isLightHexColor(C.bg)
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)',
       display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}
-      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      onClick={e=>closeOnBackdrop&&e.target===e.currentTarget&&onClose()}>
       <div style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:20,
         padding:28, width:'100%', maxWidth:width, maxHeight:'90vh', overflowY:'auto',
         boxShadow: lightTheme ? '0 24px 60px rgba(15,23,42,0.18)' : '0 24px 80px rgba(0,0,0,0.7)' }}>
@@ -147,7 +147,7 @@ export function ConfirmModal({
   confirmVariant = 'danger',
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={title} width={400}>
+    <Modal open={open} onClose={onClose} title={title} width={400} closeOnBackdrop>
       <p style={{ color:C.textSub, marginBottom:24 }}>{message||'Tem certeza? Esta ação não pode ser desfeita.'}</p>
       <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>

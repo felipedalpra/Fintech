@@ -541,7 +541,10 @@ export function FinanceWorkspace() {
     }
     if (user?.id) loadRemoteData()
     return () => { active = false }
-  }, [user])
+    // Depende so do id: o Supabase emite um novo objeto user ao voltar para a aba,
+    // e isso nao deve recarregar tudo nem desmontar as telas/modais abertos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   useEffect(() => {
     if (!user?.id || !hydratedRef.current) return
@@ -556,14 +559,15 @@ export function FinanceWorkspace() {
     }
     persist()
     return () => { active = false }
-  }, [data, user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, user?.id])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!user?.id || !hydratedRef.current) return
     const draftKey = getDraftStorageKey(user.id)
     window.sessionStorage.setItem(draftKey, JSON.stringify(data))
-  }, [data, user])
+  }, [data, user?.id])
 
   useEffect(() => {
     function onResize() {

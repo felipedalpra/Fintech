@@ -76,7 +76,11 @@ export function AuthProvider({ children }) {
 
       setSession(nextSession)
       const verifiedUser = resolveVerifiedUser(nextSession)
-      setUser(prevUser => verifiedUser || prevUser || null)
+      // Mantem a mesma referencia quando o usuario nao mudou (ex.: refresh de token ao voltar para a aba).
+      setUser(prevUser => {
+        if (verifiedUser && prevUser?.id === verifiedUser.id) return prevUser
+        return verifiedUser || prevUser || null
+      })
     })
 
     return () => {

@@ -59,7 +59,8 @@ export function BillingProvider({ children }) {
 
     bootstrap()
     return () => { active = false }
-  }, [user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   const value = useMemo(() => ({
     billing,
