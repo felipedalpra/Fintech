@@ -89,3 +89,10 @@ O schema recomendado está em [supabase/lgpd_schema.sql](/Users/felipedalpra/Des
 3. instrumentar logs de auditoria no backend
 4. isolar dados de saúde em tabela própria com criptografia
 5. expor funções seguras de exportação, anonimização e exclusão via backend
+
+## Integração Google Agenda
+
+- Quando o usuário conecta a Google Agenda, o nome completo do paciente e o procedimento/tipo de consulta são enviados como título de evento para a conta Google do próprio usuário (controlador). O aviso é exibido na tela de conexão.
+- O refresh token é armazenado criptografado (AES-256-GCM) em `google_calendar_connections`, com RLS sem policies (acesso apenas pelo service role).
+- Ao desconectar, o token é revogado no Google e conexão e vínculos são apagados; eventos já criados permanecem na agenda do usuário.
+- Escopos solicitados: `calendar.events` e `userinfo.email`.

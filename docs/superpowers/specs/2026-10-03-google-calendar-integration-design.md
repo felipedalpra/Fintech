@@ -1,7 +1,8 @@
 # Integração Google Agenda (sincronização nos dois sentidos)
 
 Data: 2026-10-03
-Status: aguardando revisão do usuário
+Status: aprovada e implementada
+Refinamentos feitos no plano de implementação: ver `docs/superpowers/plans/2026-10-03-google-calendar-integration.md` (endpoint único, `remote_snapshot`, token em jsonb, sincronização só de hoje em diante).
 
 ## Objetivo
 

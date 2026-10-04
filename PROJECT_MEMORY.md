@@ -68,6 +68,8 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 - `b61747c`: melhorias de UX da landing em mobile e fluxo de planos
 - `9e18e3e`/`b7bce03`/`518a7e7`: ajustes de branding e favicon
 
+- 2026-10-03 (branch `feat/google-calendar`): integração Google Agenda. Arquivos: `api/google/calendar.js` (endpoint único, para respeitar o limite de 12 funções da Vercel), `api/_lib/googleCalendar*.js`, `src/lib/useGoogleCalendarSync.js`, `src/lib/googleCalendarPayload.js`, `src/components/GoogleCalendarBar.jsx`. Só sincroniza registros de hoje em diante (ou já vinculados). Migração `supabase/google_calendar_schema.sql` deve ser aplicada ANTES do deploy (cirurgias/consultas ganham `start_time` e `duration_minutes`). Testes: `npm run test:unit` e `npm run e2e`.
+
 ### Placeholder operacional
 - `[YYYY-MM-DD] [versão/tag] [resumo da alteração] [impacto] [responsável]`
 
