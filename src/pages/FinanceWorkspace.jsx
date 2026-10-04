@@ -28,6 +28,7 @@ import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
+import { useGoogleCalendarSync } from '../lib/useGoogleCalendarSync.js'
 
 const NAV_SECTIONS = [
   {
@@ -647,6 +648,7 @@ export function FinanceWorkspace() {
   }, [page])
 
   const setData = updater => setRaw(prev => normalizeData(typeof updater === 'function' ? updater(prev) : updater))
+  const google = useGoogleCalendarSync({ data:safeData, enabled:!loading })
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
   if (!PAGES[page]) return <Navigate to="/app/dashboard" replace />
@@ -927,7 +929,7 @@ export function FinanceWorkspace() {
           </Card>
         )}
         {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
-        <Page data={safeData} setData={setData} saveError={saveError} />
+        <Page data={safeData} setData={setData} saveError={saveError} google={google} />
         <CopilotWidget data={safeData} />
         <FAB currentPage={page} />
       </main>
