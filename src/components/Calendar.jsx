@@ -2,6 +2,10 @@ import { useMemo, useState, useRef, useEffect } from 'react'
 import { C } from '../theme.js'
 import { fmt } from '../utils.js'
 import { Card } from './UI.jsx'
+import { GoogleCalendarBar } from './GoogleCalendarBar.jsx'
+import { useToast } from '../context/ToastContext.jsx'
+import { fetchGoogleEvents } from '../lib/googleCalendarClient.js'
+import { applyExternalChanges } from '../lib/googleCalendarPayload.js'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MONTHS_PT = [
@@ -24,13 +28,55 @@ function buildCalendarGrid(year, month) {
 
 function pad(n) { return String(n).padStart(2, '0') }
 
-export function Calendar({ data }) {
+function eventColor(type) {
+  if (type === 'surgery') return C.accent
+  if (type === 'google') return C.yellow
+  return C.cyan
+}
+
+function eventTypeLabel(type) {
+  if (type === 'surgery') return 'Cirurgia'
+  if (type === 'google') return 'Google Agenda'
+  return 'Consulta'
+}
+
+export function Calendar({ data, setData, google }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
   const navBtn = { background:'transparent', border:`1px solid ${C.border}`, color:C.textSub, width:36, height:36, borderRadius:10, cursor:'pointer', fontSize:22, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'inherit', lineHeight:1 }
   const [popover, setPopover] = useState(null) // { day, events, rect }
   const popoverRef = useRef(null)
+  const { toast } = useToast()
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const [googleEvents, setGoogleEvents] = useState([])
+  const googleConnected = Boolean(google?.status.connected)
+
+  useEffect(() => {
+    if (!googleConnected) {
+      setGoogleEvents([])
+      return undefined
+    }
+    let active = true
+    const timeMin = new Date(year, month, 1).toISOString()
+    const timeMax = new Date(year, month + 1, 1).toISOString()
+    fetchGoogleEvents({ timeMin, timeMax, timeZone:google.timeZone })
+      .then(({ events = [] }) => {
+        if (!active) return
+        setGoogleEvents(events)
+        const { changed } = applyExternalChanges(dataRef.current, events)
+        if (changed > 0) {
+          setData(current => applyExternalChanges(current, events).data)
+          toast(`${changed} item(ns) atualizado(s) a partir da Google Agenda.`, 'success')
+        }
+      })
+      .catch(error => {
+        if (active && error.needsReconnect) google.markNeedsReconnect()
+      })
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleConnected, year, month])
 
   const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 
@@ -48,6 +94,7 @@ export function Calendar({ data }) {
         label:`${item.patient || 'Paciente'} — ${procName}`,
         value:item.totalValue || 0,
         id:item.id,
+        time:item.startTime || '',
       })
     })
 
@@ -60,11 +107,23 @@ export function Calendar({ data }) {
         label:`${item.patient || 'Paciente'} — ${item.consultationType || 'Consulta'}`,
         value:item.value || 0,
         id:item.id,
+        time:item.startTime || '',
       })
     })
 
+    const localIds = new Set([...(data.surgeries || []), ...(data.consultations || [])].map(item => item.id))
+    googleEvents.forEach(event => {
+      if (!event.date || !event.date.startsWith(monthStr)) return
+      if (event.recordId && localIds.has(event.recordId)) return
+      const day = parseInt(event.date.slice(8, 10), 10)
+      if (!map[day]) map[day] = []
+      map[day].push({ type:'google', label:event.title, value:0, id:`google:${event.googleId}`, time:event.startTime || '' })
+    })
+
+    Object.values(map).forEach(list => list.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99')))
+
     return map
-  }, [data, year, month])
+  }, [data, year, month, googleEvents])
 
   const grid = useMemo(() => buildCalendarGrid(year, month), [year, month])
 
@@ -101,9 +160,13 @@ export function Calendar({ data }) {
 
   const surgeryCount = Object.values(eventsByDay).reduce((acc, arr) => acc + arr.filter(e => e.type === 'surgery').length, 0)
   const consultationCount = Object.values(eventsByDay).reduce((acc, arr) => acc + arr.filter(e => e.type === 'consultation').length, 0)
+  const googleCount = Object.values(eventsByDay).reduce((acc, arr) => acc + arr.filter(e => e.type === 'google').length, 0)
+  const totalCount = surgeryCount + consultationCount + googleCount
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <GoogleCalendarBar google={google} />
+
       {/* Legend + summary */}
       <div style={{ display:'flex', gap:20, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -114,6 +177,12 @@ export function Calendar({ data }) {
           <span style={{ width:10, height:10, borderRadius:'50%', background:C.cyan, display:'inline-block', flexShrink:0 }} />
           <span style={{ fontSize:12, color:C.textSub }}>{consultationCount} consulta{consultationCount !== 1 ? 's' : ''}</span>
         </div>
+        {googleConnected && (
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <span style={{ width:10, height:10, borderRadius:'50%', background:C.yellow, display:'inline-block', flexShrink:0 }} />
+            <span style={{ fontSize:12, color:C.textSub }}>{googleCount} evento{googleCount !== 1 ? 's' : ''} do Google</span>
+          </div>
+        )}
         <span style={{ fontSize:11, color:C.textDim, marginLeft:'auto' }}>Clique em um dia para ver os eventos</span>
       </div>
 
@@ -133,7 +202,7 @@ export function Calendar({ data }) {
               {MONTHS_PT[month]} {year}
             </div>
             <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>
-              {surgeryCount + consultationCount} evento{(surgeryCount + consultationCount) !== 1 ? 's' : ''} neste mês
+              {totalCount} evento{totalCount !== 1 ? 's' : ''} neste mês
             </div>
           </div>
           <button onClick={goForward} style={navBtn}>›</button>
@@ -162,6 +231,7 @@ export function Calendar({ data }) {
             const dayEvents = day ? (eventsByDay[day] || []) : []
             const hasSurgery = dayEvents.some(e => e.type === 'surgery')
             const hasConsultation = dayEvents.some(e => e.type === 'consultation')
+            const hasGoogle = dayEvents.some(e => e.type === 'google')
             const isPopoverDay = popover && popover.day === day
 
             return (
@@ -204,7 +274,7 @@ export function Calendar({ data }) {
                       marginBottom:4,
                     }}>{day}</div>
                     {/* Event dots */}
-                    {(hasSurgery || hasConsultation) && (
+                    {(hasSurgery || hasConsultation || hasGoogle) && (
                       <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginTop:2 }}>
                         {hasSurgery && (
                           <span style={{
@@ -225,6 +295,16 @@ export function Calendar({ data }) {
                             display:'inline-block',
                             boxShadow:`0 0 4px ${C.cyan}88`,
                           }} title="Consulta" />
+                        )}
+                        {hasGoogle && (
+                          <span style={{
+                            width:7,
+                            height:7,
+                            borderRadius:'50%',
+                            background:C.yellow,
+                            display:'inline-block',
+                            boxShadow:`0 0 4px ${C.yellow}88`,
+                          }} title="Google Agenda" />
                         )}
                         {dayEvents.length > 1 && (
                           <span style={{ fontSize:9, color:C.textDim, lineHeight:'8px', marginTop:1 }}>
@@ -284,14 +364,14 @@ export function Calendar({ data }) {
                   alignItems:'flex-start',
                   padding:'10px 12px',
                   borderRadius:10,
-                  background: ev.type === 'surgery' ? C.accent + '10' : C.cyan + '10',
-                  border:`1px solid ${ev.type === 'surgery' ? C.accent : C.cyan}22`,
+                  background: eventColor(ev.type) + '10',
+                  border:`1px solid ${eventColor(ev.type)}22`,
                 }}>
                   <span style={{
                     width:8,
                     height:8,
                     borderRadius:'50%',
-                    background:ev.type === 'surgery' ? C.accent : C.cyan,
+                    background:eventColor(ev.type),
                     flexShrink:0,
                     marginTop:4,
                   }} />
@@ -300,7 +380,7 @@ export function Calendar({ data }) {
                       {ev.label}
                     </div>
                     <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>
-                      {ev.type === 'surgery' ? 'Cirurgia' : 'Consulta'}
+                      {ev.time ? `${ev.time} · ` : ''}{eventTypeLabel(ev.type)}
                       {ev.value > 0 && <span style={{ color:C.green, marginLeft:8, fontWeight:700 }}>{fmt(ev.value)}</span>}
                     </div>
                   </div>
