@@ -96,3 +96,4 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 3. Consolidar checklist técnico para mudanças de schema Supabase (migração + rollback + validação).
 4. Monitorar e auditar execução de recorrências (logs e métricas de sucesso/erro).
 5. Evoluir observabilidade do assistente financeiro (taxa de erro, latência, limite diário e custo por usuário).
+6. **Pendente — conectar a Google Agenda** (código pronto na branch `feat/google-calendar`): confirmar o projeto Google Cloud do `GOOGLE_CLIENT_ID` (prefixo `530038901215`), aplicar `supabase/google_calendar_schema.sql` antes do deploy, ativar Calendar API, autorizar URI `/api/google/calendar` e escopos, criar `GOOGLE_CALENDAR_REDIRECT_URI` na Vercel e decidir o merge. Checklist completo na Task 8 de `docs/superpowers/plans/2026-10-03-google-calendar-integration.md`.
