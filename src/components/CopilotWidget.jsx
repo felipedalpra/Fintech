@@ -10,14 +10,18 @@ const QUICK_QUESTIONS = [
   'O que preciso fazer esta semana?',
 ]
 
+const INITIAL_MESSAGE = {
+  role:'assistant',
+  content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.',
+  meta:{ source:'local', mode:'welcome', reason:'', evidence:[] },
+}
+
 export function CopilotWidget({ data }) {
   const brain = useMemo(() => buildFinancialBrain(data), [data])
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [messages, setMessages] = useState([
-    { role:'assistant', content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.', meta:{ source:'local', reason:'' } },
-  ])
+  const [messages, setMessages] = useState([INITIAL_MESSAGE])
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -32,11 +36,23 @@ export function CopilotWidget({ data }) {
     setInput('')
     setSending(true)
 
-    const history = [...messages, { role:'user', content:question }]
-    const result = await queryFinancialAssistant({ question, brain, history })
-    setSending(false)
-
-    setMessages(current => [...current, { role:'assistant', content:result.answer, meta:{ source:result.source, reason:result.reason } }])
+    try {
+      const result = await queryFinancialAssistant({ question, brain, history:messages })
+      setMessages(current => [...current, {
+        role:'assistant',
+        content:result.answer,
+        meta:{
+          source:result.source,
+          mode:result.mode,
+          reason:result.reason,
+          evidence:result.evidence,
+          requestId:result.requestId,
+          question,
+        },
+      }])
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -77,7 +93,10 @@ export function CopilotWidget({ data }) {
                 <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Copiloto</div>
                 <div style={{ color:C.text, fontWeight:800, marginTop:4 }}>Assistente financeiro da clínica</div>
               </div>
-              <button type="button" onClick={() => setOpen(false)} style={{ width:34, height:34, borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, cursor:'pointer' }}>×</button>
+              <div style={{ display:'flex', gap:8 }}>
+                <button type="button" onClick={() => setMessages([INITIAL_MESSAGE])} style={{ height:34, borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, cursor:'pointer', padding:'0 10px', fontSize:11 }}>Limpar</button>
+                <button type="button" onClick={() => setOpen(false)} style={{ width:34, height:34, borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, cursor:'pointer' }}>×</button>
+              </div>
             </div>
 
             <div style={{ display:'grid', gridTemplateColumns:'84px 1fr', gap:14, alignItems:'center' }}>
@@ -102,8 +121,13 @@ export function CopilotWidget({ data }) {
 
           <div style={{ flex:1, overflowY:'auto', padding:16, display:'flex', flexDirection:'column', gap:12 }}>
             {messages.map((message, index) => (
-              <div key={index} style={{ alignSelf:message.role === 'user' ? 'flex-end' : 'flex-start', maxWidth:'88%', padding:'12px 14px', borderRadius:message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background:message.role === 'user' ? C.accent : C.surface, border:`1px solid ${message.role === 'user' ? C.accent + '55' : C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }}>
-                {message.content}
+              <div key={index} style={{ alignSelf:message.role === 'user' ? 'flex-end' : 'flex-start', maxWidth:'88%' }}>
+                <div style={{ padding:'12px 14px', borderRadius:message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background:message.role === 'user' ? C.accent : C.surface, border:`1px solid ${message.role === 'user' ? C.accent + '55' : C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }}>
+                  {message.content}
+                </div>
+                {message.role === 'assistant' && message.meta?.mode !== 'welcome' && (
+                  <ResponseMeta meta={message.meta} onRetry={message.meta?.question ? () => send(message.meta.question) : null} sending={sending} />
+                )}
               </div>
             ))}
             {sending && <div style={{ maxWidth:'88%', padding:'12px 14px', borderRadius:'16px 16px 16px 4px', background:C.surface, border:`1px solid ${C.border}`, color:C.textDim, fontSize:13 }}>Analisando os dados...</div>}
@@ -131,6 +155,23 @@ export function CopilotWidget({ data }) {
         </div>
       )}
     </>
+  )
+}
+
+function ResponseMeta({ meta, onRetry, sending }) {
+  const limited = meta?.mode === 'limited' || meta?.source === 'fallback'
+  const period = meta?.evidence?.map(item => item.period).filter(Boolean)[0] || ''
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginTop:5, padding:'0 4px', color:limited ? C.yellow : C.textDim, fontSize:10, lineHeight:1.4 }}>
+      <span>{limited ? 'Modo limitado' : meta?.mode === 'tool_assisted' ? 'Dados consultados' : 'Resposta do assistente'}</span>
+      {period ? <span>· {period.replace('/', ' a ')}</span> : null}
+      {limited && meta?.reason ? <span>· {meta.reason}</span> : null}
+      {limited && onRetry ? (
+        <button type="button" onClick={onRetry} disabled={sending} style={{ border:'none', background:'transparent', color:C.accentLight, padding:0, cursor:sending ? 'not-allowed' : 'pointer', fontSize:10, textDecoration:'underline' }}>
+          Tentar novamente
+        </button>
+      ) : null}
+    </div>
   )
 }
 
