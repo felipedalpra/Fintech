@@ -8,6 +8,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-10-03
 ### Added
 - Confirmação ao fechar modais de formulário com dados preenchidos: ao clicar no ×, em "Cancelar" ou fora do modal, aparece "Descartar alterações?" com as opções "Continuar editando" e "Descartar". Sem alterações, o modal fecha direto; ao salvar, fecha sem perguntar. Implementado no componente `Modal` (`src/components/UI.jsx`), valendo para lançamentos, cirurgias, consultas, metas, produtos, procedimentos e recorrências.
+- Páginas públicas de Política de Privacidade (`/privacidade`) e Termos de Serviço (`/termos`), com layout compartilhado em `src/components/LegalPage.jsx`, páginas em `src/pages/PrivacyPolicyPage.jsx` e `src/pages/TermsOfServicePage.jsx`, rotas em `src/routes.jsx` e entradas em `public/sitemap.xml`. A política inclui a seção de uso dos dados do Google Agenda e a declaração de Uso Limitado exigidas pelo Google para a tela de consentimento OAuth.
 - Regra obrigatória de preencher o `CHANGELOG.md` em toda alteração (`SYSTEM_RULES.md`, `PROMPT_GUIDE.md`, `CLAUDE.md` e `AGENTS.md`).
 
 ### Fixed

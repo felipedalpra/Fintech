@@ -4,6 +4,8 @@ import { ProtectedRoute } from './router/ProtectedRoute.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
 import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
 import { FinanceWorkspace } from './pages/FinanceWorkspace.jsx'
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage.jsx'
+import { TermsOfServicePage } from './pages/TermsOfServicePage.jsx'
 import { LandingPage } from './landing/LandingPage.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
@@ -33,6 +35,8 @@ export function AppRoutes() {
         <Route path="/login" element={<LoginPage initialMode="login" />} />
         <Route path="/signup" element={<LoginPage initialMode="register" />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/privacidade" element={<PrivacyPolicyPage />} />
+        <Route path="/termos" element={<TermsOfServicePage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppEntryRedirect />} />
           <Route path="/app/:page" element={<FinanceWorkspace />} />
