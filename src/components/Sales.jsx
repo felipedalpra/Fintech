@@ -60,6 +60,8 @@ export function Sales({ data, setData }) {
     procedureId:data.procedures[0]?.id || '',
     totalValue:0,
     date:today(),
+    startTime:'',
+    durationMinutes:180,
     paymentMethod:'pix',
     paymentMode:'unico',
     paymentScheduleMode:'unica',
@@ -123,6 +125,8 @@ export function Sales({ data, setData }) {
     setForm({
       ...item,
       ...payment,
+      startTime:item.startTime || '',
+      durationMinutes:item.durationMinutes || 180,
       payment1Date:payment1?.date || item.paymentDate || item.date || today(),
       payment1Amount:payment1?.amount || 0,
       payment1Method:payment1?.method || 'pix',
@@ -365,6 +369,8 @@ export function Sales({ data, setData }) {
           <FInput label="Cirurgião" value={form.surgeon} onChange={value => setForm(current => ({ ...current, surgeon:value }))} placeholder="Nome do cirurgião responsável" />
           <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+          <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
+          <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="180" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
           {form.paymentScheduleMode === 'duas_datas' && (

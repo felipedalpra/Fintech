@@ -1,4 +1,4 @@
-import { buildMetrics } from '../useMetrics.js'
+import { buildMetrics } from '../financialMetrics.js'
 import { fmt, fmtN, getPeriodRange, monthKey, today } from '../utils.js'
 
 export function buildFinancialBrain(data) {

@@ -68,6 +68,9 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 - `b61747c`: melhorias de UX da landing em mobile e fluxo de planos
 - `9e18e3e`/`b7bce03`/`518a7e7`: ajustes de branding e favicon
 
+- 2026-10-03 (branch `feat/google-calendar`): integração Google Agenda. Arquivos: `api/google/calendar.js` (endpoint único, para respeitar o limite de 12 funções da Vercel), `api/_lib/googleCalendar*.js`, `src/lib/useGoogleCalendarSync.js`, `src/lib/googleCalendarPayload.js`, `src/components/GoogleCalendarBar.jsx`. Só sincroniza registros de hoje em diante (ou já vinculados). Migração `supabase/google_calendar_schema.sql` deve ser aplicada ANTES do deploy (cirurgias/consultas ganham `start_time` e `duration_minutes`). Testes: `npm run test:unit` e `npm run e2e`.
+- 2026-10-05: assistente financeiro IA v2 com autenticação obrigatória, consultas server-side protegidas por RLS, function calling, cota diária persistente, telemetria sem conteúdo financeiro e fallback visível. Aplicar `supabase/ai_assistant_schema.sql` ANTES do deploy. Os cálculos compartilhados ficam em `src/financialMetrics.js`; nomes e notas de pacientes não são enviados ao modelo. Testes: `npm run test:unit`.
+
 ### Placeholder operacional
 - `[YYYY-MM-DD] [versão/tag] [resumo da alteração] [impacto] [responsável]`
 
@@ -93,4 +96,5 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 2. Criar suíte mínima de testes de regressão para fluxo financeiro (consultas, cirurgias, contas e fechamento de período).
 3. Consolidar checklist técnico para mudanças de schema Supabase (migração + rollback + validação).
 4. Monitorar e auditar execução de recorrências (logs e métricas de sucesso/erro).
-5. Evoluir observabilidade do assistente financeiro (taxa de erro, latência, limite diário e custo por usuário).
+5. Monitorar a telemetria do assistente financeiro v2 (taxa de erro, latência, modo limitado e custo por usuário) após aplicar `supabase/ai_assistant_schema.sql`.
+6. **Pendente — conectar a Google Agenda** (código pronto na branch `feat/google-calendar`): confirmar o projeto Google Cloud do `GOOGLE_CLIENT_ID` (prefixo `530038901215`), aplicar `supabase/google_calendar_schema.sql` antes do deploy, ativar Calendar API, autorizar URI `/api/google/calendar` e escopos, criar `GOOGLE_CALENDAR_REDIRECT_URI` na Vercel e decidir o merge. Checklist completo na Task 8 de `docs/superpowers/plans/2026-10-03-google-calendar-integration.md`.

@@ -65,6 +65,8 @@ export function Consultations({ data, setData }) {
   const empty = {
     patient:'',
     date:today(),
+    startTime:'',
+    durationMinutes:60,
     consultationType:'avaliacao',
     value:0,
     invoiceIssuancePercent:0,
@@ -117,6 +119,8 @@ export function Consultations({ data, setData }) {
     setForm({
       ...item,
       ...payment,
+      startTime:item.startTime || '',
+      durationMinutes:item.durationMinutes || 60,
       payment1Date:payment1?.date || item.paymentDate || item.date || today(),
       payment1Amount:payment1?.amount || 0,
       payment1Method:payment1?.method || 'pix',
@@ -281,6 +285,8 @@ export function Consultations({ data, setData }) {
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <FInput label="Paciente ou ID interno" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Use somente o dado mínimo necessário" />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+          <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
+          <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="60" />
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
           <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" placeholder="0" />
           <FInput label="Emissão NF (%)" value={form.invoiceIssuancePercent} onChange={value => setForm(current => ({ ...current, invoiceIssuancePercent:value }))} type="number" placeholder="0" />
