@@ -12,6 +12,26 @@ test('restaura a ultima tela ao entrar em /app', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/reports$/)
 })
 
+test('prioriza a tela mais recente da sessao sobre uma rota antiga persistida', async ({ page }) => {
+  await page.addInitScript(([routeKey]) => {
+    window.localStorage.setItem(routeKey, '/app/settings')
+    window.sessionStorage.setItem(routeKey, '/app/consultations')
+  }, [LAST_APP_PATH_KEY])
+
+  await page.goto('/app')
+  await expect(page).toHaveURL(/\/app\/consultations$/)
+})
+
+test('mantem a tela aberta depois do reload', async ({ page }) => {
+  await page.goto('/app/reports')
+  await expect(page).toHaveURL(/\/app\/reports$/)
+
+  await page.reload()
+
+  await expect(page).toHaveURL(/\/app\/reports$/)
+  await expect(page.getByRole('heading', { name:'Relatórios Analíticos' })).toBeVisible()
+})
+
 test('mantem e restaura rascunho da sessao no workspace', async ({ page }) => {
   const draftPayload = {
     procedures:[],

@@ -64,7 +64,7 @@ export function LandingPage() {
   }, [])
 
   if (!loading && user) {
-    return <Navigate to="/app/dashboard" replace />
+    return <Navigate to="/app" replace />
   }
 
   return (

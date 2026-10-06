@@ -589,6 +589,7 @@ export function FinanceWorkspace() {
     if (typeof window === 'undefined') return
     if (!PAGES[page]) return
     window.sessionStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
+    window.localStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
   }, [location.pathname, page])
 
   useEffect(() => {
