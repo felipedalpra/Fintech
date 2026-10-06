@@ -41,7 +41,7 @@ export default async function handler(req, res) {
 
     const dailyLimit = parseDailyLimit(process.env.AI_ASSISTANT_DAILY_LIMIT)
     await consumeAssistantQuota(supabase, dailyLimit)
-    model = process.env.OPENAI_MODEL || 'gpt-5.2-chat-latest'
+    model = (process.env.OPENAI_MODEL || 'gpt-5.2').trim()
 
     const input = [
       { role:'system', content:buildSystemPrompt(saoPauloDate()) },
