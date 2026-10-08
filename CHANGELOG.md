@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (4)
+### Changed
+- Drawer do paciente reestruturado com 5 abas: **Resumo**, **Dados**, **Anamnese**, **Prontuário**, **Financeiro**.
+- Nova aba **Resumo**: card de info rápida (idade, queixa, alergias, medicamentos), indicadores (sessões, procedimentos, total financeiro), status do TCLE e linha do tempo unificada com sessões de prontuário, cirurgias e consultas ordenadas por data.
+- **Dados** agora contém apenas identificação, contato e endereço; **Anamnese** virou aba própria com todos os campos clínicos em cards individuais.
+
 ## [Unreleased] - 2026-10-08 (3)
 ### Added
 - Anamnese médica completa no cadastro de pacientes (`supabase/patients_anamnese_migration.sql`): HDA, doenças crônicas, alergias, medicamentos em uso, cirurgias anteriores, internações, tabagismo, etilismo, atividade física, antecedentes familiares e antecedentes ginecológicos.

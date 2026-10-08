@@ -22,8 +22,8 @@ const CIVIL_STATUS_OPTIONS = [
   { v: 'uniao_estavel', l: 'União estável' },
 ]
 
-const DRAWER_TABS = ['dados', 'prontuario', 'financeiro']
-const DRAWER_TAB_LABELS = { dados: 'Dados', prontuario: 'Prontuário', financeiro: 'Financeiro' }
+const DRAWER_TABS = ['resumo', 'pessoal', 'anamnese', 'prontuario', 'financeiro']
+const DRAWER_TAB_LABELS = { resumo: 'Resumo', pessoal: 'Dados', anamnese: 'Anamnese', prontuario: 'Prontuário', financeiro: 'Financeiro' }
 
 const emptyForm = {
   full_name: '',
@@ -273,7 +273,7 @@ export function Patients({ data }) {
                       cursor: 'pointer',
                       background: selected?.id === p.id ? C.accent + '10' : 'transparent',
                     }}
-                    onClick={() => { setSelected(p); setDrawerTab('dados') }}
+                    onClick={() => { setSelected(p); setDrawerTab('resumo') }}
                   >
                     <td style={{ padding: '13px 18px', color: C.text, fontWeight: 600 }}>{p.full_name}</td>
                     <td style={{ padding: '13px 18px', color: C.textSub, fontSize: 13 }}>{p.cpf || '—'}</td>
@@ -416,7 +416,17 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
 
         {/* Tab content */}
         <div style={{ padding: '20px 24px', flex: 1 }}>
-          {tab === 'dados' && <DadosTab patient={patient} />}
+          {tab === 'resumo' && (
+            <ResumoTab
+              patient={patient}
+              userId={userId}
+              surgeries={surgeries}
+              consultations={consultations}
+              totalFinanceiro={totalFinanceiro}
+            />
+          )}
+          {tab === 'pessoal' && <PessoalTab patient={patient} />}
+          {tab === 'anamnese' && <AnamneseTab patient={patient} />}
           {tab === 'prontuario' && (
             <MedicalRecord patientId={patient.id} userId={userId} />
           )}
@@ -433,91 +443,184 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
   )
 }
 
-function DadosTab({ patient }) {
-  function Section({ title, children }) {
-    return (
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>{children}</div>
-      </div>
-    )
-  }
+function Field({ label, value }) {
+  if (!value) return null
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: C.textDim, marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, color: C.text }}>{value}</div>
+    </div>
+  )
+}
 
-  function Field({ label, value }) {
-    if (!value) return null
-    return (
+function TabSection({ title, children }) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>{children}</div>
+    </div>
+  )
+}
+
+function ResumoTab({ patient, userId, surgeries, consultations, totalFinanceiro }) {
+  const [records, setRecords] = useState([])
+  useEffect(() => {
+    if (!patient?.id || !userId) return
+    supabase.from('medical_records').select('id,session_date,evolution_notes,procedures_applied,archived')
+      .eq('patient_id', patient.id).eq('user_id', userId).eq('archived', false)
+      .order('session_date', { ascending: false })
+      .then(({ data }) => setRecords(data || []))
+  }, [patient?.id, userId])
+
+  const sexLabel = { F: 'Feminino', M: 'Masculino', outro: 'Outro' }
+
+  // Unified timeline
+  const timeline = [
+    ...records.map(r => ({
+      id: r.id, date: r.session_date, type: 'prontuario',
+      label: 'Sessão', desc: r.procedures_applied || r.evolution_notes?.slice(0, 80),
+      color: C.accent,
+    })),
+    ...surgeries.map(s => ({
+      id: s.id, date: s.date, type: 'cirurgia',
+      label: 'Cirurgia', desc: fmt(s.totalValue),
+      color: C.cyan,
+    })),
+    ...consultations.map(c => ({
+      id: c.id, date: c.date, type: 'consulta',
+      label: 'Consulta', desc: fmt(c.value),
+      color: C.green,
+    })),
+  ].filter(e => e.date).sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+  const age = patient.date_of_birth
+    ? Math.floor((Date.now() - new Date(patient.date_of_birth)) / (365.25 * 24 * 3600 * 1000))
+    : null
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Quick info card */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+        {age !== null && <Field label="Idade" value={`${age} anos`} />}
+        {patient.sex && <Field label="Sexo" value={sexLabel[patient.sex] || patient.sex} />}
+        {patient.chief_complaint && <Field label="Queixa principal" value={patient.chief_complaint} />}
+        {patient.phone && <Field label="Telefone" value={patient.phone} />}
+        {patient.allergies && <Field label="Alergias" value={patient.allergies} />}
+        {patient.current_medications && <Field label="Medicamentos" value={patient.current_medications} />}
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        {[
+          { label: 'Sessões', value: records.length, color: C.accent },
+          { label: 'Procedimentos', value: surgeries.length + consultations.length, color: C.cyan },
+          { label: 'Total', value: fmt(totalFinanceiro), color: C.green },
+        ].map(s => (
+          <div key={s.label} style={{ background: s.color + '12', border: `1px solid ${s.color}30`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 10, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* TCLE */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: patient.consent_signed ? C.green + '10' : C.yellow + '10', border: `1px solid ${patient.consent_signed ? C.green : C.yellow}33`, borderRadius: 8 }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: patient.consent_signed ? C.green : C.yellow, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: C.text }}>TCLE — {patient.consent_signed ? `Assinado${patient.consent_date ? ` em ${formatDateBR(patient.consent_date)}` : ''}` : 'Pendente'}</span>
+      </div>
+
+      {/* Timeline */}
       <div>
-        <div style={{ fontSize: 11, color: C.textDim, marginBottom: 2 }}>{label}</div>
-        <div style={{ fontSize: 13, color: C.text }}>{value}</div>
+        <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>Histórico</div>
+        {timeline.length === 0 ? (
+          <div style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: '20px 0' }}>Nenhum registro ainda.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {timeline.map((e, i) => (
+              <div key={e.id} style={{ display: 'flex', gap: 12, paddingBottom: 14, position: 'relative' }}>
+                {/* Line */}
+                {i < timeline.length - 1 && (
+                  <div style={{ position: 'absolute', left: 11, top: 22, bottom: 0, width: 2, background: C.border }} />
+                )}
+                {/* Dot */}
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: e.color + '20', border: `2px solid ${e.color}`, flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: e.color }} />
+                </div>
+                {/* Content */}
+                <div style={{ flex: 1, paddingTop: 1 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: e.color, background: e.color + '15', borderRadius: 4, padding: '1px 6px' }}>{e.label}</span>
+                    <span style={{ fontSize: 12, color: C.textDim }}>{formatDateBR(e.date)}</span>
+                  </div>
+                  {e.desc && <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{e.desc}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-    )
-  }
+    </div>
+  )
+}
 
+function PessoalTab({ patient }) {
   const sexLabel = { F: 'Feminino', M: 'Masculino', outro: 'Outro' }
   const civilLabel = { solteiro: 'Solteiro(a)', casado: 'Casado(a)', divorciado: 'Divorciado(a)', viuvo: 'Viúvo(a)', uniao_estavel: 'União estável' }
 
   return (
     <div>
-      <Section title="Identificação">
+      <TabSection title="Identificação">
         <Field label="Nome completo" value={patient.full_name} />
         <Field label="CPF" value={patient.cpf} />
         <Field label="Data de nascimento" value={patient.date_of_birth ? formatDateBR(patient.date_of_birth) : null} />
         <Field label="Sexo" value={sexLabel[patient.sex] || null} />
         <Field label="Estado civil" value={civilLabel[patient.civil_status] || null} />
         <Field label="Profissão" value={patient.profession} />
-      </Section>
+        <Field label="Início do acompanhamento" value={patient.start_date ? formatDateBR(patient.start_date) : null} />
+      </TabSection>
 
-      <Section title="Contato">
+      <TabSection title="Contato">
         <Field label="Telefone" value={patient.phone} />
         <Field label="E-mail" value={patient.email} />
         <Field label="Contato de emergência" value={patient.emergency_contact_name} />
         <Field label="Telefone emergência" value={patient.emergency_contact_phone} />
-      </Section>
+      </TabSection>
 
       {(patient.address_street || patient.address_city) && (
-        <Section title="Endereço">
+        <TabSection title="Endereço">
           <Field label="Logradouro" value={[patient.address_street, patient.address_number].filter(Boolean).join(', ')} />
           <Field label="Complemento" value={patient.address_complement} />
           <Field label="Bairro" value={patient.address_district} />
           <Field label="Cidade / UF" value={[patient.address_city, patient.address_state].filter(Boolean).join(' — ')} />
           <Field label="CEP" value={patient.address_zip} />
-        </Section>
+        </TabSection>
       )}
+    </div>
+  )
+}
 
-      <Section title="Clínico">
-        <Field label="Início do acompanhamento" value={patient.start_date ? formatDateBR(patient.start_date) : null} />
-        <Field label="Queixa principal" value={patient.chief_complaint} />
-      </Section>
+function AnamneseTab({ patient }) {
+  const hasAnamnese = patient.chief_complaint || patient.hda || patient.chronic_diseases || patient.allergies || patient.current_medications || patient.previous_surgeries || patient.hospitalizations || patient.smoking || patient.alcohol || patient.physical_activity || patient.family_history || patient.gynecological_history || patient.clinical_notes
 
-      {(patient.hda || patient.previous_surgeries || patient.hospitalizations || patient.chronic_diseases || patient.allergies || patient.current_medications || patient.smoking || patient.alcohol || patient.physical_activity || patient.family_history || patient.gynecological_history || patient.clinical_notes) && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Anamnese</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {patient.hda && <AnamneseField label="HDA" value={patient.hda} />}
-            {patient.chronic_diseases && <AnamneseField label="Doenças crônicas" value={patient.chronic_diseases} />}
-            {patient.allergies && <AnamneseField label="Alergias" value={patient.allergies} />}
-            {patient.current_medications && <AnamneseField label="Medicamentos em uso" value={patient.current_medications} />}
-            {patient.previous_surgeries && <AnamneseField label="Cirurgias anteriores" value={patient.previous_surgeries} />}
-            {patient.hospitalizations && <AnamneseField label="Internações" value={patient.hospitalizations} />}
-            {patient.smoking && <AnamneseField label="Tabagismo" value={patient.smoking} />}
-            {patient.alcohol && <AnamneseField label="Etilismo" value={patient.alcohol} />}
-            {patient.physical_activity && <AnamneseField label="Atividade física" value={patient.physical_activity} />}
-            {patient.family_history && <AnamneseField label="Antecedentes familiares" value={patient.family_history} />}
-            {patient.gynecological_history && <AnamneseField label="Antecedentes ginecológicos" value={patient.gynecological_history} />}
-            {patient.clinical_notes && <AnamneseField label="Observações gerais" value={patient.clinical_notes} />}
-          </div>
-        </div>
-      )}
+  if (!hasAnamnese) {
+    return <div style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: '32px 0' }}>Anamnese não preenchida ainda.</div>
+  }
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: patient.consent_signed ? C.green + '10' : C.yellow + '10', border: `1px solid ${patient.consent_signed ? C.green : C.yellow}33`, borderRadius: 10 }}>
-        <div style={{ width: 10, height: 10, borderRadius: '50%', background: patient.consent_signed ? C.green : C.yellow, flexShrink: 0 }} />
-        <div>
-          <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>TCLE — {patient.consent_signed ? 'Assinado' : 'Pendente'}</div>
-          {patient.consent_date && (
-            <div style={{ fontSize: 12, color: C.textDim }}>Data: {formatDateBR(patient.consent_date)}</div>
-          )}
-        </div>
-      </div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {patient.chief_complaint && <AnamneseField label="Queixa principal" value={patient.chief_complaint} />}
+      {patient.hda && <AnamneseField label="HDA — História da doença atual" value={patient.hda} />}
+      {patient.chronic_diseases && <AnamneseField label="Doenças crônicas" value={patient.chronic_diseases} />}
+      {patient.allergies && <AnamneseField label="Alergias" value={patient.allergies} />}
+      {patient.current_medications && <AnamneseField label="Medicamentos em uso" value={patient.current_medications} />}
+      {patient.previous_surgeries && <AnamneseField label="Cirurgias anteriores" value={patient.previous_surgeries} />}
+      {patient.hospitalizations && <AnamneseField label="Internações" value={patient.hospitalizations} />}
+      {patient.smoking && <AnamneseField label="Tabagismo" value={patient.smoking} />}
+      {patient.alcohol && <AnamneseField label="Etilismo" value={patient.alcohol} />}
+      {patient.physical_activity && <AnamneseField label="Atividade física" value={patient.physical_activity} />}
+      {patient.family_history && <AnamneseField label="Antecedentes familiares" value={patient.family_history} />}
+      {patient.gynecological_history && <AnamneseField label="Antecedentes ginecológicos" value={patient.gynecological_history} />}
+      {patient.clinical_notes && <AnamneseField label="Observações gerais" value={patient.clinical_notes} />}
     </div>
   )
 }
