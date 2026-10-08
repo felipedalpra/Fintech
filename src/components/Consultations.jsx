@@ -3,6 +3,8 @@ import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { PatientSelector } from './PatientSelector.jsx'
 
 const TYPES = [
   { v:'avaliacao', l:'Avaliação' },
@@ -60,10 +62,12 @@ function readDraft() {
 }
 
 export function Consultations({ data, setData }) {
+  const { user } = useAuth()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const empty = {
     patient:'',
+    patientId:'',
     date:today(),
     startTime:'',
     durationMinutes:60,
@@ -118,6 +122,7 @@ export function Consultations({ data, setData }) {
     const payment2 = payment.payments?.[1]
     setForm({
       ...item,
+      patientId: item.patientId || '',
       ...payment,
       startTime:item.startTime || '',
       durationMinutes:item.durationMinutes || 60,
@@ -133,7 +138,7 @@ export function Consultations({ data, setData }) {
   }
 
   const save = () => {
-    if (!form.patient || !form.date) return
+    if ((!form.patient && !form.patientId) || !form.date) return
     const totalValue = Math.max(0, Number(form.value || 0))
     let payment1Amount = Math.max(0, Number(form.payment1Amount || 0))
     let payment2Amount = Math.max(0, Number(form.payment2Amount || 0))
@@ -185,6 +190,7 @@ export function Consultations({ data, setData }) {
     } = form
     const nextRecord = {
       ...baseForm,
+      patientId: form.patientId || null,
       invoiceIssuancePercent:Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0))),
       insurance:form.paymentType === 'particular' ? '' : form.insurance,
       paymentMethod,
@@ -283,7 +289,14 @@ export function Consultations({ data, setData }) {
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Consulta' : 'Nova Consulta'} width={640}>
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
-          <FInput label="Paciente ou ID interno" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Use somente o dado mínimo necessário" />
+          <div style={{ gridColumn: '1 / -1' }}>
+            <PatientSelector
+              userId={user?.id}
+              value={form.patientId}
+              onChange={(id, name) => setForm(current => ({ ...current, patientId: id, patient: name || current.patient }))}
+            />
+          </div>
+          <FInput label="Identificador interno (opcional)" value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Apelido, código ou observação" />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="60" />
@@ -320,7 +333,7 @@ export function Consultations({ data, setData }) {
           <FInput label="Data do recebimento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
           <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}>
             <Btn variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Btn>
-            <Btn onClick={save} disabled={!form.patient}>Salvar consulta</Btn>
+            <Btn onClick={save} disabled={!form.patient && !form.patientId}>Salvar consulta</Btn>
           </div>
         </div>
       </Modal>

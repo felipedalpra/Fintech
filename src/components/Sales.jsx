@@ -3,6 +3,8 @@ import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { PatientSelector } from './PatientSelector.jsx'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -47,6 +49,7 @@ function readDraft() {
 }
 
 export function Sales({ data, setData }) {
+  const { user } = useAuth()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const STATUS_COLORS = {
@@ -57,6 +60,7 @@ export function Sales({ data, setData }) {
   }
   const empty = {
     patient:'',
+    patientId:'',
     procedureId:data.procedures[0]?.id || '',
     totalValue:0,
     date:today(),
@@ -112,6 +116,13 @@ export function Sales({ data, setData }) {
     window.sessionStorage.setItem(SALES_MODAL_DRAFT_KEY, payload)
   }, [showModal, editing, form])
 
+  useEffect(() => {
+    if (editing !== null) return
+    const proc = data.procedures.find(p => p.id === form.procedureId)
+    if (!proc) return
+    setForm(cur => cur.totalValue === 0 ? { ...cur, totalValue: proc.price } : cur)
+  }, [form.procedureId, editing, data.procedures])
+
   const openAdd = () => {
     setForm({ ...empty, procedureId:data.procedures[0]?.id || '' })
     setEditing(null)
@@ -124,6 +135,7 @@ export function Sales({ data, setData }) {
     const payment2 = payment.payments?.[1]
     setForm({
       ...item,
+      patientId: item.patientId || '',
       ...payment,
       startTime:item.startTime || '',
       durationMinutes:item.durationMinutes || 180,
@@ -139,7 +151,7 @@ export function Sales({ data, setData }) {
   }
 
   const save = () => {
-    if (!form.patient || !form.date) return
+    if ((!form.patient && !form.patientId) || !form.date) return
     const procedureValue = data.procedures.find(item => item.id === form.procedureId)?.price || 0
     const resolvedTotal = form.totalValue || procedureValue
     const invoiceIssuancePercent = Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0)))
@@ -190,6 +202,7 @@ export function Sales({ data, setData }) {
     } = form
     const nextRecord = {
       ...baseForm,
+      patientId: form.patientId || null,
       totalValue:resolvedTotal,
       invoiceIssuancePercent,
       paymentMethod,
@@ -365,7 +378,14 @@ export function Sales({ data, setData }) {
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar Cirurgia' : 'Nova Cirurgia'} width={720}>
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
-          <FInput label="Paciente ou ID interno" required value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Use o mínimo necessário para identificar" />
+          <div style={{ gridColumn: '1 / -1' }}>
+            <PatientSelector
+              userId={user?.id}
+              value={form.patientId}
+              onChange={(id, name) => setForm(current => ({ ...current, patientId: id, patient: name || current.patient }))}
+            />
+          </div>
+          <FInput label="Identificador interno (opcional)" value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Apelido, código ou observação" />
           <FInput label="Cirurgião" value={form.surgeon} onChange={value => setForm(current => ({ ...current, surgeon:value }))} placeholder="Nome do cirurgião responsável" />
           <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
           <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
@@ -427,7 +447,7 @@ export function Sales({ data, setData }) {
           </div>
           <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}>
             <Btn variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Btn>
-            <Btn onClick={save} disabled={!form.patient}>Salvar cirurgia</Btn>
+            <Btn onClick={save} disabled={!form.patient && !form.patientId}>Salvar cirurgia</Btn>
           </div>
         </div>
       </Modal>

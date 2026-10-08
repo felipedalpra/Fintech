@@ -114,6 +114,12 @@ export function NavIcon({ name, size = 14, style }) {
         <path d="M10 15h4"/>
       </svg>
     )
+    case 'patients': return (
+      <svg {...props}>
+        <circle cx="12" cy="8" r="4"/>
+        <path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/>
+      </svg>
+    )
     case 'settings': return (
       <svg {...props}>
         <line x1="21" x2="14" y1="4" y2="4"/>

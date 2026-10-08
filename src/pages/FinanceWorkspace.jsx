@@ -23,6 +23,7 @@ import { AlertsBell } from '../components/AlertsBell.jsx'
 import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
 import { TaxCalculator } from '../components/TaxCalculator.jsx'
+import { Patients } from '../components/Patients.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
@@ -40,6 +41,7 @@ const NAV_SECTIONS = [
       { id:'consultations', label:'Consultas',     icon:'consultations', hint:'Atendimentos e convênios' },
       { id:'calendar',      label:'Agenda',        icon:'calendar',      hint:'Calendário de cirurgias e consultas' },
       { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
+      { id:'patients',      label:'Pacientes',     icon:'patients',      hint:'Cadastro clínico e prontuários' },
     ],
   },
   {
@@ -75,6 +77,7 @@ const TITLES = {
   ai:'Central de IA',
   billing:'Assinatura',
   settings:'Configurações',
+  patients:'Pacientes',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -96,6 +99,7 @@ const SUBTITLES = {
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
+  patients:'Cadastro CFP, prontuário eletrônico e histórico financeiro.',
 }
 
 const PAGES = {
@@ -116,6 +120,7 @@ const PAGES = {
   ai:AIAssistant,
   billing:BillingPage,
   settings:Settings,
+  patients:Patients,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])

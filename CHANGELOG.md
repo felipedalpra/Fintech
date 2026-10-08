@@ -5,6 +5,28 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (2)
+### Added
+- Componente `PatientSelector` (`src/components/PatientSelector.jsx`): dropdown de pacientes cadastrados com botão "+ Novo" que abre mini-modal inline (nome, CPF, telefone) para criar e selecionar o paciente sem sair do formulário de cirurgia ou consulta.
+
+### Changed
+- `Sales.jsx` e `Consultations.jsx`: campo "Paciente" substituído pelo `PatientSelector` — permite selecionar paciente existente ou criar novo direto do formulário. Campo "Identificador interno" mantido para anotações livres. Validação ajustada para aceitar qualquer um dos dois.
+
+## [Unreleased] - 2026-10-08
+### Added
+- Módulo **Pacientes**: cadastro clínico completo seguindo o padrão CFP Resolução 1/2009 (`src/components/Patients.jsx`). Lista com busca por nome e CPF, drawer lateral com três abas — Dados (identificação, contato, endereço, clínico, TCLE), Prontuário e Financeiro. Item "Pacientes" adicionado ao menu Operação em `FinanceWorkspace.jsx`.
+- **Prontuário eletrônico** (`src/components/MedicalRecord.jsx`) vinculado ao módulo Pacientes. Registros de sessão com data, evolução (texto livre), procedimentos aplicados e próxima sessão. Arquivamento sem exclusão conforme exigência CFP; numeração de sessões por ordem cronológica.
+- Schema SQL de pacientes, prontuário e documentos do paciente (`supabase/patients_schema.sql`), com RLS por `user_id`, política sem DELETE em `medical_records` (CFP), FKs retrocompatíveis `patient_id` em `surgeries` e `consultations`, e índices de performance.
+- Ícone SVG `patients` no `NavIcon.jsx`.
+
+### Changed
+- `Sales.jsx`: seletor de paciente cadastrado preenchido automaticamente — ao selecionar, o campo "Paciente ou ID interno" é preenchido com o nome completo. Novo campo `patientId` persistido no registro.
+- `Consultations.jsx`: mesmo seletor de paciente cadastrado com auto-preenchimento do nome. Novo campo `patientId` persistido.
+- `financeStore.js`: mappers de `surgeries` e `consultations` agora incluem `patient_id` / `patientId` para vincular registros financeiros ao cadastro de pacientes.
+
+### Fixed
+- `Sales.jsx`: ao selecionar um procedimento, o campo "Valor total" agora é preenchido automaticamente com o preço base cadastrado, eliminando a necessidade de informar o valor manualmente a cada registro.
+
 ## [Unreleased] - 2026-10-05
 ### Added
 - Especificação técnica do assistente financeiro com IA v2 (`docs/superpowers/specs/2026-10-05-ai-financial-assistant-v2-design.md`), cobrindo consultas server-side com autenticação e RLS, function calling, privacidade, fallback transparente, rate limit persistente, observabilidade, rollout e critérios de aceite.
