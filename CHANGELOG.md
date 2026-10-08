@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (6)
+### Fixed
+- Ao recarregar a plataforma, o app sempre abria na aba Assinatura independente de onde o usuário estava. Causa: quando redirecionado para `/app/billing` pelo guard de acesso, esse caminho era salvo como última rota visitada e restaurado na próxima sessão. Solução: `/app/billing` não é mais persistido em `LAST_APP_PATH_KEY`, e `AppEntryRedirect` ignora valores salvos de `/app/billing`, caindo em `/app/dashboard`.
+
 ## [Unreleased] - 2026-10-08 (5)
 ### Changed
 - `PatientForm` reescrito como formulário em etapas (stepper): pills de navegação no topo com as seções **Identificação → Contato → Endereço → Clínico → Anamnese → TCLE → Revisão**. Cada etapa exibe apenas os campos daquela seção; botões Anterior/Próximo navegam entre elas; botão "Salvar paciente" aparece somente na última etapa.

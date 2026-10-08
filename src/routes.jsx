@@ -22,7 +22,8 @@ function AppEntryRedirect() {
     return <Navigate to="/app/dashboard" replace />
   }
   const lastPath = window.sessionStorage.getItem(LAST_APP_PATH_KEY) || window.localStorage.getItem(LAST_APP_PATH_KEY)
-  const nextPath = lastPath?.startsWith('/app/') ? lastPath : '/app/dashboard'
+  const validPath = lastPath?.startsWith('/app/') && lastPath !== '/app/billing'
+  const nextPath = validPath ? lastPath : '/app/dashboard'
   return <Navigate to={nextPath} replace />
 }
 

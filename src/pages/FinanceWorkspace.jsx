@@ -593,6 +593,7 @@ export function FinanceWorkspace() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!PAGES[page]) return
+    if (page === 'billing') return  // não persistir redirecionamentos forçados para billing
     window.sessionStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
     window.localStorage.setItem(LAST_APP_PATH_KEY, location.pathname)
   }, [location.pathname, page])
