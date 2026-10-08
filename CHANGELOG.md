@@ -5,6 +5,14 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (3)
+### Added
+- Anamnese médica completa no cadastro de pacientes (`supabase/patients_anamnese_migration.sql`): HDA, doenças crônicas, alergias, medicamentos em uso, cirurgias anteriores, internações, tabagismo, etilismo, atividade física, antecedentes familiares e antecedentes ginecológicos.
+- Referência corrigida de CFP (Psicologia) para padrão CFM/CRM (Medicina) no módulo Pacientes.
+
+### Changed
+- `Patients.jsx`: formulário expandido com seção Anamnese estruturada em subseções; `DadosTab` exibe cada campo com card individual por tópico.
+
 ## [Unreleased] - 2026-10-08 (2)
 ### Added
 - Componente `PatientSelector` (`src/components/PatientSelector.jsx`): dropdown de pacientes cadastrados com botão "+ Novo" que abre mini-modal inline (nome, CPF, telefone) para criar e selecionar o paciente sem sair do formulário de cirurgia ou consulta.

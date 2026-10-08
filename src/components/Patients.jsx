@@ -45,6 +45,17 @@ const emptyForm = {
   address_zip: '',
   start_date: today(),
   chief_complaint: '',
+  hda: '',
+  previous_surgeries: '',
+  hospitalizations: '',
+  chronic_diseases: '',
+  allergies: '',
+  current_medications: '',
+  smoking: '',
+  alcohol: '',
+  physical_activity: '',
+  family_history: '',
+  gynecological_history: '',
   clinical_notes: '',
   consent_signed: false,
   consent_date: '',
@@ -110,6 +121,17 @@ export function Patients({ data }) {
       address_zip: p.address_zip || '',
       start_date: p.start_date || today(),
       chief_complaint: p.chief_complaint || '',
+      hda: p.hda || '',
+      previous_surgeries: p.previous_surgeries || '',
+      hospitalizations: p.hospitalizations || '',
+      chronic_diseases: p.chronic_diseases || '',
+      allergies: p.allergies || '',
+      current_medications: p.current_medications || '',
+      smoking: p.smoking || '',
+      alcohol: p.alcohol || '',
+      physical_activity: p.physical_activity || '',
+      family_history: p.family_history || '',
+      gynecological_history: p.gynecological_history || '',
       clinical_notes: p.clinical_notes || '',
       consent_signed: p.consent_signed || false,
       consent_date: p.consent_date || '',
@@ -141,6 +163,17 @@ export function Patients({ data }) {
       address_zip: form.address_zip || null,
       start_date: form.start_date || null,
       chief_complaint: form.chief_complaint || null,
+      hda: form.hda || null,
+      previous_surgeries: form.previous_surgeries || null,
+      hospitalizations: form.hospitalizations || null,
+      chronic_diseases: form.chronic_diseases || null,
+      allergies: form.allergies || null,
+      current_medications: form.current_medications || null,
+      smoking: form.smoking || null,
+      alcohol: form.alcohol || null,
+      physical_activity: form.physical_activity || null,
+      family_history: form.family_history || null,
+      gynecological_history: form.gynecological_history || null,
       clinical_notes: form.clinical_notes || null,
       consent_signed: form.consent_signed,
       consent_date: form.consent_signed ? (form.consent_date || null) : null,
@@ -456,10 +489,23 @@ function DadosTab({ patient }) {
         <Field label="Queixa principal" value={patient.chief_complaint} />
       </Section>
 
-      {patient.clinical_notes && (
+      {(patient.hda || patient.previous_surgeries || patient.hospitalizations || patient.chronic_diseases || patient.allergies || patient.current_medications || patient.smoking || patient.alcohol || patient.physical_activity || patient.family_history || patient.gynecological_history || patient.clinical_notes) && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>Anamnese / Notas clínicas</div>
-          <div style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{patient.clinical_notes}</div>
+          <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Anamnese</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {patient.hda && <AnamneseField label="HDA" value={patient.hda} />}
+            {patient.chronic_diseases && <AnamneseField label="Doenças crônicas" value={patient.chronic_diseases} />}
+            {patient.allergies && <AnamneseField label="Alergias" value={patient.allergies} />}
+            {patient.current_medications && <AnamneseField label="Medicamentos em uso" value={patient.current_medications} />}
+            {patient.previous_surgeries && <AnamneseField label="Cirurgias anteriores" value={patient.previous_surgeries} />}
+            {patient.hospitalizations && <AnamneseField label="Internações" value={patient.hospitalizations} />}
+            {patient.smoking && <AnamneseField label="Tabagismo" value={patient.smoking} />}
+            {patient.alcohol && <AnamneseField label="Etilismo" value={patient.alcohol} />}
+            {patient.physical_activity && <AnamneseField label="Atividade física" value={patient.physical_activity} />}
+            {patient.family_history && <AnamneseField label="Antecedentes familiares" value={patient.family_history} />}
+            {patient.gynecological_history && <AnamneseField label="Antecedentes ginecológicos" value={patient.gynecological_history} />}
+            {patient.clinical_notes && <AnamneseField label="Observações gerais" value={patient.clinical_notes} />}
+          </div>
         </div>
       )}
 
@@ -570,20 +616,36 @@ function PatientForm({ form, setForm, onSave, onCancel, saving }) {
       </section>
 
       <section>
-        <SectionTitle>Informações clínicas</SectionTitle>
+        <SectionTitle>Clínico</SectionTitle>
         <div style={grid}>
           {f('start_date', 'Início do acompanhamento', { type: 'date' })}
           {f('chief_complaint', 'Queixa principal', { placeholder: 'Motivo da busca pelo atendimento' })}
         </div>
-        <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column' }}>
-          <label style={base.label}>Anamnese / Notas clínicas (opcional)</label>
-          <textarea
-            value={form.clinical_notes}
-            onChange={e => setForm(f => ({ ...f, clinical_notes: e.target.value }))}
-            placeholder="Histórico relevante, medicamentos em uso, observações gerais…"
-            rows={3}
-            style={{ ...base.input, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
-          />
+      </section>
+
+      <section>
+        <SectionTitle>Anamnese</SectionTitle>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Textarea field="hda" label="HDA — História da doença atual" placeholder="Descreva o histórico e evolução da queixa principal…" form={form} setForm={setForm} />
+          <div style={grid}>
+            {f('chronic_diseases', 'Doenças crônicas', { placeholder: 'HAS, DM, hipotireoidismo…' })}
+            {f('allergies', 'Alergias', { placeholder: 'Medicamentos, látex, outros…' })}
+          </div>
+          <Textarea field="current_medications" label="Medicamentos em uso" placeholder="Nome, dose e frequência de cada medicamento…" form={form} setForm={setForm} rows={2} />
+          <div style={grid}>
+            {f('previous_surgeries', 'Cirurgias anteriores', { placeholder: 'Ex.: apendicectomia 2010, colecistectomia 2018…' })}
+            {f('hospitalizations', 'Internações', { placeholder: 'Motivo e ano…' })}
+          </div>
+          <div style={grid}>
+            {f('smoking', 'Tabagismo', { placeholder: 'Nunca / Ex-tabagista (X anos) / Ativo (X cigarros/dia)' })}
+            {f('alcohol', 'Etilismo', { placeholder: 'Não / Social / Frequente' })}
+            {f('physical_activity', 'Atividade física', { placeholder: 'Tipo, frequência e intensidade…' })}
+          </div>
+          <div style={grid}>
+            {f('family_history', 'Antecedentes familiares', { placeholder: 'Doenças cardiovasculares, câncer, diabetes…' })}
+            {f('gynecological_history', 'Antecedentes ginecológicos', { placeholder: 'G P A, última menstruação, contraceptivos…' })}
+          </div>
+          <Textarea field="clinical_notes" label="Observações gerais (opcional)" placeholder="Outras informações relevantes…" form={form} setForm={setForm} rows={2} />
         </div>
       </section>
 
@@ -627,6 +689,30 @@ function SectionTitle({ children }) {
   return (
     <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
       {children}
+    </div>
+  )
+}
+
+function Textarea({ field, label, placeholder, form, setForm, rows = 3 }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <label style={base.label}>{label}</label>
+      <textarea
+        value={form[field]}
+        onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+        placeholder={placeholder}
+        rows={rows}
+        style={{ ...base.input, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
+      />
+    </div>
+  )
+}
+
+function AnamneseField({ label, value }) {
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px' }}>
+      <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: C.textSub, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{value}</div>
     </div>
   )
 }
