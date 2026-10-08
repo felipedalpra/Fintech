@@ -665,15 +665,27 @@ function FinanceiroTab({ surgeries, consultations, total }) {
   )
 }
 
+const FORM_STEPS = [
+  { id: 'identificacao', label: 'Identificação' },
+  { id: 'contato',       label: 'Contato' },
+  { id: 'endereco',      label: 'Endereço' },
+  { id: 'clinico',       label: 'Clínico' },
+  { id: 'anamnese',      label: 'Anamnese' },
+  { id: 'tcle',          label: 'TCLE' },
+  { id: 'revisao',       label: 'Revisão' },
+]
+
 function PatientForm({ form, setForm, onSave, onCancel, saving }) {
+  const [step, setStep] = useState(0)
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const grid = { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }
-  const f = (field, label, opts = {}) => (
+
+  const fi = (field, label, opts = {}) => (
     <FInput
       key={field}
       label={label}
       value={form[field]}
-      onChange={v => setForm(f => ({ ...f, [field]: opts.type === 'checkbox' ? v : v }))}
+      onChange={v => setForm(f => ({ ...f, [field]: v }))}
       type={opts.type || 'text'}
       placeholder={opts.placeholder}
       options={opts.options}
@@ -681,109 +693,220 @@ function PatientForm({ form, setForm, onSave, onCancel, saving }) {
     />
   )
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <section>
-        <SectionTitle>Identificação</SectionTitle>
+  const isLast = step === FORM_STEPS.length - 1
+  const canSave = form.full_name.trim()
+
+  const stepContent = {
+    identificacao: (
+      <div style={grid}>
+        {fi('full_name', 'Nome completo', { required: true, placeholder: 'Nome completo do paciente' })}
+        {fi('cpf', 'CPF', { placeholder: '000.000.000-00' })}
+        {fi('date_of_birth', 'Data de nascimento', { type: 'date' })}
+        {fi('sex', 'Sexo', { options: SEX_OPTIONS })}
+        {fi('civil_status', 'Estado civil', { options: CIVIL_STATUS_OPTIONS })}
+        {fi('profession', 'Profissão', { placeholder: 'Ex.: Professora, Engenheiro…' })}
+      </div>
+    ),
+    contato: (
+      <div style={grid}>
+        {fi('phone', 'Telefone', { placeholder: '(11) 99999-9999' })}
+        {fi('email', 'E-mail', { type: 'email', placeholder: 'email@exemplo.com' })}
+        {fi('emergency_contact_name', 'Contato de emergência', { placeholder: 'Nome' })}
+        {fi('emergency_contact_phone', 'Telefone de emergência', { placeholder: '(11) 99999-9999' })}
+      </div>
+    ),
+    endereco: (
+      <div style={grid}>
+        {fi('address_zip', 'CEP', { placeholder: '00000-000' })}
+        {fi('address_street', 'Logradouro', { placeholder: 'Rua, Av., Praça…' })}
+        {fi('address_number', 'Número', { placeholder: '123' })}
+        {fi('address_complement', 'Complemento', { placeholder: 'Apto, Bloco…' })}
+        {fi('address_district', 'Bairro')}
+        {fi('address_city', 'Cidade')}
+        {fi('address_state', 'UF', { placeholder: 'SP' })}
+      </div>
+    ),
+    clinico: (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={grid}>
-          {f('full_name', 'Nome completo', { required: true, placeholder: 'Nome completo do paciente' })}
-          {f('cpf', 'CPF', { placeholder: '000.000.000-00' })}
-          {f('date_of_birth', 'Data de nascimento', { type: 'date' })}
-          {f('sex', 'Sexo', { options: SEX_OPTIONS })}
-          {f('civil_status', 'Estado civil', { options: CIVIL_STATUS_OPTIONS })}
-          {f('profession', 'Profissão', { placeholder: 'Ex.: Professora, Engenheiro…' })}
+          {fi('start_date', 'Início do acompanhamento', { type: 'date' })}
+          {fi('chief_complaint', 'Queixa principal', { placeholder: 'Motivo da busca pelo atendimento' })}
         </div>
-      </section>
-
-      <section>
-        <SectionTitle>Contato</SectionTitle>
+      </div>
+    ),
+    anamnese: (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <AutoTextarea field="hda" label="HDA — História da doença atual" placeholder="Descreva o histórico e evolução da queixa principal…" form={form} setForm={setForm} />
         <div style={grid}>
-          {f('phone', 'Telefone', { placeholder: '(11) 99999-9999' })}
-          {f('email', 'E-mail', { type: 'email', placeholder: 'email@exemplo.com' })}
-          {f('emergency_contact_name', 'Contato de emergência', { placeholder: 'Nome' })}
-          {f('emergency_contact_phone', 'Telefone de emergência', { placeholder: '(11) 99999-9999' })}
+          {fi('chronic_diseases', 'Doenças crônicas', { placeholder: 'HAS, DM, hipotireoidismo…' })}
+          {fi('allergies', 'Alergias', { placeholder: 'Medicamentos, látex, outros…' })}
         </div>
-      </section>
-
-      <section>
-        <SectionTitle>Endereço</SectionTitle>
+        <AutoTextarea field="current_medications" label="Medicamentos em uso" placeholder="Nome, dose e frequência de cada medicamento…" form={form} setForm={setForm} />
         <div style={grid}>
-          {f('address_zip', 'CEP', { placeholder: '00000-000' })}
-          {f('address_street', 'Logradouro', { placeholder: 'Rua, Av., Praça…' })}
-          {f('address_number', 'Número', { placeholder: '123' })}
-          {f('address_complement', 'Complemento', { placeholder: 'Apto, Bloco…' })}
-          {f('address_district', 'Bairro')}
-          {f('address_city', 'Cidade')}
-          {f('address_state', 'UF', { placeholder: 'SP' })}
+          {fi('previous_surgeries', 'Cirurgias anteriores', { placeholder: 'Ex.: apendicectomia 2010, colecistectomia 2018…' })}
+          {fi('hospitalizations', 'Internações', { placeholder: 'Motivo e ano…' })}
         </div>
-      </section>
-
-      <section>
-        <SectionTitle>Clínico</SectionTitle>
         <div style={grid}>
-          {f('start_date', 'Início do acompanhamento', { type: 'date' })}
-          {f('chief_complaint', 'Queixa principal', { placeholder: 'Motivo da busca pelo atendimento' })}
+          {fi('smoking', 'Tabagismo', { placeholder: 'Nunca / Ex-tabagista (X anos) / Ativo (X cigarros/dia)' })}
+          {fi('alcohol', 'Etilismo', { placeholder: 'Não / Social / Frequente' })}
+          {fi('physical_activity', 'Atividade física', { placeholder: 'Tipo, frequência e intensidade…' })}
         </div>
-      </section>
-
-      <section>
-        <SectionTitle>Anamnese</SectionTitle>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Textarea field="hda" label="HDA — História da doença atual" placeholder="Descreva o histórico e evolução da queixa principal…" form={form} setForm={setForm} />
-          <div style={grid}>
-            {f('chronic_diseases', 'Doenças crônicas', { placeholder: 'HAS, DM, hipotireoidismo…' })}
-            {f('allergies', 'Alergias', { placeholder: 'Medicamentos, látex, outros…' })}
-          </div>
-          <Textarea field="current_medications" label="Medicamentos em uso" placeholder="Nome, dose e frequência de cada medicamento…" form={form} setForm={setForm} rows={2} />
-          <div style={grid}>
-            {f('previous_surgeries', 'Cirurgias anteriores', { placeholder: 'Ex.: apendicectomia 2010, colecistectomia 2018…' })}
-            {f('hospitalizations', 'Internações', { placeholder: 'Motivo e ano…' })}
-          </div>
-          <div style={grid}>
-            {f('smoking', 'Tabagismo', { placeholder: 'Nunca / Ex-tabagista (X anos) / Ativo (X cigarros/dia)' })}
-            {f('alcohol', 'Etilismo', { placeholder: 'Não / Social / Frequente' })}
-            {f('physical_activity', 'Atividade física', { placeholder: 'Tipo, frequência e intensidade…' })}
-          </div>
-          <div style={grid}>
-            {f('family_history', 'Antecedentes familiares', { placeholder: 'Doenças cardiovasculares, câncer, diabetes…' })}
-            {f('gynecological_history', 'Antecedentes ginecológicos', { placeholder: 'G P A, última menstruação, contraceptivos…' })}
-          </div>
-          <Textarea field="clinical_notes" label="Observações gerais (opcional)" placeholder="Outras informações relevantes…" form={form} setForm={setForm} rows={2} />
+        <div style={grid}>
+          {fi('family_history', 'Antecedentes familiares', { placeholder: 'Doenças cardiovasculares, câncer, diabetes…' })}
+          {fi('gynecological_history', 'Antecedentes ginecológicos', { placeholder: 'G P A, última menstruação, contraceptivos…' })}
         </div>
-      </section>
-
-      <section>
-        <SectionTitle>TCLE</SectionTitle>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: C.surface, borderRadius: 10, border: `1px solid ${C.border}` }}>
+        <AutoTextarea field="clinical_notes" label="Observações gerais (opcional)" placeholder="Outras informações relevantes…" form={form} setForm={setForm} />
+      </div>
+    ),
+    tcle: (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 16px', background: C.surface, borderRadius: 10, border: `1px solid ${C.border}` }}>
           <input
             type="checkbox"
             id="consent_signed"
             checked={form.consent_signed}
             onChange={e => setForm(f => ({ ...f, consent_signed: e.target.checked }))}
-            style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }}
+            style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
           />
-          <label htmlFor="consent_signed" style={{ fontSize: 13, color: C.text, cursor: 'pointer' }}>
-            Termo de Consentimento Livre e Esclarecido assinado
-          </label>
-          {form.consent_signed && (
-            <div style={{ marginLeft: 'auto' }}>
-              <FInput
-                label="Data da assinatura"
-                type="date"
-                value={form.consent_date}
-                onChange={v => setForm(f => ({ ...f, consent_date: v }))}
-              />
+          <div>
+            <label htmlFor="consent_signed" style={{ fontSize: 13, color: C.text, cursor: 'pointer', fontWeight: 600 }}>
+              Termo de Consentimento Livre e Esclarecido assinado
+            </label>
+            <div style={{ fontSize: 12, color: C.textDim, marginTop: 4 }}>
+              O paciente foi informado sobre os procedimentos, riscos e benefícios e concordou com o tratamento.
             </div>
+          </div>
+        </div>
+        {form.consent_signed && (
+          <div style={{ maxWidth: 240 }}>
+            <FInput label="Data da assinatura" type="date" value={form.consent_date} onChange={v => setForm(f => ({ ...f, consent_date: v }))} />
+          </div>
+        )}
+      </div>
+    ),
+    revisao: <RevisaoForm form={form} />,
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {/* Step pills */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, flexWrap: 'wrap' }}>
+        {FORM_STEPS.map((s, i) => {
+          const active = i === step
+          const done = i < step
+          return (
+            <button
+              key={s.id}
+              onClick={() => setStep(i)}
+              style={{
+                background: active ? C.accent : done ? C.accent + '20' : C.surface,
+                color: active ? '#fff' : done ? C.accent : C.textDim,
+                border: `1px solid ${active ? C.accent : done ? C.accent + '50' : C.border}`,
+                borderRadius: 99,
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: active ? 700 : 500,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all 0.15s',
+              }}
+            >
+              {i + 1}. {s.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Step content */}
+      <div style={{ minHeight: 180 }}>
+        {stepContent[FORM_STEPS[step].id]}
+      </div>
+
+      {/* Navigation */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 24, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn variant="ghost" onClick={onCancel}>Cancelar</Btn>
+          {step > 0 && <Btn variant="ghost" onClick={() => setStep(s => s - 1)}>← Anterior</Btn>}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!isLast && <Btn onClick={() => setStep(s => s + 1)}>Próximo →</Btn>}
+          {isLast && (
+            <Btn onClick={onSave} disabled={saving || !canSave}>
+              {saving ? 'Salvando…' : 'Salvar paciente'}
+            </Btn>
           )}
         </div>
-      </section>
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 8 }}>
-        <Btn variant="ghost" onClick={onCancel}>Cancelar</Btn>
-        <Btn onClick={onSave} disabled={saving || !form.full_name.trim()}>
-          {saving ? 'Salvando…' : 'Salvar paciente'}
-        </Btn>
       </div>
+    </div>
+  )
+}
+
+function RevisaoForm({ form }) {
+  const sexLabel = { F: 'Feminino', M: 'Masculino', outro: 'Outro' }
+  const civilLabel = { solteiro: 'Solteiro(a)', casado: 'Casado(a)', divorciado: 'Divorciado(a)', viuvo: 'Viúvo(a)', uniao_estavel: 'União estável' }
+
+  function Block({ title, fields }) {
+    const visible = fields.filter(f => f.value)
+    if (!visible.length) return null
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8, paddingBottom: 4, borderBottom: `1px solid ${C.border}` }}>{title}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px' }}>
+          {visible.map(f => (
+            <div key={f.label}>
+              <div style={{ fontSize: 10, color: C.textDim, marginBottom: 1 }}>{f.label}</div>
+              <div style={{ fontSize: 13, color: C.text, whiteSpace: 'pre-wrap' }}>{f.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <Block title="Identificação" fields={[
+        { label: 'Nome', value: form.full_name },
+        { label: 'CPF', value: form.cpf },
+        { label: 'Nascimento', value: form.date_of_birth ? formatDateBR(form.date_of_birth) : '' },
+        { label: 'Sexo', value: sexLabel[form.sex] || '' },
+        { label: 'Estado civil', value: civilLabel[form.civil_status] || '' },
+        { label: 'Profissão', value: form.profession },
+      ]} />
+      <Block title="Contato" fields={[
+        { label: 'Telefone', value: form.phone },
+        { label: 'E-mail', value: form.email },
+        { label: 'Emergência', value: form.emergency_contact_name },
+        { label: 'Tel. emergência', value: form.emergency_contact_phone },
+      ]} />
+      <Block title="Endereço" fields={[
+        { label: 'Logradouro', value: [form.address_street, form.address_number].filter(Boolean).join(', ') },
+        { label: 'Bairro', value: form.address_district },
+        { label: 'Cidade / UF', value: [form.address_city, form.address_state].filter(Boolean).join(' — ') },
+        { label: 'CEP', value: form.address_zip },
+      ]} />
+      <Block title="Clínico" fields={[
+        { label: 'Início', value: form.start_date ? formatDateBR(form.start_date) : '' },
+        { label: 'Queixa principal', value: form.chief_complaint },
+      ]} />
+      <Block title="Anamnese" fields={[
+        { label: 'HDA', value: form.hda },
+        { label: 'Doenças crônicas', value: form.chronic_diseases },
+        { label: 'Alergias', value: form.allergies },
+        { label: 'Medicamentos', value: form.current_medications },
+        { label: 'Cirurgias anteriores', value: form.previous_surgeries },
+        { label: 'Internações', value: form.hospitalizations },
+        { label: 'Tabagismo', value: form.smoking },
+        { label: 'Etilismo', value: form.alcohol },
+        { label: 'Atividade física', value: form.physical_activity },
+        { label: 'Antec. familiares', value: form.family_history },
+        { label: 'Antec. ginecológicos', value: form.gynecological_history },
+        { label: 'Observações', value: form.clinical_notes },
+      ]} />
+      <Block title="TCLE" fields={[
+        { label: 'Status', value: form.consent_signed ? 'Assinado' : 'Pendente' },
+        { label: 'Data', value: form.consent_date ? formatDateBR(form.consent_date) : '' },
+      ]} />
     </div>
   )
 }
@@ -796,16 +919,23 @@ function SectionTitle({ children }) {
   )
 }
 
-function Textarea({ field, label, placeholder, form, setForm, rows = 3 }) {
+function AutoTextarea({ field, label, placeholder, form, setForm }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = 'auto'
+      ref.current.style.height = Math.max(80, ref.current.scrollHeight) + 'px'
+    }
+  }, [form[field]])
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <label style={base.label}>{label}</label>
       <textarea
+        ref={ref}
         value={form[field]}
         onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
         placeholder={placeholder}
-        rows={rows}
-        style={{ ...base.input, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
+        style={{ ...base.input, resize: 'none', fontFamily: 'inherit', lineHeight: 1.6, overflow: 'hidden' }}
       />
     </div>
   )

@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (5)
+### Changed
+- `PatientForm` reescrito como formulário em etapas (stepper): pills de navegação no topo com as seções **Identificação → Contato → Endereço → Clínico → Anamnese → TCLE → Revisão**. Cada etapa exibe apenas os campos daquela seção; botões Anterior/Próximo navegam entre elas; botão "Salvar paciente" aparece somente na última etapa.
+- Etapa final **Revisão** exibe um resumo somente-leitura de todos os dados preenchidos, agrupados por seção, antes de confirmar o cadastro.
+- Campos de texto longo (HDA, medicamentos, observações, etc.) agora crescem automaticamente conforme o usuário digita — altura calculada via `scrollHeight` sem barra de rolagem visível.
+
 ## [Unreleased] - 2026-10-08 (4)
 ### Changed
 - Drawer do paciente reestruturado com 5 abas: **Resumo**, **Dados**, **Anamnese**, **Prontuário**, **Financeiro**.
