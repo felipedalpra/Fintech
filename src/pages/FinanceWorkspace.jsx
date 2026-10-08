@@ -99,7 +99,7 @@ const SUBTITLES = {
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
-  patients:'Cadastro CFP, prontuário eletrônico e histórico financeiro.',
+  patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
 }
 
 const PAGES = {
