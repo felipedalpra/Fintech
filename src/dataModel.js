@@ -101,6 +101,7 @@ export function normalizeData(data) {
       id:normalizeUuid(item.id, 'extra_revenue'),
       competenceDate:item.competenceDate || item.date || '',
       dueDate:item.dueDate || item.date || '',
+      originLabel:item.originLabel || '',
     })) : [],
     expenses: Array.isArray(data?.expenses)
       ? data.expenses.map(expense => ({
@@ -113,6 +114,7 @@ export function normalizeData(data) {
           status:expense.status || (expense.paymentDate ? 'pago' : 'aberto'),
           costCenter:expense.costCenter || '',
           competenceDate:expense.competenceDate || expense.dueDate || expense.date || '',
+          originLabel:expense.originLabel || '',
         }))
       : [],
     assets: Array.isArray(data?.assets) ? data.assets.map(item => ({

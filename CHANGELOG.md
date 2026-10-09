@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (24)
+### Added
+- Campo "Origem" (texto livre com sugestões, igual ao Centro de custo) em nova receita e nova despesa. Permite marcar de onde vem o lançamento (ex: Indicação, Instagram, Convênio X). Aparece na coluna Origem das abas Entradas/Saídas e no filtro. Lançamentos automáticos (cirurgia, consulta, produto) seguem com a origem do sistema. SQL em `supabase/origin_label_migration.sql` (coluna `origin_label` em `extra_revenues` e `expenses`). `Finance.jsx`, `dataModel.js`, `financeStore.js`, `financialMetrics.js`.
+
 ## [Unreleased] - 2026-10-09 (23)
 ### Added
 - Regime de competência explícito em toda a plataforma. Novos campos **data de competência** (quando o fato entra na DRE) e **data de vencimento** (quando a cobrança vence) em cirurgias, consultas, despesas, receitas extras, vendas e compras de produto. SQL em `supabase/competence_date_migration.sql` (colunas `competence_date`/`due_date` + backfill).

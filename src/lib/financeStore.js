@@ -201,6 +201,7 @@ async function fetchRelationalData(userId) {
       costCenter:item.cost_center || '',
       competenceDate:item.competence_date || item.date || '',
       dueDate:item.due_date || item.date || '',
+      originLabel:item.origin_label || '',
     })),
     expenses:(expensesResult.data || []).map(item => ({
       id:item.id,
@@ -212,6 +213,7 @@ async function fetchRelationalData(userId) {
       status:item.status || 'aberto',
       costCenter:item.cost_center || '',
       competenceDate:item.competence_date || item.due_date || '',
+      originLabel:item.origin_label || '',
     })),
     assets:(assetsResult.data || []).map(item => ({
       id:item.id,
@@ -354,6 +356,7 @@ function mapExtraRevenuesRows(userId, data) {
     competence_date:item.competenceDate || item.date || null,
     due_date:item.dueDate || item.date || null,
     cost_center:item.costCenter || null,
+    origin_label:item.originLabel || null,
   }))
 }
 
@@ -369,6 +372,7 @@ function mapExpensesRows(userId, data) {
     payment_date:item.paymentDate || null,
     status:item.status || 'aberto',
     cost_center:item.costCenter || null,
+    origin_label:item.originLabel || null,
   }))
 }
 

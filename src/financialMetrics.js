@@ -316,13 +316,13 @@ export function buildMetrics(rawData, options = {}) {
 
   extraRevenues.forEach(item => {
     if (inRange(item.date, startDate, endDate) && onOrBefore(item.date, balanceDate)) {
-      entriesFinancial.push({ id:`entry-extra-${item.id}`, description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.date, origin:'outra_receita', referenceId:item.id })
+      entriesFinancial.push({ id:`entry-extra-${item.id}`, description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.date, origin:'outra_receita', originLabel:item.originLabel || '', referenceId:item.id })
     }
   })
 
   expenses.forEach(item => {
     if (item.status === 'pago' && inRange(item.paymentDate || item.dueDate, startDate, endDate)) {
-      exitsFinancial.push({ id:`exit-expense-${item.id}`, description:item.description, category:item.category, value:item.value || 0, date:item.paymentDate || item.dueDate, origin:'despesa', referenceId:item.id })
+      exitsFinancial.push({ id:`exit-expense-${item.id}`, description:item.description, category:item.category, value:item.value || 0, date:item.paymentDate || item.dueDate, origin:'despesa', originLabel:item.originLabel || '', referenceId:item.id })
     }
   })
 

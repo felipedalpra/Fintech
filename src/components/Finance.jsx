@@ -32,8 +32,12 @@ const DEFAULT_COST_CENTERS = [
   'Recursos Humanos',
   'Outros',
 ]
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), competenceDate:today(), dueDate:today(), costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), competenceDate:today(), dueDate:today(), costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+
+// Origem exibida: rótulo livre preenchido pelo usuário (ex: "Indicação") ou,
+// na falta dele, a origem automática do sistema (ex: "cirurgia", "despesa").
+const resolveOrigin = item => (String(item.originLabel || '').trim() || String(item.origin || ''))
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
@@ -206,6 +210,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       ...DEFAULT_COST_CENTERS.map(l => ({ v:l, l })),
       ...[...custom].map(l => ({ v:l, l })),
     ]
+  }, [data?.extraRevenues, data?.expenses])
+
+  const allOrigins = useMemo(() => {
+    const used = new Set()
+    for (const item of [...(data?.extraRevenues || []), ...(data?.expenses || [])]) {
+      const label = String(item.originLabel || '').trim()
+      if (label) used.add(label)
+    }
+    return [{ v:'', l:'Sem origem definida' }, ...[...used].sort().map(l => ({ v:l, l }))]
   }, [data?.extraRevenues, data?.expenses])
 
   useEffect(() => {
@@ -673,9 +686,9 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       const launchType = item.origin === 'recorrencia_receita' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
-      if (listFilters.origin !== 'all' && item.origin !== listFilters.origin) return false
+      if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
       if (!search) return true
-      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${item.origin || ''}`.toLowerCase()
+      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${resolveOrigin(item)}`.toLowerCase()
       return haystack.includes(search)
     })
   }, [m.entriesFinancial, listFilters])
@@ -686,7 +699,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       const launchType = item.origin === 'recorrencia_despesa' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
-      if (listFilters.origin !== 'all' && item.origin !== listFilters.origin) return false
+      if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
       if (!search) return true
       const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${item.origin || ''}`.toLowerCase()
       return haystack.includes(search)
@@ -724,12 +737,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const activeListFilterConfig = useMemo(() => {
     if (tab === 'entradas') {
       const categories = [...new Set(m.entriesFinancial.map(item => item.category).filter(Boolean))].sort()
-      const origins = [...new Set(m.entriesFinancial.map(item => item.origin).filter(Boolean))].sort()
+      const origins = [...new Set(m.entriesFinancial.map(item => resolveOrigin(item)).filter(Boolean))].sort()
       return { show:true, showStatus:false, categories, origins, statuses:[] }
     }
     if (tab === 'saidas') {
       const categories = [...new Set(m.exitsFinancial.map(item => item.category).filter(Boolean))].sort()
-      const origins = [...new Set(m.exitsFinancial.map(item => item.origin).filter(Boolean))].sort()
+      const origins = [...new Set(m.exitsFinancial.map(item => resolveOrigin(item)).filter(Boolean))].sort()
       return { show:true, showStatus:false, categories, origins, statuses:[] }
     }
     if (tab === 'receber') {
@@ -988,7 +1001,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           return {
             key:item.id,
             cells:[
-              formatDateBR(item.date), item.category, item.description, item.origin,
+              formatDateBR(item.date), item.category, item.description, resolveOrigin(item),
               <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>,
               <div style={{ display:'flex', gap:6 }}>
                 {sourceRecord && <Btn variant="ghost" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openEdit(editType, sourceRecord)}>Editar</Btn>}
@@ -997,7 +1010,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                   : <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
               </div>,
             ],
-            rawCells:[item.date, item.category, item.description, item.origin, item.value, removable ? 1 : 0],
+            rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, removable ? 1 : 0],
           }
         })} emptyMessage="Nenhuma entrada financeira no período." />
       </>}
@@ -1049,7 +1062,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               {removeBtn || <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
             </div>
           )
-          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, actionCell], rawCells:[item.date, item.category, item.description, item.origin, item.value, ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
+          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, resolveOrigin(item), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, actionCell], rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
         })} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
@@ -1312,6 +1325,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             </div>
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
+            <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
@@ -1349,6 +1363,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             </div>
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
+            <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
