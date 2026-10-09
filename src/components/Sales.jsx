@@ -4,6 +4,7 @@ import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 
 const PAYMENT_METHODS = [
@@ -50,6 +51,7 @@ function readDraft() {
 
 export function Sales({ data, setData }) {
   const { user } = useAuth()
+  const { ownerId } = useUserRole()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const STATUS_COLORS = {
@@ -380,7 +382,7 @@ export function Sales({ data, setData }) {
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:16 }}>
           <div style={{ gridColumn: '1 / -1' }}>
             <PatientSelector
-              userId={user?.id}
+              userId={ownerId || user?.id}
               value={form.patientId}
               onChange={(id, name) => setForm(current => ({ ...current, patientId: id, patient: name || current.patient }))}
             />

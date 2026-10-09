@@ -6,6 +6,7 @@ import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { ExportModal } from './ExportModal.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 import { supabase } from '../lib/supabase.js'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
@@ -131,6 +132,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   ]
   const { financialPrivacyMode } = useFinancialPrivacy()
   const { toast } = useToast()
+  const { ownerId } = useUserRole()
   const [tab, setTab] = useState(defaultTab)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
@@ -282,7 +284,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     const safeDay = form.recurrenceFrequency === 'semanal' ? Math.min(7, recurrenceDay) : Math.min(31, recurrenceDay)
 
     const payload = {
-      user_id:userData.user.id,
+      user_id: ownerId || userData.user.id,
       tipo,
       descricao:form.description,
       valor:Number(form.value || 0),

@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (19)
+### Fixed
+- Membros da clínica agora conseguem salvar recorrências, cirurgias via modal de recorrência em Finance, selecionar e criar pacientes em Cirurgias e em Consultas: `Recurrences.jsx`, `Finance.jsx`, `Sales.jsx`, `Consultations.jsx` agora usam `ownerId || user.id` em todos os writes e no `PatientSelector`.
+
 ## [Unreleased] - 2026-10-09 (18)
 ### Fixed
 - Membros da clínica (ex: Lunara/gestão) não conseguiam salvar pacientes nem cirurgias: `Patients.jsx` agora usa `ownerId` do contexto de role em vez de `user.id`, garantindo que inserts e queries usem o `user_id` do owner. `Patients.jsx`, `UserRoleContext.jsx`.

@@ -4,6 +4,7 @@ import { C } from '../theme.js'
 import { fmt, today } from '../utils.js'
 import { Badge, Btn, Card, ConfirmModal, FInput, Modal } from './UI.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 
 const EMPTY_FORM = {
   tipo:'despesa',
@@ -23,6 +24,7 @@ const CATEGORIAS_RECEITA = ['consulta', 'cirurgia', 'contrato', 'aluguel_equipam
 
 export function Recurrences() {
   const { toast } = useToast()
+  const { ownerId } = useUserRole()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -99,7 +101,7 @@ export function Recurrences() {
     }
 
     const payload = {
-      user_id:user.id,
+      user_id: ownerId || user.id,
       tipo:form.tipo,
       descricao:form.descricao.trim(),
       valor:Number(form.valor || 0),
