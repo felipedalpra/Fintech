@@ -353,6 +353,7 @@ function TeamSettings({ clinicId }) {
               value={inviteRole}
               onChange={setInviteRole}
               options={[
+                { v:'admin', l:'Administrador' },
                 { v:'gestao', l:'Gestão' },
                 { v:'equipe', l:'Equipe' },
               ]}
@@ -384,6 +385,7 @@ function TeamSettings({ clinicId }) {
                   onChange={e => changeRole(m.id, e.target.value)}
                   style={{ padding:'6px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}
                 >
+                  <option value="admin">Administrador</option>
                   <option value="gestao">Gestão</option>
                   <option value="equipe">Equipe</option>
                 </select>

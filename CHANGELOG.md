@@ -5,13 +5,15 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
-## [Unreleased] - 2026-10-09 (13)
+## [Unreleased] - 2026-10-09 (14)
 ### Fixed
 - Membros da clínica (ex: Lunara) agora enxergam os dados do dono (Vitoria) em vez de ERP vazio. `UserRoleContext` expõe `ownerId` (UUID do dono da clínica); `FinanceWorkspace` usa `ownerId` para carregar e salvar dados; `importLegacyDataIfNeeded` aceita `ownerId` como segundo parâmetro.
 - Carregamento de dados aguarda `ownerId` estar disponível antes de disparar (evita query com UUID errado).
 
 ### Added
 - Coluna `ownerId` no `UserRoleContext`, buscada da tabela `clinics` tanto para owners quanto para membros.
+- Controle de acesso por perfil (Admin / Gestão / Equipe): `canAccess()` agora protege tanto o sidebar quanto a rota direta — acesso não autorizado redireciona para `/app/dashboard`. Arquivo: `src/pages/FinanceWorkspace.jsx`.
+- Opção "Administrador" adicionada ao formulário de convite e ao select de alteração de perfil na aba Equipe. Arquivo: `src/components/Settings.jsx`.
 
 > **Requer SQL no Supabase** (atualizar RLS de todas as tabelas financeiras para aceitar membros via `data_owner_id()`):
 > ```sql

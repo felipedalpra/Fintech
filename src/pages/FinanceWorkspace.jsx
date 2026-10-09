@@ -659,7 +659,7 @@ export function FinanceWorkspace() {
   const google = useGoogleCalendarSync({ data:safeData, enabled:!loading })
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
-  if (!PAGES[page]) return <Navigate to="/app/dashboard" replace />
+  if (!PAGES[page] || !canAccess(page)) return <Navigate to="/app/dashboard" replace />
 
   const Page = PAGES[page]
   const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
