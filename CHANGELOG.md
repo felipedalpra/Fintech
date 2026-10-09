@@ -5,6 +5,19 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (13)
+### Fixed
+- Membros da clínica (ex: Lunara) agora enxergam os dados do dono (Vitoria) em vez de ERP vazio. `UserRoleContext` expõe `ownerId` (UUID do dono da clínica); `FinanceWorkspace` usa `ownerId` para carregar e salvar dados; `importLegacyDataIfNeeded` aceita `ownerId` como segundo parâmetro.
+- Carregamento de dados aguarda `ownerId` estar disponível antes de disparar (evita query com UUID errado).
+
+### Added
+- Coluna `ownerId` no `UserRoleContext`, buscada da tabela `clinics` tanto para owners quanto para membros.
+
+> **Requer SQL no Supabase** (atualizar RLS de todas as tabelas financeiras para aceitar membros via `data_owner_id()`):
+> ```sql
+> DO $$ DECLARE t text; tables text[] := ARRAY['procedures','products','surgeries','consultations','product_sales','product_purchases','extra_revenues','expenses','assets','liabilities','goals']; BEGIN FOREACH t IN ARRAY tables LOOP EXECUTE format('DROP POLICY IF EXISTS "%s own rows" ON public.%I', t, t); EXECUTE format('DROP POLICY IF EXISTS "clinic members access" ON public.%I', t); EXECUTE format('CREATE POLICY "clinic members access" ON public.%I USING (data_owner_id() = user_id) WITH CHECK (data_owner_id() = user_id)', t); END LOOP; END; $$;
+> ```
+
 ## [Unreleased] - 2026-10-09 (12)
 ### Changed
 - Sidebar "Conta ativa" agora exibe nome do usuário e nome da clínica (em vez de email). `UserRoleContext` passa a buscar e expor `clinicName`.

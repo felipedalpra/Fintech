@@ -23,6 +23,7 @@ export function UserRoleProvider({ children }) {
   const [role, setRole] = useState(null)
   const [clinicId, setClinicId] = useState(null)
   const [clinicName, setClinicName] = useState('')
+  const [ownerId, setOwnerId] = useState(null)
   const [isOwner, setIsOwner] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -52,6 +53,7 @@ export function UserRoleProvider({ children }) {
       if (ownedClinic) {
         setClinicId(ownedClinic.id)
         setClinicName(ownedClinic.name || '')
+        setOwnerId(user.id)
         setRole('admin')
         setIsOwner(true)
         setLoading(false)
@@ -73,11 +75,12 @@ export function UserRoleProvider({ children }) {
         setIsOwner(false)
         const { data: memberClinic } = await supabase
           .from('clinics')
-          .select('name')
+          .select('id, name, owner_id')
           .eq('id', membership.clinic_id)
           .maybeSingle()
         if (!mounted) return
         setClinicName(memberClinic?.name || '')
+        setOwnerId(memberClinic?.owner_id || null)
         setLoading(false)
         return
       }
@@ -94,6 +97,7 @@ export function UserRoleProvider({ children }) {
       if (!error && newClinic) {
         setClinicId(newClinic.id)
         setClinicName(newClinic.name || '')
+        setOwnerId(user.id)
         setRole('admin')
         setIsOwner(true)
       }
@@ -109,13 +113,14 @@ export function UserRoleProvider({ children }) {
     role,
     clinicId,
     clinicName,
+    ownerId,
     isOwner,
     loading,
     canAccess(sectionId) {
       if (!role) return false
       return (ROLE_ACCESS[role] ?? []).includes(sectionId)
     },
-  }), [role, clinicId, clinicName, isOwner, loading])
+  }), [role, clinicId, clinicName, ownerId, isOwner, loading])
 
   return (
     <UserRoleContext.Provider value={value}>

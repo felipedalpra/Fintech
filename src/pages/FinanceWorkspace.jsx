@@ -491,7 +491,7 @@ export function FinanceWorkspace() {
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
   const { mode, toggleTheme } = useTheme()
-  const { canAccess, clinicName } = useUserRole()
+  const { canAccess, clinicName, ownerId } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -534,7 +534,7 @@ export function FinanceWorkspace() {
         }
       }
       try {
-        const nextData = await importLegacyDataIfNeeded(user)
+        const nextData = await importLegacyDataIfNeeded(user, ownerId || user.id)
         if (!active) return
         setRaw(draftData || nextData)
         hydratedRef.current = true
@@ -547,12 +547,11 @@ export function FinanceWorkspace() {
         if (active) setLoading(false)
       }
     }
-    if (user?.id) loadRemoteData()
+    if (user?.id && ownerId) loadRemoteData()
     return () => { active = false }
-    // Depende so do id: o Supabase emite um novo objeto user ao voltar para a aba,
-    // e isso nao deve recarregar tudo nem desmontar as telas/modais abertos.
+    // Depende do id e do ownerId: ownerId vem do UserRoleContext e pode ser de outro usuario (membro de clinica)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
+  }, [user?.id, ownerId])
 
   useEffect(() => {
     if (!user?.id || !hydratedRef.current) return
@@ -560,7 +559,7 @@ export function FinanceWorkspace() {
     async function persist() {
       try {
         setSaveError('')
-        await saveFinanceData(user.id, data)
+        await saveFinanceData(ownerId || user.id, data)
       } catch (error) {
         if (active) setSaveError(error.message || 'Nao foi possivel sincronizar os dados.')
       }

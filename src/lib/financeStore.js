@@ -450,15 +450,15 @@ export async function saveFinanceData(userId, financeData) {
   await insertAuditLog(userId, 'sync_finance_data', { records:RELATIONAL_TABLES.length })
 }
 
-export async function importLegacyDataIfNeeded(user) {
+export async function importLegacyDataIfNeeded(user, ownerId = user.id) {
   const alreadyMigrated = localStorage.getItem(migratedKey(user.id)) === '1'
-  const remoteData = await fetchFinanceData(user.id)
+  const remoteData = await fetchFinanceData(ownerId)
 
   if (!isDataEmpty(remoteData) || alreadyMigrated) {
     return remoteData
   }
 
-  const legacyRemote = await fetchLegacyPayload(user.id)
+  const legacyRemote = await fetchLegacyPayload(ownerId)
   const localUserData = getLocalUserDataByEmail(user.email)
   const legacyAppData = readJson(LEGACY_APP_KEY, null)
   const importCandidate = !isDataEmpty(normalizeData(legacyRemote))
@@ -478,7 +478,7 @@ export async function importLegacyDataIfNeeded(user) {
     return remoteData
   }
 
-  await saveFinanceData(user.id, normalized)
+  await saveFinanceData(ownerId, normalized)
   localStorage.setItem(migratedKey(user.id), '1')
   return normalized
 }
