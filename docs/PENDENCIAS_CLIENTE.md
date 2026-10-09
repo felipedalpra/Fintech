@@ -84,8 +84,8 @@
 ### Controle de Acesso por Perfil (Fase 1 — pendente)
 - [x] Emails de Jonas (jonassg1996@gmail.com), Sumary (sumaryoliveira72@gmail.com), Jessica (jessycachriis26@gmail.com) e Vitoria (vitoria.ribeiroo.cardoso@gmail.com) — ✅ recebidos em 2026-10-08
 - [x] Permissões por módulo confirmadas pela Dra. Vitoria em 2026-10-08 — ✅ documentadas no CLAUDE.md e spec
-- [ ] **Email de Augusto** — ainda não recebido
-- [ ] **Email de Lunara** — ainda não recebido
+- [x] **Email de Augusto** — Draugustoribeiroplastica@gmail.com ✅ recebido em 2026-10-08
+- [x] **Email de Lunara** — luhbentom@gmail.com ✅ recebido em 2026-10-08 · já tem conta ativa na plataforma
 - [ ] Confirmar se **Jonas** pode ver o valor total do paciente no drawer, ou apenas cadastrar (sem visualizar histórico financeiro do paciente)
 
 ---
@@ -96,7 +96,7 @@
 |------|------|--------|
 | Perfis de acesso (Admin / Gestão / Equipe) e quem é cada um | 2026-10-08 | ✅ |
 | Permissões detalhadas por módulo (financeiro, WhatsApp, etc.) | 2026-10-08 | ✅ |
-| Emails de Dra. Vitoria, Jonas, Sumary e Jessica | 2026-10-08 | ✅ |
+| Emails de toda a equipe (Vitoria, Augusto, Lunara, Jonas, Sumary, Jessica) | 2026-10-08 | ✅ |
 | WhatsApp Business obrigatório (não pessoal) | 2026-10-08 | ✅ |
 | Escopo excluído: receituário de controle especial (azul/amarela) | — | ✅ |
 | Escopo excluído: histórico clínico antigo do Amigo | — | ✅ |

@@ -17,8 +17,8 @@ Antes de qualquer alteração, leia `PROJECT_MEMORY.md` e `SYSTEM_RULES.md`.
 | Perfil | Quem | Email |
 |--------|------|-------|
 | Administrador | Dra. Vitoria Ribeiro | vitoria.ribeiroo.cardoso@gmail.com |
-| Administrador | Augusto | *(email pendente)* |
-| Gestão | Lunara | *(email pendente)* |
+| Administrador | Augusto | Draugustoribeiroplastica@gmail.com |
+| Gestão | Lunara | luhbentom@gmail.com — **já tem conta ativa, usando a plataforma** |
 | Equipe | Jonas (concierge) | jonassg1996@gmail.com |
 | Equipe | Sumary (secretária) | sumaryoliveira72@gmail.com |
 | Equipe | Jessica | jessycachriis26@gmail.com |
