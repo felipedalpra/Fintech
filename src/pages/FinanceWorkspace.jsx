@@ -27,6 +27,7 @@ import { Patients } from '../components/Patients.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
 import { useGoogleCalendarSync } from '../lib/useGoogleCalendarSync.js'
@@ -132,12 +133,12 @@ function getDraftStorageKey(userId) {
 }
 
 // ---- QuickSearchModal ----
-function QuickSearchModal({ open, onClose, navigate }) {
+function QuickSearchModal({ open, onClose, navigate, sections }) {
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef(null)
 
-  const allItems = useMemo(() => NAV_SECTIONS.flatMap(s => s.items), [])
+  const allItems = useMemo(() => (sections ?? NAV_SECTIONS).flatMap(s => s.items), [sections])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -490,6 +491,7 @@ export function FinanceWorkspace() {
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
   const { mode, toggleTheme } = useTheme()
+  const { canAccess } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -667,7 +669,10 @@ export function FinanceWorkspace() {
     `${summary.consultationsCompleted} consulta(s)`,
     billing?.status === 'trialing' ? `Trial: ${trialDaysLeft} dia(s)` : `Assinatura: ${billing?.status || 'pendente'}`,
   ]
-  const quickLinks = NAV_SECTIONS.flatMap(section => section.items).slice(0, 4)
+  const visibleSections = NAV_SECTIONS
+    .map(section => ({ ...section, items: section.items.filter(item => canAccess(item.id)) }))
+    .filter(section => section.items.length > 0)
+  const quickLinks = visibleSections.flatMap(section => section.items).slice(0, 4)
   const desktopCompactNav = !isMobile
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900
   const compactForShortHeight = desktopCompactNav && viewportHeight < 860
@@ -786,7 +791,7 @@ export function FinanceWorkspace() {
         </div>
 
         <div style={{ flex:1, overflowY:isMobile ? 'scroll' : (compactForShortHeight ? 'auto' : 'hidden'), padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px'), WebkitOverflowScrolling:'touch', overscrollBehavior:'contain', touchAction:'pan-y' }}>
-          {NAV_SECTIONS.map(section => (
+          {visibleSections.map(section => (
             <div key={section.title} style={{ marginBottom:isMobile ? 14 : (ultraCompactDesktop ? 6 : 8) }}>
               <div style={{ padding:isMobile ? '0 10px 8px' : (ultraCompactDesktop ? '0 6px 4px' : '0 8px 6px'), fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{section.title}</div>
               <div style={{ display:'flex', flexDirection:'column', gap:isMobile ? 4 : (ultraCompactDesktop ? 2 : 3) }}>
@@ -946,6 +951,7 @@ export function FinanceWorkspace() {
         open={quickSearchOpen}
         onClose={() => setQuickSearchOpen(false)}
         navigate={navigate}
+        sections={visibleSections}
       />
 
       {/* Onboarding wizard */}

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
 import { Btn, Card, FInput } from './UI.jsx'
 import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClient.js'
+import { supabase } from '../lib/supabase.js'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -29,6 +31,8 @@ const EMPTY_PROFILE = {
 
 export function Settings() {
   const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
+  const { role, clinicId } = useUserRole()
+  const [tab, setTab] = useState('perfil')
   const [profile, setProfile] = useState(EMPTY_PROFILE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -106,75 +110,109 @@ export function Settings() {
     updateField('clinic', 'logoDataUrl', dataUrl)
   }
 
+  const tabs = [
+    { id:'perfil', label:'Perfil' },
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }] : []),
+  ]
+
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
       <Card style={{ maxWidth:920 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', gap:16, alignItems:'flex-start', flexWrap:'wrap' }}>
-          <div>
-            <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Perfil seguro</div>
-            <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Médico e clínica</h3>
-            <p style={{ margin:0, color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:620 }}>
-              Registre aqui as suas informações e da sua clínica.
-            </p>
-          </div>
-          <div style={{ display:'grid', gap:8, minWidth:220 }}>
-            <MiniStatus label="Campos do médico" value={String(profileSummary.doctorFields)} />
-            <MiniStatus label="Campos da clínica" value={String(profileSummary.clinicFields)} />
-            <MiniStatus label="Logo" value={profileSummary.hasLogo ? 'Carregada' : 'Não enviada'} />
-          </div>
+        <div style={{ display:'flex', gap:0, marginBottom:24, borderBottom:`1px solid ${C.border}` }}>
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding:'10px 18px',
+                border:'none',
+                borderBottom: tab === t.id ? `2px solid ${C.accent}` : '2px solid transparent',
+                background:'none',
+                color: tab === t.id ? C.accent : C.textSub,
+                fontWeight: tab === t.id ? 700 : 500,
+                fontSize:14,
+                cursor:'pointer',
+                fontFamily:'inherit',
+                marginBottom:-1,
+              }}
+            >{t.label}</button>
+          ))}
         </div>
 
-        {loading ? (
-          <div style={{ marginTop:24, color:C.textSub }}>Carregando perfil seguro...</div>
-        ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:22, marginTop:24 }}>
-            <SectionCard title="Informações do médico" subtitle="Dados pessoais e profissionais.">
-              <Grid>
-                <FInput label="Nome completo" value={profile.doctor.fullName} onChange={value => updateField('doctor', 'fullName', value)} />
-                <FInput label="Título profissional" value={profile.doctor.professionalTitle} onChange={value => updateField('doctor', 'professionalTitle', value)} />
-                <FInput label="Especialidade" value={profile.doctor.specialty} onChange={value => updateField('doctor', 'specialty', value)} />
-                <FInput label="CRM / RQE" value={profile.doctor.registrationId} onChange={value => updateField('doctor', 'registrationId', value)} />
-                <FInput label="Telefone" value={profile.doctor.phone} onChange={value => updateField('doctor', 'phone', value)} />
-                <FInput label="E-mail profissional" value={profile.doctor.email} onChange={value => updateField('doctor', 'email', value)} />
-              </Grid>
-            </SectionCard>
+        {tab === 'perfil' && (
+          <>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:16, alignItems:'flex-start', flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Perfil seguro</div>
+                <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Médico e clínica</h3>
+                <p style={{ margin:0, color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:620 }}>
+                  Registre aqui as suas informações e da sua clínica.
+                </p>
+              </div>
+              <div style={{ display:'grid', gap:8, minWidth:220 }}>
+                <MiniStatus label="Campos do médico" value={String(profileSummary.doctorFields)} />
+                <MiniStatus label="Campos da clínica" value={String(profileSummary.clinicFields)} />
+                <MiniStatus label="Logo" value={profileSummary.hasLogo ? 'Carregada' : 'Não enviada'} />
+              </div>
+            </div>
 
-            <SectionCard title="Informações da clínica" subtitle="Dados institucionais para identidade visual, contato e documentos da operação.">
-              <Grid>
-                <FInput label="Razão social" value={profile.clinic.legalName} onChange={value => updateField('clinic', 'legalName', value)} />
-                <FInput label="Nome fantasia" value={profile.clinic.tradeName} onChange={value => updateField('clinic', 'tradeName', value)} />
-                <FInput label="CNPJ / Documento" value={profile.clinic.documentId} onChange={value => updateField('clinic', 'documentId', value)} />
-                <FInput label="Telefone da clínica" value={profile.clinic.phone} onChange={value => updateField('clinic', 'phone', value)} />
-                <FInput label="E-mail da clínica" value={profile.clinic.email} onChange={value => updateField('clinic', 'email', value)} />
-                <FInput label="Site" value={profile.clinic.website} onChange={value => updateField('clinic', 'website', value)} />
-                <FInput label="Endereço" value={profile.clinic.addressLine} onChange={value => updateField('clinic', 'addressLine', value)} />
-                <FInput label="Cidade" value={profile.clinic.city} onChange={value => updateField('clinic', 'city', value)} />
-                <FInput label="Estado" value={profile.clinic.state} onChange={value => updateField('clinic', 'state', value)} />
-                <FInput label="Observações institucionais" value={profile.clinic.notes} onChange={value => updateField('clinic', 'notes', value)} />
-              </Grid>
+            {loading ? (
+              <div style={{ marginTop:24, color:C.textSub }}>Carregando perfil seguro...</div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:22, marginTop:24 }}>
+                <SectionCard title="Informações do médico" subtitle="Dados pessoais e profissionais.">
+                  <Grid>
+                    <FInput label="Nome completo" value={profile.doctor.fullName} onChange={value => updateField('doctor', 'fullName', value)} />
+                    <FInput label="Título profissional" value={profile.doctor.professionalTitle} onChange={value => updateField('doctor', 'professionalTitle', value)} />
+                    <FInput label="Especialidade" value={profile.doctor.specialty} onChange={value => updateField('doctor', 'specialty', value)} />
+                    <FInput label="CRM / RQE" value={profile.doctor.registrationId} onChange={value => updateField('doctor', 'registrationId', value)} />
+                    <FInput label="Telefone" value={profile.doctor.phone} onChange={value => updateField('doctor', 'phone', value)} />
+                    <FInput label="E-mail profissional" value={profile.doctor.email} onChange={value => updateField('doctor', 'email', value)} />
+                  </Grid>
+                </SectionCard>
 
-              <div style={{ marginTop:18 }}>
-                <label style={{ display:'block', fontSize:12, color:C.textSub, fontWeight:700, marginBottom:10 }}>Logo da clínica</label>
-                <div style={{ display:'flex', gap:16, alignItems:'center', flexWrap:'wrap' }}>
-                  <div style={{ width:96, height:96, borderRadius:20, border:`1px solid ${C.border}`, background:C.surface, display:'grid', placeItems:'center', overflow:'hidden' }}>
-                    {profile.clinic.logoDataUrl ? <img src={profile.clinic.logoDataUrl} alt="Logo da clínica" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ color:C.textDim, fontSize:12 }}>Sem logo</span>}
+                <SectionCard title="Informações da clínica" subtitle="Dados institucionais para identidade visual, contato e documentos da operação.">
+                  <Grid>
+                    <FInput label="Razão social" value={profile.clinic.legalName} onChange={value => updateField('clinic', 'legalName', value)} />
+                    <FInput label="Nome fantasia" value={profile.clinic.tradeName} onChange={value => updateField('clinic', 'tradeName', value)} />
+                    <FInput label="CNPJ / Documento" value={profile.clinic.documentId} onChange={value => updateField('clinic', 'documentId', value)} />
+                    <FInput label="Telefone da clínica" value={profile.clinic.phone} onChange={value => updateField('clinic', 'phone', value)} />
+                    <FInput label="E-mail da clínica" value={profile.clinic.email} onChange={value => updateField('clinic', 'email', value)} />
+                    <FInput label="Site" value={profile.clinic.website} onChange={value => updateField('clinic', 'website', value)} />
+                    <FInput label="Endereço" value={profile.clinic.addressLine} onChange={value => updateField('clinic', 'addressLine', value)} />
+                    <FInput label="Cidade" value={profile.clinic.city} onChange={value => updateField('clinic', 'city', value)} />
+                    <FInput label="Estado" value={profile.clinic.state} onChange={value => updateField('clinic', 'state', value)} />
+                    <FInput label="Observações institucionais" value={profile.clinic.notes} onChange={value => updateField('clinic', 'notes', value)} />
+                  </Grid>
+
+                  <div style={{ marginTop:18 }}>
+                    <label style={{ display:'block', fontSize:12, color:C.textSub, fontWeight:700, marginBottom:10 }}>Logo da clínica</label>
+                    <div style={{ display:'flex', gap:16, alignItems:'center', flexWrap:'wrap' }}>
+                      <div style={{ width:96, height:96, borderRadius:20, border:`1px solid ${C.border}`, background:C.surface, display:'grid', placeItems:'center', overflow:'hidden' }}>
+                        {profile.clinic.logoDataUrl ? <img src={profile.clinic.logoDataUrl} alt="Logo da clínica" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ color:C.textDim, fontSize:12 }}>Sem logo</span>}
+                      </div>
+                      <div style={{ display:'grid', gap:10 }}>
+                        <input type="file" accept="image/*" onChange={onLogoSelected} />
+                        {profile.clinic.logoDataUrl ? <Btn variant="ghost" onClick={() => updateField('clinic', 'logoDataUrl', '')}>Remover logo</Btn> : null}
+                        <div style={{ color:C.textDim, fontSize:12 }}> Use arquivos de até 1 MB.</div>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display:'grid', gap:10 }}>
-                    <input type="file" accept="image/*" onChange={onLogoSelected} />
-                    {profile.clinic.logoDataUrl ? <Btn variant="ghost" onClick={() => updateField('clinic', 'logoDataUrl', '')}>Remover logo</Btn> : null}
-                    <div style={{ color:C.textDim, fontSize:12 }}> Use arquivos de até 1 MB.</div>
-                  </div>
+                </SectionCard>
+
+                {error ? <Feedback color={C.red} text={error} /> : null}
+                {message ? <Feedback color={C.green} text={message} /> : null}
+
+                <div style={{ display:'flex', justifyContent:'flex-end' }}>
+                  <Btn onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar configurações seguras'}</Btn>
                 </div>
               </div>
-            </SectionCard>
+            )}
+          </>
+        )}
 
-            {error ? <Feedback color={C.red} text={error} /> : null}
-            {message ? <Feedback color={C.green} text={message} /> : null}
-
-            <div style={{ display:'flex', justifyContent:'flex-end' }}>
-              <Btn onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar configurações seguras'}</Btn>
-            </div>
-          </div>
+        {tab === 'equipe' && role === 'admin' && (
+          <TeamSettings clinicId={clinicId} />
         )}
       </Card>
 
@@ -215,6 +253,146 @@ export function Settings() {
           </a>
         </div>
       </Card>
+    </div>
+  )
+}
+
+const ROLE_LABELS = { admin:'Administrador', gestao:'Gestão', equipe:'Equipe' }
+
+function TeamSettings({ clinicId }) {
+  const [members, setMembers] = useState([])
+  const [loadingMembers, setLoadingMembers] = useState(true)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('equipe')
+  const [inviting, setInviting] = useState(false)
+  const [teamError, setTeamError] = useState('')
+  const [teamMessage, setTeamMessage] = useState('')
+
+  const loadMembers = async () => {
+    if (!clinicId) return
+    setLoadingMembers(true)
+    const { data, error } = await supabase
+      .from('clinic_members')
+      .select('id, user_id, role, created_at')
+      .eq('clinic_id', clinicId)
+      .order('created_at')
+    if (!error) setMembers(data ?? [])
+    setLoadingMembers(false)
+  }
+
+  useEffect(() => { loadMembers() }, [clinicId])
+
+  const invite = async () => {
+    if (!inviteEmail.trim()) return
+    setInviting(true)
+    setTeamError('')
+    setTeamMessage('')
+
+    const { data: userId, error: lookupError } = await supabase
+      .rpc('get_user_id_by_email', { lookup_email: inviteEmail.trim().toLowerCase() })
+
+    if (lookupError || !userId) {
+      setTeamError('Usuário não encontrado. Verifique se o e-mail está cadastrado na plataforma.')
+      setInviting(false)
+      return
+    }
+
+    const { error: insertError } = await supabase
+      .from('clinic_members')
+      .insert({ clinic_id: clinicId, user_id: userId, role: inviteRole })
+
+    if (insertError) {
+      setTeamError(insertError.code === '23505' ? 'Esse usuário já é membro da clínica.' : insertError.message)
+    } else {
+      setTeamMessage(`${inviteEmail} adicionado como ${ROLE_LABELS[inviteRole]}.`)
+      setInviteEmail('')
+      await loadMembers()
+    }
+    setInviting(false)
+  }
+
+  const changeRole = async (memberId, newRole) => {
+    const { error } = await supabase
+      .from('clinic_members')
+      .update({ role: newRole })
+      .eq('id', memberId)
+    if (!error) setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m))
+  }
+
+  const removeMember = async (memberId) => {
+    const { error } = await supabase
+      .from('clinic_members')
+      .delete()
+      .eq('id', memberId)
+    if (!error) setMembers(prev => prev.filter(m => m.id !== memberId))
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <div>
+        <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Controle de acesso</div>
+        <h3 style={{ margin:'0 0 6px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Equipe</h3>
+        <p style={{ margin:0, color:C.textSub, fontSize:14, lineHeight:1.7 }}>
+          Adicione colaboradores e defina o nível de acesso de cada um.
+        </p>
+      </div>
+
+      <SectionCard title="Convidar membro" subtitle="O usuário precisa ter uma conta ativa na plataforma.">
+        <div style={{ display:'flex', gap:10, alignItems:'flex-end', flexWrap:'wrap' }}>
+          <div style={{ flex:1, minWidth:220 }}>
+            <FInput
+              label="E-mail do usuário"
+              value={inviteEmail}
+              onChange={setInviteEmail}
+              placeholder="email@exemplo.com"
+            />
+          </div>
+          <div style={{ minWidth:160 }}>
+            <FInput
+              label="Perfil"
+              value={inviteRole}
+              onChange={setInviteRole}
+              options={[
+                { v:'gestao', l:'Gestão' },
+                { v:'equipe', l:'Equipe' },
+              ]}
+            />
+          </div>
+          <Btn onClick={invite} disabled={inviting || !inviteEmail.trim()}>
+            {inviting ? 'Adicionando...' : 'Adicionar'}
+          </Btn>
+        </div>
+        {teamError ? <div style={{ marginTop:10 }}><Feedback color={C.red} text={teamError} /></div> : null}
+        {teamMessage ? <div style={{ marginTop:10 }}><Feedback color={C.green} text={teamMessage} /></div> : null}
+      </SectionCard>
+
+      <SectionCard title="Membros da clínica" subtitle="Gerencie os colaboradores que têm acesso à plataforma.">
+        {loadingMembers ? (
+          <div style={{ color:C.textSub, fontSize:14 }}>Carregando membros...</div>
+        ) : members.length === 0 ? (
+          <div style={{ color:C.textDim, fontSize:14 }}>Nenhum membro adicionado ainda.</div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {members.map(m => (
+              <div key={m.id} style={{ display:'flex', gap:12, alignItems:'center', padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.bg, flexWrap:'wrap' }}>
+                <div style={{ flex:1, minWidth:140 }}>
+                  <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>ID do usuário</div>
+                  <div style={{ fontSize:13, color:C.textSub, fontFamily:'monospace' }}>{m.user_id.slice(0, 8)}…</div>
+                </div>
+                <select
+                  value={m.role}
+                  onChange={e => changeRole(m.id, e.target.value)}
+                  style={{ padding:'6px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}
+                >
+                  <option value="gestao">Gestão</option>
+                  <option value="equipe">Equipe</option>
+                </select>
+                <Btn variant="ghost" onClick={() => removeMember(m.id)}>Remover</Btn>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </div>
   )
 }

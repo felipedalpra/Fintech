@@ -8,6 +8,7 @@ import { ThemeProvider } from './context/ThemeContext.jsx'
 import { FinancialPrivacyProvider } from './context/FinancialPrivacyContext.jsx'
 import { BillingProvider } from './context/BillingContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
+import { UserRoleProvider } from './context/UserRoleContext.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -15,11 +16,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <ThemeProvider>
         <FinancialPrivacyProvider>
           <AuthProvider>
-            <BillingProvider>
-              <ToastProvider>
-                <App />
-              </ToastProvider>
-            </BillingProvider>
+            <UserRoleProvider>
+              <BillingProvider>
+                <ToastProvider>
+                  <App />
+                </ToastProvider>
+              </BillingProvider>
+            </UserRoleProvider>
           </AuthProvider>
         </FinancialPrivacyProvider>
       </ThemeProvider>

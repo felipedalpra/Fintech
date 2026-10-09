@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (9)
+### Added
+- **Controle de acesso por perfil**: `UserRoleContext` detecta automaticamente se o usuário logado é dono de uma clínica (`admin`) ou membro convidado (`gestao` / `equipe`). Na primeira sessão, a clínica é criada automaticamente.
+- `canAccess(sectionId)` filtra a navegação lateral e a busca rápida conforme o perfil: admins veem tudo; gestão veem finanças mas não billing/settings; equipe veem apenas dashboard, pacientes e agenda.
+- **Aba Equipe em Configurações** (visível apenas para admins): convite de membros por e-mail (via RPC `get_user_id_by_email`), seleção de perfil por membro (gestão/equipe), botão de remoção.
+- `supabase/access_control_schema.sql`: tabelas `clinics` e `clinic_members` com RLS, função `data_owner_id()` para multi-tenancy transparente, RPC `get_user_id_by_email`, política atualizada em `patients`.
+
 ## [Unreleased] - 2026-10-08 (8)
 ### Changed
 - `FInput` com `type="number"` agora exibe e aceita valores no padrão brasileiro: vírgula como separador decimal e ponto como separador de milhar (ex: `1.234,56`). Ao clicar no campo, permite digitar normalmente com vírgula; ao sair do campo, o valor é formatado automaticamente. Teclado mobile mostra teclado numérico com decimal.
