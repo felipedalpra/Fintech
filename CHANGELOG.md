@@ -5,8 +5,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
-## [Unreleased] - 2026-10-09 (14)
+## [Unreleased] - 2026-10-09 (15)
 ### Fixed
+- Trocar o procedimento no formulário de cirurgia agora atualiza o valor corretamente. Antes, o primeiro auto-fill impedia que mudanças subsequentes de procedimento afetassem o valor total. `Sales.jsx` linha 390.
 - Membros da clínica (ex: Lunara) agora enxergam os dados do dono (Vitoria) em vez de ERP vazio. `UserRoleContext` expõe `ownerId` (UUID do dono da clínica); `FinanceWorkspace` usa `ownerId` para carregar e salvar dados; `importLegacyDataIfNeeded` aceita `ownerId` como segundo parâmetro.
 - Carregamento de dados aguarda `ownerId` estar disponível antes de disparar (evita query com UUID errado).
 
