@@ -81,12 +81,10 @@ export function Plans({ data, setData }) {
 
           return (
             <div key={procedure.id} style={{ borderRadius:16, border:`1px solid ${C.border}`, borderTop:`3px solid ${procedure.color}`, background:C.surface, padding:'14px 16px', display:'flex', flexDirection:'column', gap:8 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
-                <div style={{ fontSize:13, fontWeight:800, color:procedure.color, lineHeight:1.3 }}>{procedure.name}</div>
-                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
-                  <Btn variant="ghost" onClick={() => openEdit(procedure)} style={{ padding:'3px 8px', fontSize:11 }}>Editar</Btn>
-                  <Btn variant="danger" onClick={() => setConfirmId(procedure.id)} style={{ padding:'3px 8px', fontSize:11 }}>Excluir</Btn>
-                </div>
+              <div style={{ fontSize:13, fontWeight:800, color:procedure.color, lineHeight:1.3, wordBreak:'break-word' }}>{procedure.name}</div>
+              <div style={{ display:'flex', gap:6 }}>
+                <Btn variant="ghost" onClick={() => openEdit(procedure)} style={{ padding:'3px 8px', fontSize:11 }}>Editar</Btn>
+                <Btn variant="danger" onClick={() => setConfirmId(procedure.id)} style={{ padding:'3px 8px', fontSize:11 }}>Excluir</Btn>
               </div>
               <div style={{ fontSize:22, fontWeight:800, color:C.text }}>{fmt(procedure.price)}</div>
               <div style={{ fontSize:11, color:C.textDim }}>{procedure.durationHours || 0}h estimadas de sala / equipe</div>
