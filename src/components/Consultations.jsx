@@ -90,7 +90,7 @@ export function Consultations({ data, setData }) {
     mixAmountB:0,
     insurance:'',
     paymentStatus:'pendente',
-    forecastPaymentDate:today(),
+    forecastPaymentDate:'',
     paymentDate:'',
   }
 

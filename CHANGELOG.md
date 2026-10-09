@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (7)
+### Fixed
+- `Consultations.jsx`: `forecastPaymentDate` não é mais inicializado com `today()` ao abrir o formulário. Antes, toda consulta nova aparecia imediatamente em "A receber" com a data de hoje, mesmo sem data de recebimento prevista. Agora o campo começa vazio e a data de vencimento em "A receber" usa `item.date` como fallback.
+- `financialMetrics.js`: receitas extras com data futura não contam mais em `cashBalance` ("Recebido no período") antes do recebimento efetivo. O filtro `onOrBefore(item.date, balanceDate)` foi adicionado ao cálculo de `entriesFinancial` para alinhar com a lógica já existente em `cumulativeEntries`.
+- `Finance.jsx`: formulário de despesa agora suporta data futura. Ao informar uma data de vencimento posterior a hoje, a despesa é salva como `status: 'aberto'` (sem `paymentDate`) e aparece em "A pagar". Um aviso em amarelo é exibido no formulário. Antes, toda despesa era forçada como paga no dia do lançamento.
+
 ## [Unreleased] - 2026-10-08 (6)
 ### Fixed
 - Ao recarregar a plataforma, o app sempre abria na aba Assinatura independente de onde o usuário estava. Causa: quando redirecionado para `/app/billing` pelo guard de acesso, esse caminho era salvo como última rota visitada e restaurado na próxima sessão. Solução: `/app/billing` não é mais persistido em `LAST_APP_PATH_KEY`, e `AppEntryRedirect` ignora valores salvos de `/app/billing`, caindo em `/app/dashboard`.

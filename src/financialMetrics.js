@@ -313,7 +313,7 @@ export function buildMetrics(rawData, options = {}) {
   })
 
   extraRevenues.forEach(item => {
-    if (inRange(item.date, startDate, endDate)) {
+    if (inRange(item.date, startDate, endDate) && onOrBefore(item.date, balanceDate)) {
       entriesFinancial.push({ id:`entry-extra-${item.id}`, description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.date, origin:'outra_receita', referenceId:item.id })
     }
   })

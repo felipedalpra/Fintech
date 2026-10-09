@@ -353,12 +353,23 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           return
         }
       }
-      const expenseDate = form.dueDate || form.paymentDate || today()
+      const isFutureExpense = (form.dueDate || '') > today()
       const normalizedExpense = {
         ...form,
-        dueDate:expenseDate,
-        paymentDate:expenseDate,
-        status:'pago',
+        dueDate: form.dueDate || today(),
+        paymentDate: isFutureExpense ? null : (form.paymentDate || form.dueDate || today()),
+        status: isFutureExpense ? 'aberto' : 'pago',
+      }
+      if (isFutureExpense) {
+        setData(current => ({
+          ...current,
+          expenses: editing
+            ? current.expenses.map(record => record.id === editing ? { ...normalizedExpense, id:editing } : record)
+            : [...current.expenses, { ...normalizedExpense, id:uid() }],
+        }))
+        toast(editing ? 'Despesa atualizada.' : 'Despesa registrada como pendente.')
+        setShowModal(false)
+        return
       }
       setConfirmState({
         action:'confirm-expense-save',
@@ -1206,12 +1217,22 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                 <FInput label="Marcar como pago automaticamente?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
               </>
             ) : (
-              <FInput
-                label="Data do pagamento"
-                value={form.dueDate}
-                onChange={value => setForm(current => ({ ...current, dueDate:value, paymentDate:value, status:'pago' }))}
-                type="date"
-              />
+              <>
+                <FInput
+                  label="Data de vencimento"
+                  value={form.dueDate}
+                  onChange={value => {
+                    const isFuture = value > today()
+                    setForm(current => ({ ...current, dueDate:value, paymentDate:isFuture ? '' : value, status:isFuture ? 'aberto' : 'pago' }))
+                  }}
+                  type="date"
+                />
+                {form.dueDate > today() && (
+                  <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
+                    Data futura — será registrada como <strong>pendente</strong> (aparece em "A pagar").
+                  </div>
+                )}
+              </>
             )}
 
             <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
