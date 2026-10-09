@@ -5,6 +5,7 @@ import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 
 const SEX_OPTIONS = [
   { v: '', l: 'Não informado' },
@@ -63,6 +64,8 @@ const emptyForm = {
 
 export function Patients({ data }) {
   const { user } = useAuth()
+  const { ownerId } = useUserRole()
+  const effectiveUserId = ownerId || user?.id
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
 
   const [patients, setPatients] = useState([])
@@ -79,16 +82,16 @@ export function Patients({ data }) {
   const [confirmArchiveId, setConfirmArchiveId] = useState(null)
 
   useEffect(() => {
-    if (!user?.id) return
+    if (!effectiveUserId) return
     load()
-  }, [user?.id])
+  }, [effectiveUserId])
 
   async function load() {
     setLoading(true)
     const { data: rows } = await supabase
       .from('patients')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .order('full_name')
     setPatients(rows || [])
     setLoading(false)
@@ -184,7 +187,7 @@ export function Patients({ data }) {
         .from('patients')
         .update(payload)
         .eq('id', editingId)
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveUserId)
         .select()
         .single()
       if (updated) {
@@ -194,7 +197,7 @@ export function Patients({ data }) {
     } else {
       const { data: created } = await supabase
         .from('patients')
-        .insert({ ...payload, user_id: user.id })
+        .insert({ ...payload, user_id: effectiveUserId })
         .select()
         .single()
       if (created) setPatients(ps => [...ps, created].sort((a, b) => a.full_name.localeCompare(b.full_name)))
@@ -205,7 +208,7 @@ export function Patients({ data }) {
   }
 
   async function archivePatient(id) {
-    await supabase.from('patients').update({ active: false }).eq('id', id).eq('user_id', user.id)
+    await supabase.from('patients').update({ active: false }).eq('id', id).eq('user_id', effectiveUserId)
     setPatients(ps => ps.filter(p => p.id !== id))
     if (selected?.id === id) setSelected(null)
   }
@@ -306,7 +309,7 @@ export function Patients({ data }) {
           onTabChange={setDrawerTab}
           onClose={() => setSelected(null)}
           onEdit={() => openEdit(selected)}
-          userId={user?.id}
+          userId={effectiveUserId}
           surgeries={patientSurgeries}
           consultations={patientConsultations}
           totalFinanceiro={totalFinanceiro}

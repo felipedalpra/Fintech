@@ -88,7 +88,35 @@ do $$ begin
   exception when duplicate_object then null; end;
 end $$;
 
--- 7. Índices para performance.
+-- 7. Atualizar RLS de todas as tabelas financeiras e médicas para aceitar membros da clínica.
+--    Substitui a policy "own rows" (auth.uid() = user_id) por data_owner_id().
+do $$
+declare
+  tbl text;
+  tables text[] := array[
+    'procedures','products','surgeries','consultations',
+    'product_sales','product_purchases','extra_revenues','expenses',
+    'assets','liabilities','goals','recorrencias',
+    'medical_records','patient_documents'
+  ];
+begin
+  foreach tbl in array tables loop
+    execute format('drop policy if exists "%s own rows" on public.%I', initcap(replace(tbl, '_', ' ')), tbl);
+    execute format('drop policy if exists "Medical records select" on public.%I', tbl);
+    execute format('drop policy if exists "Medical records insert" on public.%I', tbl);
+    execute format('drop policy if exists "Medical records update" on public.%I', tbl);
+    execute format('drop policy if exists "Patient documents own rows" on public.%I', tbl);
+    begin
+      execute format(
+        'create policy "%s clinic access" on public.%I for all to authenticated using (user_id = public.data_owner_id()) with check (user_id = public.data_owner_id())',
+        initcap(replace(tbl, '_', ' ')), tbl
+      );
+    exception when duplicate_object then null;
+    end;
+  end loop;
+end $$;
+
+-- 8. Índices para performance.
 create index if not exists idx_clinic_members_user  on public.clinic_members(user_id);
 create index if not exists idx_clinic_members_clinic on public.clinic_members(clinic_id);
 create index if not exists idx_clinics_owner         on public.clinics(owner_id);

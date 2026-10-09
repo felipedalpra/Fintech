@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (18)
+### Fixed
+- Membros da clínica (ex: Lunara/gestão) não conseguiam salvar pacientes nem cirurgias: `Patients.jsx` agora usa `ownerId` do contexto de role em vez de `user.id`, garantindo que inserts e queries usem o `user_id` do owner. `Patients.jsx`, `UserRoleContext.jsx`.
+- Adicionado bloco SQL em `access_control_schema.sql` para atualizar a RLS de todas as tabelas financeiras e médicas (`surgeries`, `consultations`, `medical_records` e outras 11 tabelas) para usar `data_owner_id()` em vez de `auth.uid()`, permitindo que membros gravem dados no contexto do owner. `supabase/access_control_schema.sql`.
+
 ## [Unreleased] - 2026-10-09 (17)
 ### Added
 - Botão "Remover" nas entradas financeiras: cirurgias e consultas voltam para pendente (saem do financeiro mas continuam cadastradas); receitas adicionais e vendas de produto são excluídas permanentemente. `Finance.jsx`.
