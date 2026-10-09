@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Emitir boletos bancários diretamente do sistema para cobranças de cirurgias e consultas, com confirmação automática de pagamento via webhook do provider.
+**Goal:** Emitir boletos bancários diretamente do sistema para cobranças de cirurgias e consultas, com **registro automático** no banco e **baixa automática** de pagamento — sem precisar entrar no sistema do banco manualmente.
 
 **Pré-requisito:** O plano `2026-10-08-whatsapp-crm.md` é opcional mas recomendado para a cobrança automática via WhatsApp.
 
@@ -11,6 +11,57 @@
 **Provider:** Abstrato — configurar `BILLING_PROVIDER_URL` e `BILLING_API_KEY` nas env vars. O código documenta claramente onde adaptar para cada provider.
 
 **Tech Stack:** React 18, Supabase, Vercel serverless
+
+---
+
+## ⚠️ Decisão arquitetural obrigatória antes de implementar
+
+Existem dois caminhos para registro automático + baixa automática. A clínica precisa decidir antes de começar.
+
+### Caminho A — Via gateway de pagamento (Asaas, Iugu, EFÍ/Gerencianet) ← **spec atual**
+
+O gateway emite o boleto, faz o registro no banco e notifica o pagamento via webhook. A clínica não precisa de certificado digital e não interage com o banco diretamente.
+
+| Item | Detalhe |
+|------|---------|
+| Certificado digital | ❌ Não precisa |
+| Registro automático | ✅ Feito pelo gateway |
+| Baixa automática | ✅ Via webhook (já no spec) |
+| Custo por boleto | R$ 1–3 por boleto emitido (varia por gateway) |
+| Complexidade | Baixa — só configurar chave de API e URL do webhook |
+| Prazo | 1–3 dias para ativar conta no gateway |
+
+**Gateways recomendados (do mais simples ao mais completo):**
+- **Asaas** — cadastro PJ, API REST bem documentada, sandbox gratuito, webhook testável no painel
+- **EFÍ (ex-Gerencianet)** — menor custo por boleto, boa API, suporte a PIX
+- **Iugu** — mais robusto, ideal se precisar de split de pagamento no futuro
+
+### Caminho B — Integração direta com o banco (sem gateway)
+
+O sistema se comunica diretamente com a API do banco da clínica (BB, Bradesco, Itaú, Caixa, Sicoob, etc.). Requer autenticação mútua com certificado digital.
+
+| Item | Detalhe |
+|------|---------|
+| Certificado digital | ✅ **Obrigatório** — e-CNPJ A1 (tipo "A1", arquivo `.pfx` ou `.p12`) |
+| Quem emite o certificado | Autoridade Certificadora credenciada (Serasa, Certisign, Valid, etc.) |
+| Validade | 1 ano (A1) — precisa renovar anualmente |
+| Custo do certificado | R$ 200–400/ano |
+| Registro automático | ✅ Via API bancária (ex: Cobrança Registrada do BB, API Boleto Híbrido Bradesco) |
+| Baixa automática | ✅ Via webhook/polling da API bancária |
+| Complexidade | Alta — cada banco tem API diferente, autenticação OAuth 2.0 + mTLS |
+| Prazo | 2–4 semanas (tempo de emissão do certificado + cadastro na API do banco) |
+
+**Pré-requisitos para o Caminho B:**
+1. Conta PJ no banco com acesso à API de cobrança (solicitar ao gerente)
+2. Certificado e-CNPJ A1 no nome do CNPJ da clínica — **não** no nome da Dra. Vitoria como CPF
+3. Ambiente de homologação/sandbox disponibilizado pelo banco
+4. Credenciais OAuth do banco (client_id + client_secret)
+
+> **Recomendação:** Para o volume de uma clínica pequena (< 100 boletos/mês), o Caminho A via Asaas tem custo menor, zero burocracia de certificado e implementação em dias. O certificado só se justifica se a clínica já tiver volume alto ou quiser eliminar taxas por boleto no longo prazo.
+
+**Ação necessária:** Confirmar com a Dra. Vitoria / Augusto qual caminho seguir antes de qualquer implementação. Se Caminho B, confirmar também com qual banco e solicitar acesso à API.
+
+---
 
 ---
 
@@ -503,11 +554,14 @@ git commit -m "feat: emissão de boletos com confirmação automática de pagame
 - ✅ Atualiza `payment_status` no lançamento de origem
 
 ### Riscos
+- **Decisão de caminho (A vs B) não tomada** → implementação pode precisar ser refeita do zero se mudar de gateway para banco direto
 - Asaas exige que o CPF do cliente seja válido — pacientes sem CPF cadastrado podem causar erro no provider; o `customerData` é opcional, mas o provider pode rejeitar sem ele
 - `BILLING_WEBHOOK_TOKEN` usa `asaas-access-token` header no Asaas — verificar o header correto para o provider escolhido
 - Chave de API em `BILLING_API_KEY` dá acesso total à conta do provider — rotacionar periodicamente
+- **Caminho B:** certificado A1 é um arquivo `.pfx`/`.p12` com senha — nunca commitar no repositório; armazenar como variável de ambiente codificada em base64 na Vercel
 
 ### Fora do escopo
 - Cobrança automática via WhatsApp (spec separada — `automacoes-whatsapp.md`)
 - Parcelamento
 - Notas fiscais
+- Emissão de certificado digital (responsabilidade da clínica — ver seção "Decisão arquitetural" acima)
