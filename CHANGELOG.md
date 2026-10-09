@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (22)
+### Added
+- Botão "Editar" em todos os lançamentos das abas Entradas e Saídas do financeiro. Receitas extras e despesas abrem o modal completo já existente. Cirurgias e consultas abrem modal de edição financeira com todos os campos (valor, data, pagamento, custos cirúrgicos). Vendas e compras de produto também editáveis. Qualquer alteração reflete imediatamente nos números do financeiro. `Finance.jsx`, `UI.jsx`.
+
 ## [Unreleased] - 2026-10-09 (21)
 ### Changed
 - Centro de custo agora é campo de texto livre com sugestões (creatable combobox). O usuário pode digitar um valor novo, salvar o registro e o valor aparece como sugestão nas próximas vezes. `UI.jsx` (prop `creatable` no FInput via `<datalist>`), `Finance.jsx` (memo `allCostCenters` agrega valores já usados).

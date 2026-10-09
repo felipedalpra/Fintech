@@ -10,6 +10,19 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { supabase } from '../lib/supabase.js'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
+const PAYMENT_METHODS = [
+  { v:'pix', l:'PIX' },
+  { v:'cartao', l:'Cartão' },
+  { v:'dinheiro', l:'Dinheiro' },
+  { v:'boleto', l:'Boleto' },
+  { v:'transferencia', l:'Transferência' },
+]
+const SURGERY_PAYMENT_STATUS = [
+  { v:'pago', l:'Pago' },
+  { v:'pendente', l:'Pendente' },
+  { v:'cancelado', l:'Cancelado' },
+]
+
 const DEFAULT_COST_CENTERS = [
   'Cirurgia Plástica',
   'Consultas',
@@ -412,6 +425,34 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     if (modalType === 'liability') {
       if (!form.name) return
       setData(current => ({ ...current, liabilities: editing ? current.liabilities.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.liabilities, { ...form, id:uid() }] }))
+    }
+    if (modalType === 'surgery') {
+      if (!editing) return
+      setData(current => ({ ...current, surgeries: current.surgeries.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      toast('Cirurgia atualizada com sucesso.')
+      setShowModal(false)
+      return
+    }
+    if (modalType === 'consultation') {
+      if (!editing) return
+      setData(current => ({ ...current, consultations: current.consultations.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      toast('Consulta atualizada com sucesso.')
+      setShowModal(false)
+      return
+    }
+    if (modalType === 'product-sale') {
+      if (!editing) return
+      setData(current => ({ ...current, productSales: current.productSales.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      toast('Venda atualizada com sucesso.')
+      setShowModal(false)
+      return
+    }
+    if (modalType === 'product-purchase') {
+      if (!editing) return
+      setData(current => ({ ...current, productPurchases: current.productPurchases.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      toast('Compra atualizada com sucesso.')
+      setShowModal(false)
+      return
     }
     const labels = { extra: 'Receita salva', expense: 'Despesa salva', asset: 'Ativo salvo', liability: 'Passivo salvo' }
     toast(editing ? `${labels[modalType]} com sucesso.` : `${labels[modalType]} com sucesso.`)
@@ -933,21 +974,28 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
         <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
           const removable = ['cirurgia', 'consulta', 'outra_receita', 'venda_produto'].includes(item.origin)
-          const labels = { cirurgia:'Cancelar pagamento', consulta:'Cancelar pagamento', outra_receita:'Remover receita', venda_produto:'Remover venda' }
+          const removeLabels = { cirurgia:'Cancelar pgto', consulta:'Cancelar pgto', outra_receita:'Remover', venda_produto:'Remover' }
           const messages = {
             cirurgia:'Cancelar pagamento marca a cirurgia como pendente e a remove do financeiro. Ela continua cadastrada em Cirurgias.',
             consulta:'Cancelar pagamento marca a consulta como pendente e a remove do financeiro. Ela continua cadastrada em Consultas.',
             outra_receita:'Remover esta receita adicional? Ela será excluída permanentemente.',
             venda_produto:'Remover esta venda de produto? Ela será excluída permanentemente.',
           }
+          const editTypeMap = { cirurgia:'surgery', consulta:'consultation', outra_receita:'extra', venda_produto:'product-sale' }
+          const sourceMap = { cirurgia:data.surgeries, consulta:data.consultations, outra_receita:data.extraRevenues, venda_produto:data.productSales }
+          const editType = editTypeMap[item.origin]
+          const sourceRecord = editType ? (sourceMap[item.origin] || []).find(r => r.id === item.referenceId) : null
           return {
             key:item.id,
             cells:[
               formatDateBR(item.date), item.category, item.description, item.origin,
               <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>,
-              removable
-                ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, title:labels[item.origin], message:messages[item.origin], confirmLabel:'Confirmar', confirmVariant:'danger' })}>{labels[item.origin]}</Btn>
-                : <span style={{ color:C.textDim, fontSize:11 }}>—</span>,
+              <div style={{ display:'flex', gap:6 }}>
+                {sourceRecord && <Btn variant="ghost" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openEdit(editType, sourceRecord)}>Editar</Btn>}
+                {removable
+                  ? <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, title:removeLabels[item.origin], message:messages[item.origin], confirmLabel:'Confirmar', confirmVariant:'danger' })}>{removeLabels[item.origin]}</Btn>
+                  : <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
+              </div>,
             ],
             rawCells:[item.date, item.category, item.description, item.origin, item.value, removable ? 1 : 0],
           }
@@ -985,14 +1033,22 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         )}
 
         <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
-          let actionCell
+          const editSourceMap = { despesa:data.expenses, compra_produto:data.productPurchases }
+          const editTypeMap = { despesa:'expense', compra_produto:'product-purchase' }
+          const sourceRecord = (editSourceMap[item.origin] || []).find(r => r.id === item.referenceId)
+          const editType = editTypeMap[item.origin]
+          let removeBtn = null
           if (item.origin === 'despesa') {
-            actionCell = <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir despesa', message:'Deseja excluir esta despesa? O lançamento será removido permanentemente.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Remover</Btn>
+            removeBtn = <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir despesa', message:'Deseja excluir esta despesa? O lançamento será removido permanentemente.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Remover</Btn>
           } else if (item.origin === 'compra_produto') {
-            actionCell = <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-exit', origin:'compra_produto', referenceId:item.referenceId, title:'Remover compra de produto', message:'Deseja remover esta compra de produto? Ela será excluída permanentemente.', confirmLabel:'Remover', confirmVariant:'danger' })}>Remover</Btn>
-          } else {
-            actionCell = <span style={{ color:C.textDim, fontSize:11 }}>—</span>
+            removeBtn = <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-exit', origin:'compra_produto', referenceId:item.referenceId, title:'Remover compra de produto', message:'Deseja remover esta compra de produto? Ela será excluída permanentemente.', confirmLabel:'Remover', confirmVariant:'danger' })}>Remover</Btn>
           }
+          const actionCell = (
+            <div style={{ display:'flex', gap:6 }}>
+              {sourceRecord && editType && <Btn variant="ghost" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openEdit(editType, sourceRecord)}>Editar</Btn>}
+              {removeBtn || <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
+            </div>
+          )
           return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, actionCell], rawCells:[item.date, item.category, item.description, item.origin, item.value, ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
         })} emptyMessage="Nenhuma saída financeira no período." />
       </>}
@@ -1239,7 +1295,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
       {tab === 'indicadores' && <IndicadoresTab m={m} data={data} money={money} setData={setData} indicatorPeriodKey={indicatorPeriodKey} />}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editing ? 'Editar registro' : 'Novo registro'}>
+      <Modal open={showModal} onClose={() => setShowModal(false)} title={(() => { const t = { surgery:'Editar cirurgia', consultation:'Editar consulta', 'product-sale':'Editar venda', 'product-purchase':'Editar compra' }; return t[modalType] || (editing ? 'Editar registro' : 'Novo registro') })()}>
         {modalType === 'extra' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {!editing && (
@@ -1322,6 +1378,57 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </div>
         )}
         {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}
+
+        {modalType === 'surgery' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <FInput label="Paciente" value={form.patient || ''} onChange={value => setForm(c => ({ ...c, patient:value }))} placeholder="Nome do paciente" />
+            <FInput label="Data da cirurgia" value={form.date || ''} onChange={value => setForm(c => ({ ...c, date:value }))} type="date" />
+            <FInput label="Status de pagamento" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value }))} options={SURGERY_PAYMENT_STATUS} />
+            {form.paymentStatus === 'pago' && <FInput label="Data de pagamento" value={form.paymentDate || ''} onChange={value => setForm(c => ({ ...c, paymentDate:value }))} type="date" />}
+            <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
+            <FInput label="Forma de pagamento" value={form.paymentMethod || 'pix'} onChange={value => setForm(c => ({ ...c, paymentMethod:value }))} options={PAYMENT_METHODS} />
+            <div style={{ fontSize:12, color:C.textSub, fontWeight:600, marginBottom:-8 }}>Custos cirúrgicos</div>
+            <FInput label="Custo hospital (R$)" value={form.hospitalCost || 0} onChange={value => setForm(c => ({ ...c, hospitalCost:value }))} type="number" />
+            <FInput label="Custo anestesia (R$)" value={form.anesthesiaCost || 0} onChange={value => setForm(c => ({ ...c, anesthesiaCost:value }))} type="number" />
+            <FInput label="Custo material (R$)" value={form.materialCost || 0} onChange={value => setForm(c => ({ ...c, materialCost:value }))} type="number" />
+            <FInput label="Outros custos (R$)" value={form.otherCosts || 0} onChange={value => setForm(c => ({ ...c, otherCosts:value }))} type="number" />
+            <FInput label="NF / ISSQN (%)" value={form.invoiceIssuancePercent || 0} onChange={value => setForm(c => ({ ...c, invoiceIssuancePercent:value }))} type="number" />
+            <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+          </div>
+        )}
+
+        {modalType === 'consultation' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <FInput label="Paciente" value={form.patient || ''} onChange={value => setForm(c => ({ ...c, patient:value }))} placeholder="Nome do paciente" />
+            <FInput label="Data da consulta" value={form.date || ''} onChange={value => setForm(c => ({ ...c, date:value }))} type="date" />
+            <FInput label="Status de pagamento" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value }))} options={SURGERY_PAYMENT_STATUS} />
+            {form.paymentStatus === 'pago' && <FInput label="Data de pagamento" value={form.paymentDate || ''} onChange={value => setForm(c => ({ ...c, paymentDate:value }))} type="date" />}
+            <FInput label="Valor (R$)" value={form.value || 0} onChange={value => setForm(c => ({ ...c, value:value }))} type="number" />
+            <FInput label="Forma de pagamento" value={form.paymentMethod || 'pix'} onChange={value => setForm(c => ({ ...c, paymentMethod:value }))} options={PAYMENT_METHODS} />
+            <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+          </div>
+        )}
+
+        {modalType === 'product-sale' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <FInput label="Data da venda" value={form.saleDate || ''} onChange={value => setForm(c => ({ ...c, saleDate:value }))} type="date" />
+            <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
+            <FInput label="Quantidade" value={form.quantity || 1} onChange={value => setForm(c => ({ ...c, quantity:value }))} type="number" />
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+          </div>
+        )}
+
+        {modalType === 'product-purchase' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <FInput label="Data da compra" value={form.purchaseDate || ''} onChange={value => setForm(c => ({ ...c, purchaseDate:value }))} type="date" />
+            <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
+            <FInput label="Quantidade" value={form.quantity || 1} onChange={value => setForm(c => ({ ...c, quantity:value }))} type="number" />
+            <FInput label="Fornecedor" value={form.supplier || ''} onChange={value => setForm(c => ({ ...c, supplier:value }))} placeholder="Nome do fornecedor" />
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+          </div>
+        )}
       </Modal>
 
       <ConfirmModal
