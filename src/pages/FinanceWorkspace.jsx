@@ -491,7 +491,7 @@ export function FinanceWorkspace() {
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
   const { mode, toggleTheme } = useTheme()
-  const { canAccess } = useUserRole()
+  const { canAccess, clinicName } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -766,7 +766,8 @@ export function FinanceWorkspace() {
         <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '10px 14px'), borderBottom:`1px solid ${C.border}`, background:C.accent+'08' }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Conta ativa</div>
           <div style={{ fontSize:isMobile ? 14 : 13, fontWeight:700, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.user_metadata?.name || user.email}</div>
-          {isMobile && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{user.email}</div>}
+          {clinicName && <div style={{ fontSize:11, color:C.textDim, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{clinicName}</div>}
+          {isMobile && <div style={{ fontSize:10, color:C.textDim, marginTop:1 }}>{user.email}</div>}
         </div>
 
         <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>

@@ -273,7 +273,7 @@ function TeamSettings({ clinicId }) {
     setLoadingMembers(true)
     const { data, error } = await supabase
       .from('clinic_members')
-      .select('id, user_id, role, created_at')
+      .select('id, user_id, role, member_email, created_at')
       .eq('clinic_id', clinicId)
       .order('created_at')
     if (!error) setMembers(data ?? [])
@@ -299,7 +299,7 @@ function TeamSettings({ clinicId }) {
 
     const { error: insertError } = await supabase
       .from('clinic_members')
-      .insert({ clinic_id: clinicId, user_id: userId, role: inviteRole })
+      .insert({ clinic_id: clinicId, user_id: userId, role: inviteRole, member_email: inviteEmail.trim().toLowerCase() })
 
     if (insertError) {
       setTeamError(insertError.code === '23505' ? 'Esse usuário já é membro da clínica.' : insertError.message)
@@ -375,9 +375,9 @@ function TeamSettings({ clinicId }) {
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {members.map(m => (
               <div key={m.id} style={{ display:'flex', gap:12, alignItems:'center', padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.bg, flexWrap:'wrap' }}>
-                <div style={{ flex:1, minWidth:140 }}>
-                  <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>ID do usuário</div>
-                  <div style={{ fontSize:13, color:C.textSub, fontFamily:'monospace' }}>{m.user_id.slice(0, 8)}…</div>
+                <div style={{ flex:1, minWidth:180 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.member_email || '—'}</div>
+                  <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{ROLE_LABELS[m.role]}</div>
                 </div>
                 <select
                   value={m.role}

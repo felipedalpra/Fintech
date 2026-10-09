@@ -22,6 +22,7 @@ export function UserRoleProvider({ children }) {
   const { user } = useAuth()
   const [role, setRole] = useState(null)
   const [clinicId, setClinicId] = useState(null)
+  const [clinicName, setClinicName] = useState('')
   const [isOwner, setIsOwner] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -42,7 +43,7 @@ export function UserRoleProvider({ children }) {
       // 1. Verificar se já é owner de uma clínica.
       const { data: ownedClinic } = await supabase
         .from('clinics')
-        .select('id')
+        .select('id, name')
         .eq('owner_id', user.id)
         .maybeSingle()
 
@@ -50,6 +51,7 @@ export function UserRoleProvider({ children }) {
 
       if (ownedClinic) {
         setClinicId(ownedClinic.id)
+        setClinicName(ownedClinic.name || '')
         setRole('admin')
         setIsOwner(true)
         setLoading(false)
@@ -69,6 +71,13 @@ export function UserRoleProvider({ children }) {
         setClinicId(membership.clinic_id)
         setRole(membership.role)
         setIsOwner(false)
+        const { data: memberClinic } = await supabase
+          .from('clinics')
+          .select('name')
+          .eq('id', membership.clinic_id)
+          .maybeSingle()
+        if (!mounted) return
+        setClinicName(memberClinic?.name || '')
         setLoading(false)
         return
       }
@@ -77,13 +86,14 @@ export function UserRoleProvider({ children }) {
       const { data: newClinic, error } = await supabase
         .from('clinics')
         .insert({ owner_id: user.id, name: 'Minha Clínica' })
-        .select('id')
+        .select('id, name')
         .single()
 
       if (!mounted) return
 
       if (!error && newClinic) {
         setClinicId(newClinic.id)
+        setClinicName(newClinic.name || '')
         setRole('admin')
         setIsOwner(true)
       }
@@ -98,13 +108,14 @@ export function UserRoleProvider({ children }) {
   const value = useMemo(() => ({
     role,
     clinicId,
+    clinicName,
     isOwner,
     loading,
     canAccess(sectionId) {
       if (!role) return false
       return (ROLE_ACCESS[role] ?? []).includes(sectionId)
     },
-  }), [role, clinicId, isOwner, loading])
+  }), [role, clinicId, clinicName, isOwner, loading])
 
   return (
     <UserRoleContext.Provider value={value}>

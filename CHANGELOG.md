@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (12)
+### Changed
+- Sidebar "Conta ativa" agora exibe nome do usuário e nome da clínica (em vez de email). `UserRoleContext` passa a buscar e expor `clinicName`.
+- Aba Equipe em Configurações: lista de membros exibe e-mail e cargo (em vez de UUID truncado). E-mail é salvo em `clinic_members.member_email` no convite.
+
+### Added
+- Coluna `member_email text` na tabela `clinic_members` (aplicar SQL abaixo antes de usar):
+  ```sql
+  ALTER TABLE public.clinic_members ADD COLUMN IF NOT EXISTS member_email text;
+  ```
+
 ## [Unreleased] - 2026-10-09 (11)
 ### Added
 - Tooltip interativo no gráfico de Relatórios: ao passar o mouse sobre qualquer ponto, exibe card flutuante com receita, despesa e lucro do período, mais variação percentual e margem de lucro.
