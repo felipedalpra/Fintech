@@ -490,7 +490,31 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       return
     }
     if (item.source === 'cirurgia') {
-      setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
+      setData(current => ({
+        ...current,
+        surgeries:current.surgeries.map(record => {
+          if (record.id !== item.sourceId) return record
+          const decoded = decodePaymentMethod(record.paymentMethod)
+          const scheduledPayments = Array.isArray(decoded.payments)
+            ? decoded.payments
+              .map(entry => ({ date:String(entry?.date || '').trim(), amount:Number(entry?.amount || 0) }))
+              .filter(entry => entry.date && entry.amount > 0)
+              .sort((a, b) => a.date.localeCompare(b.date))
+            : []
+          if (scheduledPayments.length <= 1) {
+            return { ...record, paymentStatus:'pago', paymentDate:today() }
+          }
+          const currentCutoff = String(record.paymentDate || '').trim()
+          const paidCount = currentCutoff ? scheduledPayments.filter(entry => entry.date <= currentCutoff).length : 0
+          const installmentToReceive = scheduledPayments.find(entry => entry.date === item.dueDate) || scheduledPayments[Math.min(paidCount, scheduledPayments.length - 1)]
+          if (!installmentToReceive) return record
+          const nextPaymentDate = currentCutoff && currentCutoff > installmentToReceive.date ? currentCutoff : installmentToReceive.date
+          const allPaid = scheduledPayments.every(entry => entry.date <= nextPaymentDate)
+          return { ...record, paymentDate:nextPaymentDate, paymentStatus:allPaid ? 'pago' : 'pendente' }
+        }),
+      }))
+      toast('Parcela marcada como recebida.')
+      return
     }
     if (item.source === 'consulta') {
       setData(current => ({

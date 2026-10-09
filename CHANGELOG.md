@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (27)
+### Added
+- Parcelamento real de cirurgias (cronograma com N parcelas). Nova opção "Parcelado (cronograma)" na configuração de pagamento abre um modal para gerar parcelas por frequência (mensal/quinzenal/semanal), data da 1ª parcela e número de parcelas, com valores e formas de pagamento editáveis por parcela. `Sales.jsx`.
+### Changed
+- Cirurgias agora refletem no caixa **por parcela e por data**: cada parcela paga entra no fluxo de caixa na sua data; parcelas em aberto aparecem em Contas a receber pelo vencimento; a DRE segue reconhecendo a receita total pela competência (data da cirurgia). Antes a cirurgia era tudo-ou-nada pelo status. Fluxo de parcelas (`consultationPaymentFlow`) generalizado para `paymentScheduleFlow` e aplicado a cirurgias. "Marcar recebido" avança parcela a parcela. `financialMetrics.js`, `Finance.jsx`.
+
 ## [Unreleased] - 2026-10-09 (26)
 ### Added
 - Aviso de vencimento "em atraso" nos lançamentos: ao marcar uma receita/despesa como "a receber/a pagar" com vencimento anterior a hoje (ex: lançamento retroativo de setembro), aparece um alerta vermelho indicando que ficará em atraso/inadimplência até ser liquidado. `Finance.jsx`.

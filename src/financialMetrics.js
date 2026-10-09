@@ -38,8 +38,11 @@ function patientLabel(value, fallback = '') {
   return value || fallback || 'Paciente não informado'
 }
 
-function consultationPaymentFlow(item, balanceDate) {
-  const totalValue = Math.max(0, Number(item?.value || 0))
+// Fluxo de parcelas genérico (consultas e cirurgias): decodifica o cronograma
+// de pagamentos (payments) e separa parcelas pagas x em aberto. Parcelas pagas
+// entram no caixa pela sua data; em aberto viram contas a receber pelo vencimento.
+function paymentScheduleFlow(totalValueRaw, item, balanceDate) {
+  const totalValue = Math.max(0, Number(totalValueRaw || 0))
   const decoded = decodePaymentMethod(item?.paymentMethod)
   const schedule = decoded.paymentScheduleMode === 'duas_datas' && Array.isArray(decoded.payments)
     ? decoded.payments
@@ -58,7 +61,7 @@ function consultationPaymentFlow(item, balanceDate) {
       hasSchedule:false,
       installments:[],
       paidInstallments:paid ? [{ index:0, date:item?.paymentDate || item?.date, amount:totalValue }] : [],
-      openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:item?.forecastPaymentDate || item?.date, amount:totalValue }],
+      openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:item?.forecastPaymentDate || item?.dueDate || item?.date, amount:totalValue }],
       paidAmount:paid ? totalValue : 0,
       openAmount:paid ? 0 : totalValue,
     }
@@ -259,8 +262,18 @@ export function buildMetrics(rawData, options = {}) {
   const exitsFinancial = []
 
   surgeries.forEach(item => {
-    if (item.paymentStatus === 'pago' && inRange(item.paymentDate || item.date, startDate, endDate)) {
-      entriesFinancial.push({ id:`entry-surgery-${item.id}`, description:`Cirurgia - ${patientLabel(item.patient, item.id)}`, category:'cirurgia', value:item.totalValue || 0, date:item.paymentDate || item.date, origin:'cirurgia', referenceId:item.id })
+    if (item.paymentStatus !== 'cancelado') {
+      const flow = paymentScheduleFlow(item.totalValue, item, balanceDate)
+      flow.paidInstallments.forEach((payment, index) => {
+        if (!payment.date || !inRange(payment.date, startDate, endDate)) return
+        entriesFinancial.push({
+          id:`entry-surgery-${item.id}-${index}`,
+          description:flow.hasSchedule
+            ? `Cirurgia - ${patientLabel(item.patient, item.id)} (parcela ${index + 1}/${flow.installments.length})`
+            : `Cirurgia - ${patientLabel(item.patient, item.id)}`,
+          category:'cirurgia', value:payment.amount || 0, date:payment.date, origin:'cirurgia', referenceId:item.id,
+        })
+      })
     }
     if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
       const surgeryInvoiceCost = invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
@@ -277,7 +290,7 @@ export function buildMetrics(rawData, options = {}) {
   })
 
   consultations.forEach(item => {
-    const flow = consultationPaymentFlow(item, balanceDate)
+    const flow = paymentScheduleFlow(item.value, item, balanceDate)
     flow.paidInstallments.forEach((payment, index) => {
       if (!payment.date || !inRange(payment.date, startDate, endDate)) return
       entriesFinancial.push({
@@ -348,11 +361,32 @@ export function buildMetrics(rawData, options = {}) {
   const cashBalance = cashIn - cashOut
 
   const accountsReceivable = [
-    ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:'cirurgia', value:item.totalValue || 0, competenceDate:item.competenceDate || item.date, dueDate:item.dueDate || item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
+    ...surgeries
+      .filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate))
+      .flatMap(item => {
+        const flow = paymentScheduleFlow(item.totalValue, item, balanceDate)
+        if (flow.openAmount <= 0) return []
+        const pendingDates = flow.openInstallments.map(entry => entry.date).filter(Boolean)
+        const scheduleSummary = flow.hasSchedule
+          ? `${flow.installments.length} parcelas · recebido ${flow.paidInstallments.length}/${flow.installments.length}`
+          : ''
+        return [{
+          id:`surgery-${item.id}`,
+          source:'cirurgia',
+          sourceId:item.id,
+          patient:patientLabel(item.patient, item.id),
+          category:'cirurgia',
+          value:flow.openAmount,
+          competenceDate:item.competenceDate || item.date,
+          dueDate:pendingDates[0] || item.dueDate || item.date,
+          status:item.paymentStatus,
+          description:flow.hasSchedule ? `${mapProcedureName(procedures, item.procedureId)} (${scheduleSummary})` : mapProcedureName(procedures, item.procedureId),
+        }]
+      }),
     ...consultations
       .filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate))
       .flatMap(item => {
-        const flow = consultationPaymentFlow(item, balanceDate)
+        const flow = paymentScheduleFlow(item.value, item, balanceDate)
         if (flow.openAmount <= 0) return []
         const pendingDates = flow.openInstallments.map(entry => entry.date).filter(Boolean)
         const scheduleSummary = flow.hasSchedule
@@ -384,9 +418,15 @@ export function buildMetrics(rawData, options = {}) {
   const payablesOpenTotal = accountsPayable.reduce((acc, item) => acc + item.value, 0)
 
   const cumulativeEntries = []
-  surgeries.filter(item => item.paymentStatus === 'pago' && onOrBefore(item.paymentDate || item.date, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.totalValue || 0 }))
+  surgeries.forEach(item => {
+    if (item.paymentStatus === 'cancelado') return
+    const flow = paymentScheduleFlow(item.totalValue, item, balanceDate)
+    flow.paidInstallments.filter(payment => onOrBefore(payment.date, balanceDate)).forEach(payment => {
+      cumulativeEntries.push({ type:'entrada', value:payment.amount || 0 })
+    })
+  })
   consultations.forEach(item => {
-    const flow = consultationPaymentFlow(item, balanceDate)
+    const flow = paymentScheduleFlow(item.value, item, balanceDate)
     flow.paidInstallments.filter(payment => onOrBefore(payment.date, balanceDate)).forEach(payment => {
       cumulativeEntries.push({ type:'entrada', value:payment.amount || 0 })
     })

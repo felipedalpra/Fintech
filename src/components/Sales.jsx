@@ -21,7 +21,44 @@ const PAYMENT_MODES = [
 const PAYMENT_SCHEDULE_MODES = [
   { v:'unica', l:'Pagamento em 1 data' },
   { v:'duas_datas', l:'Pagamento em 2 datas' },
+  { v:'parcelas', l:'Parcelado (cronograma)' },
 ]
+const INSTALLMENT_FREQUENCIES = [
+  { v:'mensal', l:'Mensal' },
+  { v:'quinzenal', l:'Quinzenal' },
+  { v:'semanal', l:'Semanal' },
+]
+
+function round2(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
+}
+
+function shiftDate(dateStr, periods, frequency) {
+  const raw = String(dateStr || '').trim()
+  const base = raw ? new Date(`${raw}T00:00:00`) : new Date()
+  if (Number.isNaN(base.getTime())) return raw
+  if (frequency === 'semanal') base.setDate(base.getDate() + periods * 7)
+  else if (frequency === 'quinzenal') base.setDate(base.getDate() + periods * 14)
+  else base.setMonth(base.getMonth() + periods)
+  const y = base.getFullYear()
+  const m = String(base.getMonth() + 1).padStart(2, '0')
+  const d = String(base.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function generateInstallments({ total, count, firstDate, frequency, method }) {
+  const n = Math.max(1, Math.min(60, Math.floor(Number(count) || 1)))
+  const totalValue = Math.max(0, Number(total) || 0)
+  const base = Math.floor((totalValue / n) * 100) / 100
+  const rows = []
+  let accumulated = 0
+  for (let i = 0; i < n; i += 1) {
+    const amount = i === n - 1 ? round2(totalValue - accumulated) : base
+    accumulated = round2(accumulated + amount)
+    rows.push({ date:shiftDate(firstDate, i, frequency), amount, method:method || 'pix' })
+  }
+  return rows
+}
 const PAYMENT_METHOD_LABEL = {
   pix:'PIX',
   cartao:'Cartão',
@@ -96,6 +133,7 @@ export function Sales({ data, setData }) {
     installmentCount:2,
     installmentValue:0,
     firstInstallmentDate:'',
+    schedulePayments:[],
   }
 
   const [form, setForm] = useState(() => {
@@ -107,6 +145,7 @@ export function Sales({ data, setData }) {
   const [confirmId, setConfirmId] = useState(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
+  const [installmentModal, setInstallmentModal] = useState(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -137,10 +176,14 @@ export function Sales({ data, setData }) {
     const payment = decodePaymentMethod(item.paymentMethod)
     const payment1 = payment.payments?.[0]
     const payment2 = payment.payments?.[1]
+    const scheduledPayments = Array.isArray(payment.payments) ? payment.payments : []
+    const isScheduled = scheduledPayments.length > 2
     setForm({
       ...item,
       patientId: item.patientId || '',
       ...payment,
+      paymentScheduleMode: isScheduled ? 'parcelas' : payment.paymentScheduleMode,
+      schedulePayments: isScheduled ? scheduledPayments.map(p => ({ date:p.date, amount:p.amount, method:p.method })) : [],
       startTime:item.startTime || '',
       durationMinutes:item.durationMinutes || 180,
       payment1Date:payment1?.date || item.paymentDate || item.date || today(),
@@ -164,12 +207,14 @@ export function Sales({ data, setData }) {
     const installmentValue = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
       ? resolvedTotal / form.installmentCount
       : 0
-    const payments = form.paymentScheduleMode === 'duas_datas'
-      ? [
-        { date:form.payment1Date, amount:form.payment1Amount, method:form.payment1Method },
-        { date:form.payment2Date, amount:form.payment2Amount, method:form.payment2Method },
-      ]
-      : []
+    const payments = form.paymentScheduleMode === 'parcelas'
+      ? (form.schedulePayments || []).map(p => ({ date:p.date, amount:p.amount, method:p.method || 'pix' }))
+      : form.paymentScheduleMode === 'duas_datas'
+        ? [
+          { date:form.payment1Date, amount:form.payment1Amount, method:form.payment1Method },
+          { date:form.payment2Date, amount:form.payment2Amount, method:form.payment2Method },
+        ]
+        : []
     const paymentMethod = encodePaymentMethod({
       paymentMode:form.paymentMode,
       paymentMethod:form.paymentMethod,
@@ -187,8 +232,9 @@ export function Sales({ data, setData }) {
       || !form.payment2Method
       || scheduledTotal <= 0
     )) return
+    if (form.paymentScheduleMode === 'parcelas' && (payments.length < 2 || payments.some(p => !p.date || !(p.amount > 0)))) return
     const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
-    if (form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+    if (form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
     const {
       paymentMode,
       paymentScheduleMode,
@@ -202,6 +248,7 @@ export function Sales({ data, setData }) {
       mixMethodB,
       mixAmountA,
       mixAmountB,
+      schedulePayments,
       ...baseForm
     } = form
     const nextRecord = {
@@ -410,9 +457,37 @@ export function Sales({ data, setData }) {
               <div />
             </>
           )}
-          {form.paymentScheduleMode !== 'duas_datas' && <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />}
-          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
-          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (
+          {form.paymentScheduleMode === 'parcelas' && (
+            <div style={{ gridColumn:'1 / -1', border:`1px solid ${C.border}`, borderRadius:12, padding:14, background:C.surface }}>
+              {(form.schedulePayments || []).length > 0 ? (
+                <>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:8 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{form.schedulePayments.length} parcelas · {fmt(form.schedulePayments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0))}</div>
+                    <Btn variant="ghost" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setInstallmentModal({ rows:form.schedulePayments.map(p => ({ ...p })), count:form.schedulePayments.length, frequency:'mensal', firstDate:form.schedulePayments[0]?.date || form.date, method:form.schedulePayments[0]?.method || 'pix' })}>Editar parcelas</Btn>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:140, overflowY:'auto' }}>
+                    {form.schedulePayments.map((p, i) => (
+                      <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:C.textSub, borderTop:i ? `1px solid ${C.border}44` : 'none', paddingTop:i ? 4 : 0 }}>
+                        <span>{i + 1}ª · {formatDateBR(p.date)} · {PAYMENT_METHOD_LABEL[p.method] || p.method}</span>
+                        <span style={{ fontWeight:700, color:C.text }}>{fmt(p.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {Math.abs(form.schedulePayments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0) - (Number(form.totalValue) || 0)) > 0.01 && (
+                    <div style={{ fontSize:12, color:C.yellow, marginTop:8 }}>Soma das parcelas difere do valor total ({fmt(form.totalValue)}).</div>
+                  )}
+                </>
+              ) : (
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:13, color:C.textSub }}>Nenhuma parcela configurada ainda.</span>
+                  <Btn style={{ padding:'6px 14px', fontSize:12 }} onClick={() => setInstallmentModal({ rows:[], count:3, frequency:'mensal', firstDate:form.date || today(), method:'pix' })}>Configurar parcelas</Btn>
+                </div>
+              )}
+            </div>
+          )}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && form.paymentMode === 'misto' && (
             <>
               <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
               <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />
@@ -455,6 +530,56 @@ export function Sales({ data, setData }) {
             <Btn onClick={save} disabled={!form.patient && !form.patientId}>Salvar cirurgia</Btn>
           </div>
         </div>
+      </Modal>
+
+      <Modal open={!!installmentModal} onClose={() => setInstallmentModal(null)} title="Parcelas do pagamento">
+        {installmentModal && (() => {
+          const rows = installmentModal.rows || []
+          const rowsTotal = rows.reduce((acc, p) => acc + (Number(p.amount) || 0), 0)
+          const target = Number(form.totalValue) || 0
+          const diff = round2(rowsTotal - target)
+          const updateRow = (i, patch) => setInstallmentModal(cur => ({ ...cur, rows:cur.rows.map((r, idx) => idx === i ? { ...r, ...patch } : r) }))
+          return (
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <FInput label="Número de parcelas" type="number" value={installmentModal.count} onChange={value => setInstallmentModal(cur => ({ ...cur, count:value }))} />
+                <FInput label="Frequência" value={installmentModal.frequency} onChange={value => setInstallmentModal(cur => ({ ...cur, frequency:value }))} options={INSTALLMENT_FREQUENCIES} />
+                <FInput label="Data da 1ª parcela" type="date" value={installmentModal.firstDate} onChange={value => setInstallmentModal(cur => ({ ...cur, firstDate:value }))} />
+                <FInput label="Forma de pagamento" value={installmentModal.method} onChange={value => setInstallmentModal(cur => ({ ...cur, method:value }))} options={PAYMENT_METHODS} />
+              </div>
+              <Btn variant="ghost" onClick={() => setInstallmentModal(cur => ({ ...cur, rows:generateInstallments({ total:target, count:cur.count, firstDate:cur.firstDate, frequency:cur.frequency, method:cur.method }) }))}>
+                Gerar {Math.max(1, Math.min(60, Math.floor(Number(installmentModal.count) || 1)))} parcelas de {fmt(target / Math.max(1, Math.min(60, Math.floor(Number(installmentModal.count) || 1))))}
+              </Btn>
+              {rows.length > 0 && (
+                <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:280, overflowY:'auto' }}>
+                  {rows.map((row, i) => (
+                    <div key={i} style={{ display:'grid', gridTemplateColumns:'24px 1.1fr 1fr 1fr 28px', gap:8, alignItems:'end' }}>
+                      <div style={{ fontSize:12, color:C.textDim, paddingBottom:12 }}>{i + 1}</div>
+                      <FInput label={i === 0 ? 'Vencimento' : ''} type="date" value={row.date} onChange={value => updateRow(i, { date:value })} />
+                      <FInput label={i === 0 ? 'Valor' : ''} type="number" value={row.amount} onChange={value => updateRow(i, { amount:value })} />
+                      <FInput label={i === 0 ? 'Forma' : ''} value={row.method} onChange={value => updateRow(i, { method:value })} options={PAYMENT_METHODS} />
+                      <Btn variant="ghost" style={{ padding:'8px 8px', fontSize:12 }} onClick={() => setInstallmentModal(cur => ({ ...cur, rows:cur.rows.filter((_, idx) => idx !== i) }))}>×</Btn>
+                    </div>
+                  ))}
+                  <Btn variant="ghost" style={{ fontSize:12 }} onClick={() => setInstallmentModal(cur => ({ ...cur, rows:[...cur.rows, { date:cur.rows.length ? shiftDate(cur.rows[cur.rows.length - 1].date, 1, cur.frequency) : (cur.firstDate || today()), amount:0, method:cur.method || 'pix' }] }))}>+ Adicionar parcela</Btn>
+                </div>
+              )}
+              {rows.length > 0 && (
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:Math.abs(diff) > 0.01 ? C.yellow : C.green, fontWeight:700 }}>
+                  <span>Soma das parcelas: {fmt(rowsTotal)}</span>
+                  <span>{Math.abs(diff) > 0.01 ? `Diferença: ${fmt(diff)}` : 'Confere com o total'}</span>
+                </div>
+              )}
+              <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                <Btn variant="ghost" onClick={() => setInstallmentModal(null)}>Cancelar</Btn>
+                <Btn disabled={rows.length < 2 || rows.some(r => !r.date || !(Number(r.amount) > 0))} onClick={() => {
+                  setForm(current => ({ ...current, schedulePayments:rows.map(r => ({ date:r.date, amount:round2(r.amount), method:r.method || 'pix' })) }))
+                  setInstallmentModal(null)
+                }}>Salvar parcelas</Btn>
+              </div>
+            </div>
+          )
+        })()}
       </Modal>
 
       <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => setData(current => ({ ...current, surgeries:current.surgeries.filter(item => item.id !== confirmId) }))} />
