@@ -257,7 +257,7 @@ export function Settings() {
   )
 }
 
-const ROLE_LABELS = { admin:'Administrador', gestao:'Gestão', equipe:'Equipe' }
+const ROLE_LABELS = { admin:'Administrador', gestao:'Gestão', concierge:'Concierge', equipe:'Equipe' }
 
 function TeamSettings({ clinicId }) {
   const [members, setMembers] = useState([])
@@ -355,6 +355,7 @@ function TeamSettings({ clinicId }) {
               options={[
                 { v:'admin', l:'Administrador' },
                 { v:'gestao', l:'Gestão' },
+                { v:'concierge', l:'Concierge' },
                 { v:'equipe', l:'Equipe' },
               ]}
             />
@@ -387,6 +388,7 @@ function TeamSettings({ clinicId }) {
                 >
                   <option value="admin">Administrador</option>
                   <option value="gestao">Gestão</option>
+                  <option value="concierge">Concierge</option>
                   <option value="equipe">Equipe</option>
                 </select>
                 <Btn variant="ghost" onClick={() => removeMember(m.id)}>Remover</Btn>

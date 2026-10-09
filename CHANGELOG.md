@@ -5,6 +5,18 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (16)
+### Changed
+- Perfil `equipe` agora tem acesso somente a: Consultas, Agenda, Produtos e Pacientes. Removidos Dashboard, Procedimentos e Cirurgias. `UserRoleContext.jsx`.
+- Resumo Rápido (Caixa hoje / Lucro líq. mês) no sidebar agora é ocultado para perfis sem acesso ao módulo Financeiro (equipe e concierge). Somente Admin e Gestão veem. `FinanceWorkspace.jsx`.
+- Redirect ao tentar acessar página bloqueada agora aponta para a primeira página acessível do perfil, e não sempre para `/app/dashboard` (evitava loop para equipe). `FinanceWorkspace.jsx`.
+
+### Added
+- Novo perfil `concierge` (Jonas): acesso a Procedimentos, Cirurgias, Consultas, Agenda, Produtos e Pacientes — pode cadastrar orçamentos sem ver financeiro. `UserRoleContext.jsx`, `Settings.jsx`.
+- Opção "Concierge" no formulário de convite e no select de alteração de perfil da aba Equipe. `Settings.jsx`.
+
+> **Ação necessária no Supabase:** alterar o role do Jonas de `equipe` para `concierge` diretamente na tabela `clinic_members`.
+
 ## [Unreleased] - 2026-10-09 (15)
 ### Fixed
 - Trocar o procedimento no formulário de cirurgia agora atualiza o valor corretamente. Antes, o primeiro auto-fill impedia que mudanças subsequentes de procedimento afetassem o valor total. `Sales.jsx` linha 390.

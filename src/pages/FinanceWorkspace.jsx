@@ -659,7 +659,8 @@ export function FinanceWorkspace() {
   const google = useGoogleCalendarSync({ data:safeData, enabled:!loading })
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
-  if (!PAGES[page] || !canAccess(page)) return <Navigate to="/app/dashboard" replace />
+  const fallbackPage = NAV_SECTIONS.flatMap(s => s.items).find(item => canAccess(item.id))?.id || 'dashboard'
+  if (!PAGES[page] || !canAccess(page)) return <Navigate to={`/app/${fallbackPage}`} replace />
 
   const Page = PAGES[page]
   const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
@@ -769,7 +770,7 @@ export function FinanceWorkspace() {
           {isMobile && <div style={{ fontSize:10, color:C.textDim, marginTop:1 }}>{user.email}</div>}
         </div>
 
-        <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
+        {canAccess('finance') && <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
           <div style={{ display:'flex', flexDirection:'column', gap:ultraCompactDesktop ? 2 : 4 }}>
             <div>
@@ -788,7 +789,7 @@ export function FinanceWorkspace() {
               {sidebarStats.map(item => <div key={item} style={{ color:C.textDim, fontSize:isMobile ? 12 : 11 }}>{item}</div>)}
             </div>
           )}
-        </div>
+        </div>}
 
         <div style={{ flex:1, overflowY:isMobile ? 'scroll' : (compactForShortHeight ? 'auto' : 'hidden'), padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px'), WebkitOverflowScrolling:'touch', overscrollBehavior:'contain', touchAction:'pan-y' }}>
           {visibleSections.map(section => (

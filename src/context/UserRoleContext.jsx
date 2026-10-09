@@ -13,8 +13,13 @@ const ROLE_ACCESS = {
     'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients',
     'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ai',
   ],
+  // Jonas (concierge): pode cadastrar cirurgias, consultas e orçamentos — sem acesso financeiro
+  concierge: [
+    'plans', 'sales', 'consultations', 'calendar', 'products', 'patients',
+  ],
+  // Sumary, Jessica, Joyce: agenda, pacientes, consultas e produtos apenas
   equipe: [
-    'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'patients',
+    'consultations', 'calendar', 'products', 'patients',
   ],
 }
 
