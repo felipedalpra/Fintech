@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (11)
+### Added
+- Tooltip interativo no gráfico de Relatórios: ao passar o mouse sobre qualquer ponto, exibe card flutuante com receita, despesa e lucro do período, mais variação percentual e margem de lucro.
+### Changed
+- Pontos do gráfico agora são sempre visíveis (círculos); aumentam ao hover. Linha vertical tracejada marca a coluna ativa.
+
 ## [Unreleased] - 2026-10-09 (10)
 ### Changed
 - Tela de Procedimentos: cards menores (`minmax(220px,1fr)` em vez de 300px), fonte e espaçamentos reduzidos. Checklist e descrição removidos da visualização do card (continuam editáveis no modal).
