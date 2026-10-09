@@ -102,6 +102,7 @@ export function normalizeData(data) {
           dueDate:expense.dueDate || expense.date || '',
           paymentDate:expense.paymentDate || expense.paidDate || '',
           status:expense.status || (expense.paymentDate ? 'pago' : 'aberto'),
+          costCenter:expense.costCenter || '',
         }))
       : [],
     assets: Array.isArray(data?.assets) ? data.assets.map(item => ({

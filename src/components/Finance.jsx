@@ -10,8 +10,18 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { supabase } from '../lib/supabase.js'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const COST_CENTERS = [
+  { v:'', l:'Sem centro de custo' },
+  { v:'cirurgia', l:'Cirurgia Plástica' },
+  { v:'consulta', l:'Consultas' },
+  { v:'marketing', l:'Marketing' },
+  { v:'infraestrutura', l:'Infraestrutura' },
+  { v:'administrativo', l:'Administrativo' },
+  { v:'rh', l:'Recursos Humanos' },
+  { v:'outros', l:'Outros' },
+]
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
@@ -1233,6 +1243,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               {formError && modalType === 'extra' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
             </div>
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />
+            <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={COST_CENTERS} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
@@ -1265,6 +1276,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               {formError && modalType === 'expense' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
             </div>
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />
+            <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={COST_CENTERS} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (

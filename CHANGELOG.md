@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (20)
+### Added
+- Campo "Centro de custo" no modal de nova entrada e nova saída financeira. Opções: Cirurgia Plástica, Consultas, Marketing, Infraestrutura, Administrativo, RH, Outros. Campo persistido nas tabelas `extra_revenues` e `expenses` (coluna `cost_center`). `Finance.jsx`, `financeStore.js`, `dataModel.js`.
+
 ## [Unreleased] - 2026-10-09 (19)
 ### Fixed
 - Membros da clínica agora conseguem salvar recorrências, cirurgias via modal de recorrência em Finance, selecionar e criar pacientes em Cirurgias e em Consultas: `Recurrences.jsx`, `Finance.jsx`, `Sales.jsx`, `Consultations.jsx` agora usam `ownerId || user.id` em todos os writes e no `PatientSelector`.

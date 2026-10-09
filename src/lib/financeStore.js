@@ -191,6 +191,7 @@ async function fetchRelationalData(userId) {
       category:item.category || 'outras_receitas',
       value:Number(item.value || 0),
       date:item.date || '',
+      costCenter:item.cost_center || '',
     })),
     expenses:(expensesResult.data || []).map(item => ({
       id:item.id,
@@ -200,6 +201,7 @@ async function fetchRelationalData(userId) {
       dueDate:item.due_date || '',
       paymentDate:item.payment_date || '',
       status:item.status || 'aberto',
+      costCenter:item.cost_center || '',
     })),
     assets:(assetsResult.data || []).map(item => ({
       id:item.id,
@@ -332,6 +334,7 @@ function mapExtraRevenuesRows(userId, data) {
     category:item.category || 'outras_receitas',
     value:item.value || 0,
     date:item.date,
+    cost_center:item.costCenter || null,
   }))
 }
 
@@ -345,6 +348,7 @@ function mapExpensesRows(userId, data) {
     due_date:item.dueDate,
     payment_date:item.paymentDate || null,
     status:item.status || 'aberto',
+    cost_center:item.costCenter || null,
   }))
 }
 
