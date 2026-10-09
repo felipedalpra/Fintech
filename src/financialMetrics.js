@@ -315,8 +315,12 @@ export function buildMetrics(rawData, options = {}) {
   })
 
   extraRevenues.forEach(item => {
-    if (inRange(item.date, startDate, endDate) && onOrBefore(item.date, balanceDate)) {
-      entriesFinancial.push({ id:`entry-extra-${item.id}`, description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.date, origin:'outra_receita', originLabel:item.originLabel || '', referenceId:item.id })
+    // Só entra no caixa quando efetivamente recebida (status 'recebido').
+    // Receitas sem status (dados antigos) contam como recebidas (retrocompat).
+    const received = (item.status || 'recebido') === 'recebido'
+    const cashDate = item.date || item.dueDate
+    if (received && inRange(cashDate, startDate, endDate) && onOrBefore(cashDate, balanceDate)) {
+      entriesFinancial.push({ id:`entry-extra-${item.id}`, description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:cashDate, origin:'outra_receita', originLabel:item.originLabel || '', referenceId:item.id })
     }
   })
 
@@ -367,6 +371,7 @@ export function buildMetrics(rawData, options = {}) {
           description:flow.hasSchedule ? `${item.consultationType} (${scheduleSummary})` : item.consultationType,
         }]
       }),
+    ...extraRevenues.filter(item => (item.status || 'recebido') !== 'recebido' && onOrBefore(item.competenceDate || item.dueDate || item.date, balanceDate)).map(item => ({ id:`extra-${item.id}`, source:'outra_receita', sourceId:item.id, patient:item.originLabel || 'Receita', category:item.category || 'outras_receitas', value:Number(item.value || 0), competenceDate:item.competenceDate || item.date, dueDate:item.dueDate || item.date, status:'pendente', description:item.description })),
     ...recurringUntilBalance.filter(item => item.tipo === 'receita' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item))).map(item => ({ id:`recurrence-income-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, patient:'Recorrência', category:item.categoria || 'outras_receitas', value:Number(item.valor || 0), competenceDate:item.dueDate, dueDate:item.dueDate, status:'pendente', description:item.descricao || 'Receita fixa' })),
   ]
 
@@ -387,7 +392,7 @@ export function buildMetrics(rawData, options = {}) {
     })
   })
   productSales.filter(item => onOrBefore(item.saleDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.totalValue || 0 }))
-  extraRevenues.filter(item => onOrBefore(item.date, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.value || 0 }))
+  extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && onOrBefore(item.date || item.dueDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.value || 0 }))
   expenses.filter(item => item.status === 'pago' && onOrBefore(item.paymentDate || item.dueDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'saida', value:item.value || 0 }))
   productPurchases.filter(item => onOrBefore(item.purchaseDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'saida', value:item.totalValue || 0 }))
   surgeries.filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).forEach(item => {

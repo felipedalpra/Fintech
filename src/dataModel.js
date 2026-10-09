@@ -102,6 +102,7 @@ export function normalizeData(data) {
       competenceDate:item.competenceDate || item.date || '',
       dueDate:item.dueDate || item.date || '',
       originLabel:item.originLabel || '',
+      status:item.status || 'recebido',
     })) : [],
     expenses: Array.isArray(data?.expenses)
       ? data.expenses.map(expense => ({

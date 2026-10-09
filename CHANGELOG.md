@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (25)
+### Fixed
+- Receita extra agora tem situação **A receber / Já recebi** (antes entrava sempre no caixa no ato de salvar e nunca aparecia em Contas a receber). Quando "a receber": aparece em Contas a receber pelo vencimento, conta na DRE pela competência e só entra no caixa ao marcar como recebida. SQL em `supabase/extra_revenue_status_migration.sql` (coluna `status`).
+### Changed
+- Despesa passou a ter o mesmo controle explícito de situação (**Já paguei / A pagar**) em vez de adivinhar pelo vencimento. "A pagar" vai para Contas a pagar e só sai do caixa ao marcar como paga; na DRE conta pela competência. Botões Recebido/Pendente passam a funcionar também para receitas extras na aba "A receber". `Finance.jsx`, `financialMetrics.js`, `dataModel.js`, `financeStore.js`.
+
 ## [Unreleased] - 2026-10-09 (24)
 ### Added
 - Campo "Origem" (texto livre com sugestões, igual ao Centro de custo) em nova receita e nova despesa. Permite marcar de onde vem o lançamento (ex: Indicação, Instagram, Convênio X). Aparece na coluna Origem das abas Entradas/Saídas e no filtro. Lançamentos automáticos (cirurgia, consulta, produto) seguem com a origem do sistema. SQL em `supabase/origin_label_migration.sql` (coluna `origin_label` em `extra_revenues` e `expenses`). `Finance.jsx`, `dataModel.js`, `financeStore.js`, `financialMetrics.js`.

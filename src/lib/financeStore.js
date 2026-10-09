@@ -202,6 +202,7 @@ async function fetchRelationalData(userId) {
       competenceDate:item.competence_date || item.date || '',
       dueDate:item.due_date || item.date || '',
       originLabel:item.origin_label || '',
+      status:item.status || 'recebido',
     })),
     expenses:(expensesResult.data || []).map(item => ({
       id:item.id,
@@ -357,6 +358,7 @@ function mapExtraRevenuesRows(userId, data) {
     due_date:item.dueDate || item.date || null,
     cost_center:item.costCenter || null,
     origin_label:item.originLabel || null,
+    status:item.status || 'recebido',
   }))
 }
 

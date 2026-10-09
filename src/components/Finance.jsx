@@ -32,7 +32,7 @@ const DEFAULT_COST_CENTERS = [
   'Recursos Humanos',
   'Outros',
 ]
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), competenceDate:today(), dueDate:today(), costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), competenceDate:today(), dueDate:today(), status:'recebido', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 
 // Origem exibida: rótulo livre preenchido pelo usuário (ex: "Indicação") ou,
@@ -403,21 +403,21 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           return
         }
       }
-      const isFutureExpense = (form.dueDate || '') > today()
+      const isOpenExpense = form.status === 'aberto'
       const normalizedExpense = {
         ...form,
-        dueDate: form.dueDate || today(),
-        paymentDate: isFutureExpense ? null : (form.paymentDate || form.dueDate || today()),
-        status: isFutureExpense ? 'aberto' : 'pago',
+        dueDate: form.dueDate || form.paymentDate || today(),
+        paymentDate: isOpenExpense ? null : (form.paymentDate || form.dueDate || today()),
+        status: isOpenExpense ? 'aberto' : 'pago',
       }
-      if (isFutureExpense) {
+      if (isOpenExpense) {
         setData(current => ({
           ...current,
           expenses: editing
             ? current.expenses.map(record => record.id === editing ? { ...normalizedExpense, id:editing } : record)
             : [...current.expenses, { ...normalizedExpense, id:uid() }],
         }))
-        toast(editing ? 'Despesa atualizada.' : 'Despesa registrada como pendente.')
+        toast(editing ? 'Despesa atualizada.' : 'Despesa registrada como a pagar.')
         setShowModal(false)
         return
       }
@@ -484,6 +484,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       toast('Recorrência marcada como recebida.')
       return
     }
+    if (item.source === 'outra_receita') {
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', date:today() } : record) }))
+      toast('Receita marcada como recebida.')
+      return
+    }
     if (item.source === 'cirurgia') {
       setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'pago', paymentDate:today() } : record) }))
     }
@@ -524,6 +529,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   }
 
   const markReceivableAsPending = item => {
+    if (item.source === 'outra_receita') {
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'pendente', date:'' } : record) }))
+      toast('Receita marcada como a receber.', 'warning')
+      return
+    }
     if (item.source !== 'recorrencia') return
     setData(current => ({
       ...current,
@@ -1075,7 +1085,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           money={money}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, ['recorrencia','outra_receita'].includes(item.source) ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -1340,7 +1350,17 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               <>
                 <FInput label="Data de competência" required value={form.competenceDate || ''} onChange={value => setForm(current => ({ ...current, competenceDate:value }))} type="date" />
                 <div style={{ fontSize:11, color:C.textDim, marginTop:-10 }}>Mês a que a receita pertence na DRE (regime de competência), mesmo que o dinheiro entre em outra data.</div>
-                <FInput label="Data do recebimento (caixa)" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+                <FInput label="Situação" value={form.status || 'recebido'} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'recebido', l:'Já recebi' }, { v:'pendente', l:'A receber' }]} />
+                {form.status === 'pendente' ? (
+                  <>
+                    <FInput label="Vencimento (previsão de recebimento)" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value, date:'' }))} type="date" />
+                    <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
+                      Será registrada como <strong>a receber</strong> (aparece em "A receber") e só entra no caixa quando você marcar como recebida. Na DRE já conta pela competência.
+                    </div>
+                  </>
+                ) : (
+                  <FInput label="Data do recebimento (caixa)" required value={form.date} onChange={value => setForm(current => ({ ...current, date:value, dueDate:current.dueDate || value }))} type="date" />
+                )}
               </>
             )}
 
@@ -1378,19 +1398,16 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               <>
                 <FInput label="Data de competência" required value={form.competenceDate || ''} onChange={value => setForm(current => ({ ...current, competenceDate:value }))} type="date" />
                 <div style={{ fontSize:11, color:C.textDim, marginTop:-10 }}>Mês a que a despesa pertence na DRE (regime de competência), mesmo que vença ou seja paga em outra data.</div>
-                <FInput
-                  label="Data de vencimento"
-                  value={form.dueDate}
-                  onChange={value => {
-                    const isFuture = value > today()
-                    setForm(current => ({ ...current, dueDate:value, paymentDate:isFuture ? '' : value, status:isFuture ? 'aberto' : 'pago' }))
-                  }}
-                  type="date"
-                />
-                {form.dueDate > today() && (
-                  <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
-                    Data futura — será registrada como <strong>pendente</strong> (aparece em "A pagar").
-                  </div>
+                <FInput label="Situação" value={form.status === 'aberto' ? 'aberto' : 'pago'} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'pago', l:'Já paguei' }, { v:'aberto', l:'A pagar' }]} />
+                {form.status === 'aberto' ? (
+                  <>
+                    <FInput label="Vencimento" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
+                    <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
+                      Será registrada como <strong>a pagar</strong> (aparece em "A pagar") e só sai do caixa quando você marcar como paga. Na DRE já conta pela competência.
+                    </div>
+                  </>
+                ) : (
+                  <FInput label="Data do pagamento (caixa)" required value={form.paymentDate || ''} onChange={value => setForm(current => ({ ...current, paymentDate:value, dueDate:current.dueDate || value }))} type="date" />
                 )}
               </>
             )}
@@ -1971,12 +1988,14 @@ function isSaveDisabled(modalType, form, editing) {
   if (modalType === 'extra') {
     if (!form.description) return true
     if (!editing && form.launchType === 'fixa') return !form.recurrenceStartDate
-    return !form.date || !form.competenceDate
+    if (!form.competenceDate) return true
+    return form.status === 'pendente' ? !form.dueDate : !form.date
   }
   if (modalType === 'expense') {
     if (!form.description || !form.category) return true
     if (!editing && form.launchType === 'fixa') return !form.recurrenceStartDate
-    return !form.dueDate || !form.competenceDate
+    if (!form.competenceDate) return true
+    return form.status === 'aberto' ? !form.dueDate : !form.paymentDate
   }
   return false
 }
