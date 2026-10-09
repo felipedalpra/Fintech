@@ -501,6 +501,33 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       setConfirmState(null)
       return
     }
+    if (confirmState.action === 'delete-entry') {
+      const { origin, referenceId } = confirmState
+      if (origin === 'cirurgia') {
+        setData(current => ({ ...current, surgeries:current.surgeries.map(s => s.id === referenceId ? { ...s, paymentStatus:'pendente', paymentDate:null } : s) }))
+        toast('Cirurgia marcada como pendente — saiu do financeiro.', 'warning')
+      } else if (origin === 'consulta') {
+        setData(current => ({ ...current, consultations:current.consultations.map(c => c.id === referenceId ? { ...c, paymentStatus:'pendente', paymentDate:null } : c) }))
+        toast('Consulta marcada como pendente — saiu do financeiro.', 'warning')
+      } else if (origin === 'outra_receita') {
+        setData(current => ({ ...current, extraRevenues:current.extraRevenues.filter(r => r.id !== referenceId) }))
+        toast('Receita removida.', 'warning')
+      } else if (origin === 'venda_produto') {
+        setData(current => ({ ...current, productSales:current.productSales.filter(r => r.id !== referenceId) }))
+        toast('Venda de produto removida.', 'warning')
+      }
+      setConfirmState(null)
+      return
+    }
+    if (confirmState.action === 'delete-exit') {
+      const { origin, referenceId } = confirmState
+      if (origin === 'compra_produto') {
+        setData(current => ({ ...current, productPurchases:current.productPurchases.filter(r => r.id !== referenceId) }))
+        toast('Compra de produto removida.', 'warning')
+      }
+      setConfirmState(null)
+      return
+    }
     if (confirmState.action === 'confirm-expense-save') {
       const payload = confirmState.payload?.expense
       if (!payload) {
@@ -880,7 +907,27 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </div>
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => ({ key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value] }))} emptyMessage="Nenhuma entrada financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
+          const removable = ['cirurgia', 'consulta', 'outra_receita', 'venda_produto'].includes(item.origin)
+          const labels = { cirurgia:'Cancelar pagamento', consulta:'Cancelar pagamento', outra_receita:'Remover receita', venda_produto:'Remover venda' }
+          const messages = {
+            cirurgia:'Cancelar pagamento marca a cirurgia como pendente e a remove do financeiro. Ela continua cadastrada em Cirurgias.',
+            consulta:'Cancelar pagamento marca a consulta como pendente e a remove do financeiro. Ela continua cadastrada em Consultas.',
+            outra_receita:'Remover esta receita adicional? Ela será excluída permanentemente.',
+            venda_produto:'Remover esta venda de produto? Ela será excluída permanentemente.',
+          }
+          return {
+            key:item.id,
+            cells:[
+              formatDateBR(item.date), item.category, item.description, item.origin,
+              <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>,
+              removable
+                ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, title:labels[item.origin], message:messages[item.origin], confirmLabel:'Confirmar', confirmVariant:'danger' })}>{labels[item.origin]}</Btn>
+                : <span style={{ color:C.textDim, fontSize:11 }}>—</span>,
+            ],
+            rawCells:[item.date, item.category, item.description, item.origin, item.value, removable ? 1 : 0],
+          }
+        })} emptyMessage="Nenhuma entrada financeira no período." />
       </>}
 
       {tab === 'saidas' && <>
@@ -913,7 +960,17 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => ({ key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, item.origin === 'despesa' ? <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir saída', message:'Deseja excluir esta saída paga? Essa ação remove o lançamento de despesa vinculado.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Excluir</Btn> : <span style={{ color:C.textSub, fontSize:12 }}>-</span>], rawCells:[item.date, item.category, item.description, item.origin, item.value, item.origin === 'despesa' ? 1 : 0] }))} emptyMessage="Nenhuma saída financeira no período." />
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
+          let actionCell
+          if (item.origin === 'despesa') {
+            actionCell = <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir despesa', message:'Deseja excluir esta despesa? O lançamento será removido permanentemente.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Remover</Btn>
+          } else if (item.origin === 'compra_produto') {
+            actionCell = <Btn variant="danger" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-exit', origin:'compra_produto', referenceId:item.referenceId, title:'Remover compra de produto', message:'Deseja remover esta compra de produto? Ela será excluída permanentemente.', confirmLabel:'Remover', confirmVariant:'danger' })}>Remover</Btn>
+          } else {
+            actionCell = <span style={{ color:C.textDim, fontSize:11 }}>—</span>
+          }
+          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.origin, <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, actionCell], rawCells:[item.date, item.category, item.description, item.origin, item.value, ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
+        })} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
       {tab === 'receber' && <>

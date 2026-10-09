@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (17)
+### Added
+- Botão "Remover" nas entradas financeiras: cirurgias e consultas voltam para pendente (saem do financeiro mas continuam cadastradas); receitas adicionais e vendas de produto são excluídas permanentemente. `Finance.jsx`.
+- Botão "Remover" em compras de produto nas saídas (além de despesas, que já tinham). `Finance.jsx`.
+
 ## [Unreleased] - 2026-10-09 (16)
 ### Changed
 - Perfil `equipe` agora tem acesso somente a: Consultas, Agenda, Produtos e Pacientes. Removidos Dashboard, Procedimentos e Cirurgias. `UserRoleContext.jsx`.
