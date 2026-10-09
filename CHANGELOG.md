@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-08 (8)
+### Changed
+- `FInput` com `type="number"` agora exibe e aceita valores no padrão brasileiro: vírgula como separador decimal e ponto como separador de milhar (ex: `1.234,56`). Ao clicar no campo, permite digitar normalmente com vírgula; ao sair do campo, o valor é formatado automaticamente. Teclado mobile mostra teclado numérico com decimal.
+
 ## [Unreleased] - 2026-10-08 (7)
 ### Fixed
 - `Consultations.jsx`: `forecastPaymentDate` não é mais inicializado com `today()` ao abrir o formulário. Antes, toda consulta nova aparecia imediatamente em "A receber" com a data de hoje, mesmo sem data de recebimento prevista. Agora o campo começa vazio e a data de vencimento em "A receber" usa `item.date` como fallback.

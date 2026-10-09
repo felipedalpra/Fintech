@@ -62,6 +62,38 @@ export function Btn({ children, onClick, variant='primary', disabled, style }) {
 }
 
 export function FInput({ label, value, onChange, type='text', placeholder, options, required }) {
+  const isNum = type === 'number'
+  const [focused, setFocused] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const displayValue = () => {
+    if (!isNum) return value
+    if (focused) return draft
+    const n = parseFloat(String(value))
+    if (!value && value !== 0) return ''
+    if (isNaN(n)) return ''
+    return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  const handleFocus = e => {
+    if (isNum) {
+      const n = parseFloat(String(value))
+      setDraft(!isNaN(n) && n !== 0 ? String(n).replace('.', ',') : '')
+      setFocused(true)
+    }
+    e.currentTarget.style.borderColor = C.accent
+  }
+
+  const handleBlur = e => {
+    if (isNum) {
+      const raw = draft.replace(/\./g, '').replace(',', '.')
+      onChange(parseFloat(raw) || 0)
+      setDraft('')
+      setFocused(false)
+    }
+    e.currentTarget.style.borderColor = C.border
+  }
+
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
       {label && <label style={base.label}>{label}{required&&<span style={{color:C.red}}> *</span>}</label>}
@@ -70,11 +102,15 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
             style={{ ...base.input, appearance:'none', cursor:'pointer' }}>
             {options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
-        : <input type={type} value={value} placeholder={placeholder}
-            onChange={e=>onChange(type==='number'?(parseFloat(e.target.value)||0):e.target.value)}
+        : <input
+            type={isNum ? 'text' : type}
+            inputMode={isNum ? 'decimal' : undefined}
+            value={displayValue()}
+            placeholder={placeholder}
+            onChange={e => isNum ? setDraft(e.target.value) : onChange(e.target.value)}
             style={base.input}
-            onFocus={e=>(e.currentTarget.style.borderColor=C.accent)}
-            onBlur={e=>(e.currentTarget.style.borderColor=C.border)} />
+            onFocus={handleFocus}
+            onBlur={handleBlur} />
       }
     </div>
   )
