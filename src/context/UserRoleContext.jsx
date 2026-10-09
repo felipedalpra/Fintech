@@ -73,14 +73,18 @@ export function UserRoleProvider({ children }) {
         setClinicId(membership.clinic_id)
         setRole(membership.role)
         setIsOwner(false)
+        // data_owner_id() é SECURITY DEFINER — funciona mesmo sem leitura direta em clinics
+        const { data: ownerUuid } = await supabase.rpc('data_owner_id')
+        if (!mounted) return
+        setOwnerId(ownerUuid || user.id)
+        // nome da clínica: tenta buscar, mas não trava se RLS bloquear
         const { data: memberClinic } = await supabase
           .from('clinics')
-          .select('id, name, owner_id')
+          .select('name')
           .eq('id', membership.clinic_id)
           .maybeSingle()
         if (!mounted) return
-        setClinicName(memberClinic?.name || '')
-        setOwnerId(memberClinic?.owner_id || null)
+        if (memberClinic?.name) setClinicName(memberClinic.name)
         setLoading(false)
         return
       }
