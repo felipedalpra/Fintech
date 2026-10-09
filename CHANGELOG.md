@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (21)
+### Changed
+- Centro de custo agora é campo de texto livre com sugestões (creatable combobox). O usuário pode digitar um valor novo, salvar o registro e o valor aparece como sugestão nas próximas vezes. `UI.jsx` (prop `creatable` no FInput via `<datalist>`), `Finance.jsx` (memo `allCostCenters` agrega valores já usados).
+
 ## [Unreleased] - 2026-10-09 (20)
 ### Added
 - Campo "Centro de custo" no modal de nova entrada e nova saída financeira. Opções: Cirurgia Plástica, Consultas, Marketing, Infraestrutura, Administrativo, RH, Outros. Campo persistido nas tabelas `extra_revenues` e `expenses` (coluna `cost_center`). `Finance.jsx`, `financeStore.js`, `dataModel.js`.

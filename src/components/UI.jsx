@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { C, base } from '../theme.js'
 
 function isLightHexColor(hex) {
@@ -61,10 +61,11 @@ export function Btn({ children, onClick, variant='primary', disabled, style }) {
   )
 }
 
-export function FInput({ label, value, onChange, type='text', placeholder, options, required }) {
+export function FInput({ label, value, onChange, type='text', placeholder, options, required, creatable }) {
   const isNum = type === 'number'
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
+  const listId = useId()
 
   const displayValue = () => {
     if (!isNum) return value
@@ -97,20 +98,28 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
       {label && <label style={base.label}>{label}{required&&<span style={{color:C.red}}> *</span>}</label>}
-      {options
+      {options && !creatable
         ? <select value={value} onChange={e=>onChange(e.target.value)}
             style={{ ...base.input, appearance:'none', cursor:'pointer' }}>
             {options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
-        : <input
-            type={isNum ? 'text' : type}
-            inputMode={isNum ? 'decimal' : undefined}
-            value={displayValue()}
-            placeholder={placeholder}
-            onChange={e => isNum ? setDraft(e.target.value) : onChange(e.target.value)}
-            style={base.input}
-            onFocus={handleFocus}
-            onBlur={handleBlur} />
+        : <>
+            <input
+              type={isNum ? 'text' : type}
+              inputMode={isNum ? 'decimal' : undefined}
+              value={displayValue()}
+              placeholder={placeholder}
+              list={options && creatable ? listId : undefined}
+              onChange={e => isNum ? setDraft(e.target.value) : onChange(e.target.value)}
+              style={base.input}
+              onFocus={handleFocus}
+              onBlur={handleBlur} />
+            {options && creatable && (
+              <datalist id={listId}>
+                {options.map(o=><option key={o.v} value={o.v} />)}
+              </datalist>
+            )}
+          </>
       }
     </div>
   )

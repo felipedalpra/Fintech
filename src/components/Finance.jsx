@@ -10,15 +10,14 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { supabase } from '../lib/supabase.js'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
-const COST_CENTERS = [
-  { v:'', l:'Sem centro de custo' },
-  { v:'cirurgia', l:'Cirurgia Plástica' },
-  { v:'consulta', l:'Consultas' },
-  { v:'marketing', l:'Marketing' },
-  { v:'infraestrutura', l:'Infraestrutura' },
-  { v:'administrativo', l:'Administrativo' },
-  { v:'rh', l:'Recursos Humanos' },
-  { v:'outros', l:'Outros' },
+const DEFAULT_COST_CENTERS = [
+  'Cirurgia Plástica',
+  'Consultas',
+  'Marketing',
+  'Infraestrutura',
+  'Administrativo',
+  'Recursos Humanos',
+  'Outros',
 ]
 const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
@@ -182,6 +181,19 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     if (!prevRange.start) return null
     return buildMetrics(mergedData, { startDate: prevRange.start, endDate: prevRange.end, balanceDate: prevRange.end })
   }, [mergedData, prevRange.start, prevRange.end])
+
+  const allCostCenters = useMemo(() => {
+    const defaults = new Set(DEFAULT_COST_CENTERS)
+    const custom = new Set()
+    for (const item of [...(data?.extraRevenues || []), ...(data?.expenses || [])]) {
+      if (item.costCenter && !defaults.has(item.costCenter)) custom.add(item.costCenter)
+    }
+    return [
+      { v:'', l:'Sem centro de custo' },
+      ...DEFAULT_COST_CENTERS.map(l => ({ v:l, l })),
+      ...[...custom].map(l => ({ v:l, l })),
+    ]
+  }, [data?.extraRevenues, data?.expenses])
 
   useEffect(() => {
     setTab(defaultTab)
@@ -1243,7 +1255,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               {formError && modalType === 'extra' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
             </div>
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />
-            <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={COST_CENTERS} />
+            <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
@@ -1276,7 +1288,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               {formError && modalType === 'expense' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
             </div>
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />
-            <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={COST_CENTERS} />
+            <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
