@@ -14,11 +14,30 @@ Antes de qualquer alteração, leia `PROJECT_MEMORY.md` e `SYSTEM_RULES.md`.
 
 ### Equipe da clínica e níveis de acesso
 
-| Perfil | Quem | O que pode ver |
-|--------|------|----------------|
-| Administrador | Dra. Vitoria, Augusto | Acesso total — financeiro completo, configurações |
-| Gestão | Lunara | CRM, agenda, financeiro operacional — sem configurações sensíveis |
-| Equipe | Secretaria/recepção | WhatsApp, agenda, CRM básico — sem DRE nem financeiro |
+| Perfil | Quem | Email |
+|--------|------|-------|
+| Administrador | Dra. Vitoria Ribeiro | vitoria.ribeiroo.cardoso@gmail.com |
+| Administrador | Augusto | *(email pendente)* |
+| Gestão | Lunara | *(email pendente)* |
+| Equipe | Jonas (concierge) | jonassg1996@gmail.com |
+| Equipe | Sumary (secretária) | sumaryoliveira72@gmail.com |
+| Equipe | Jessica | jessycachriis26@gmail.com |
+
+#### Permissões por módulo (definição da Dra. Vitoria — 2026-10-08)
+
+| Módulo | Admin | Gestão | Equipe |
+|--------|-------|--------|--------|
+| Financeiro completo (DRE, fluxo de caixa, metas, totais mensais) | ✅ | ✅ | ❌ |
+| Valores de paciente (cadastrar orçamento/procedimento) | ✅ | ✅ | ✅ Jonas |
+| CRM — cadastro de pacientes | ✅ | ✅ | ✅ |
+| Pedido de exames | ✅ | ✅ | ✅ |
+| Funil de jornada / agendamentos | ✅ | ✅ | ✅ |
+| WhatsApp — uso (enviar/receber mensagens) | ✅ | ✅ | ✅ |
+| WhatsApp — monitoramento e configuração | ✅ | ❌ | ❌ |
+| Configurações da clínica | ✅ | ❌ | ❌ |
+
+> **Nota sobre Jonas:** ele pode cadastrar valores de procedimentos para pacientes (orçamento), mas não vê o fluxo de caixa, DRE nem totais financeiros do período.  
+> **Nota sobre WhatsApp:** todos usam, mas apenas Dra. Vitoria e Augusto podem monitorar (ver todas as conversas de outros usuários) e configurar. A clínica usa **WhatsApp Business** — não WhatsApp pessoal.
 
 > O controle de acesso por perfil ainda não foi implementado. É parte da Fase 1.
 

@@ -2,16 +2,40 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Permitir que a Dra. Vitoria convide colaboradoras (Lunara, secretaria) com acesso restrito ao sistema, onde cada perfil vê apenas as seções autorizadas.
+**Goal:** Permitir que a Dra. Vitoria convide a equipe (Jonas, Sumary, Jessica, Lunara) com acesso restrito, onde cada perfil vê apenas as seções autorizadas.
 
-**Architecture:** Uma tabela `clinic_members` associa usuários Supabase a uma clínica com um role. O `user_id` da Dra. (a dona da conta) é o `owner_id` da clínica. Convidadas fazem login com sua própria conta Supabase e acessam os dados da clínica via RLS policies que checam membership. Um novo contexto `UserRoleContext` expõe o role atual para o frontend filtrar a nav e proteger rotas.
+**Architecture:** Uma tabela `clinic_members` associa usuários Supabase a uma clínica com um role. O `user_id` da Dra. (a dona da conta) é o `owner_id` da clínica. Convidados fazem login com sua própria conta Supabase e acessam os dados da clínica via RLS policies que checam membership. Um novo contexto `UserRoleContext` expõe o role atual para o frontend filtrar a nav e proteger rotas.
 
-**Três roles definidos no CLAUDE.md:**
-| Role | Quem | Acesso |
-|------|------|--------|
-| `admin` | Dra. Vitoria, Augusto | Tudo — financeiro completo, configurações |
-| `gestao` | Lunara | CRM, agenda, financeiro operacional (sem DRE nem configurações sensíveis) |
-| `equipe` | Secretaria/recepção | WhatsApp, agenda, CRM básico (sem DRE nem financeiro) |
+> Equipe completa e emails estão em `CLAUDE.md` — consultar sempre como fonte de verdade.
+
+**Roles e permissões confirmados pela Dra. Vitoria (2026-10-08):**
+
+| Role | Quem |
+|------|------|
+| `admin` | Dra. Vitoria, Augusto |
+| `gestao` | Lunara |
+| `equipe` | Jonas (concierge), Sumary (secretária), Jessica |
+
+**Permissões por módulo:**
+
+| Módulo / Seção | `admin` | `gestao` | `equipe` |
+|----------------|---------|----------|----------|
+| Financeiro — DRE, fluxo de caixa, metas, totais de período | ✅ | ✅ | ❌ |
+| Financeiro — cadastrar valor de procedimento em paciente | ✅ | ✅ | ✅ Jonas |
+| CRM — cadastro e consulta de pacientes | ✅ | ✅ | ✅ |
+| Pedido de exames / receituário | ✅ | ✅ | ✅ |
+| Funil de jornada / agendamentos | ✅ | ✅ | ✅ |
+| WhatsApp — enviar/receber mensagens | ✅ | ✅ | ✅ |
+| WhatsApp — monitorar conversas alheias e configurar | ✅ | ❌ | ❌ |
+| Settings / configurações da clínica | ✅ | ❌ | ❌ |
+
+> **Jonas:** `equipe` com permissão extra de cadastrar valor em paciente. Não acessa módulo Financeiro (DRE, caixa, totais).  
+> **WhatsApp:** todos enviam/recebem. Apenas `admin` monitora e configura. Obrigatório usar **WhatsApp Business**.
+
+**Seções visíveis por role (nav do FinanceWorkspace):**
+- `admin`: todas
+- `gestao`: CRM, Pacientes, Funil, Agenda, Exames, Receituário, WhatsApp, Financeiro (sem Settings)
+- `equipe`: CRM, Pacientes, Funil, Agenda, Exames, Receituário, WhatsApp — **sem** módulo Financeiro
 
 **Tech Stack:** React 18, Supabase (Auth + Postgres + RLS), Context API
 
