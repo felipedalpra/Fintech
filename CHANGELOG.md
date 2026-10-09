@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (26)
+### Added
+- Aviso de vencimento "em atraso" nos lançamentos: ao marcar uma receita/despesa como "a receber/a pagar" com vencimento anterior a hoje (ex: lançamento retroativo de setembro), aparece um alerta vermelho indicando que ficará em atraso/inadimplência até ser liquidado. `Finance.jsx`.
+
 ## [Unreleased] - 2026-10-09 (25)
 ### Fixed
 - Receita extra agora tem situação **A receber / Já recebi** (antes entrava sempre no caixa no ato de salvar e nunca aparecia em Contas a receber). Quando "a receber": aparece em Contas a receber pelo vencimento, conta na DRE pela competência e só entra no caixa ao marcar como recebida. SQL em `supabase/extra_revenue_status_migration.sql` (coluna `status`).

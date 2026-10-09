@@ -1354,9 +1354,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                 {form.status === 'pendente' ? (
                   <>
                     <FInput label="Vencimento (previsão de recebimento)" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value, date:'' }))} type="date" />
-                    <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
-                      Será registrada como <strong>a receber</strong> (aparece em "A receber") e só entra no caixa quando você marcar como recebida. Na DRE já conta pela competência.
-                    </div>
+                    {form.dueDate && form.dueDate < today() ? (
+                      <div style={{ fontSize:12, color:C.red, background:`${C.red}12`, border:`1px solid ${C.red}33`, borderRadius:8, padding:'8px 12px' }}>
+                        Vencimento <strong>em atraso</strong> (anterior a hoje). Será registrada como a receber e aparece em "A receber" e na Inadimplência até você marcar como recebida.
+                      </div>
+                    ) : (
+                      <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
+                        Será registrada como <strong>a receber</strong> (aparece em "A receber") e só entra no caixa quando você marcar como recebida. Na DRE já conta pela competência.
+                      </div>
+                    )}
                   </>
                 ) : (
                   <FInput label="Data do recebimento (caixa)" required value={form.date} onChange={value => setForm(current => ({ ...current, date:value, dueDate:current.dueDate || value }))} type="date" />
@@ -1402,9 +1408,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                 {form.status === 'aberto' ? (
                   <>
                     <FInput label="Vencimento" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
-                    <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
-                      Será registrada como <strong>a pagar</strong> (aparece em "A pagar") e só sai do caixa quando você marcar como paga. Na DRE já conta pela competência.
-                    </div>
+                    {form.dueDate && form.dueDate < today() ? (
+                      <div style={{ fontSize:12, color:C.red, background:`${C.red}12`, border:`1px solid ${C.red}33`, borderRadius:8, padding:'8px 12px' }}>
+                        Vencimento <strong>em atraso</strong> (anterior a hoje). Será registrada como a pagar e aparece em "A pagar" e na Inadimplência até você marcar como paga.
+                      </div>
+                    ) : (
+                      <div style={{ fontSize:12, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}33`, borderRadius:8, padding:'8px 12px' }}>
+                        Será registrada como <strong>a pagar</strong> (aparece em "A pagar") e só sai do caixa quando você marcar como paga. Na DRE já conta pela competência.
+                      </div>
+                    )}
                   </>
                 ) : (
                   <FInput label="Data do pagamento (caixa)" required value={form.paymentDate || ''} onChange={value => setForm(current => ({ ...current, paymentDate:value, dueDate:current.dueDate || value }))} type="date" />
