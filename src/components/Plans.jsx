@@ -12,8 +12,13 @@ export function Plans({ data, setData }) {
   const [editing, setEditing] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
+  const [search, setSearch] = useState('')
   const m = useMetrics(data)
   const procedureMap = new Map(m.byProcedure.map(item => [item.id, item]))
+
+  const filtered = data.procedures.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  )
 
   const openAdd = () => {
     setForm({ ...empty, id:uid() })
@@ -45,8 +50,16 @@ export function Plans({ data, setData }) {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <div style={{ display:'flex', justifyContent:'flex-end' }}><Btn onClick={openAdd}>+ Novo Procedimento</Btn></div>
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+      <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar procedimento..."
+          style={{ flex:1, minWidth:200, padding:'8px 12px', borderRadius:10, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:13, fontFamily:'inherit', outline:'none' }}
+        />
+        <Btn onClick={openAdd}>+ Novo Procedimento</Btn>
+      </div>
 
       {data.procedures.length === 0 && (
         <Card>
@@ -56,47 +69,38 @@ export function Plans({ data, setData }) {
         </Card>
       )}
 
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:16 }}>
-        {data.procedures.map(procedure => {
+      {data.procedures.length > 0 && filtered.length === 0 && (
+        <p style={{ color:C.textDim, fontSize:13, textAlign:'center', padding:'24px 0' }}>Nenhum procedimento encontrado para "{search}".</p>
+      )}
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:12 }}>
+        {filtered.map(procedure => {
           const procedureStats = procedureMap.get(procedure.id)
           const count = procedureStats?.count || 0
           const revenue = procedureStats?.revenue || 0
-          const checklist = Array.isArray(procedure.checklist) ? procedure.checklist : []
 
           return (
-            <Card key={procedure.id} glow={procedure.color+'25'} style={{ borderTop:`3px solid ${procedure.color}` }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
-                <h3 style={{ margin:0, fontSize:20, fontWeight:800, color:procedure.color }}>{procedure.name}</h3>
-                <div style={{ display:'flex', gap:8 }}>
-                  <Btn variant="ghost" onClick={() => openEdit(procedure)} style={{ padding:'5px 10px', fontSize:12 }}>Editar</Btn>
-                  <Btn variant="danger" onClick={() => setConfirmId(procedure.id)} style={{ padding:'5px 10px', fontSize:12 }}>Excluir</Btn>
+            <div key={procedure.id} style={{ borderRadius:16, border:`1px solid ${C.border}`, borderTop:`3px solid ${procedure.color}`, background:C.surface, padding:'14px 16px', display:'flex', flexDirection:'column', gap:8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
+                <div style={{ fontSize:13, fontWeight:800, color:procedure.color, lineHeight:1.3 }}>{procedure.name}</div>
+                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                  <Btn variant="ghost" onClick={() => openEdit(procedure)} style={{ padding:'3px 8px', fontSize:11 }}>Editar</Btn>
+                  <Btn variant="danger" onClick={() => setConfirmId(procedure.id)} style={{ padding:'3px 8px', fontSize:11 }}>Excluir</Btn>
                 </div>
               </div>
-              <div style={{ fontSize:32, fontWeight:800, color:C.text, marginBottom:4 }}>
-                {fmt(procedure.price)}
-              </div>
-              <div style={{ fontSize:12, color:C.textDim, marginBottom:10 }}>{procedure.durationHours || 0}h estimadas de sala / equipe</div>
-              {procedure.desc && <p style={{ color:C.textSub, fontSize:13, margin:'8px 0 16px' }}>{procedure.desc}</p>}
-              {checklist.length > 0 && (
-                <ul style={{ listStyle:'none', padding:0, margin:'0 0 16px', display:'flex', flexDirection:'column', gap:6 }}>
-                  {checklist.map((item, index) => (
-                    <li key={index} style={{ fontSize:13, color:C.textSub, display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ color:procedure.color, fontSize:12 }}>✓</span>{item}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:14, display:'flex', gap:24 }}>
+              <div style={{ fontSize:22, fontWeight:800, color:C.text }}>{fmt(procedure.price)}</div>
+              <div style={{ fontSize:11, color:C.textDim }}>{procedure.durationHours || 0}h estimadas de sala / equipe</div>
+              <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:10, display:'flex', gap:20, marginTop:2 }}>
                 <div>
-                  <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>Cirurgias</div>
-                  <div style={{ fontSize:22, fontWeight:700, color:C.text }}>{count}</div>
+                  <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:2 }}>Cirurgias</div>
+                  <div style={{ fontSize:16, fontWeight:700, color:C.text }}>{count}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>Valor projetado</div>
-                  <div style={{ fontSize:22, fontWeight:700, color:procedure.color }}>{fmt(revenue)}</div>
+                  <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:2 }}>Valor projetado</div>
+                  <div style={{ fontSize:16, fontWeight:700, color:procedure.color }}>{fmt(revenue)}</div>
                 </div>
               </div>
-            </Card>
+            </div>
           )
         })}
       </div>

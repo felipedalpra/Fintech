@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (10)
+### Changed
+- Tela de Procedimentos: cards menores (`minmax(220px,1fr)` em vez de 300px), fonte e espaçamentos reduzidos. Checklist e descrição removidos da visualização do card (continuam editáveis no modal).
+### Added
+- Campo de busca por nome na tela de Procedimentos, com mensagem de "nenhum resultado" quando não há match.
+
 ## [Unreleased] - 2026-10-08 (9)
 ### Added
 - **Controle de acesso por perfil**: `UserRoleContext` detecta automaticamente se o usuário logado é dono de uma clínica (`admin`) ou membro convidado (`gestao` / `equipe`). Na primeira sessão, a clínica é criada automaticamente.
