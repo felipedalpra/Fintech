@@ -71,6 +71,7 @@ export function Consultations({ data, setData }) {
     patient:'',
     patientId:'',
     date:today(),
+    competenceDate:today(),
     startTime:'',
     durationMinutes:60,
     consultationType:'avaliacao',
@@ -299,7 +300,7 @@ export function Consultations({ data, setData }) {
             />
           </div>
           <FInput label="Identificador interno (opcional)" value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Apelido, código ou observação" />
-          <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+          <FInput label="Data da consulta (competência)" value={form.date} onChange={value => setForm(current => ({ ...current, date:value, competenceDate:value }))} type="date" />
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="60" />
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
@@ -331,8 +332,8 @@ export function Consultations({ data, setData }) {
             </>
           )}
           <FInput label="Status" value={form.paymentStatus} onChange={value => setForm(current => ({ ...current, paymentStatus:value }))} options={STATUSES} />
-          <FInput label="Previsão de pagamento" value={form.forecastPaymentDate} onChange={value => setForm(current => ({ ...current, forecastPaymentDate:value }))} type="date" />
-          <FInput label="Data do recebimento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
+          <FInput label="Vencimento (previsão de pagamento)" value={form.forecastPaymentDate} onChange={value => setForm(current => ({ ...current, forecastPaymentDate:value, dueDate:value }))} type="date" />
+          <FInput label="Data do recebimento (caixa)" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
           <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}>
             <Btn variant="ghost" onClick={() => setShowModal(false)}>Cancelar</Btn>
             <Btn onClick={save} disabled={!form.patient && !form.patientId}>Salvar consulta</Btn>

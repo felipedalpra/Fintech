@@ -143,6 +143,8 @@ async function fetchRelationalData(userId) {
       paymentStatus:item.payment_status || 'pendente',
       surgeon:item.surgeon || '',
       paymentDate:item.payment_date || '',
+      competenceDate:item.competence_date || item.date || '',
+      dueDate:item.due_date || item.date || '',
       hospitalCost:Number(item.hospital_cost || 0),
       anesthesiaCost:Number(item.anesthesia_cost || 0),
       materialCost:Number(item.material_cost || 0),
@@ -166,6 +168,8 @@ async function fetchRelationalData(userId) {
       paymentStatus:item.payment_status || 'pendente',
       forecastPaymentDate:item.forecast_payment_date || '',
       paymentDate:item.payment_date || '',
+      competenceDate:item.competence_date || item.date || '',
+      dueDate:item.due_date || item.forecast_payment_date || item.date || '',
     })),
     productSales:(productSalesResult.data || []).map(item => ({
       id:item.id,
@@ -176,6 +180,7 @@ async function fetchRelationalData(userId) {
       totalValue:Number(item.total_value || 0),
       saleDate:item.sale_date || '',
       paymentMethod:item.payment_method || 'pix',
+      competenceDate:item.competence_date || item.sale_date || '',
     })),
     productPurchases:(productPurchasesResult.data || []).map(item => ({
       id:item.id,
@@ -184,6 +189,8 @@ async function fetchRelationalData(userId) {
       totalValue:Number(item.total_value || 0),
       supplier:item.supplier || '',
       purchaseDate:item.purchase_date || '',
+      competenceDate:item.competence_date || item.purchase_date || '',
+      dueDate:item.due_date || item.purchase_date || '',
     })),
     extraRevenues:(extraRevenuesResult.data || []).map(item => ({
       id:item.id,
@@ -192,6 +199,8 @@ async function fetchRelationalData(userId) {
       value:Number(item.value || 0),
       date:item.date || '',
       costCenter:item.cost_center || '',
+      competenceDate:item.competence_date || item.date || '',
+      dueDate:item.due_date || item.date || '',
     })),
     expenses:(expensesResult.data || []).map(item => ({
       id:item.id,
@@ -202,6 +211,7 @@ async function fetchRelationalData(userId) {
       paymentDate:item.payment_date || '',
       status:item.status || 'aberto',
       costCenter:item.cost_center || '',
+      competenceDate:item.competence_date || item.due_date || '',
     })),
     assets:(assetsResult.data || []).map(item => ({
       id:item.id,
@@ -264,6 +274,8 @@ function mapSurgeriesRows(userId, data) {
     patient_id:item.patientId || null,
     total_value:item.totalValue || 0,
     date:item.date,
+    competence_date:item.competenceDate || item.date || null,
+    due_date:item.dueDate || item.date || null,
     start_time:item.startTime || null,
     duration_minutes:Number(item.durationMinutes) || null,
     payment_method:item.paymentMethod || null,
@@ -286,6 +298,8 @@ function mapConsultationsRows(userId, data) {
     patient:item.patient || '',
     patient_id:item.patientId || null,
     date:item.date,
+    competence_date:item.competenceDate || item.date || null,
+    due_date:item.dueDate || item.forecastPaymentDate || item.date || null,
     start_time:item.startTime || null,
     duration_minutes:Number(item.durationMinutes) || null,
     consultation_type:item.consultationType || 'avaliacao',
@@ -310,6 +324,7 @@ function mapProductSalesRows(userId, data) {
     unit_value:item.unitValue || 0,
     total_value:item.totalValue || 0,
     sale_date:item.saleDate,
+    competence_date:item.competenceDate || item.saleDate || null,
     payment_method:item.paymentMethod || null,
   }))
 }
@@ -323,6 +338,8 @@ function mapProductPurchasesRows(userId, data) {
     total_value:item.totalValue || 0,
     supplier:item.supplier || null,
     purchase_date:item.purchaseDate,
+    competence_date:item.competenceDate || item.purchaseDate || null,
+    due_date:item.dueDate || item.purchaseDate || null,
   }))
 }
 
@@ -334,6 +351,8 @@ function mapExtraRevenuesRows(userId, data) {
     category:item.category || 'outras_receitas',
     value:item.value || 0,
     date:item.date,
+    competence_date:item.competenceDate || item.date || null,
+    due_date:item.dueDate || item.date || null,
     cost_center:item.costCenter || null,
   }))
 }
@@ -346,6 +365,7 @@ function mapExpensesRows(userId, data) {
     category:item.category || 'outros',
     value:item.value || 0,
     due_date:item.dueDate,
+    competence_date:item.competenceDate || item.dueDate || null,
     payment_date:item.paymentDate || null,
     status:item.status || 'aberto',
     cost_center:item.costCenter || null,

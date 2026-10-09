@@ -43,6 +43,8 @@ export function normalizeData(data) {
       invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
         id:normalizeUuid(item.id, 'surgery'),
         procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
+        competenceDate:item.competenceDate || item.date || '',
+        dueDate:item.dueDate || item.date || '',
       }))
     : Array.isArray(data?.sales)
       ? data.sales.map(sale => ({
@@ -77,21 +79,28 @@ export function normalizeData(data) {
       ...item,
       invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
       id:normalizeUuid(item.id, 'consultation'),
+      competenceDate:item.competenceDate || item.date || '',
+      dueDate:item.dueDate || item.forecastPaymentDate || item.date || '',
     })) : [],
     products,
     productSales: Array.isArray(data?.productSales) ? data.productSales.map(item => ({
       ...item,
       id:normalizeUuid(item.id, 'product_sale'),
       productId:normalizeRelatedId(item.productId, 'product', productIdMap),
+      competenceDate:item.competenceDate || item.saleDate || '',
     })) : [],
     productPurchases: Array.isArray(data?.productPurchases) ? data.productPurchases.map(item => ({
       ...item,
       id:normalizeUuid(item.id, 'product_purchase'),
       productId:normalizeRelatedId(item.productId, 'product', productIdMap),
+      competenceDate:item.competenceDate || item.purchaseDate || '',
+      dueDate:item.dueDate || item.purchaseDate || '',
     })) : [],
     extraRevenues: Array.isArray(data?.extraRevenues) ? data.extraRevenues.map(item => ({
       ...item,
       id:normalizeUuid(item.id, 'extra_revenue'),
+      competenceDate:item.competenceDate || item.date || '',
+      dueDate:item.dueDate || item.date || '',
     })) : [],
     expenses: Array.isArray(data?.expenses)
       ? data.expenses.map(expense => ({
@@ -103,6 +112,7 @@ export function normalizeData(data) {
           paymentDate:expense.paymentDate || expense.paidDate || '',
           status:expense.status || (expense.paymentDate ? 'pago' : 'aberto'),
           costCenter:expense.costCenter || '',
+          competenceDate:expense.competenceDate || expense.dueDate || expense.date || '',
         }))
       : [],
     assets: Array.isArray(data?.assets) ? data.assets.map(item => ({

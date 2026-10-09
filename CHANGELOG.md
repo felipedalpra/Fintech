@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-09 (23)
+### Added
+- Regime de competência explícito em toda a plataforma. Novos campos **data de competência** (quando o fato entra na DRE) e **data de vencimento** (quando a cobrança vence) em cirurgias, consultas, despesas, receitas extras, vendas e compras de produto. SQL em `supabase/competence_date_migration.sql` (colunas `competence_date`/`due_date` + backfill).
+- Colunas **Competência** e **Vencimento** lado a lado nas tabelas de Contas a receber e Contas a pagar.
+### Changed
+- DRE agora é de fato por **competência**: despesas passam a entrar no mês de competência (antes entravam pelo vencimento). Receitas/custos de cirurgia, consulta, produtos e receitas extras também passam a reconhecer pelo mês de competência. O fluxo de caixa continua pelo regime de caixa (data de pagamento/recebimento) — os dois regimes agora são separados corretamente. `financialMetrics.js`, `dataModel.js`, `financeStore.js`, `Finance.jsx`, `Sales.jsx`, `Consultations.jsx`, `Products.jsx`, `UI.jsx`.
+
 ## [Unreleased] - 2026-10-09 (22)
 ### Added
 - Botão "Editar" em todos os lançamentos das abas Entradas e Saídas do financeiro. Receitas extras e despesas abrem o modal completo já existente. Cirurgias e consultas abrem modal de edição financeira com todos os campos (valor, data, pagamento, custos cirúrgicos). Vendas e compras de produto também editáveis. Qualquer alteração reflete imediatamente nos números do financeiro. `Finance.jsx`, `UI.jsx`.

@@ -221,12 +221,14 @@ export function buildMetrics(rawData, options = {}) {
   const recurringRangeEnd = endDate || startDate || today()
   const recurringBalanceStart = startDate || `${new Date().getFullYear()}-01-01`
 
-  const surgeriesInRange = surgeries.filter(item => item.date && inRange(item.date, startDate, endDate))
-  const consultationsInRange = consultations.filter(item => item.date && inRange(item.date, startDate, endDate))
-  const productSalesInRange = productSales.filter(item => item.saleDate && inRange(item.saleDate, startDate, endDate))
-  const productPurchasesInRange = productPurchases.filter(item => item.purchaseDate && inRange(item.purchaseDate, startDate, endDate))
-  const extraRevenuesInRange = extraRevenues.filter(item => item.date && inRange(item.date, startDate, endDate))
-  const expensesInRange = expenses.filter(item => item.dueDate && inRange(item.dueDate, startDate, endDate))
+  // Regime de COMPETÊNCIA: a DRE/resultado reconhece o fato no mês de competência,
+  // independente de quando o dinheiro entra (caixa) ou de quando vence (vencimento).
+  const surgeriesInRange = surgeries.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
+  const consultationsInRange = consultations.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
+  const productSalesInRange = productSales.filter(item => (item.competenceDate || item.saleDate) && inRange(item.competenceDate || item.saleDate, startDate, endDate))
+  const productPurchasesInRange = productPurchases.filter(item => (item.competenceDate || item.purchaseDate) && inRange(item.competenceDate || item.purchaseDate, startDate, endDate))
+  const extraRevenuesInRange = extraRevenues.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
+  const expensesInRange = expenses.filter(item => (item.competenceDate || item.dueDate) && inRange(item.competenceDate || item.dueDate, startDate, endDate))
   const recurringInRange = generateRecurringOccurrences(recurrences, recurringRangeStart, recurringRangeEnd)
   const recurringUntilBalance = generateRecurringOccurrences(recurrences, recurringBalanceStart, balanceDate)
   const recurringRevenueOpenInRange = recurringInRange.filter(item => item.tipo === 'receita' && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item)))
@@ -342,7 +344,7 @@ export function buildMetrics(rawData, options = {}) {
   const cashBalance = cashIn - cashOut
 
   const accountsReceivable = [
-    ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:'cirurgia', value:item.totalValue || 0, dueDate:item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
+    ...surgeries.filter(item => item.paymentStatus !== 'pago' && item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).map(item => ({ id:`surgery-${item.id}`, source:'cirurgia', sourceId:item.id, patient:patientLabel(item.patient, item.id), category:'cirurgia', value:item.totalValue || 0, competenceDate:item.competenceDate || item.date, dueDate:item.dueDate || item.date, status:item.paymentStatus, description:mapProcedureName(procedures, item.procedureId) })),
     ...consultations
       .filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate))
       .flatMap(item => {
@@ -359,17 +361,18 @@ export function buildMetrics(rawData, options = {}) {
           patient:patientLabel(item.patient, item.id),
           category:item.paymentType || 'consulta',
           value:flow.openAmount,
-          dueDate:pendingDates[0] || item.forecastPaymentDate || item.date,
+          competenceDate:item.competenceDate || item.date,
+          dueDate:pendingDates[0] || item.dueDate || item.forecastPaymentDate || item.date,
           status:item.paymentStatus,
           description:flow.hasSchedule ? `${item.consultationType} (${scheduleSummary})` : item.consultationType,
         }]
       }),
-    ...recurringUntilBalance.filter(item => item.tipo === 'receita' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item))).map(item => ({ id:`recurrence-income-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, patient:'Recorrência', category:item.categoria || 'outras_receitas', value:Number(item.valor || 0), dueDate:item.dueDate, status:'pendente', description:item.descricao || 'Receita fixa' })),
+    ...recurringUntilBalance.filter(item => item.tipo === 'receita' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item))).map(item => ({ id:`recurrence-income-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, patient:'Recorrência', category:item.categoria || 'outras_receitas', value:Number(item.valor || 0), competenceDate:item.dueDate, dueDate:item.dueDate, status:'pendente', description:item.descricao || 'Receita fixa' })),
   ]
 
   const accountsPayable = [
-    ...expenses.filter(item => item.status !== 'pago' && item.status !== 'cancelado' && onOrBefore(item.dueDate, balanceDate)).map(item => ({ id:`expense-${item.id}`, source:'despesa', sourceId:item.id, supplier:item.description, category:item.category, value:item.value || 0, dueDate:item.dueDate, status:item.status })),
-    ...recurringUntilBalance.filter(item => item.tipo === 'despesa' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !expenses.some(entry => matchesRecurringExpense(entry, item))).map(item => ({ id:`recurrence-expense-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, supplier:item.descricao || 'Despesa fixa', category:item.categoria || 'outros', value:Number(item.valor || 0), dueDate:item.dueDate, status:'pendente' })),
+    ...expenses.filter(item => item.status !== 'pago' && item.status !== 'cancelado' && onOrBefore(item.dueDate, balanceDate)).map(item => ({ id:`expense-${item.id}`, source:'despesa', sourceId:item.id, supplier:item.description, category:item.category, value:item.value || 0, competenceDate:item.competenceDate || item.dueDate, dueDate:item.dueDate, status:item.status })),
+    ...recurringUntilBalance.filter(item => item.tipo === 'despesa' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !expenses.some(entry => matchesRecurringExpense(entry, item))).map(item => ({ id:`recurrence-expense-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, supplier:item.descricao || 'Despesa fixa', category:item.categoria || 'outros', value:Number(item.valor || 0), competenceDate:item.dueDate, dueDate:item.dueDate, status:'pendente' })),
   ]
 
   const receivablesOpenTotal = accountsReceivable.reduce((acc, item) => acc + item.value, 0)

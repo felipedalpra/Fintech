@@ -32,8 +32,8 @@ const DEFAULT_COST_CENTERS = [
   'Recursos Humanos',
   'Outros',
 ]
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), paymentDate:today(), status:'pago', costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), competenceDate:today(), dueDate:today(), costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
@@ -1062,7 +1062,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           money={money}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -1074,7 +1074,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           money={money}
           emptyMessage="Sem contas a pagar agrupadas por mês."
         />
-        <RecordTable columns={['Categoria', 'Descrição', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
+        <RecordTable columns={['Categoria', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
       </>}
 
       {tab === 'dre' && (
@@ -1323,7 +1323,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                 <FInput label="Marcar como recebido automaticamente?" value={form.recurrenceAutoMarkAsPaid ? 'sim' : 'nao'} onChange={value => setForm(current => ({ ...current, recurrenceAutoMarkAsPaid:value === 'sim' }))} options={[{ v:'nao', l:'Não' }, { v:'sim', l:'Sim' }]} />
               </>
             ) : (
-              <FInput label="Data do recebimento" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+              <>
+                <FInput label="Data de competência" required value={form.competenceDate || ''} onChange={value => setForm(current => ({ ...current, competenceDate:value }))} type="date" />
+                <div style={{ fontSize:11, color:C.textDim, marginTop:-10 }}>Mês a que a receita pertence na DRE (regime de competência), mesmo que o dinheiro entre em outra data.</div>
+                <FInput label="Data do recebimento (caixa)" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+              </>
             )}
 
             <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
@@ -1357,6 +1361,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               </>
             ) : (
               <>
+                <FInput label="Data de competência" required value={form.competenceDate || ''} onChange={value => setForm(current => ({ ...current, competenceDate:value }))} type="date" />
+                <div style={{ fontSize:11, color:C.textDim, marginTop:-10 }}>Mês a que a despesa pertence na DRE (regime de competência), mesmo que vença ou seja paga em outra data.</div>
                 <FInput
                   label="Data de vencimento"
                   value={form.dueDate}
@@ -1382,7 +1388,9 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         {modalType === 'surgery' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             <FInput label="Paciente" value={form.patient || ''} onChange={value => setForm(c => ({ ...c, patient:value }))} placeholder="Nome do paciente" />
-            <FInput label="Data da cirurgia" value={form.date || ''} onChange={value => setForm(c => ({ ...c, date:value }))} type="date" />
+            <FInput label="Data da cirurgia (competência)" required value={form.competenceDate || form.date || ''} onChange={value => setForm(c => ({ ...c, competenceDate:value, date:c.date || value }))} type="date" />
+            <FInput label="Data da cirurgia (agenda)" value={form.date || ''} onChange={value => setForm(c => ({ ...c, date:value }))} type="date" />
+            <FInput label="Vencimento (previsão de recebimento)" value={form.dueDate || ''} onChange={value => setForm(c => ({ ...c, dueDate:value }))} type="date" />
             <FInput label="Status de pagamento" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value }))} options={SURGERY_PAYMENT_STATUS} />
             {form.paymentStatus === 'pago' && <FInput label="Data de pagamento" value={form.paymentDate || ''} onChange={value => setForm(c => ({ ...c, paymentDate:value }))} type="date" />}
             <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
@@ -1401,7 +1409,9 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         {modalType === 'consultation' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             <FInput label="Paciente" value={form.patient || ''} onChange={value => setForm(c => ({ ...c, patient:value }))} placeholder="Nome do paciente" />
-            <FInput label="Data da consulta" value={form.date || ''} onChange={value => setForm(c => ({ ...c, date:value }))} type="date" />
+            <FInput label="Data da consulta (competência)" required value={form.competenceDate || form.date || ''} onChange={value => setForm(c => ({ ...c, competenceDate:value, date:c.date || value }))} type="date" />
+            <FInput label="Data da consulta (agenda)" value={form.date || ''} onChange={value => setForm(c => ({ ...c, date:value }))} type="date" />
+            <FInput label="Vencimento (previsão de recebimento)" value={form.dueDate || ''} onChange={value => setForm(c => ({ ...c, dueDate:value }))} type="date" />
             <FInput label="Status de pagamento" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value }))} options={SURGERY_PAYMENT_STATUS} />
             {form.paymentStatus === 'pago' && <FInput label="Data de pagamento" value={form.paymentDate || ''} onChange={value => setForm(c => ({ ...c, paymentDate:value }))} type="date" />}
             <FInput label="Valor (R$)" value={form.value || 0} onChange={value => setForm(c => ({ ...c, value:value }))} type="number" />
@@ -1413,7 +1423,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
         {modalType === 'product-sale' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            <FInput label="Data da venda" value={form.saleDate || ''} onChange={value => setForm(c => ({ ...c, saleDate:value }))} type="date" />
+            <FInput label="Data da venda (competência / caixa)" required value={form.competenceDate || form.saleDate || ''} onChange={value => setForm(c => ({ ...c, saleDate:value, competenceDate:value }))} type="date" />
             <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
             <FInput label="Quantidade" value={form.quantity || 1} onChange={value => setForm(c => ({ ...c, quantity:value }))} type="number" />
             <FormActions onCancel={() => setShowModal(false)} onSave={save} />
@@ -1422,7 +1432,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
         {modalType === 'product-purchase' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            <FInput label="Data da compra" value={form.purchaseDate || ''} onChange={value => setForm(c => ({ ...c, purchaseDate:value }))} type="date" />
+            <FInput label="Data da compra (competência / caixa)" required value={form.competenceDate || form.purchaseDate || ''} onChange={value => setForm(c => ({ ...c, purchaseDate:value, competenceDate:value }))} type="date" />
+            <FInput label="Vencimento" value={form.dueDate || ''} onChange={value => setForm(c => ({ ...c, dueDate:value }))} type="date" />
             <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
             <FInput label="Quantidade" value={form.quantity || 1} onChange={value => setForm(c => ({ ...c, quantity:value }))} type="number" />
             <FInput label="Fornecedor" value={form.supplier || ''} onChange={value => setForm(c => ({ ...c, supplier:value }))} placeholder="Nome do fornecedor" />
@@ -1945,12 +1956,12 @@ function isSaveDisabled(modalType, form, editing) {
   if (modalType === 'extra') {
     if (!form.description) return true
     if (!editing && form.launchType === 'fixa') return !form.recurrenceStartDate
-    return !form.date
+    return !form.date || !form.competenceDate
   }
   if (modalType === 'expense') {
     if (!form.description || !form.category) return true
     if (!editing && form.launchType === 'fixa') return !form.recurrenceStartDate
-    return !form.dueDate
+    return !form.dueDate || !form.competenceDate
   }
   return false
 }

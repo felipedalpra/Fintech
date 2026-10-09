@@ -23,6 +23,7 @@ const SALE_EMPTY = {
   unitValue:0,
   totalValue:0,
   saleDate:today(),
+  competenceDate:today(),
   paymentMethod:'pix',
   paymentMode:'unico',
   paymentScheduleMode:'unica',
@@ -44,6 +45,8 @@ const PURCHASE_EMPTY = {
   totalValue:0,
   supplier:'',
   purchaseDate:today(),
+  competenceDate:today(),
+  dueDate:today(),
 }
 
 const CATEGORIES = [
@@ -381,7 +384,7 @@ export function Products({ data, setData }) {
           <FInput label="Paciente ou ID interno" value={form.patientName} onChange={value => setForm(current => ({ ...current, patientName:value }))} placeholder="Opcional, use o mínimo necessário" />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
-          <FInput label="Data da venda" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value }))} type="date" />
+          <FInput label="Data da venda (competência / caixa)" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value, competenceDate:value }))} type="date" />
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
           {form.paymentScheduleMode === 'duas_datas' && (
             <>
@@ -422,7 +425,7 @@ export function Products({ data, setData }) {
           <FInput label="Fornecedor" value={form.supplier} onChange={value => setForm(current => ({ ...current, supplier:value }))} placeholder="Fornecedor" />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(productsById.get(current.productId)?.purchasePrice || 0) * value }))} type="number" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" />
-          <FInput label="Data da compra" value={form.purchaseDate} onChange={value => setForm(current => ({ ...current, purchaseDate:value }))} type="date" />
+          <FInput label="Data da compra (competência / caixa)" value={form.purchaseDate} onChange={value => setForm(current => ({ ...current, purchaseDate:value, competenceDate:value }))} type="date" />
           <div />
           <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId}>Salvar compra</Btn></div>
         </div>

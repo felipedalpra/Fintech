@@ -66,6 +66,8 @@ export function Sales({ data, setData }) {
     procedureId:data.procedures[0]?.id || '',
     totalValue:0,
     date:today(),
+    competenceDate:today(),
+    dueDate:today(),
     startTime:'',
     durationMinutes:180,
     paymentMethod:'pix',
@@ -390,7 +392,8 @@ export function Sales({ data, setData }) {
           <FInput label="Identificador interno (opcional)" value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Apelido, código ou observação" />
           <FInput label="Cirurgião" value={form.surgeon} onChange={value => setForm(current => ({ ...current, surgeon:value }))} placeholder="Nome do cirurgião responsável" />
           <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value, totalValue:0 }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
-          <FInput label="Data" value={form.date} onChange={value => setForm(current => ({ ...current, date:value }))} type="date" />
+          <FInput label="Data da cirurgia (competência)" value={form.date} onChange={value => setForm(current => ({ ...current, date:value, competenceDate:value, dueDate:current.dueDate || value }))} type="date" />
+          <FInput label="Vencimento (previsão de recebimento)" value={form.dueDate || form.date} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="180" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
