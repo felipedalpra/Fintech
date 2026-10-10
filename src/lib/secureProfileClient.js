@@ -20,9 +20,9 @@ async function authFetch(path, payload = {}) {
 }
 
 export async function fetchSecureProfile() {
-  return authFetch('/api/secure-profile/get')
+  return authFetch('/api/secure-profile?action=get')
 }
 
 export async function saveSecureProfile(profile) {
-  return authFetch('/api/secure-profile/save', { profile })
+  return authFetch('/api/secure-profile?action=save', { profile })
 }

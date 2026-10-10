@@ -1,4 +1,4 @@
-import { getAuthenticatedUser } from '../secure-profile/_lib.js'
+import { getAuthenticatedUser } from '../_lib/secureProfile.js'
 import {
   NeedsReconnectError,
   buildAuthUrl,

@@ -1,4 +1,4 @@
-import { decryptPayload, encryptPayload, getAdminSupabase } from '../secure-profile/_lib.js'
+import { decryptPayload, encryptPayload, getAdminSupabase } from './secureProfile.js'
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke'

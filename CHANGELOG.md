@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (31)
+### Changed
+- Perfil seguro: os endpoints `secure-profile/get` e `secure-profile/save` foram consolidados num único `api/secure-profile.js` (roteado por `?action=get|save`) e o helper movido para `api/_lib/secureProfile.js`. Comportamento idêntico; libera **1 função serverless** (de 12 para 11, no limite de 12 do plano Hobby da Vercel) para a integração de WhatsApp da Fase 2. `src/lib/secureProfileClient.js`, `api/google/calendar.js` e `api/_lib/googleCalendarApi.js` ajustados para o novo caminho.
+
 ## [Unreleased] - 2026-10-10 (30)
 ### Fixed
 - Controle de acesso: o perfil **Concierge** (ex.: Jonas) não podia ser atribuído a um membro — o CHECK da coluna `role` em `clinic_members` só aceitava admin/gestão/equipe, então convidar ou alterar para Concierge pela aba Equipe falhava com violação de constraint. SQL em `supabase/clinic_members_concierge_role.sql` (rodar no SQL Editor); `supabase/access_control_schema.sql` também corrigido para novas instalações.
