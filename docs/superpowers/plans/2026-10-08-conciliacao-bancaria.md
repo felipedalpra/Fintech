@@ -10,6 +10,35 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 3. A Dra. importa o extrato (OFX/CSV) e o sistema sugere os pares com os lançamentos; ela confirma com um clique.
+
+**Área e navegação:** área **Financeiro → Cobrança** (ou Movimento). Admin/Gestão.
+
+**Benchmark (o que copiar):** Olist/Tiny ERP — a IA "Lis" cruza lançamentos × recebimentos e aponta divergências. Parser de extrato: `ofx-data-extractor` (referência). **Conciliação por extrato = custo zero** — não usar Open Finance pago (Pluggy/Belvo, R$2.500+/mês), ver estimativa de custos.
+
+**Fluxo ideal:** importar OFX/CSV (lido no browser, sem upload) → sistema sugere pares → usuário confirma/rejeita cada um → confirmados recebem `reconciled = true`.
+
+**Modelo de dados e propagação (ponto crítico):**
+- A **IA apenas SUGERE**; o usuário **CONFIRMA**. O modelo nunca marca sozinho nem recalcula valores (princípio de cálculo determinístico do assistente v2).
+- Confirmar a conciliação **só marca `reconciled`** — **não altera o valor nem a data** do lançamento. Conciliar não cria lançamento novo nem duplica recebimento.
+- O que for ambíguo fica **pendente** para confirmação manual, nunca auto-conciliado.
+
+**Permissões:** admin/gestão.
+
+**Checklist de fidedignidade (desta feature):**
+1. A IA só sugere; nada é conciliado sem confirmação do usuário.
+2. Confirmar não muda valor/data do lançamento — só o flag `reconciled`.
+3. Não duplica recebimento nem cria lançamento fantasma a partir do extrato.
+4. Ambíguo → pendente; nunca auto-conciliado.
+5. Parser OFX/CSV testado com **arquivo real do banco** da clínica (o formato varia por instituição).
+6. Extrato lido no browser, sem subir para servidor (privacidade).
+
+---
+
 ## Referências obrigatórias
 
 - `api/financial-assistant.js` — padrão de serverless com OpenAI e auth

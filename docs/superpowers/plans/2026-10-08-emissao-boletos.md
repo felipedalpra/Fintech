@@ -14,6 +14,35 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. A decisão arquitetural (Caminho A/B) abaixo continua válida.
+
+**Contexto do cliente:** Fase 3. Emitir boletos do sistema com **registro automático** e **baixa automática**, sem entrar no banco.
+
+**Área e navegação:** área **Financeiro → Cobrança**. Admin/Gestão.
+
+**Benchmark (o que copiar):** Olist/Tiny ERP (geração de boleto + conciliação). Gateways: Asaas/EFÍ (ver estimativa de custos: boleto ~R$0–2 no provedor certo; PIX grátis). Libs de referência: `node-boleto` (pagar.me), `gerar-boletos`.
+
+**Fluxo ideal:** emitir boleto a partir de um lançamento (cirurgia/consulta) → gateway registra no banco → paciente paga → webhook dá baixa → `payment_status` atualizado no sistema.
+
+**Modelo de dados e propagação (ponto crítico):**
+- O boleto é **vinculado a um lançamento** existente (cirurgia/consulta). O valor do boleto = valor do lançamento.
+- O webhook de pagamento (`api/billing/webhook.js`) atualiza o `payment_status`, que **propaga** para fluxo de caixa (data de caixa/recebimento), contas a receber (vencimento), DRE (competência), financeiro do paciente, metas e dashboard.
+- Conta de cobrança **no nome da clínica** (contrato Anexo III); nenhuma chave do provider no frontend.
+
+**Permissões:** admin/gestão.
+
+**Checklist de fidedignidade (desta feature):**
+1. Webhook de baixa **idempotente** — o mesmo pagamento não dá baixa 2x nem cria recebimento duplicado.
+2. A baixa atualiza o **lançamento certo** (vínculo boleto↔lançamento correto).
+3. Valor/vencimento do boleto = valor/vencimento do lançamento (as 3 datas respeitadas na propagação).
+4. Emitir boleto não cria um lançamento paralelo — reusa o existente.
+5. Falha/timeout do gateway não deixa estado inconsistente (ex.: boleto emitido sem vínculo).
+6. Teste cobre: emitir → vincula; webhook pago → baixa única e propaga para fluxo/DRE/contas a receber.
+
+---
+
 ## ⚠️ Decisão arquitetural obrigatória antes de implementar
 
 Existem dois caminhos para registro automático + baixa automática. A clínica precisa decidir antes de começar.
