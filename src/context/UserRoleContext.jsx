@@ -4,6 +4,8 @@ import { useAuth } from './AuthContext.jsx'
 
 const UserRoleContext = createContext(null)
 
+const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
+
 const ROLE_ACCESS = {
   admin: [
     'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel',
@@ -34,9 +36,23 @@ export function UserRoleProvider({ children }) {
 
   useEffect(() => {
     if (!user) {
+      // Sem user ainda = role indeterminado. Manter loading=true (NÃO false): se setássemos
+      // false com role=null, o guard de rota do workspace redirecionaria pra dashboard no gap
+      // entre o auth resolver e o role resolver. Logout real é tratado pelo ProtectedRoute.
       setRole(null)
       setClinicId(null)
       setIsOwner(false)
+      setLoading(true)
+      return
+    }
+
+    // E2E: concede admin sem bater no Supabase (espelha o bypass do AuthContext).
+    if (E2E_BYPASS_AUTH) {
+      setRole('admin')
+      setOwnerId('e2e-user-id')
+      setClinicId('e2e-clinic-id')
+      setClinicName('Clínica E2E')
+      setIsOwner(true)
       setLoading(false)
       return
     }

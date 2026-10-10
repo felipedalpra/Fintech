@@ -8,6 +8,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-10-10 (28)
 ### Added
 - Funil de jornada do paciente (Fase 1): nova tela kanban em **Pacientes → Funil** com 5 estágios (consulta agendada → consultado → orçamento enviado → reserva paga → follow-up). Cada card mostra nome/telefone/data e tem um seletor para mover o paciente entre estágios (atualização otimista com rollback em caso de erro). Leitura/escrita respeitam o multi-tenant via `ownerId` (membro de clínica enxerga os pacientes do dono). Nova coluna `funnel_stage` em `patients` — SQL em `supabase/patient_funnel_schema.sql` (aditiva, default `consulta_agendada`, rodar no SQL Editor antes do deploy). Visível a todos os perfis (admin/gestão/concierge/equipe). Arquivos: `src/components/PatientFunnel.jsx`, `src/pages/FinanceWorkspace.jsx`, `src/context/UserRoleContext.jsx`, `src/components/NavIcon.jsx`.
+- Teste e2e do funil (`tests/e2e/patient-funnel.spec.js`): cobre listagem de pacientes por estágio e a movimentação (PATCH + reflexo otimista), com o Supabase mockado.
+
+### Fixed
+- Workspace redirecionava para o Dashboard ao recarregar ou acessar por link direto qualquer página (ex.: `/app/funnel`, `/app/finance`) enquanto o perfil ainda carregava. O guard de rota agora espera o `UserRoleContext` resolver antes de decidir acesso, e o contexto mantém `loading=true` enquanto não há usuário (elimina a janela role=null/loading=false que disparava o redirect). `src/pages/FinanceWorkspace.jsx`, `src/context/UserRoleContext.jsx`.
+
+### Changed
+- `UserRoleContext` concede perfil admin automaticamente sob `VITE_E2E_BYPASS_AUTH` (espelha o bypass já existente no `AuthContext`), destravando os testes e2e de rotas protegidas.
 
 ## [Unreleased] - 2026-10-09 (27)
 ### Added

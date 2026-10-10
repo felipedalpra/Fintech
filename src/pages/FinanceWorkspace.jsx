@@ -496,7 +496,7 @@ export function FinanceWorkspace() {
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
   const { mode, toggleTheme } = useTheme()
-  const { canAccess, clinicName, ownerId } = useUserRole()
+  const { canAccess, clinicName, ownerId, loading: roleLoading } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -665,7 +665,9 @@ export function FinanceWorkspace() {
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
   const fallbackPage = NAV_SECTIONS.flatMap(s => s.items).find(item => canAccess(item.id))?.id || 'dashboard'
-  if (!PAGES[page] || !canAccess(page)) return <Navigate to={`/app/${fallbackPage}`} replace />
+  // Só decidir acesso/redirect depois que o role (UserRoleContext) carregou — senão o
+  // primeiro render (role=null) redireciona pra dashboard em refresh/deep-link de qualquer página.
+  if (!roleLoading && (!PAGES[page] || !canAccess(page))) return <Navigate to={`/app/${fallbackPage}`} replace />
 
   const Page = PAGES[page]
   const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
@@ -686,7 +688,7 @@ export function FinanceWorkspace() {
     ? sidebarQuickStats
     : sidebarQuickStats.slice(0, ultraCompactDesktop ? 0 : (compactForShortHeight ? 1 : 2))
 
-  if (loading) {
+  if (loading || roleLoading) {
     return (
       <div style={{ display:'flex', minHeight:'100vh', background:C.bg }}>
         {/* Sidebar skeleton */}
