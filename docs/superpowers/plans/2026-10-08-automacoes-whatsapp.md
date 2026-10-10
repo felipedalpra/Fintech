@@ -12,6 +12,32 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha o plano à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 2. Mensagens automáticas: lembrete de consulta/cirurgia, cobrança de pagamento pendente, link de anamnese, follow-up pós-consulta.
+
+**Área e navegação:** config/toggle na área **Automações & Integrações** (admin); cada automação **referenciada no contexto** (cobrança perto do Financeiro, link de anamnese perto do Clínico).
+
+**Benchmark (o que copiar):** Kommo Salesbot / régua de follow-up — gatilhos por evento, mensagens configuráveis por template.
+
+**Modelo de dados e propagação (ponto crítico):**
+- Cron diário lê os eventos do dia e dispara via `whatsappClient`.
+- A **cobrança** usa o **VENCIMENTO real** do financeiro (regime de vencimento) — nunca a competência nem a data de caixa. O lembrete usa a data do evento. Confundir as três datas gera cobrança/lembrete errado.
+- Respeita o toggle de cada automação; mensagens fora da janela de 24h usam template aprovado (API oficial) e geram custo (Cláusula 8, contratante).
+
+**Permissões:** configurar automações = só admin.
+
+**Checklist de fidedignidade (desta feature):**
+1. **Idempotência:** a mesma automação não dispara 2x para o mesmo evento/paciente/dia.
+2. A cobrança lê o **vencimento** correto; lembrete lê a data do evento correta (fuso Brasília).
+3. Toggle desligado = não envia. Paciente sem telefone válido = não tenta/erra silenciosamente.
+4. Pagamento já feito não gera cobrança (checar `payment_status` no momento do disparo).
+5. Teste cobre cada gatilho com data de corte e o caso "já pago / já lembrado".
+
+---
+
 ## Referências obrigatórias
 
 - `api/_lib/whatsappClient.js` — cliente WhatsApp (plano anterior)

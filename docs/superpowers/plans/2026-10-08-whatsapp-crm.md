@@ -12,6 +12,35 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha o plano à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 2. Caixa de entrada por paciente + envio a partir do sistema. Todos usam; só admin monitora/configura (contrato).
+
+**Área e navegação:** a **inbox** vive na área **Pacientes** (por paciente); o **monitoramento de todas as conversas + config** vivem na área **Automações & Integrações** (só admin). Mesma integração, dois lugares conforme o uso — reflete o contrato.
+
+**Benchmark (o que copiar):** Kommo/Chatwoot — inbox unificada por contato, etiquetas, atribuição, templates aprovados, notas internas com menção. Engine: a abstração `whatsappService` já cobre **Z-API** e **Evolution API** (ver estimativa de custos: Z-API ~R$55-100/número, Evolution ~R$30-60/mês). O contrato cita "API oficial"; a negociação (Ponto 1) usa não-oficial — a abstração atende os dois; **confirmar o provider antes de implementar**.
+
+**Fluxo ideal:** abrir o paciente → aba/área WhatsApp → ver histórico da conversa → enviar mensagem/template → recebidas chegam por webhook e aparecem no histórico do paciente certo.
+
+**Modelo de dados e propagação:**
+- `whatsapp_messages` vinculada a `patient_id` ("um dado, várias portas": o histórico aparece no cadastro do paciente).
+- Recebidas via `api/whatsapp/webhook.js`. Vincular a mensagem ao paciente pelo telefone; se não casar, deixar "não atribuída" (não forçar vínculo errado).
+
+**Pontos de integração:** Serviço de Terceiro (Cláusula 8) — custo de mensagem/número é do contratante. Nenhuma chave do provider no frontend.
+
+**Permissões:** inbox = todos (enviar/receber); monitorar conversas alheias + configurar = só admin.
+
+**Checklist de fidedignidade (desta feature):**
+1. Webhook **idempotente** — a mesma mensagem recebida não é gravada/duplicada 2x.
+2. Vínculo paciente↔telefone correto; sem telefone casado → "não atribuída", nunca no paciente errado.
+3. Sem vazamento cross-tenant (RLS por `auth.uid()`/`data_owner_id()`).
+4. Monitoramento de conversas de outros só para admin (UI **e** backend).
+5. Teste cobre: enviar → grava e sai; receber (webhook) → aparece no paciente certo, sem duplicar.
+
+---
+
 ## Referências obrigatórias
 
 - `api/financial-assistant.js` — padrão de serverless Vercel com auth

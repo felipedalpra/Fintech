@@ -20,6 +20,31 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha o plano à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks e a tabela de regras acima continuam válidas.
+
+**Contexto do cliente:** Fase 2. Mover o paciente de estágio automaticamente por evento, sem trabalho manual.
+
+**Área e navegação:** regras na área **Automações & Integrações** (admin); o efeito aparece no **Funil** (área Pacientes).
+
+**Benchmark (o que copiar):** Kommo — automação que avança a etapa quando a condição é clara.
+
+**Modelo de dados e propagação (ponto crítico):**
+- Triggers Postgres atualizam `patients.funnel_stage` — a **mesma fonte** que o movimento manual do funil. Por isso: só avança se estava no estágio anterior esperado (guarda já na tabela de regras), **nunca regride** um estágio, e a mudança automática é **auditável** (registrar origem `auto`).
+- `reserva_paga` depende do `payment_status`/valor correto da cirurgia; `consultado` depende de consulta com `patient_id`. Ler o estado real, não um proxy.
+
+**Permissões:** configurar regras = só admin; o efeito é visível a todos no funil.
+
+**Checklist de fidedignidade (desta feature):**
+1. Trigger **idempotente** e com guarda de estágio anterior — não pula nem regride etapas.
+2. Não sobrescreve um estágio movido manualmente de forma deliberada sem registro (origem auditável).
+3. `reserva_paga` só dispara com pagamento real registrado; coerente com o Financeiro.
+4. Alterar/excluir o evento-fonte (consulta/cirurgia) não deixa o estágio órfão/divergente.
+5. Teste cobre cada regra da tabela, incluindo o caso "evento ocorre mas o estágio não era o esperado".
+
+---
+
 ## Referências obrigatórias
 
 - `supabase/patient_funnel_schema.sql` — coluna `funnel_stage` em `patients`
