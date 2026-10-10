@@ -135,3 +135,15 @@ A organização da plataforma (áreas, navegação, permissões), os benchmarks 
 **Protocolo de colaboração** (ao pedir/entregar uma feature):
 - **Editor humano traz:** o pedido em 1 frase + quem pediu (Dra. Vitória/Lunara); comportamento atual vs. desejado; contexto novo do cliente.
 - **Agente traz de volta:** a spec no padrão (seção 7 da spec de arquitetura) com o **mapa de propagação** e o **checklist de fidedignidade** preenchidos; arquivos tocados; testes a rodar; riscos de regressão explícitos antes de implementar.
+
+## Fluxo de git (uma branch por funcionalidade)
+
+- **Nunca trabalhar/commitar direto na `main`.** Uma branch por funcionalidade (`feat/<nome>`, `fix/<nome>`, `docs/<nome>`), criada da `main` atualizada. Ver regra 8 do `SYSTEM_RULES.md`.
+- Sempre checar e comunicar o estado do git (o que está na `main`, o que já foi commitado, o que está no working tree) — os vibe coders têm dificuldade com isso; o agente mantém esse controle e guia.
+- Push e merge **só quando pedido**. Ao terminar, reportar branch, commits e próximos passos (push/PR/merge).
+
+## Agentes do projeto (`.claude/agents/`)
+
+- **`code-reviewer`** (modelo: sonnet) — revisa o diff antes do merge: fidedignidade/propagação de dados, regressões, SYSTEM_RULES. Use ao concluir uma feature.
+- **`platform-tester`** (modelo: haiku) — sobe o app local e testa os fluxos no Chrome, com screenshots e console; reporta observações (o veredito de fidedignidade fica com o revisor).
+- **Custo:** tarefas mecânicas/repetitivas → modelo mais barato (haiku); tarefas que exigem conhecimento/rigor → modelo melhor (sonnet/opus). Sempre cuidar para não estourar o limite de tokens; não spawnar agente quando o trabalho inline resolve.

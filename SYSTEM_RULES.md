@@ -30,6 +30,12 @@
 - Usar as categorias `Added`, `Changed` e `Fixed`, descrevendo o que mudou, a causa (em correções) e os arquivos principais afetados.
 - Alteração sem entrada no changelog não deve ser considerada concluída.
 
+8. **Uma branch por funcionalidade (sempre)**
+- Nunca trabalhar nem commitar direto na `main`. Toda funcionalidade, ajuste ou spec tem a sua própria branch, criada a partir da `main` atualizada (`feat/<nome>`, `fix/<nome>`, `docs/<nome>`).
+- Antes de começar, verificar o estado do git (`git status`, `git branch --show-current`) e deixar claro o que está na `main`, o que já foi commitado e o que ainda está no working tree — os editores (vibe coders) podem ter dificuldade com isso, então o agente guia esse controle.
+- Só integrar na `main` via merge/PR após revisão. Push e merge só quando o responsável pedir.
+- Ao concluir, informar: nome da branch, commits e o que falta (push/PR/merge).
+
 ## Critérios obrigatórios antes de concluir alterações
 - Nenhuma rota principal deve regressar (`/`, `/login`, `/signup`, `/app/*`).
 - Fluxos críticos (autenticação, persistência e financeiro) devem permanecer íntegros.
