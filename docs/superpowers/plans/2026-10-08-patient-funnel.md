@@ -10,6 +10,38 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha o plano à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** o funil é a feature central pedida pela Dra. Vitória na Fase 1 — dar visibilidade da jornada do paciente (consulta → orçamento → reserva → follow-up). É onde o concierge (Jonas) e a secretária trabalham no dia a dia.
+
+**Área e navegação:** área **Pacientes (CRM & Jornada)**, primeira seção. Acesso: todos os perfis.
+
+**Benchmark (o que copiar):** Kommo — funil kanban com cards e etapas configuráveis e movimentação visual. Repos de referência: DeskcommCRM, wacrm, Frappe CRM; UI de arrastar/soltar: `dnd-kit`.
+> Nota de design: o plano atual move por `<select>`/clique, não por drag-and-drop — decisão pragmática por mobile e testabilidade. Mantemos como MVP; o drag-and-drop estilo Kommo (`dnd-kit`) fica como evolução e **não bloqueia a entrega**.
+
+**Fluxo ideal:** (1) abre o Funil e vê as 5 colunas; (2) cada card mostra paciente + estágio + próxima ação; (3) mover o paciente atualiza o estágio e persiste na hora; (4) clicar no card abre o drawer do paciente sem sair do funil; (5) pacientes parados entram em régua de follow-up (automação, Fase 2).
+
+**Modelo de dados e propagação:**
+- Registro-fonte: `patients.funnel_stage` — é um **estado de CRM armazenado** (não um número derivado), o que é correto aqui.
+- Movido **manualmente** (usuário) OU **por automação** (Fase 2 `automacoes-funil`: consulta criada → `consultado`; pagamento registrado → `reserva_paga`). A automação **não pode sobrescrever silenciosamente** um estágio movido à mão — toda mudança automática tem de ser auditável.
+- O funil **lê** o estado real do paciente; o estágio não deve divergir do estado financeiro/clínico (ex.: `reserva_paga` sem pagamento registrado é inconsistência a sinalizar).
+
+**Pontos de integração/automação:** os gatilhos de movimentação automática ficam na área Automações (Fase 2), apenas referenciados aqui. Agenda e WhatsApp inbox acessíveis a partir do card.
+
+**Permissões:** admin, gestão e equipe — todos veem e movem (CRM é de todos). Sem dados financeiros sensíveis no card além do status.
+
+**Checklist de fidedignidade (desta feature):**
+1. Mover de estágio persiste e reflete imediatamente em todas as colunas, sem recarregar.
+2. Automação (quando ativa) e movimento manual não conflitam; mudança automática é auditável.
+3. O estágio não diverge do estado real (pagamento/consulta); divergência é sinalizada.
+4. `patient_id` nullable e pacientes sem estágio recebem o default sem quebrar.
+5. RLS: só aparecem pacientes do `user_id`/clínica (via `data_owner_id()` para membros).
+6. Teste cobre: novo paciente → cai em `consulta_agendada`; mover → persiste; (Fase 2) evento → move automático.
+
+---
+
 ## Arquivo de referência obrigatória
 
 Antes de qualquer step, leia:

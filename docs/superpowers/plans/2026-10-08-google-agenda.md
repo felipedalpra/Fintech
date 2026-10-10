@@ -12,6 +12,33 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha o plano à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo (config e deploy) continuam válidas — o código já existe na branch `feat/google-calendar`.
+
+**Contexto do cliente:** sincronização bidirecional com o Google Agenda da clínica — item da Fase 1. Já implementado; falta conectar ao projeto Google Cloud correto e publicar (checklist na Task 8 e no `PROJECT_MEMORY`).
+
+**Área e navegação:** a **Agenda** vive na área **Pacientes (CRM & Jornada)** (todos usam); a **conexão/config do Google** vive na área **Automações & Integrações** (só admin). Mesma integração, dois lugares conforme o uso.
+
+**Benchmark:** Google Calendar nativo (ida e volta de eventos). Sem reinventar — usar a Calendar API v3 já integrada.
+
+**Modelo de dados e propagação ("um dado, várias portas"):**
+- O evento do Google é **derivado** de um registro-fonte (cirurgia/consulta) — `start_time` e `duration_minutes` saem do registro. Não existe "evento solto" que divirja do atendimento.
+- Propagação: mudar data/hora/duração de uma cirurgia/consulta deve **refletir no Google** (e vice-versa quando aplicável), sem criar duplicatas. Só sincroniza registros de hoje em diante ou já vinculados.
+- Token OAuth por usuário em `google_calendar_tokens` (RLS por `auth.uid()`); nada cross-tenant.
+
+**Pontos de integração:** é uma integração de terceiro (Serviços de Terceiros, Cláusula 8 do contrato) — custo zero de API, mas depende da liberação do projeto Google. Aplicar `supabase/google_calendar_schema.sql` **ANTES** do deploy.
+
+**Checklist de fidedignidade (desta feature):**
+1. Editar cirurgia/consulta (data/hora/duração) reflete no evento do Google sem duplicar.
+2. Cancelar/arquivar o atendimento remove/atualiza o evento correspondente.
+3. Não sincroniza registros passados não vinculados (evita poluir a agenda).
+4. Token por usuário, isolado por `auth.uid()`; revogar token corta a sincronização.
+5. Fuso horário correto (Brasília) nos eventos criados.
+6. Testes: `npm run test:unit` e `npm run e2e` (conforme `PROJECT_MEMORY`).
+
+---
+
 ## Referências obrigatórias
 
 - Branch: `feat/google-calendar`

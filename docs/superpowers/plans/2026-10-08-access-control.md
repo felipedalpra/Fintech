@@ -41,6 +41,41 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha o plano à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks e a tabela de permissões acima continuam válidas.
+
+**Contexto do cliente:** a Dra. Vitória definiu permissões por perfil (ver tabela acima e `CLAUDE.md`). É a segunda feature da Fase 1 e a base de segurança de toda a plataforma.
+
+**Área e navegação (modelo de 6 áreas):** o controle de acesso vira **visibilidade de área** (primeira camada) + permissão por ação dentro da área (segunda camada):
+
+| Área | admin | gestao | equipe |
+|------|-------|--------|--------|
+| Início | ✅ | ✅ | ✅ (filtrado) |
+| Pacientes (+ Orçamentos) | ✅ | ✅ | ✅ |
+| Clínico | ✅ | configurável | ❌ |
+| Financeiro | ✅ | ✅ | ❌ |
+| Automações & Integrações | ✅ | ❌ | ❌ |
+| Configurações | ✅ | ❌ | ❌ |
+
+> O Jonas (equipe) cadastra orçamento/valor do paciente pela área **Pacientes** (não entra no Financeiro) — por isso "Orçamentos" vive em Pacientes. WhatsApp: todos usam (inbox em Pacientes); só admin monitora/configura (área Automações & Integrações).
+
+**Benchmark:** modelo de membership multi-tenant (RBAC) — como em DeskcommCRM (multi-tenant, LGPD). Padrão: `owner_id` da clínica + `clinic_members(role)` + RLS por membership.
+
+**Modelo de dados e propagação / fidedignidade (ponto crítico desta feature):**
+- A tabela `clinic_members` e o `UserRoleContext` definem o role. **A visibilidade de área no frontend é só a camada 1 (UX).** A segurança real é o **RLS no backend** — um usuário sem permissão não pode ler/escrever o dado nem via API, mesmo que force a rota. Frontend e RLS **têm de concordar** (SYSTEM_RULES 5).
+- Membros de clínica acessam os dados do dono via `data_owner_id()` — garantir que todas as queries usem o owner correto e que nada vaze cross-tenant (`auth.uid()`).
+- Alterar RLS/schema exige validação em ambiente controlado antes de produção (SYSTEM_RULES, PROJECT_MEMORY §5).
+
+**Checklist de fidedignidade (desta feature):**
+1. Cada role vê **exatamente** as áreas da tabela — nem mais, nem menos.
+2. O que o frontend esconde, o **RLS também bloqueia** no backend (testar tentando acessar via API com role sem permissão).
+3. Membro de clínica lê os dados do dono certo (`data_owner_id()`), nunca de outra clínica.
+4. Rebaixar/remover um membro corta o acesso imediatamente.
+5. Teste cobre: login como `equipe` não acessa Financeiro (UI e API); `gestao` não acessa Configurações; `admin` acessa tudo.
+
+---
+
 ## Arquivos de referência obrigatória
 
 Antes de qualquer step, leia:
