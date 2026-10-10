@@ -16,7 +16,7 @@ create table if not exists public.clinic_members (
   clinic_id   uuid not null references public.clinics(id) on delete cascade,
   user_id     uuid not null references auth.users(id) on delete cascade,
   role        text not null default 'equipe'
-              check (role in ('admin', 'gestao', 'equipe')),
+              check (role in ('admin', 'gestao', 'concierge', 'equipe')),
   invited_by  uuid references auth.users(id),
   created_at  timestamptz not null default timezone('utc', now()),
   unique (clinic_id, user_id)

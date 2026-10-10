@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (30)
+### Fixed
+- Controle de acesso: o perfil **Concierge** (ex.: Jonas) não podia ser atribuído a um membro — o CHECK da coluna `role` em `clinic_members` só aceitava admin/gestão/equipe, então convidar ou alterar para Concierge pela aba Equipe falhava com violação de constraint. SQL em `supabase/clinic_members_concierge_role.sql` (rodar no SQL Editor); `supabase/access_control_schema.sql` também corrigido para novas instalações.
+
 ## [Unreleased] - 2026-10-10 (29)
 ### Changed
 - **Navegação reorganizada em 6 áreas de domínio** (Fase 0 — esqueleto de arquitetura, spec seção 4): barra de áreas no topo (Início · Pacientes · Clínico · Financeiro · Automações & Integrações · Configurações) e a sidebar passa a mostrar só a sub-navegação da área ativa, em vez do menu plano "Operação/Gestão". Cada feature futura cai na área certa. O funil fica em Pacientes; cirurgias/consultas/produtos/lançamentos no Financeiro; assinatura/configurações em Configurações. Visibilidade de área por perfil (admin vê as 6; gestão sem Automações/Config; equipe/concierge só Início/Pacientes). Deep-links `/app/:page` preservados. `src/pages/FinanceWorkspace.jsx`, `src/components/NavIcon.jsx`.
