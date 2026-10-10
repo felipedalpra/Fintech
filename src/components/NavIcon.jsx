@@ -120,6 +120,11 @@ export function NavIcon({ name, size = 14, style }) {
         <path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/>
       </svg>
     )
+    case 'funnel': return (
+      <svg {...props}>
+        <path d="M3 4h18l-7 8v7l-4 2v-9z"/>
+      </svg>
+    )
     case 'settings': return (
       <svg {...props}>
         <line x1="21" x2="14" y1="4" y2="4"/>

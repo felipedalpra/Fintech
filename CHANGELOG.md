@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (28)
+### Added
+- Funil de jornada do paciente (Fase 1): nova tela kanban em **Pacientes → Funil** com 5 estágios (consulta agendada → consultado → orçamento enviado → reserva paga → follow-up). Cada card mostra nome/telefone/data e tem um seletor para mover o paciente entre estágios (atualização otimista com rollback em caso de erro). Leitura/escrita respeitam o multi-tenant via `ownerId` (membro de clínica enxerga os pacientes do dono). Nova coluna `funnel_stage` em `patients` — SQL em `supabase/patient_funnel_schema.sql` (aditiva, default `consulta_agendada`, rodar no SQL Editor antes do deploy). Visível a todos os perfis (admin/gestão/concierge/equipe). Arquivos: `src/components/PatientFunnel.jsx`, `src/pages/FinanceWorkspace.jsx`, `src/context/UserRoleContext.jsx`, `src/components/NavIcon.jsx`.
+
 ## [Unreleased] - 2026-10-09 (27)
 ### Added
 - Parcelamento real de cirurgias (cronograma com N parcelas). Nova opção "Parcelado (cronograma)" na configuração de pagamento abre um modal para gerar parcelas por frequência (mensal/quinzenal/semanal), data da 1ª parcela e número de parcelas, com valores e formas de pagamento editáveis por parcela. `Sales.jsx`.

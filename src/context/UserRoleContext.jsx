@@ -6,20 +6,20 @@ const UserRoleContext = createContext(null)
 
 const ROLE_ACCESS = {
   admin: [
-    'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients',
+    'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel',
     'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ai', 'billing', 'settings',
   ],
   gestao: [
-    'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients',
+    'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel',
     'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ai',
   ],
   // Jonas (concierge): pode cadastrar cirurgias, consultas e orçamentos — sem acesso financeiro
   concierge: [
-    'plans', 'sales', 'consultations', 'calendar', 'products', 'patients',
+    'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel',
   ],
   // Sumary, Jessica, Joyce: agenda, pacientes, consultas e produtos apenas
   equipe: [
-    'consultations', 'calendar', 'products', 'patients',
+    'consultations', 'calendar', 'products', 'patients', 'funnel',
   ],
 }
 

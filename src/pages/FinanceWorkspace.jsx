@@ -24,6 +24,7 @@ import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
 import { TaxCalculator } from '../components/TaxCalculator.jsx'
 import { Patients } from '../components/Patients.jsx'
+import { PatientFunnel } from '../components/PatientFunnel.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
@@ -43,6 +44,7 @@ const NAV_SECTIONS = [
       { id:'calendar',      label:'Agenda',        icon:'calendar',      hint:'Calendário de cirurgias e consultas' },
       { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
       { id:'patients',      label:'Pacientes',     icon:'patients',      hint:'Cadastro clínico e prontuários' },
+      { id:'funnel',        label:'Funil',         icon:'funnel',        hint:'Jornada dos pacientes por estágio' },
     ],
   },
   {
@@ -79,6 +81,7 @@ const TITLES = {
   billing:'Assinatura',
   settings:'Configurações',
   patients:'Pacientes',
+  funnel:'Funil de Jornada',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -101,6 +104,7 @@ const SUBTITLES = {
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
   patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
+  funnel:'Jornada do paciente em 5 estágios: consulta agendada → consultado → orçamento → reserva paga → follow-up.',
 }
 
 const PAGES = {
@@ -122,6 +126,7 @@ const PAGES = {
   billing:BillingPage,
   settings:Settings,
   patients:Patients,
+  funnel:PatientFunnel,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
