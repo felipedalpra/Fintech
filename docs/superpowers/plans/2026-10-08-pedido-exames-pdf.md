@@ -10,6 +10,31 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 4. Módulo de pedido de exames com catálogo pré-cadastrado (kits como "kit pré-operatório") e PDF com o timbre da Dra.
+
+**Área e navegação:** área **Clínico → Pedido de exames**. Perfis clínicos (e equipe, conforme permissão de pedido de exames do contrato).
+
+**Benchmark (o que copiar):** ficha de exames da clínica + kits. PDF com timbre, dados do paciente, data e inscrição profissional (CRM), pronto para assinar.
+
+**Modelo de dados e propagação:**
+- `exam_catalog`, `exam_kits`, `exam_requests`; timbre configurado em Settings.
+- O pedido emitido fica **registrado** (histórico no paciente). O PDF é uma **representação fiel** do pedido salvo — não uma fonte paralela.
+
+**Permissões:** admin/gestão/equipe (pedido de exames é permitido à equipe pelo contrato).
+
+**Checklist de fidedignidade (desta feature):**
+1. O PDF reflete **exatamente** os exames/kits selecionados, os dados do paciente e o timbre/CRM corretos.
+2. O pedido emitido é persistido e aparece no histórico do paciente.
+3. Kit expande para os exames certos; editar o catálogo não altera pedidos já emitidos.
+4. CRM/timbre vêm da config da Dra. (fonte única), não digitados soltos.
+5. Teste cobre: montar pedido → salvar → PDF confere com o salvo.
+
+---
+
 ## Referências obrigatórias
 
 - `src/components/Settings.jsx` — onde fica a configuração do timbre da Dra.

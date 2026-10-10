@@ -10,6 +10,32 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 4. Anamnese com campos estruturados (peso/altura/IMC, sim/não, texto livre) e um link que a paciente preenche sem conta (em consulta ou pelo WhatsApp).
+
+**Área e navegação:** área **Clínico → Anamnese**; o link pode ser enviado pela automação de WhatsApp (Fase 2). A ficha deve ser montada com os **campos da ficha atual do Amigo** enviada pela Dra.
+
+**Benchmark (o que copiar):** Amigo (ficha atual) + estética — anamnese personalizável por procedimento, com assinatura.
+
+**Modelo de dados e propagação (ponto crítico — segurança da rota pública):**
+- Campos na tabela `patients`; página pública `/anamnese/:token`; escrita via **RPC server-side** (contorna RLS sem expor `user_id`).
+- A RPC pública só pode **escrever os campos de anamnese do paciente daquele token** — nada além. O token deve **expirar / ser de uso único** e a página pública **não pode exibir** dados do paciente (só o formulário).
+- IMC calculado a partir de peso/altura; submeter **atualiza** o cadastro sem apagar o que já existia.
+
+**Permissões:** gerar link = perfis clínicos/equipe conforme config; preencher = qualquer um com o token válido.
+
+**Checklist de fidedignidade (desta feature):**
+1. O token escreve **só** no paciente correto e **só** os campos de anamnese.
+2. Token expira / uso único; link antigo não sobrescreve dados depois.
+3. A página pública não vaza nome/dados do paciente nem permite ler outros registros.
+4. IMC calculado corretamente; submissão não apaga campos já preenchidos sem intenção.
+5. Teste cobre: token válido grava no paciente certo; token inválido/expirado é rejeitado; página pública não expõe dados.
+
+---
+
 ## Referências obrigatórias
 
 - `src/components/Patients.jsx` — formulário de paciente existente (stepper em etapas, aba Anamnese)

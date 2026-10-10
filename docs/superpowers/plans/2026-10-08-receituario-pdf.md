@@ -10,6 +10,31 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 4. Receituário com catálogo de medicamentos (posologia padrão) e PDF com timbre. **Sem receitas de controle especial (azul/amarela)** — fora do escopo do contrato.
+
+**Área e navegação:** área **Clínico → Receituário**. Reusa `PrintDocument.jsx` do pedido de exames.
+
+**Benchmark (o que copiar):** modelos de posologia editáveis antes de emitir; PDF com timbre e CRM.
+
+**Modelo de dados e propagação:**
+- `medication_catalog`, `prescriptions`; timbre da config (fonte única).
+- A receita emitida é **registrada** (histórico); o PDF reflete fielmente a receita salva.
+
+**Permissões:** perfis clínicos (emissão de receita é ato médico).
+
+**Checklist de fidedignidade (desta feature):**
+1. O PDF reflete exatamente os medicamentos/posologia selecionados + paciente + CRM.
+2. **Bloqueio de escopo:** nada de controle especial (azul/amarela) — não oferecer esses modelos.
+3. Receita emitida é persistida no histórico do paciente.
+4. Editar o catálogo não altera receitas já emitidas.
+5. Teste cobre: montar receita → salvar → PDF confere; tentativa de controle especial não é suportada.
+
+---
+
 ## Referências obrigatórias
 
 - `src/components/PrintDocument.jsx` — componente de impressão criado no plano `pedido-exames-pdf` (deve existir antes deste)

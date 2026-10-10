@@ -12,6 +12,31 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 4. Fase 1 da assinatura = **upload do PDF já assinado externamente** (Assinador gov.br ou certificado da Dra.). Evolução = integração com provedor em nuvem (BirdID/Vidaas), condicionada à liberação e custo (contrato 12.3, Cláusula 8).
+
+**Área e navegação:** área **Clínico → Documentos & assinatura**. Perfis clínicos.
+
+**Benchmark (o que copiar):** fluxo simples de anexar o documento assinado ao prontuário, etiquetado por tipo.
+
+**Modelo de dados e propagação:**
+- Reusa `patient_attachments` + bucket `patient-documents`; etiqueta `tcle_assinado`, `receita_assinada`, `laudo`.
+- **A plataforma não armazena o arquivo do certificado nem a senha** da Dra. (contrato 12.3).
+
+**Permissões:** perfis clínicos.
+
+**Checklist de fidedignidade (desta feature):**
+1. O documento é anexado ao **paciente certo**, com o **tipo certo**, sem apagar anexos anteriores (archive-only).
+2. Download devolve o arquivo íntegro (mesmo hash/tamanho do upload).
+3. Isolado por paciente/clínica (RLS); só perfil clínico acessa.
+4. Nunca pedir/guardar certificado ou senha na plataforma.
+5. Teste cobre: upload → aparece no paciente com a etiqueta; download íntegro; acesso negado a perfil não-clínico.
+
+---
+
 ## Referências obrigatórias
 
 - `supabase/medical_record_addenda_schema.sql` — tabela `patient_attachments` e bucket `patient-documents`

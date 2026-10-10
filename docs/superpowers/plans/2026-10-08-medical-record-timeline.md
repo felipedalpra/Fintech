@@ -10,6 +10,32 @@
 
 ---
 
+## Padrão e contexto (atualizado 2026-10-10)
+
+> Alinha à spec de arquitetura `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. As Tasks abaixo continuam válidas.
+
+**Contexto do cliente:** Fase 4. Prontuário com linha do tempo, adendos (sem editar o original) e anexos (exames, fotos, TCLE).
+
+**Área e navegação:** área **Clínico → Prontuário**. **Só perfis clínicos.**
+
+**Benchmark (o que copiar):** Amigo + referências de estética (GestãoDS, SinapSYS) — fotos antes/depois por região e data com comparação lado a lado (slider) e marcação de pontos; histórico de evoluções/anamnese na mesma tela do atendimento. Repos de padrão: Medplum, OpenEMR (evolução/adendo).
+
+**Modelo de dados e propagação (ponto crítico — CFM/LGPD):**
+- `medical_records` + `medical_record_addenda` + `patient_attachments` (Storage, bucket `patient-documents`).
+- **Sem DELETE — só arquivamento.** Uma evolução salva **nunca é editada nem sobrescrita**; correção é **adendo** (registro novo linkado ao original). Exigência CFM/LGPD.
+- **Registro de acesso:** quem abriu/criou/alterou cada prontuário, com data/hora, sem exclusão pela equipe.
+
+**Permissões:** acesso restrito aos perfis clínicos definidos pelo contratante.
+
+**Checklist de fidedignidade (desta feature):**
+1. Nenhum registro de evolução pode ser apagado ou sobrescrito — só adendo e arquivamento.
+2. O adendo preserva e referencia o original (linha do tempo mostra a ordem real).
+3. Acesso só a perfis clínicos (UI **e** RLS); registro de acesso gravado.
+4. Anexos no bucket certo, isolados por paciente/clínica (RLS); download íntegro.
+5. Teste cobre: tentar editar evolução salva = bloqueado; adendo aparece após o original; anexo só visível ao perfil autorizado.
+
+---
+
 ## Referências obrigatórias
 
 - `src/components/MedicalRecord.jsx` — componente atual a ser refatorado
