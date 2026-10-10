@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (32)
+### Added
+- WhatsApp no CRM (Fase 2) — backend: endpoint consolidado `api/whatsapp.js` (`?action=message` envia, `?action=webhook` recebe), cliente Z-API (`api/_lib/whatsappClient.js`) e helpers puros testados (`api/_lib/whatsapp.js`: normalização de telefone, parse do webhook, matching estrito telefone→paciente). Tabela `whatsapp_messages` com RLS por `data_owner_id()` e índice único para **idempotência** do webhook (`supabase/whatsapp_schema.sql`). Fidedignidade coberta por testes (`tests/unit/whatsapp.spec.js`): webhook não duplica, ignora eco/`fromMe`, e nunca atribui ao paciente errado (ambíguo → não atribui). Provider escolhido: Z-API. **Ativação depende de env vars na Vercel + rodar o SQL** (UI por paciente vem no próximo incremento).
+
 ## [Unreleased] - 2026-10-10 (31)
 ### Changed
 - Perfil seguro: os endpoints `secure-profile/get` e `secure-profile/save` foram consolidados num único `api/secure-profile.js` (roteado por `?action=get|save`) e o helper movido para `api/_lib/secureProfile.js`. Comportamento idêntico; libera **1 função serverless** (de 12 para 11, no limite de 12 do plano Hobby da Vercel) para a integração de WhatsApp da Fase 2. `src/lib/secureProfileClient.js`, `api/google/calendar.js` e `api/_lib/googleCalendarApi.js` ajustados para o novo caminho.
