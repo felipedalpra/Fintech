@@ -113,3 +113,25 @@ Antes de qualquer alteração, leia `PROJECT_MEMORY.md` e `SYSTEM_RULES.md`.
 - Dark mode: constantes de estilo SEMPRE dentro dos componentes (nunca no nível de módulo)
 - `patient_id` é FK nullable em `surgeries` e `consultations` para retrocompatibilidade
 - App de medicina — referência sempre CFM/CRM, nunca CFP (que é Psicologia)
+
+---
+
+## ⚠️ Fidedignidade de dados (regra inegociável)
+
+Dado errado é pior que dado nenhum. Antes de concluir QUALQUER alteração que toque um registro-fonte (cirurgia, consulta, produto, despesa, receita, recorrência, meta, paciente):
+
+1. **Pense na propagação primeiro:** "o que muda aqui muda onde mais?" Mapeie o que é derivado (fluxo de caixa, DRE, balanço, contas a pagar/receber, financeiro do paciente, metas, dashboard, alertas, funil, agenda) ANTES de editar.
+2. **Fonte única + derivação:** totais/KPIs/DRE/fluxo são SEMPRE derivados dos registros (`src/financialMetrics.js` / `buildMetrics`), nunca armazenados em paralelo. Nunca crie um "total salvo" que possa divergir da soma.
+3. **Três datas, três visões:** competência → DRE; vencimento → contas a pagar/receber; caixa → fluxo. Nunca troque uma pela outra.
+4. **Teste a consistência cross-módulo, não só a tela alterada:** a soma bate em todos os períodos/filtros? Editar/excluir propagou para todas as visões? Rode `npm run test:unit` (e `npm run e2e` em fluxo crítico) e, quando couber, adicione asserção que cobre a propagação.
+5. Vale a regra existente do `PROJECT_MEMORY`: toda feature financeira preserva integridade de totais (receita, custo, margem, status de pagamento). Sem mock em fluxo real.
+
+O checklist completo está na seção 5 de `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`.
+
+## Arquitetura e padrão de specs (para vibe coders)
+
+A organização da plataforma (áreas, navegação, permissões), os benchmarks por área (Financeiro→Olist/Tiny, CRM→Kommo, Clínico→Amigo), os repositórios de referência e o **padrão de spec por feature** estão em `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`. Leia essa spec antes de criar/editar specs em `docs/superpowers/plans/`.
+
+**Protocolo de colaboração** (ao pedir/entregar uma feature):
+- **Editor humano traz:** o pedido em 1 frase + quem pediu (Dra. Vitória/Lunara); comportamento atual vs. desejado; contexto novo do cliente.
+- **Agente traz de volta:** a spec no padrão (seção 7 da spec de arquitetura) com o **mapa de propagação** e o **checklist de fidedignidade** preenchidos; arquivos tocados; testes a rodar; riscos de regressão explícitos antes de implementar.
