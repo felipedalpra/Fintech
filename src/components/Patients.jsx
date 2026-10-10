@@ -3,6 +3,7 @@ import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
+import { WhatsAppChat } from './WhatsAppChat.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -23,8 +24,8 @@ const CIVIL_STATUS_OPTIONS = [
   { v: 'uniao_estavel', l: 'União estável' },
 ]
 
-const DRAWER_TABS = ['resumo', 'pessoal', 'anamnese', 'prontuario', 'financeiro']
-const DRAWER_TAB_LABELS = { resumo: 'Resumo', pessoal: 'Dados', anamnese: 'Anamnese', prontuario: 'Prontuário', financeiro: 'Financeiro' }
+const DRAWER_TABS = ['resumo', 'pessoal', 'anamnese', 'prontuario', 'financeiro', 'whatsapp']
+const DRAWER_TAB_LABELS = { resumo: 'Resumo', pessoal: 'Dados', anamnese: 'Anamnese', prontuario: 'Prontuário', financeiro: 'Financeiro', whatsapp: 'WhatsApp' }
 
 const emptyForm = {
   full_name: '',
@@ -440,6 +441,7 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
               total={totalFinanceiro}
             />
           )}
+          {tab === 'whatsapp' && <WhatsAppChat patient={patient} />}
         </div>
       </div>
     </>
