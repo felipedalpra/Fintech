@@ -33,34 +33,85 @@ import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
 import { useGoogleCalendarSync } from '../lib/useGoogleCalendarSync.js'
 
-const NAV_SECTIONS = [
+// Navegação por ÁREAS de domínio (spec de arquitetura, seção 4).
+// Cada área tem uma barra no topo; a sidebar mostra a sub-navegação da área ativa.
+// `roles` controla a visibilidade da área na barra; `comingSoon` = área sem features ainda (Fases 2/4).
+// IA não é item de menu — vive no CopilotWidget global.
+const ALL_ROLES = ['admin', 'gestao', 'concierge', 'equipe']
+
+const AREAS = [
   {
-    title:'Operação',
-    items:[
-      { id:'dashboard',     label:'Dashboard',     icon:'dashboard',     hint:'Visão geral da clínica' },
-      { id:'plans',         label:'Procedimentos', icon:'procedures',    hint:'Catálogo cirúrgico' },
-      { id:'sales',         label:'Cirurgias',     icon:'surgery',       hint:'Agenda e resultados' },
-      { id:'consultations', label:'Consultas',     icon:'consultations', hint:'Atendimentos e convênios' },
-      { id:'calendar',      label:'Agenda',        icon:'calendar',      hint:'Calendário de cirurgias e consultas' },
-      { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
-      { id:'patients',      label:'Pacientes',     icon:'patients',      hint:'Cadastro clínico e prontuários' },
-      { id:'funnel',        label:'Funil',         icon:'funnel',        hint:'Jornada dos pacientes por estágio' },
+    id:'inicio', label:'Início', icon:'dashboard', roles:ALL_ROLES,
+    sections:[
+      { title:null, items:[
+        { id:'dashboard', label:'Dashboard', icon:'dashboard', hint:'Visão geral da clínica' },
+      ] },
     ],
   },
   {
-    title:'Gestão',
-    items:[
-      { id:'finance',     label:'Financeiro',     icon:'finance',     hint:'Caixa, DRE e balanço' },
-      { id:'impostos',    label:'Impostos',       icon:'taxes',       hint:'Carnê-Leão, IRPF e DAS' },
-      { id:'goals',       label:'Metas',          icon:'goals',       hint:'Objetivos e acompanhamento' },
-      { id:'recurrences', label:'Recorrências',   icon:'recurrences', hint:'Despesas e receitas fixas' },
-      { id:'reports',     label:'Relatórios',     icon:'reports',     hint:'Análises e comparativos' },
-      { id:'ai',          label:'Assistente',     icon:'ai',          hint:'Perguntas sobre os dados' },
-      { id:'billing',     label:'Assinatura',     icon:'billing',     hint:'Trial, checkout e cobrança' },
-      { id:'settings',    label:'Configurações',  icon:'settings',    hint:'Perfil e preferências' },
+    id:'pacientes', label:'Pacientes', icon:'patients', roles:ALL_ROLES,
+    sections:[
+      { title:'CRM & Jornada', items:[
+        { id:'funnel',   label:'Funil',     icon:'funnel',   hint:'Jornada dos pacientes por estágio' },
+        { id:'patients', label:'Pacientes', icon:'patients', hint:'Cadastro clínico e prontuários' },
+        { id:'calendar', label:'Agenda',    icon:'calendar', hint:'Calendário de cirurgias e consultas' },
+      ] },
+    ],
+  },
+  {
+    id:'clinico', label:'Clínico', icon:'clinico', roles:['admin', 'gestao'], comingSoon:true,
+    sections:[],
+  },
+  {
+    id:'financeiro', label:'Financeiro', icon:'finance', roles:['admin', 'gestao'],
+    sections:[
+      { title:'Movimento', items:[
+        { id:'finance', label:'Financeiro', icon:'finance', hint:'Caixa, DRE e balanço' },
+      ] },
+      { title:'Operação', items:[
+        { id:'sales',         label:'Cirurgias',     icon:'surgery',       hint:'Agenda e resultados' },
+        { id:'consultations', label:'Consultas',     icon:'consultations', hint:'Atendimentos e convênios' },
+        { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
+        { id:'plans',         label:'Procedimentos', icon:'procedures',    hint:'Catálogo cirúrgico' },
+        { id:'recurrences',   label:'Recorrências',  icon:'recurrences',   hint:'Despesas e receitas fixas' },
+      ] },
+      { title:'Análise', items:[
+        { id:'impostos', label:'Impostos',   icon:'taxes',   hint:'Carnê-Leão, IRPF e DAS' },
+        { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
+        { id:'reports',  label:'Relatórios', icon:'reports', hint:'Análises e comparativos' },
+      ] },
+    ],
+  },
+  {
+    id:'automacoes', label:'Automações', icon:'automacoes', roles:['admin'], comingSoon:true,
+    sections:[],
+  },
+  {
+    id:'config', label:'Configurações', icon:'settings', roles:['admin'],
+    sections:[
+      { title:null, items:[
+        { id:'settings', label:'Configurações', icon:'settings', hint:'Perfil e preferências' },
+        { id:'billing',  label:'Assinatura',    icon:'billing',  hint:'Trial, checkout e cobrança' },
+      ] },
     ],
   },
 ]
+
+// Todos os itens de todas as áreas (para resolução de página / compat).
+const ALL_NAV_ITEMS = AREAS.flatMap(a => a.sections).flatMap(s => s.items)
+const COMING_SOON = AREAS.filter(a => a.comingSoon)
+
+// Descrição de cada área "em breve" (placeholder).
+const AREA_SOON_HINT = {
+  clinico:'Prontuário, anamnese, pedido de exames, receituário e documentos com assinatura chegam na Fase 4.',
+  automacoes:'Automações de WhatsApp, régua do funil, cobrança, monitoramento e integrações chegam nas Fases 2 e 3.',
+}
+
+// Área que contém uma página (aliases do Financeiro resolvem para a área Financeiro).
+function areaIdForPage(pageId) {
+  const pid = FINANCE_ALIASES.has(pageId) ? 'finance' : pageId
+  return AREAS.find(a => a.sections.some(s => s.items.some(i => i.id === pid)))?.id
+}
 
 const TITLES = {
   dashboard:'Dashboard Executivo',
@@ -143,7 +194,7 @@ function QuickSearchModal({ open, onClose, navigate, sections }) {
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef(null)
 
-  const allItems = useMemo(() => (sections ?? NAV_SECTIONS).flatMap(s => s.items), [sections])
+  const allItems = useMemo(() => (sections ?? [{ items: ALL_NAV_ITEMS }]).flatMap(s => s.items), [sections])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -488,6 +539,17 @@ function SyncStatus({ saveError }) {
   )
 }
 
+// Placeholder "em breve" para áreas ainda sem features (Clínico, Automações).
+function AreaComingSoon({ area }) {
+  return (
+    <Card style={{ padding:32, textAlign:'center' }}>
+      <div style={{ fontSize:13, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Em breve</div>
+      <div style={{ fontSize:20, fontWeight:800, color:C.text, marginBottom:10 }}>Área {area.label}</div>
+      <div style={{ fontSize:14, color:C.textSub, maxWidth:520, margin:'0 auto', lineHeight:1.6 }}>{AREA_SOON_HINT[area.id] || 'Disponível em breve.'}</div>
+    </Card>
+  )
+}
+
 // ---- FinanceWorkspace ----
 export function FinanceWorkspace() {
   const { page = 'dashboard' } = useParams()
@@ -496,7 +558,7 @@ export function FinanceWorkspace() {
   const { user, signOut } = useAuth()
   const { trialDaysLeft, billing } = useBilling()
   const { mode, toggleTheme } = useTheme()
-  const { canAccess, clinicName, ownerId, loading: roleLoading } = useUserRole()
+  const { canAccess, clinicName, ownerId, role, loading: roleLoading } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -664,22 +726,47 @@ export function FinanceWorkspace() {
   const google = useGoogleCalendarSync({ data:safeData, enabled:!loading })
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
-  const fallbackPage = NAV_SECTIONS.flatMap(s => s.items).find(item => canAccess(item.id))?.id || 'dashboard'
+  // ---- Navegação por áreas (spec seção 4) ----
+  function canAccessArea(area) {
+    if (!area.roles.includes(role)) return false
+    if (area.comingSoon) return true
+    return area.sections.some(s => s.items.some(i => canAccess(i.id)))
+  }
+  const accessibleAreas = AREAS.filter(canAccessArea)
+  const accessibleItems = accessibleAreas.flatMap(a => a.sections).flatMap(s => s.items).filter(item => canAccess(item.id))
+  const comingSoonArea = COMING_SOON.find(a => a.id === page)
+  const activeAreaId = comingSoonArea ? comingSoonArea.id : (areaIdForPage(page) || accessibleAreas[0]?.id)
+  const activeArea = AREAS.find(a => a.id === activeAreaId)
+  const fallbackPage = accessibleItems[0]?.id || 'dashboard'
+
   // Só decidir acesso/redirect depois que o role (UserRoleContext) carregou — senão o
   // primeiro render (role=null) redireciona pra dashboard em refresh/deep-link de qualquer página.
-  if (!roleLoading && (!PAGES[page] || !canAccess(page))) return <Navigate to={`/app/${fallbackPage}`} replace />
+  if (!roleLoading) {
+    if (comingSoonArea) {
+      if (!canAccessArea(comingSoonArea)) return <Navigate to={`/app/${fallbackPage}`} replace />
+    } else if (!PAGES[page] || !canAccess(page)) {
+      return <Navigate to={`/app/${fallbackPage}`} replace />
+    }
+  }
 
-  const Page = PAGES[page]
+  const Page = comingSoonArea ? (() => <AreaComingSoon area={comingSoonArea} />) : PAGES[page]
+  const pageTitle = comingSoonArea ? comingSoonArea.label : TITLES[page]
+  const pageSubtitle = comingSoonArea ? 'Área em construção — disponível em breve.' : SUBTITLES[page]
   const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })
   const sidebarQuickStats = [
     `${summary.surgeriesCompleted} cirurgia(s)`,
     `${summary.consultationsCompleted} consulta(s)`,
     billing?.status === 'trialing' ? `Trial: ${trialDaysLeft} dia(s)` : `Assinatura: ${billing?.status || 'pendente'}`,
   ]
-  const visibleSections = NAV_SECTIONS
+  // Sub-navegação = seções da área ativa, filtradas por permissão.
+  const visibleSections = (activeArea?.sections ?? [])
     .map(section => ({ ...section, items: section.items.filter(item => canAccess(item.id)) }))
     .filter(section => section.items.length > 0)
-  const quickLinks = visibleSections.flatMap(section => section.items).slice(0, 4)
+  // Busca rápida varre todas as áreas acessíveis (não só a ativa).
+  const searchSections = accessibleAreas
+    .map(a => ({ items: a.sections.flatMap(s => s.items).filter(i => canAccess(i.id)) }))
+    .filter(s => s.items.length > 0)
+  const quickLinks = accessibleItems.slice(0, 4)
   const desktopCompactNav = !isMobile
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900
   const compactForShortHeight = desktopCompactNav && viewportHeight < 860
@@ -758,10 +845,35 @@ export function FinanceWorkspace() {
   }
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh', height:isMobile ? 'auto' : '100dvh', background:C.bg }}>
+    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', height:isMobile ? 'auto' : '100dvh', background:C.bg }}>
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
-      <aside style={{ width:isMobile ? 272 : 250, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'sticky', left:isMobile ? 0 : 'auto', top:0, height:'100dvh', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease', touchAction:isMobile ? 'pan-y' : 'auto', overscrollBehavior:'contain' }}>
+      {/* Barra de áreas (topo, full-width) */}
+      <nav data-testid="area-bar" style={{ display:'flex', alignItems:'center', gap:4, padding:isMobile ? '8px 12px' : '8px 16px', borderBottom:`1px solid ${C.border}`, background:C.surface, overflowX:'auto', flexShrink:0, zIndex:isMobile ? 20 : 11 }}>
+        {accessibleAreas.map(area => {
+          const active = area.id === activeAreaId
+          return (
+            <button
+              key={area.id}
+              onClick={() => {
+                if (area.comingSoon) { navigate(`/app/${area.id}`); if (isMobile) setMobileNavOpen(false); return }
+                const first = area.sections.flatMap(s => s.items).find(i => canAccess(i.id))
+                if (first) navigate(`/app/${first.id}`)
+                if (isMobile) setMobileNavOpen(false)
+              }}
+              style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 12px', borderRadius:10, border:active ? `1px solid ${C.accent}44` : '1px solid transparent', background:active ? C.accent+'16' : 'transparent', color:active ? C.text : C.textSub, fontWeight:active ? 700 : 600, fontSize:13, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap', flexShrink:0 }}
+            >
+              <NavIcon name={area.icon} size={15} />
+              <span>{area.label}</span>
+              {area.comingSoon && <span style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:C.textDim, border:`1px solid ${C.border}`, borderRadius:6, padding:'1px 5px' }}>em breve</span>}
+            </button>
+          )
+        })}
+      </nav>
+
+      {/* Linha: sidebar (sub-nav da área ativa) + conteúdo */}
+      <div style={{ display:'flex', flex:1, minHeight:0 }}>
+      <aside style={{ width:isMobile ? 272 : 250, background:C.surface, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', position:isMobile ? 'fixed' : 'relative', left:isMobile ? 0 : 'auto', top:0, height:isMobile ? '100dvh' : '100%', overflow:'hidden', flexShrink:0, zIndex:isMobile ? 40 : 10, transform:isMobile ? (mobileNavOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none', transition:'transform 0.25s ease', touchAction:isMobile ? 'pan-y' : 'auto', overscrollBehavior:'contain' }}>
         <div style={{ padding:isMobile ? '24px 20px 18px' : (ultraCompactDesktop ? '10px 12px 8px' : '16px 14px 12px'), borderBottom:`1px solid ${C.border}`, display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
           <div>
             <BrandLogo size="sm" />
@@ -798,7 +910,7 @@ export function FinanceWorkspace() {
           )}
         </div>}
 
-        <div style={{ flex:1, overflowY:isMobile ? 'scroll' : (compactForShortHeight ? 'auto' : 'hidden'), padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px'), WebkitOverflowScrolling:'touch', overscrollBehavior:'contain', touchAction:'pan-y' }}>
+        <div data-testid="sub-nav" style={{ flex:1, overflowY:isMobile ? 'scroll' : (compactForShortHeight ? 'auto' : 'hidden'), padding:isMobile ? '14px 10px 18px' : (ultraCompactDesktop ? '6px' : '8px 8px 10px'), WebkitOverflowScrolling:'touch', overscrollBehavior:'contain', touchAction:'pan-y' }}>
           {visibleSections.map(section => (
             <div key={section.title} style={{ marginBottom:isMobile ? 14 : (ultraCompactDesktop ? 6 : 8) }}>
               <div style={{ padding:isMobile ? '0 10px 8px' : (ultraCompactDesktop ? '0 6px 4px' : '0 8px 6px'), fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.12em', fontWeight:700 }}>{section.title}</div>
@@ -853,11 +965,11 @@ export function FinanceWorkspace() {
               {isMobile && <button onClick={() => setMobileNavOpen(true)} style={getIconButton()}>☰</button>}
               <div>
                 <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', alignItems:isMobile ? 'flex-start' : 'center', gap:8, marginBottom:2 }}>
-                  <h1 style={{ margin:0, fontSize:isMobile ? 24 : 28, fontWeight:900, letterSpacing:'-0.03em', color:C.text }}>{TITLES[page]}</h1>
+                  <h1 style={{ margin:0, fontSize:isMobile ? 24 : 28, fontWeight:900, letterSpacing:'-0.03em', color:C.text }}>{pageTitle}</h1>
                   <SyncStatus saveError={saveError} />
                 </div>
                 <div style={{ fontSize:13, color:C.textDim, marginTop:4, textTransform:'capitalize' }}>{dateStr}</div>
-                <div style={{ fontSize:isMobile ? 13 : 14, color:C.textSub, marginTop:10, maxWidth:620, lineHeight:isMobile ? 1.55 : 1.5 }}>{SUBTITLES[page]}</div>
+                <div style={{ fontSize:isMobile ? 13 : 14, color:C.textSub, marginTop:10, maxWidth:620, lineHeight:isMobile ? 1.55 : 1.5 }}>{pageSubtitle}</div>
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -953,13 +1065,14 @@ export function FinanceWorkspace() {
         <CopilotWidget data={safeData} />
         <FAB currentPage={page} />
       </main>
+      </div>
 
       {/* Quick search modal */}
       <QuickSearchModal
         open={quickSearchOpen}
         onClose={() => setQuickSearchOpen(false)}
         navigate={navigate}
-        sections={visibleSections}
+        sections={searchSections}
       />
 
       {/* Onboarding wizard */}

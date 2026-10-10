@@ -5,6 +5,15 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (29)
+### Changed
+- **Navegação reorganizada em 6 áreas de domínio** (Fase 0 — esqueleto de arquitetura, spec seção 4): barra de áreas no topo (Início · Pacientes · Clínico · Financeiro · Automações & Integrações · Configurações) e a sidebar passa a mostrar só a sub-navegação da área ativa, em vez do menu plano "Operação/Gestão". Cada feature futura cai na área certa. O funil fica em Pacientes; cirurgias/consultas/produtos/lançamentos no Financeiro; assinatura/configurações em Configurações. Visibilidade de área por perfil (admin vê as 6; gestão sem Automações/Config; equipe/concierge só Início/Pacientes). Deep-links `/app/:page` preservados. `src/pages/FinanceWorkspace.jsx`, `src/components/NavIcon.jsx`.
+- IA deixou de ser item de menu — o Copiloto (`CopilotWidget`) já é global em qualquer área.
+
+### Added
+- Áreas "em breve": Clínico e Automações & Integrações aparecem na barra com selo "em breve" e uma página placeholder, comunicando o roadmap (serão preenchidas nas Fases 2 e 4). `AreaComingSoon` em `FinanceWorkspace.jsx`.
+- Teste e2e `tests/e2e/area-navigation.spec.js`: barra com as 6 áreas, troca de área troca a sub-nav, placeholder "em breve", deep-link abre na área certa, funil em Pacientes.
+
 ## [Unreleased] - 2026-10-10 (28)
 ### Added
 - Funil de jornada do paciente (Fase 1): nova tela kanban em **Pacientes → Funil** com 5 estágios (consulta agendada → consultado → orçamento enviado → reserva paga → follow-up). Cada card mostra nome/telefone/data e tem um seletor para mover o paciente entre estágios (atualização otimista com rollback em caso de erro). Leitura/escrita respeitam o multi-tenant via `ownerId` (membro de clínica enxerga os pacientes do dono). Nova coluna `funnel_stage` em `patients` — SQL em `supabase/patient_funnel_schema.sql` (aditiva, default `consulta_agendada`, rodar no SQL Editor antes do deploy). Visível a todos os perfis (admin/gestão/concierge/equipe). Arquivos: `src/components/PatientFunnel.jsx`, `src/pages/FinanceWorkspace.jsx`, `src/context/UserRoleContext.jsx`, `src/components/NavIcon.jsx`.
