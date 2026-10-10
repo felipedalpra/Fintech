@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (33)
+### Added
+- CRM — Oportunidades (Fase 2, fundação): modelo de dados do pipeline estilo Kommo — tabela `opportunities` (um contato pode ter várias), histórico de estágio **auditável** (`opportunity_stage_history`), `opportunity_id` em cirurgias/consultas, RLS por clínica (`data_owner_id()`) e migração do `funnel_stage` atual. SQL em `supabase/opportunities_schema.sql`; design em `docs/superpowers/specs/2026-10-10-crm-opportunities-design.md`. (O pipeline que lê oportunidades vem no próximo incremento.)
+
 ## [Unreleased] - 2026-10-10 (32)
 ### Added
 - WhatsApp no CRM (Fase 2): aba **WhatsApp** no cadastro do paciente (área Pacientes) com histórico da conversa e envio de mensagem (`src/components/WhatsAppChat.jsx`, integrado em `Patients.jsx`). Backend: endpoint consolidado `api/whatsapp.js` (`?action=message` envia, `?action=webhook` recebe), cliente Z-API (`api/_lib/whatsappClient.js`) e helpers puros testados (`api/_lib/whatsapp.js`: normalização de telefone, parse do webhook, matching estrito telefone→paciente). Tabela `whatsapp_messages` com RLS por `data_owner_id()` e índice único para **idempotência** do webhook (`supabase/whatsapp_schema.sql`). Fidedignidade coberta por testes (`tests/unit/whatsapp.spec.js` + `tests/e2e/whatsapp-chat.spec.js`): webhook não duplica, ignora eco/`fromMe`, nunca atribui ao paciente errado (ambíguo → não atribui), e a UI mostra o histórico/caixa de envio. Provider escolhido: Z-API. **Ativação depende de criar a conta Z-API, setar env vars na Vercel e rodar o SQL.**
