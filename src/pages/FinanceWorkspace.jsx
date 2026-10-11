@@ -512,37 +512,42 @@ function OnboardingWizard({ onClose }) {
 }
 
 // ---- SyncStatus ----
-function SyncStatus({ saveError }) {
-  if (saveError) {
+// status: 'ok' | 'saving' | 'error'. Dá feedback real de salvamento ao usuário.
+function SyncStatus({ status = 'ok', saveError, onRetry }) {
+  const base = { display:'flex', alignItems:'center', gap:5, fontSize:11, fontWeight:600, userSelect:'none' }
+
+  if (status === 'error') {
     return (
-      <div
-        title={saveError}
-        style={{
-          display:'flex',
-          alignItems:'center',
-          gap:5,
-          fontSize:11,
-          fontWeight:600,
-          color:C.yellow,
-          cursor:'help',
-          userSelect:'none',
-        }}
-      >
-        <span style={{ fontSize:13 }}>⚠</span>
-        Erro ao salvar
+      <div style={{ ...base, color:C.yellow }}>
+        <span title={saveError} style={{ cursor:'help', display:'flex', alignItems:'center', gap:5 }}>
+          <span style={{ fontSize:13 }}>⚠</span>
+          Erro ao salvar
+        </span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            style={{ marginLeft:4, background:'none', border:`1px solid ${C.border}`, borderRadius:6,
+              padding:'1px 7px', fontSize:10, fontWeight:700, color:C.text, cursor:'pointer', fontFamily:'inherit' }}
+          >
+            Repetir
+          </button>
+        )}
       </div>
     )
   }
+
+  if (status === 'saving') {
+    return (
+      <div style={{ ...base, color:C.textSub }}>
+        <span style={{ fontSize:10 }}>⟳</span>
+        Salvando…
+      </div>
+    )
+  }
+
   return (
-    <div style={{
-      display:'flex',
-      alignItems:'center',
-      gap:5,
-      fontSize:11,
-      fontWeight:600,
-      color:C.green,
-      userSelect:'none',
-    }}>
+    <div style={{ ...base, color:C.green }}>
       <span style={{ fontSize:10 }}>●</span>
       Sincronizado
     </div>
@@ -573,6 +578,7 @@ export function FinanceWorkspace() {
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState('')
+  const [saveStatus, setSaveStatus] = useState('ok') // 'ok' | 'saving' | 'error'
   const [loadError, setLoadError] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
@@ -582,6 +588,28 @@ export function FinanceWorkspace() {
     typeof window !== 'undefined' ? window.localStorage.getItem('surgimetrics_onboarded') !== 'true' : false
   )
   const hydratedRef = useRef(false)
+  const saveTimerRef = useRef(null)
+  const pendingRef = useRef(false)      // há edição aguardando persistência?
+  const latestRef = useRef({ data, ownerId })
+  latestRef.current = { data, ownerId }
+
+  // Persistência central: NUNCA salva sob escopo indefinido (sem ownerId). Atualiza o status
+  // de salvamento para a UI dar feedback real (Salvando/Sincronizado/Erro).
+  async function flushSave(owner, snapshot) {
+    if (!owner) return
+    setSaveStatus('saving')
+    try {
+      await saveFinanceData(owner, snapshot)
+      setSaveError('')
+      setSaveStatus('ok')
+      pendingRef.current = false
+    } catch (error) {
+      setSaveError(error.message || 'Nao foi possivel sincronizar os dados.')
+      setSaveStatus('error')
+    }
+  }
+  const retrySave = () => { flushSave(latestRef.current.ownerId, latestRef.current.data) }
+
   const safeData = useMemo(() => normalizeData(data || createEmptyData()), [data])
   const todayDate = today()
   const monthStartDate = startOfMonth(todayDate)
@@ -636,21 +664,27 @@ export function FinanceWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, ownerId])
 
+  // Autosave com DEBOUNCE + GUARDA DE ESCOPO.
+  // - Guarda: só salva com ownerId resolvido. NUNCA cai pro fallback user.id (evita gravar no
+  //   escopo errado para membros da clínica -> dado órfão).
+  // - Debounce: coalesce várias edições em um único save (menos escritas, menos corrida).
   useEffect(() => {
-    if (!user?.id || !hydratedRef.current) return
-    let active = true
-    async function persist() {
-      try {
-        setSaveError('')
-        await saveFinanceData(ownerId || user.id, data)
-      } catch (error) {
-        if (active) setSaveError(error.message || 'Nao foi possivel sincronizar os dados.')
-      }
-    }
-    persist()
-    return () => { active = false }
+    if (!user?.id || !hydratedRef.current || !ownerId) return
+    pendingRef.current = true
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    const snapshot = data
+    const owner = ownerId
+    saveTimerRef.current = setTimeout(() => { flushSave(owner, snapshot) }, 800)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, user?.id])
+  }, [data, user?.id, ownerId])
+
+  // Flush da última edição ao desmontar (navegar pra fora) — não perder o que estava no debounce.
+  useEffect(() => () => {
+    const { data: d, ownerId: o } = latestRef.current
+    if (o && pendingRef.current) saveFinanceData(o, d).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -982,7 +1016,7 @@ export function FinanceWorkspace() {
               <div>
                 <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', alignItems:isMobile ? 'flex-start' : 'center', gap:8, marginBottom:2 }}>
                   <h1 style={{ margin:0, fontSize:isMobile ? 24 : 28, fontWeight:900, letterSpacing:'-0.03em', color:C.text }}>{pageTitle}</h1>
-                  <SyncStatus saveError={saveError} />
+                  <SyncStatus status={saveStatus} saveError={saveError} onRetry={retrySave} />
                 </div>
                 <div style={{ fontSize:13, color:C.textDim, marginTop:4, textTransform:'capitalize' }}>{dateStr}</div>
                 <div style={{ fontSize:isMobile ? 13 : 14, color:C.textSub, marginTop:10, maxWidth:620, lineHeight:isMobile ? 1.55 : 1.5 }}>{pageSubtitle}</div>
