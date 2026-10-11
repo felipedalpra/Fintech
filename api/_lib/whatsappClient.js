@@ -1,23 +1,20 @@
 // api/_lib/whatsappClient.js
-// Cliente HTTP do provider de WhatsApp. Provider escolhido: Z-API (não-oficial, hospedado).
-// Configurar via env vars na Vercel:
-//   WHATSAPP_API_URL  — base da instância Z-API, ex: https://api.z-api.io/instances/{id}/token/{token}
-//   WHATSAPP_API_KEY  — o Client-Token (token de segurança da conta Z-API)
+// Cliente HTTP do provider de WhatsApp (Z-API). Multi-número: as credenciais vêm por
+// parâmetro (da tabela whatsapp_numbers, lidas no servidor), não mais de env vars.
+//   instanceUrl — base da instância Z-API, ex: https://api.z-api.io/instances/{id}/token/{token}
+//   apiToken    — Client-Token (token de segurança da conta Z-API)
 // A interface é a mesma para Evolution API; para Twilio/Meta, ajustar só este arquivo.
 
-export async function sendWhatsAppText(to, text) {
-  const apiUrl = process.env.WHATSAPP_API_URL
-  const clientToken = process.env.WHATSAPP_API_KEY
-
-  if (!apiUrl || !clientToken) {
-    throw new Error('WhatsApp não configurado. Defina WHATSAPP_API_URL e WHATSAPP_API_KEY na Vercel.')
+export async function sendWhatsAppText(instanceUrl, apiToken, to, text) {
+  if (!instanceUrl || !apiToken) {
+    throw new Error('Número de WhatsApp sem credenciais configuradas.')
   }
 
-  const res = await fetch(`${apiUrl}/send-text`, {
+  const res = await fetch(`${instanceUrl}/send-text`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Client-Token': clientToken,
+      'Client-Token': apiToken,
     },
     body: JSON.stringify({ phone: to, message: text }),
   })

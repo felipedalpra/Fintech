@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (34)
+### Added
+- WhatsApp **multi-número** (Fase 2, 3a): suporte aos 3 números de WhatsApp Business da clínica. Tabela `whatsapp_numbers` (credenciais Z-API **por número**, lidas só no servidor — `instance_url`/`api_token` revogados do frontend), coluna `whatsapp_number_id` em `whatsapp_messages`. O endpoint `api/whatsapp.js` roteia o webhook **por número** (`?number=<id>&token=<secret>`) e envia pelo número escolhido (credenciais lidas da tabela via service role). Nova tela admin em **Configurações → WhatsApp** (`WhatsAppNumbers`) para cadastrar números + credenciais e copiar a URL de webhook de cada um. A aba WhatsApp do paciente agora escolhe por qual número enviar. SQL em `supabase/whatsapp_numbers_schema.sql`; design em `docs/superpowers/specs/2026-10-10-whatsapp-inbox-multinumero-design.md`. (A inbox central vem no incremento 3b.)
+
 ## [Unreleased] - 2026-10-10 (33)
 ### Changed
 - **Funil → Pipeline de Oportunidades** (CRM estilo Kommo, Fase 2): a tela em Pacientes → Funil agora mostra **oportunidades (negócios)**, não mais 1 estágio por paciente. Card rico (paciente, título, valor, origem, tags, "há X dias no estágio", atalho WhatsApp) e soma de valores por coluna. Mover de estágio é **atômico e auditável** via RPC `move_opportunity` (atualiza estágio + grava `opportunity_stage_history` numa transação, registrando quem/quando/manual-vs-automação). `src/components/OpportunityPipeline.jsx` (substitui `PatientFunnel.jsx`), `src/pages/FinanceWorkspace.jsx`. Testes: `tests/e2e/opportunity-pipeline.spec.js`.

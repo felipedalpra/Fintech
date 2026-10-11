@@ -4,6 +4,7 @@ import { Btn, Card, FInput } from './UI.jsx'
 import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClient.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -112,7 +113,7 @@ export function Settings() {
 
   const tabs = [
     { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }] : []),
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'whatsapp', label:'WhatsApp' }] : []),
   ]
 
   return (
@@ -213,6 +214,10 @@ export function Settings() {
 
         {tab === 'equipe' && role === 'admin' && (
           <TeamSettings clinicId={clinicId} />
+        )}
+
+        {tab === 'whatsapp' && role === 'admin' && (
+          <WhatsAppNumbers />
         )}
       </Card>
 

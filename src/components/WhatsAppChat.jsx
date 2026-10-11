@@ -11,9 +11,28 @@ export function WhatsAppChat({ patient }) {
   const [error, setError] = useState(null)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [numbers, setNumbers] = useState([])
+  const [numberId, setNumberId] = useState('')
   const endRef = useRef(null)
 
   const phone = (patient?.phone || '').replace(/\D/g, '')
+
+  useEffect(() => {
+    let mounted = true
+    async function loadNumbers() {
+      const { data } = await supabase
+        .from('whatsapp_numbers')
+        .select('id, label, phone')
+        .eq('active', true)
+        .order('created_at', { ascending: true })
+      if (!mounted) return
+      const list = data ?? []
+      setNumbers(list)
+      setNumberId(prev => prev || list[0]?.id || '')
+    }
+    loadNumbers()
+    return () => { mounted = false }
+  }, [])
 
   async function load() {
     setLoading(true)
@@ -35,6 +54,7 @@ export function WhatsAppChat({ patient }) {
     e.preventDefault()
     const body = text.trim()
     if (!body || !phone || sending) return
+    if (!numberId) { setError('Nenhum número de WhatsApp configurado. Peça ao admin para cadastrar em Configurações → WhatsApp.'); return }
     setSending(true)
     setError(null)
     try {
@@ -44,7 +64,7 @@ export function WhatsAppChat({ patient }) {
       const res = await fetch('/api/whatsapp?action=message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ patientId: patient.id, phone, text: body }),
+        body: JSON.stringify({ patientId: patient.id, phone, text: body, whatsappNumberId: numberId }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
@@ -103,6 +123,14 @@ export function WhatsAppChat({ patient }) {
           <div ref={endRef} />
         </div>
         {error && <div style={s.err}>{error}</div>}
+        {numbers.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px 0', fontSize: 11, color: C.textSub }}>
+            Enviar por:
+            <select value={numberId} onChange={e => setNumberId(e.target.value)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.card, color: C.text, fontFamily: 'inherit' }}>
+              {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+            </select>
+          </div>
+        )}
         <form style={s.form} onSubmit={send}>
           <input style={s.input} value={text} onChange={e => setText(e.target.value)} placeholder="Escreva uma mensagem..." disabled={sending} />
           <button type="submit" style={s.btn} disabled={sending || !text.trim()}>{sending ? 'Enviando...' : 'Enviar'}</button>
