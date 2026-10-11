@@ -3,6 +3,7 @@ import { C, base } from '../theme.js'
 import { fmt, uid } from '../utils.js'
 import { useMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal } from './UI.jsx'
+import { FilterBar } from './FilterBar.jsx'
 
 const COLORS = ['#0EA5E9', '#10B981', '#F97316', '#EC4899', '#8B5CF6', '#F59E0B', '#22C55E', '#EF4444']
 
@@ -13,12 +14,17 @@ export function Plans({ data, setData }) {
   const [showModal, setShowModal] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('nome') // 'nome' | 'preco_maior' | 'preco_menor'
   const m = useMetrics(data)
   const procedureMap = new Map(m.byProcedure.map(item => [item.id, item]))
 
-  const filtered = data.procedures.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = data.procedures
+    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === 'preco_maior') return (b.price || 0) - (a.price || 0)
+      if (sortBy === 'preco_menor') return (a.price || 0) - (b.price || 0)
+      return (a.name || '').localeCompare(b.name || '')
+    })
 
   const openAdd = () => {
     setForm({ ...empty, id:uid() })
@@ -51,15 +57,20 @@ export function Plans({ data, setData }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-      <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar procedimento..."
-          style={{ flex:1, minWidth:200, padding:'8px 12px', borderRadius:10, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:13, fontFamily:'inherit', outline:'none' }}
-        />
-        <Btn onClick={openAdd}>+ Novo Procedimento</Btn>
-      </div>
+      <FilterBar
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Buscar procedimento…"
+        selects={[
+          { label:'Ordenar', value:sortBy, onChange:setSortBy, options:[
+            { v:'nome', l:'Nome (A→Z)' }, { v:'preco_maior', l:'Maior preço' }, { v:'preco_menor', l:'Menor preço' },
+          ] },
+        ]}
+        count={filtered.length}
+        countLabel="procedimento"
+        onClear={() => { setSearch(''); setSortBy('nome') }}
+        right={<Btn onClick={openAdd}>+ Novo Procedimento</Btn>}
+      />
 
       {data.procedures.length === 0 && (
         <Card>

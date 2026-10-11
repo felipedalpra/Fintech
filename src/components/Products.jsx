@@ -3,6 +3,7 @@ import { C, base } from '../theme.js'
 import { fmt, fmtN, formatDateBR, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { FilterBar } from './FilterBar.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const PRODUCT_EMPTY = {
@@ -87,6 +88,7 @@ export function Products({ data, setData }) {
   const m = buildMetrics(data)
   const [tab, setTab] = useState('catalogo')
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('todos') // 'ativos' | 'inativos' | 'todos'
   const [modalType, setModalType] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(PRODUCT_EMPTY)
@@ -97,6 +99,9 @@ export function Products({ data, setData }) {
 
   const filteredProducts = data.products
     .filter(item => item.name.toLowerCase().includes(search.toLowerCase()) || item.category.toLowerCase().includes(search.toLowerCase()))
+    .filter(item => statusFilter === 'todos'
+      || (statusFilter === 'ativos' && item.active !== false)
+      || (statusFilter === 'inativos' && item.active === false))
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 
   const openAdd = type => {
@@ -232,13 +237,25 @@ export function Products({ data, setData }) {
         ].map(([label, value, color]) => <Card key={label} style={{ padding:isMobile ? 14 : 18 }}><div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8, lineHeight:1.35 }}>{label}</div><div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color }}>{value}</div></Card>)}
       </div>
 
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar produto ou categoria..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:isMobile ? '100%' : 320, width:isMobile ? '100%' : 'auto' }} />
-        <span style={{ marginLeft:isMobile ? 0 : 'auto', fontSize:13, color:C.textDim, width:isMobile ? '100%' : 'auto' }}>{filteredProducts.length} produto(s)</span>
-        <Btn variant="ghost" onClick={() => openAdd('purchase')} disabled={data.products.length === 0}>+ Compra</Btn>
-        <Btn variant="success" onClick={() => openAdd('sale')} disabled={data.products.length === 0}>+ Venda</Btn>
-        <Btn onClick={() => openAdd('product')}>+ Produto</Btn>
-      </div>
+      <FilterBar
+        isMobile={isMobile}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Buscar produto ou categoria…"
+        selects={[
+          { label:'Status', value:statusFilter, onChange:setStatusFilter, options:[
+            { v:'todos', l:'Todos' }, { v:'ativos', l:'Ativos' }, { v:'inativos', l:'Inativos' },
+          ] },
+        ]}
+        count={filteredProducts.length}
+        countLabel="produto"
+        onClear={() => { setSearch(''); setStatusFilter('todos') }}
+        right={<>
+          <Btn variant="ghost" onClick={() => openAdd('purchase')} disabled={data.products.length === 0}>+ Compra</Btn>
+          <Btn variant="success" onClick={() => openAdd('sale')} disabled={data.products.length === 0}>+ Venda</Btn>
+          <Btn onClick={() => openAdd('product')}>+ Produto</Btn>
+        </>}
+      />
 
       <div style={{ display:'flex', gap:4, background:C.surface, padding:4, borderRadius:12, width:isMobile ? '100%' : 'fit-content', flexWrap:'wrap' }}>
         <Tab id="catalogo" label="Produtos" />

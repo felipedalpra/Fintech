@@ -7,7 +7,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-10-11 (48)
 ### Added
-- **Filtros padrão nos módulos de lista (Fase C — início, módulo Pacientes)**: novo componente reutilizável `src/components/FilterBar.jsx` (busca + selects de filtro + ordenação + contador + ação à direita, padrão CRM, dark-mode safe) aplicado em **Pacientes** (`src/components/Patients.jsx`): busca por **nome, CPF ou telefone**; filtro de **Status** (Ativos / Arquivados / Todos — antes não dava para ver arquivados); filtro de **TCLE** (Assinado / Pendente); **ordenação** (Nome A→Z / Mais recentes); botão **Limpar**; e **Reativar** paciente arquivado (arquivar deixou de sumir o registro do estado). É o padrão de referência para replicar nos demais módulos (Consultas, Cirurgias, Produtos, Vendas). Plano em `docs/superpowers/specs/2026-10-11-data-persistence-safety-review.md` (Fase C ampliada para filtros). _Ainda não deployado — aguarda validação do padrão antes do rollout nas demais telas._
+- **Filtros padrão em todos os módulos de lista (Fase C)**: novo componente reutilizável `src/components/FilterBar.jsx` (busca + selects de filtro + ordenação + contador + ações à direita, padrão CRM, dark-mode safe), aplicado de forma consistente em:
+  - **Pacientes** (`Patients.jsx`): busca por nome/CPF/telefone; **Status** (Ativos/Arquivados/Todos — antes não dava para ver arquivados); **TCLE** (Assinado/Pendente); ordenação (Nome/Mais recentes); **Reativar** arquivado (arquivar deixou de remover o registro do estado).
+  - **Consultas** (`Consultations.jsx`): busca; **Pagamento** (Todos/Pago/Pendente/Parcelado); ordenação (Recentes/Antigas/Maior valor).
+  - **Cirurgias** (`Sales.jsx`): busca; **Pagamento** (status existente convertido ao padrão); ordenação (Recentes/Antigas/Maior valor).
+  - **Procedimentos** (`Plans.jsx`): busca; ordenação (Nome/Maior preço/Menor preço).
+  - **Produtos** (`Products.jsx`): busca; **Status** (Todos/Ativos/Inativos).
+  Todos com botão **Limpar** quando há filtro ativo. Antes só o Financeiro tinha filtros. Plano em `docs/superpowers/specs/2026-10-11-data-persistence-safety-review.md`.
 
 ## [Unreleased] - 2026-10-11 (47)
 ### Fixed

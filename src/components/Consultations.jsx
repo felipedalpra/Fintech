@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { FilterBar } from './FilterBar.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -105,6 +106,8 @@ export function Consultations({ data, setData }) {
   const [showModal, setShowModal] = useState(() => Boolean(readDraft()?.showModal))
   const [confirmId, setConfirmId] = useState(null)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('todos') // paymentStatus
+  const [sortBy, setSortBy] = useState('recentes')          // 'recentes' | 'antigas' | 'valor'
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -210,15 +213,35 @@ export function Consultations({ data, setData }) {
     setShowModal(false)
   }
 
-  const filtered = data.consultations.filter(item => item.patient.toLowerCase().includes(search.toLowerCase())).sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  const filtered = data.consultations
+    .filter(item => item.patient.toLowerCase().includes(search.toLowerCase()))
+    .filter(item => statusFilter === 'todos' || item.paymentStatus === statusFilter)
+    .sort((a, b) => {
+      if (sortBy === 'valor') return (b.value || 0) - (a.value || 0)
+      const cmp = (a.date || '').localeCompare(b.date || '')
+      return sortBy === 'antigas' ? cmp : -cmp
+    })
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:isMobile ? '100%' : 280, width:isMobile ? '100%' : 'auto' }} />
-        <span style={{ marginLeft:isMobile ? 0 : 'auto', fontSize:13, color:C.textDim, width:isMobile ? '100%' : 'auto' }}>{filtered.length} consulta{filtered.length !== 1 ? 's' : ''}</span>
-        <Btn onClick={openAdd}>+ Nova Consulta</Btn>
-      </div>
+      <FilterBar
+        isMobile={isMobile}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Buscar paciente ou ID interno…"
+        selects={[
+          { label:'Pagamento', value:statusFilter, onChange:setStatusFilter, options:[
+            { v:'todos', l:'Todos' }, { v:'pago', l:'Pago' }, { v:'pendente', l:'Pendente' }, { v:'parcelado', l:'Parcelado' },
+          ] },
+          { label:'Ordenar', value:sortBy, onChange:setSortBy, options:[
+            { v:'recentes', l:'Mais recentes' }, { v:'antigas', l:'Mais antigas' }, { v:'valor', l:'Maior valor' },
+          ] },
+        ]}
+        count={filtered.length}
+        countLabel="consulta"
+        onClear={() => { setSearch(''); setStatusFilter('todos'); setSortBy('recentes') }}
+        right={<Btn onClick={openAdd}>+ Nova Consulta</Btn>}
+      />
 
       {!isMobile && <Card style={{ padding:0, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>

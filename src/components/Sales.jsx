@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { FilterBar } from './FilterBar.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -145,6 +146,7 @@ export function Sales({ data, setData }) {
   const [confirmId, setConfirmId] = useState(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
+  const [sortBy, setSortBy] = useState('recentes') // 'recentes' | 'antigas' | 'valor'
   const [installmentModal, setInstallmentModal] = useState(null)
 
   useEffect(() => {
@@ -273,7 +275,11 @@ export function Sales({ data, setData }) {
 
   const filtered = data.surgeries
     .filter(item => item.patient.toLowerCase().includes(search.toLowerCase()) && (filterStatus === 'todos' || item.paymentStatus === filterStatus))
-    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .sort((a, b) => {
+      if (sortBy === 'valor') return (b.totalValue || 0) - (a.totalValue || 0)
+      const cmp = (a.date || '').localeCompare(b.date || '')
+      return sortBy === 'antigas' ? cmp : -cmp
+    })
 
   // Summary stats
   const totalAReceber = data.surgeries
@@ -298,17 +304,24 @@ export function Sales({ data, setData }) {
     : 0
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-        <input placeholder="Buscar paciente ou ID interno..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...base.input, maxWidth:isMobile ? '100%' : 280, width:isMobile ? '100%' : 'auto' }} />
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ ...base.input, width:'auto' }}>
-          <option value="todos">Todos</option>
-          {PAYMENT_STATUS.map(s => (
-            <option key={s.v} value={s.v}>{s.l}</option>
-          ))}
-        </select>
-        <span style={{ marginLeft:isMobile ? 0 : 'auto', fontSize:13, color:C.textDim, width:isMobile ? '100%' : 'auto' }}>{filtered.length} cirurgia{filtered.length !== 1 ? 's' : ''}</span>
-        <Btn onClick={openAdd}>+ Nova Cirurgia</Btn>
-      </div>
+      <FilterBar
+        isMobile={isMobile}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Buscar paciente ou ID interno…"
+        selects={[
+          { label:'Pagamento', value:filterStatus, onChange:setFilterStatus, options:[
+            { v:'todos', l:'Todos' }, ...PAYMENT_STATUS.map(s => ({ v:s.v, l:s.l })),
+          ] },
+          { label:'Ordenar', value:sortBy, onChange:setSortBy, options:[
+            { v:'recentes', l:'Mais recentes' }, { v:'antigas', l:'Mais antigas' }, { v:'valor', l:'Maior valor' },
+          ] },
+        ]}
+        count={filtered.length}
+        countLabel="cirurgia"
+        onClear={() => { setSearch(''); setFilterStatus('todos'); setSortBy('recentes') }}
+        right={<Btn onClick={openAdd}>+ Nova Cirurgia</Btn>}
+      />
 
       {/* Summary stats bar */}
       <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap:12 }}>
