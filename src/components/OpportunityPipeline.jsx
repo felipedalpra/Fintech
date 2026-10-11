@@ -7,6 +7,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 // Pipeline de oportunidades (CRM estilo Kommo). Cada card é uma oportunidade (negócio)
 // ligada a um paciente. Movimentação atômica/auditável via RPC move_opportunity.
 const STAGES = [
+  { key: 'primeiro_contato',  label: 'Primeiro Contato',  color: '#94a3b8' },
   { key: 'consulta_agendada', label: 'Consulta Agendada', color: '#6366f1' },
   { key: 'consultado',        label: 'Consultado',        color: '#0ea5e9' },
   { key: 'orcamento_enviado', label: 'Orçamento Enviado', color: '#f59e0b' },

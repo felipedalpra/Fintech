@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (36)
+### Added
+- **Lead automático do WhatsApp** (Fase 2): quando um número **novo** manda mensagem, a clínica ganha um **lead no pipeline automaticamente** — o webhook cria o contato (paciente) + a oportunidade no novo estágio **"Primeiro Contato"**, usando o nome do contato do WhatsApp. Via RPC atômica e idempotente `ensure_whatsapp_lead`. Resolve de vez o "lead novo que chamava no zap e sumia": agora ele entra no funil sozinho. Novo estágio inicial `primeiro_contato` no pipeline. SQL em `supabase/whatsapp_lead_autocreate.sql`. (O avanço automático de estágio por interpretação das mensagens vem no motor de automação — sub-projeto 4.)
+
 ## [Unreleased] - 2026-10-10 (35)
 ### Added
 - **Inbox central de WhatsApp** (Fase 2, 3b): nova tela em **Pacientes → WhatsApp** (`WhatsAppInbox`) com todas as conversas da clínica numa lista (estilo Chatwoot/Kommo) — nome do paciente ou número cru, prévia, horário, selo do número, e **conversas NÃO atribuídas** (lead novo que chamou no zap e antes sumia) destacadas com ⚠. Abrir uma conversa mostra o thread e permite responder escolhendo por qual número sair — inclusive responder a um lead ainda não cadastrado. Filtro por número. Visível a todos os perfis. `src/components/WhatsAppInbox.jsx`, nav/rota em `FinanceWorkspace.jsx`, ícone em `NavIcon.jsx`, acesso em `UserRoleContext.jsx`. Teste: `tests/e2e/whatsapp-inbox.spec.js`.

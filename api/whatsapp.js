@@ -106,9 +106,17 @@ async function handleWebhook(req, res) {
 
   const ownerUserId = num.user_id
 
-  // Casa o telefone a um paciente da clínica (estrito: ambíguo/novo → não atribui).
+  // Casa o telefone a um paciente da clínica (estrito: ambíguo → não casa pelo match).
   const { data: patients } = await supabase.from('patients').select('id, phone').eq('user_id', ownerUserId)
-  const patientId = matchPatientId(patients || [], parsed.phone)
+  let patientId = matchPatientId(patients || [], parsed.phone)
+
+  // Número novo → cria o lead automaticamente (paciente + oportunidade em "primeiro_contato").
+  if (!patientId) {
+    const { data: leadId } = await supabase.rpc('ensure_whatsapp_lead', {
+      p_owner: ownerUserId, p_phone: parsed.phone, p_name: parsed.senderName || '',
+    })
+    if (leadId) patientId = leadId
+  }
 
   const { error } = await supabase.from('whatsapp_messages').insert({
     user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: 'inbound',

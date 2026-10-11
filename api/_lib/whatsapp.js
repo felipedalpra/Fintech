@@ -27,11 +27,18 @@ export function parseIncomingMessage(body) {
   const phoneRaw = body.phone || body.from || body?.sender?.phone || ''
   const text = body?.text?.message || body?.message?.conversation || body?.body || ''
   const providerMessageId = body?.messageId || body?.id || null
+  // Nome do contato no WhatsApp (para nomear o lead criado automaticamente).
+  const senderName = body?.senderName || body?.chatName || body?.pushname || body?.pushName || ''
 
   const phone = normalizePhone(phoneRaw)
   if (!phone || !text) return null
 
-  return { phone, text: String(text), providerMessageId: providerMessageId ? String(providerMessageId) : null }
+  return {
+    phone,
+    text: String(text),
+    providerMessageId: providerMessageId ? String(providerMessageId) : null,
+    senderName: senderName ? String(senderName) : '',
+  }
 }
 
 // Casa um telefone a um paciente pela lista de pacientes da clínica.

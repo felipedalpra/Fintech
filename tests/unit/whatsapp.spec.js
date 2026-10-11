@@ -16,7 +16,13 @@ test('phoneCore usa os últimos 8 dígitos (ignora DDI/DDD/9º dígito)', () => 
 
 test('parseIncomingMessage: mensagem recebida do Z-API', () => {
   const r = parseIncomingMessage({ phone: '5511988887777', text: { message: 'Olá, doutora' }, messageId: 'ABC123' })
-  expect(r).toEqual({ phone: '5511988887777', text: 'Olá, doutora', providerMessageId: 'ABC123' })
+  expect(r).toMatchObject({ phone: '5511988887777', text: 'Olá, doutora', providerMessageId: 'ABC123' })
+})
+
+test('parseIncomingMessage: extrai o nome do contato (para nomear o lead)', () => {
+  expect(parseIncomingMessage({ phone: '5511988887777', senderName: 'Maria Lead', text: { message: 'oi' } }).senderName).toBe('Maria Lead')
+  expect(parseIncomingMessage({ phone: '5511988887777', chatName: 'João', text: { message: 'oi' } }).senderName).toBe('João')
+  expect(parseIncomingMessage({ phone: '5511988887777', text: { message: 'oi' } }).senderName).toBe('')
 })
 
 test('parseIncomingMessage: ignora eco da própria mensagem (fromMe)', () => {
@@ -31,9 +37,9 @@ test('parseIncomingMessage: ignora payload sem texto ou sem telefone', () => {
 
 test('parseIncomingMessage: aceita formatos alternativos de campo', () => {
   expect(parseIncomingMessage({ from: '5511988887777', message: { conversation: 'oi' }, id: 'X1' }))
-    .toEqual({ phone: '5511988887777', text: 'oi', providerMessageId: 'X1' })
+    .toMatchObject({ phone: '5511988887777', text: 'oi', providerMessageId: 'X1' })
   expect(parseIncomingMessage({ sender: { phone: '5511988887777' }, body: 'oi' }))
-    .toEqual({ phone: '5511988887777', text: 'oi', providerMessageId: null })
+    .toMatchObject({ phone: '5511988887777', text: 'oi', providerMessageId: null })
 })
 
 const PATIENTS = [
