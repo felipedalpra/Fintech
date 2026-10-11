@@ -4,6 +4,7 @@ import { fmt, formatDateBR, today } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { WhatsAppChat } from './WhatsAppChat.jsx'
+import { FilterBar } from './FilterBar.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -72,6 +73,9 @@ export function Patients({ data }) {
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ativos') // 'ativos' | 'arquivados' | 'todos'
+  const [consentFilter, setConsentFilter] = useState('todos') // 'todos' | 'assinado' | 'pendente'
+  const [sortBy, setSortBy] = useState('nome')                // 'nome' | 'recentes'
 
   const [selected, setSelected] = useState(null)
   const [drawerTab, setDrawerTab] = useState('dados')
@@ -210,15 +214,37 @@ export function Patients({ data }) {
 
   async function archivePatient(id) {
     await supabase.from('patients').update({ active: false }).eq('id', id).eq('user_id', effectiveUserId)
-    setPatients(ps => ps.filter(p => p.id !== id))
+    // Mantém no estado como arquivado (não remove), para a visão Arquivados/Todos poder mostrar.
+    setPatients(ps => ps.map(p => p.id === id ? { ...p, active: false } : p))
     if (selected?.id === id) setSelected(null)
   }
 
-  const filtered = patients.filter(p =>
-    p.active !== false &&
-    (p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.cpf || '').replace(/\D/g, '').includes(search.replace(/\D/g, '')))
-  )
+  async function reactivatePatient(id) {
+    await supabase.from('patients').update({ active: true }).eq('id', id).eq('user_id', effectiveUserId)
+    setPatients(ps => ps.map(p => p.id === id ? { ...p, active: true } : p))
+  }
+
+  const q = search.toLowerCase().trim()
+  const qDigits = search.replace(/\D/g, '')
+  const filtered = patients
+    .filter(p => {
+      if (statusFilter === 'ativos' && p.active === false) return false
+      if (statusFilter === 'arquivados' && p.active !== false) return false
+      if (consentFilter === 'assinado' && !p.consent_signed) return false
+      if (consentFilter === 'pendente' && p.consent_signed) return false
+      if (q) {
+        const byName = (p.full_name || '').toLowerCase().includes(q)
+        const byCpf = qDigits && (p.cpf || '').replace(/\D/g, '').includes(qDigits)
+        const byPhone = qDigits && (p.phone || '').replace(/\D/g, '').includes(qDigits)
+        if (!byName && !byCpf && !byPhone) return false
+      }
+      return true
+    })
+    .sort((a, b) => sortBy === 'recentes'
+      ? new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      : (a.full_name || '').localeCompare(b.full_name || ''))
+
+  const clearFilters = () => { setSearch(''); setStatusFilter('ativos'); setConsentFilter('todos'); setSortBy('nome') }
 
   // Financeiro tab: filter surgeries and consultations linked to selected patient
   const patientSurgeries = selected
@@ -233,19 +259,28 @@ export function Patients({ data }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          placeholder="Buscar por nome ou CPF…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ ...base.input, maxWidth: isMobile ? '100%' : 280, width: isMobile ? '100%' : 'auto' }}
-        />
-        <span style={{ marginLeft: isMobile ? 0 : 'auto', fontSize: 13, color: C.textDim }}>
-          {filtered.length} paciente{filtered.length !== 1 ? 's' : ''}
-        </span>
-        <Btn onClick={openAdd}>+ Novo paciente</Btn>
-      </div>
+      {/* Toolbar (filtros padrão) */}
+      <FilterBar
+        isMobile={isMobile}
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Buscar por nome, CPF ou telefone…"
+        selects={[
+          { label: 'Status', value: statusFilter, onChange: setStatusFilter, options: [
+            { v: 'ativos', l: 'Ativos' }, { v: 'arquivados', l: 'Arquivados' }, { v: 'todos', l: 'Todos' },
+          ] },
+          { label: 'TCLE', value: consentFilter, onChange: setConsentFilter, options: [
+            { v: 'todos', l: 'Todos' }, { v: 'assinado', l: 'Assinado' }, { v: 'pendente', l: 'Pendente' },
+          ] },
+          { label: 'Ordenar', value: sortBy, onChange: setSortBy, options: [
+            { v: 'nome', l: 'Nome (A→Z)' }, { v: 'recentes', l: 'Mais recentes' },
+          ] },
+        ]}
+        count={filtered.length}
+        countLabel="paciente"
+        onClear={clearFilters}
+        right={<Btn onClick={openAdd}>+ Novo paciente</Btn>}
+      />
 
       {/* Table */}
       {loading ? (
@@ -291,7 +326,9 @@ export function Patients({ data }) {
                     <td style={{ padding: '13px 18px' }}>
                       <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                         <Btn variant="ghost" onClick={() => openEdit(p)} style={{ padding: '5px 10px', fontSize: 11 }}>Editar</Btn>
-                        <Btn variant="danger" onClick={() => setConfirmArchiveId(p.id)} style={{ padding: '5px 10px', fontSize: 11 }}>Arquivar</Btn>
+                        {p.active === false
+                          ? <Btn variant="ghost" onClick={() => reactivatePatient(p.id)} style={{ padding: '5px 10px', fontSize: 11 }}>Reativar</Btn>
+                          : <Btn variant="danger" onClick={() => setConfirmArchiveId(p.id)} style={{ padding: '5px 10px', fontSize: 11 }}>Arquivar</Btn>}
                       </div>
                     </td>
                   </tr>
