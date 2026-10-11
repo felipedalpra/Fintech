@@ -11,6 +11,7 @@ import {
   persistRiskSnapshot,
   sendGmailHtml,
 } from '../_lib/alerts.js'
+import { runWhatsAppAutomations } from '../_lib/whatsappAutomations.js'
 
 function extractBearer(headers = {}) {
   const authHeader = headers.authorization || headers.Authorization || ''
@@ -140,7 +141,17 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ ok:true, referenceDate:today, ...summary })
+    // Automações de saída de WhatsApp (lembrete/follow-up) do dia.
+    // Fail-safe: um erro aqui NUNCA derruba o processamento de alertas (passo final, isolado).
+    let whatsapp = null
+    try {
+      whatsapp = await runWhatsAppAutomations(admin, { todayISO: today })
+    } catch (waErr) {
+      console.error('whatsapp automations error:', waErr?.message)
+      whatsapp = { error: waErr?.message || 'erro nas automações de WhatsApp' }
+    }
+
+    return res.status(200).json({ ok:true, referenceDate:today, ...summary, whatsapp })
   } catch (error) {
     return res.status(500).json({ error:error?.message || 'Erro interno ao processar alertas' })
   }

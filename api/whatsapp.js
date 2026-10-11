@@ -7,6 +7,7 @@ import { sendWhatsAppText } from './_lib/whatsappClient.js'
 import { parseIncomingMessage, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
+import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
 
 function adminSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -28,7 +29,26 @@ export default async function handler(req, res) {
   const action = req.query.action
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
-  return res.status(400).json({ error: 'Ação inválida. Use ?action=message ou ?action=webhook.' })
+  if (action === 'dispatch') return handleDispatch(req, res)
+  return res.status(400).json({ error: 'Ação inválida. Use ?action=message, ?action=webhook ou ?action=dispatch.' })
+}
+
+// ---- Disparo das automações de saída (gatilho manual/QA; o cron diário chama o motor direto) ----
+// Autorizado por CRON_SECRET (header x-cron-secret ou Authorization: Bearer). O cron de alertas
+// (api/alerts/process.js) roda o mesmo motor automaticamente às 08:00 BRT.
+async function handleDispatch(req, res) {
+  const secret = process.env.CRON_SECRET
+  const headerSecret = req.headers['x-cron-secret'] || ''
+  const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7) : ''
+  if (!secret || (headerSecret !== secret && bearer !== secret)) {
+    return res.status(401).json({ error: 'Invalid cron secret' })
+  }
+
+  const supabase = adminSupabase()
+  const todayISO = typeof req.query.date === 'string' && req.query.date ? req.query.date : undefined
+  const ownerId = typeof req.query.owner === 'string' && req.query.owner ? req.query.owner : null
+  const summary = await runWhatsAppAutomations(supabase, { todayISO, ownerId })
+  return res.status(200).json({ ok: true, ...summary })
 }
 
 // ---- Enviar (autenticado pelo app, por número escolhido) ----

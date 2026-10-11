@@ -1,0 +1,54 @@
+import { expect, test } from '@playwright/test'
+import {
+  addDays, formatBR, renderTemplate, planReminders, planFollowups,
+} from '../../api/_lib/whatsappAutomations.js'
+
+test('addDays: soma/subtrai sem drift de fuso, cruza mês e ano', () => {
+  expect(addDays('2026-10-11', 1)).toBe('2026-10-12')
+  expect(addDays('2026-10-11', 2)).toBe('2026-10-13')
+  expect(addDays('2026-10-11', -2)).toBe('2026-10-09')
+  expect(addDays('2026-10-31', 1)).toBe('2026-11-01')   // vira o mês
+  expect(addDays('2026-12-31', 1)).toBe('2027-01-01')   // vira o ano
+  expect(addDays('2026-01-01', -1)).toBe('2025-12-31')
+  expect(addDays('2026-03-01', -1)).toBe('2026-02-28')  // fev não-bissexto
+})
+
+test('formatBR: ISO -> DD/MM/YYYY', () => {
+  expect(formatBR('2026-10-12')).toBe('12/10/2026')
+})
+
+test('renderTemplate: substitui variáveis; faltantes/desconhecidas viram vazio', () => {
+  expect(renderTemplate('Olá {patient_name}, dia {date}', { patient_name: 'Ana', date: '12/10/2026' }))
+    .toBe('Olá Ana, dia 12/10/2026')
+  // {time} ausente não deixa literal nem "undefined"
+  expect(renderTemplate('às {time}h', {})).toBe('às h')
+  expect(renderTemplate('{foo}', {})).toBe('')
+})
+
+test('planReminders: pula quem não tem telefone; usa primeiro nome e hora HH:MM', () => {
+  const events = [
+    { id: 'c1', ref_type: 'consultation', patient_id: 'p1', start_time: '14:30:00', patients: { full_name: 'Ana Maria Souza', phone: '5511999999999' } },
+    { id: 's1', ref_type: 'surgery', patient_id: 'p2', start_time: null, patients: { full_name: 'João', phone: null } }, // sem telefone -> pula
+    { id: 'c2', ref_type: 'consultation', patient_id: null, start_time: null, patients: { full_name: 'Bia', phone: '5511888888888' } },
+  ]
+  const plan = planReminders({
+    events,
+    template: 'Oi {patient_name}, dia {date} {time}',
+    targetDate: '2026-10-12',
+  })
+  expect(plan).toHaveLength(2) // João foi pulado (sem telefone)
+  expect(plan[0]).toMatchObject({ ref_type: 'consultation', ref_id: 'c1', patient_id: 'p1', phone: '5511999999999' })
+  expect(plan[0].message).toBe('Oi Ana, dia 12/10/2026 14:30')
+  // sem start_time, {time} fica vazio (sem "undefined" nem trailing estranho além do espaço do template)
+  expect(plan[1].message).toBe('Oi Bia, dia 12/10/2026 ')
+})
+
+test('planFollowups: sem eventos -> lista vazia; evento sem nome usa fallback', () => {
+  expect(planFollowups({ events: [], template: 'x', targetDate: '2026-10-09' })).toEqual([])
+  const plan = planFollowups({
+    events: [{ id: 'c9', ref_type: 'consultation', patient_id: 'p9', start_time: null, patients: { full_name: '', phone: '551130000000' } }],
+    template: 'Olá {patient_name}!',
+    targetDate: '2026-10-09',
+  })
+  expect(plan[0].message).toBe('Olá tudo bem!')
+})
