@@ -5,6 +5,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { sendWhatsAppText } from './_lib/whatsappClient.js'
 import { parseIncomingMessage, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
+import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
+import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 
 function adminSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -129,5 +131,65 @@ async function handleWebhook(req, res) {
     console.error('whatsapp webhook insert error:', error.message)
   }
 
+  // IA sugere avanço de estágio (sugere e confirma). Nunca derruba o recebimento.
+  if (patientId) {
+    try {
+      await maybeSuggestStage(supabase, ownerUserId, patientId, parsed)
+    } catch (e) {
+      console.error('stage suggestion error:', e?.message)
+    }
+  }
+
   return res.status(200).json({ ok: true })
+}
+
+// Analisa a conversa e, se houver avanço claro, grava uma SUGESTÃO (pending) na oportunidade.
+// A IA nunca move o funil — só o humano confirma. Barato: pré-filtro + cooldown antes de chamar a IA.
+async function maybeSuggestStage(supabase, ownerUserId, patientId, parsed) {
+  const { data: opp } = await supabase
+    .from('opportunities')
+    .select('id, stage, suggestion_status, suggested_at')
+    .eq('user_id', ownerUserId)
+    .eq('patient_id', patientId)
+    .eq('status', 'aberto')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!opp) return
+
+  // Cooldown: não re-sugere se já há sugestão pendente recente (evita spam e custo).
+  const cooldownMin = Number(process.env.AI_SUGGEST_COOLDOWN_MIN || 10)
+  if (opp.suggestion_status === 'pending' && opp.suggested_at) {
+    const ageMin = (Date.now() - new Date(opp.suggested_at).getTime()) / 60000
+    if (ageMin < cooldownMin) return
+  }
+
+  // Pré-filtro grátis: só chama a IA se a mensagem sinalizar um estágio à frente.
+  if (!shouldRunAI(parsed.text, opp.stage)) return
+
+  // Últimas mensagens da conversa (cronológicas) para a classificação.
+  const { data: recent } = await supabase
+    .from('whatsapp_messages')
+    .select('direction, body, created_at')
+    .eq('user_id', ownerUserId)
+    .eq('phone', parsed.phone)
+    .order('created_at', { ascending: false })
+    .limit(12)
+  const messages = (recent || []).slice().reverse()
+
+  const raw = await classifyStageWithAI(buildSuggestionInput(messages, opp.stage))
+  const minConfidence = Number(process.env.AI_SUGGEST_MIN_CONFIDENCE || 0.7)
+  const result = parseSuggestionResult(raw, { currentStage: opp.stage, minConfidence })
+  if (!result) return
+
+  await supabase
+    .from('opportunities')
+    .update({
+      suggested_stage: result.stage,
+      suggested_reason: result.reason,
+      suggested_confidence: result.confidence,
+      suggested_at: new Date().toISOString(),
+      suggestion_status: 'pending',
+    })
+    .eq('id', opp.id)
 }

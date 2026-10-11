@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { SuggestionBox } from './OpportunityPipeline.jsx'
+import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 
 // Inbox central de WhatsApp (todas as conversas da clínica, estilo Chatwoot/Kommo).
 // Mostra conversas atribuídas e NÃO atribuídas (lead novo que chamou no zap), filtra por
@@ -27,6 +29,8 @@ export function WhatsAppInbox() {
   const [replyText, setReplyText] = useState('')
   const [replyNumberId, setReplyNumberId] = useState('')
   const [sending, setSending] = useState(false)
+  const [suggestOpp, setSuggestOpp] = useState(null)
+  const [suggestBusy, setSuggestBusy] = useState(false)
   const endRef = useRef(null)
 
   async function load() {
@@ -71,6 +75,42 @@ export function WhatsAppInbox() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread])
   useEffect(() => { if (current) setReplyNumberId(current.numberId || numbers[0]?.id || '') }, [current, numbers])
+
+  // Busca a sugestão pendente da IA para a oportunidade aberta do paciente desta conversa.
+  useEffect(() => {
+    let active = true
+    setSuggestOpp(null)
+    if (!current?.patientId) return
+    ;(async () => {
+      const { data } = await supabase
+        .from('opportunities')
+        .select('id, stage, suggested_stage, suggested_reason, suggested_confidence, suggestion_status')
+        .eq('patient_id', current.patientId)
+        .eq('status', 'aberto')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (active && data?.suggestion_status === 'pending' && data.suggested_stage) setSuggestOpp(data)
+    })()
+    return () => { active = false }
+  }, [current])
+
+  async function acceptSuggestion() {
+    if (!suggestOpp || suggestBusy) return
+    setSuggestBusy(true)
+    const { error: err } = await confirmSuggestion(suggestOpp)
+    if (err) setError('Não foi possível aplicar a sugestão.')
+    else setSuggestOpp(null)
+    setSuggestBusy(false)
+  }
+  async function rejectSuggestion() {
+    if (!suggestOpp || suggestBusy) return
+    setSuggestBusy(true)
+    const { error: err } = await dismissSuggestion(suggestOpp)
+    if (err) setError('Não foi possível descartar a sugestão.')
+    else setSuggestOpp(null)
+    setSuggestBusy(false)
+  }
 
   async function send(e) {
     e.preventDefault()
@@ -163,6 +203,12 @@ export function WhatsAppInbox() {
                 {current.name || current.phone}
                 {!current.patientId && <span style={{ ...s.unassigned, marginLeft: 8 }}>não atribuída</span>}
               </div>
+              {suggestOpp && (
+                <div style={{ padding: '10px 14px 0' }}>
+                  <SuggestionBox opp={suggestOpp} disabled={suggestBusy}
+                    onAccept={acceptSuggestion} onReject={rejectSuggestion} />
+                </div>
+              )}
               <div style={s.msgs}>
                 {thread.map(m => (
                   <div key={m.id} style={s.row(m.direction)}>
