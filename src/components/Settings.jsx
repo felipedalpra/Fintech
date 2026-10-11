@@ -5,6 +5,7 @@ import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClien
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
+import { FollowupRules } from './FollowupRules.jsx'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -113,7 +114,7 @@ export function Settings() {
 
   const tabs = [
     { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'whatsapp', label:'WhatsApp' }] : []),
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'whatsapp', label:'WhatsApp' }, { id:'followup', label:'Régua de follow-up' }] : []),
   ]
 
   return (
@@ -218,6 +219,9 @@ export function Settings() {
 
         {tab === 'whatsapp' && role === 'admin' && (
           <WhatsAppNumbers />
+        )}
+        {tab === 'followup' && role === 'admin' && (
+          <FollowupRules />
         )}
       </Card>
 
