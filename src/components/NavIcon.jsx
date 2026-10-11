@@ -138,6 +138,11 @@ export function NavIcon({ name, size = 14, style }) {
         <path d="M13 2 4 14h7l-1 8 9-12h-7z"/>
       </svg>
     )
+    case 'chat': return (
+      <svg {...props}>
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/>
+      </svg>
+    )
     case 'settings': return (
       <svg {...props}>
         <line x1="21" x2="14" y1="4" y2="4"/>

@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-10 (35)
+### Added
+- **Inbox central de WhatsApp** (Fase 2, 3b): nova tela em **Pacientes → WhatsApp** (`WhatsAppInbox`) com todas as conversas da clínica numa lista (estilo Chatwoot/Kommo) — nome do paciente ou número cru, prévia, horário, selo do número, e **conversas NÃO atribuídas** (lead novo que chamou no zap e antes sumia) destacadas com ⚠. Abrir uma conversa mostra o thread e permite responder escolhendo por qual número sair — inclusive responder a um lead ainda não cadastrado. Filtro por número. Visível a todos os perfis. `src/components/WhatsAppInbox.jsx`, nav/rota em `FinanceWorkspace.jsx`, ícone em `NavIcon.jsx`, acesso em `UserRoleContext.jsx`. Teste: `tests/e2e/whatsapp-inbox.spec.js`.
+
 ## [Unreleased] - 2026-10-10 (34)
 ### Added
 - WhatsApp **multi-número** (Fase 2, 3a): suporte aos 3 números de WhatsApp Business da clínica. Tabela `whatsapp_numbers` (credenciais Z-API **por número**, lidas só no servidor — `instance_url`/`api_token` revogados do frontend), coluna `whatsapp_number_id` em `whatsapp_messages`. O endpoint `api/whatsapp.js` roteia o webhook **por número** (`?number=<id>&token=<secret>`) e envia pelo número escolhido (credenciais lidas da tabela via service role). Nova tela admin em **Configurações → WhatsApp** (`WhatsAppNumbers`) para cadastrar números + credenciais e copiar a URL de webhook de cada um. A aba WhatsApp do paciente agora escolhe por qual número enviar. SQL em `supabase/whatsapp_numbers_schema.sql`; design em `docs/superpowers/specs/2026-10-10-whatsapp-inbox-multinumero-design.md`. (A inbox central vem no incremento 3b.)

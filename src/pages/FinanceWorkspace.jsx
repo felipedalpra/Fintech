@@ -25,6 +25,7 @@ import { Calendar } from '../components/Calendar.jsx'
 import { TaxCalculator } from '../components/TaxCalculator.jsx'
 import { Patients } from '../components/Patients.jsx'
 import { OpportunityPipeline } from '../components/OpportunityPipeline.jsx'
+import { WhatsAppInbox } from '../components/WhatsAppInbox.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
@@ -55,6 +56,7 @@ const AREAS = [
         { id:'funnel',   label:'Funil',     icon:'funnel',   hint:'Jornada dos pacientes por estágio' },
         { id:'patients', label:'Pacientes', icon:'patients', hint:'Cadastro clínico e prontuários' },
         { id:'calendar', label:'Agenda',    icon:'calendar', hint:'Calendário de cirurgias e consultas' },
+        { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
       ] },
     ],
   },
@@ -133,6 +135,7 @@ const TITLES = {
   settings:'Configurações',
   patients:'Pacientes',
   funnel:'Pipeline de Oportunidades',
+  inbox:'WhatsApp',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -156,6 +159,7 @@ const SUBTITLES = {
   settings:'Ajuste perfil e preferências da plataforma.',
   patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
   funnel:'Oportunidades (negócios) por estágio: consulta agendada → consultado → orçamento → reserva paga → follow-up.',
+  inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
 }
 
 const PAGES = {
@@ -178,6 +182,7 @@ const PAGES = {
   settings:Settings,
   patients:Patients,
   funnel:OpportunityPipeline,
+  inbox:WhatsAppInbox,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
