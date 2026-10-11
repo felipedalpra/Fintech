@@ -442,6 +442,13 @@ export async function fetchFinanceData(userId) {
 export async function saveFinanceData(userId, financeData) {
   const payload = normalizeData(financeData)
 
+  // 🔒 Trava de fidedignidade: um dataset TOTALMENTE vazio quase nunca é intencional e, no modo
+  // relacional, o syncTable apagaria TODAS as linhas do usuário (delete-sync). Já causou perda de
+  // lançamentos (carga falha/rascunho vazio -> autosave vazio -> wipe). Nunca persistir vazio.
+  if (isDataEmpty(payload)) {
+    return
+  }
+
   if (!(await canUseRelationalBackend())) {
     const { error } = await supabase
       .from('user_finance_data')

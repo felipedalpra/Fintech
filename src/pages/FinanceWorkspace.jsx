@@ -613,13 +613,19 @@ export function FinanceWorkspace() {
       try {
         const nextData = await importLegacyDataIfNeeded(user, ownerId || user.id)
         if (!active) return
-        setRaw(draftData || nextData)
+        // O servidor é a fonte de verdade. NUNCA deixar o rascunho (que pode estar vazio/defasado)
+        // sobrescrever o dado carregado: era isso que fazia o autosave apagar lançamentos no banco
+        // (rascunho sem a linha -> delete-sync remove a linha do servidor).
+        setRaw(nextData)
         hydratedRef.current = true
       } catch (error) {
         if (!active) return
         setLoadError(error.message || 'Nao foi possivel carregar os dados remotos.')
-        setRaw(draftData || createEmptyData())
-        hydratedRef.current = true
+        // Carga falhou: mostra o rascunho apenas para visualização, mas NÃO habilita o autosave
+        // (hydratedRef permanece false), para um estado vazio/parcial jamais ser persistido e
+        // apagar o que está no banco.
+        if (draftData) setRaw(draftData)
+        hydratedRef.current = false
       } finally {
         if (active) setLoading(false)
       }
