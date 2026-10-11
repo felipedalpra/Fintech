@@ -6,8 +6,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-10-10 (33)
+### Changed
+- **Funil → Pipeline de Oportunidades** (CRM estilo Kommo, Fase 2): a tela em Pacientes → Funil agora mostra **oportunidades (negócios)**, não mais 1 estágio por paciente. Card rico (paciente, título, valor, origem, tags, "há X dias no estágio", atalho WhatsApp) e soma de valores por coluna. Mover de estágio é **atômico e auditável** via RPC `move_opportunity` (atualiza estágio + grava `opportunity_stage_history` numa transação, registrando quem/quando/manual-vs-automação). `src/components/OpportunityPipeline.jsx` (substitui `PatientFunnel.jsx`), `src/pages/FinanceWorkspace.jsx`. Testes: `tests/e2e/opportunity-pipeline.spec.js`.
+
 ### Added
-- CRM — Oportunidades (Fase 2, fundação): modelo de dados do pipeline estilo Kommo — tabela `opportunities` (um contato pode ter várias), histórico de estágio **auditável** (`opportunity_stage_history`), `opportunity_id` em cirurgias/consultas, RLS por clínica (`data_owner_id()`) e migração do `funnel_stage` atual. SQL em `supabase/opportunities_schema.sql`; design em `docs/superpowers/specs/2026-10-10-crm-opportunities-design.md`. (O pipeline que lê oportunidades vem no próximo incremento.)
+- CRM — Oportunidades (Fase 2, fundação): modelo de dados — tabela `opportunities` (um contato pode ter várias), histórico de estágio **auditável** (`opportunity_stage_history`), `opportunity_id` em cirurgias/consultas, RLS por clínica (`data_owner_id()`) e migração do `funnel_stage` atual. SQL em `supabase/opportunities_schema.sql` + RPC em `supabase/opportunity_move_rpc.sql`; design em `docs/superpowers/specs/2026-10-10-crm-opportunities-design.md`.
 
 ## [Unreleased] - 2026-10-10 (32)
 ### Added

@@ -24,7 +24,7 @@ import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
 import { TaxCalculator } from '../components/TaxCalculator.jsx'
 import { Patients } from '../components/Patients.jsx'
-import { PatientFunnel } from '../components/PatientFunnel.jsx'
+import { OpportunityPipeline } from '../components/OpportunityPipeline.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
@@ -132,7 +132,7 @@ const TITLES = {
   billing:'Assinatura',
   settings:'Configurações',
   patients:'Pacientes',
-  funnel:'Funil de Jornada',
+  funnel:'Pipeline de Oportunidades',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -155,7 +155,7 @@ const SUBTITLES = {
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
   patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
-  funnel:'Jornada do paciente em 5 estágios: consulta agendada → consultado → orçamento → reserva paga → follow-up.',
+  funnel:'Oportunidades (negócios) por estágio: consulta agendada → consultado → orçamento → reserva paga → follow-up.',
 }
 
 const PAGES = {
@@ -177,7 +177,7 @@ const PAGES = {
   billing:BillingPage,
   settings:Settings,
   patients:Patients,
-  funnel:PatientFunnel,
+  funnel:OpportunityPipeline,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
