@@ -15,6 +15,9 @@ const DEFAULTS = {
   followup_enabled: false,
   followup_days_after: 2,
   followup_template: 'Olá {patient_name}! Como você está depois da sua consulta? Se tiver qualquer dúvida, estamos à disposição. 🌿',
+  payment_enabled: false,
+  payment_offset_days: 0,
+  payment_template: 'Olá {patient_name}! Consta um pagamento de {value} com vencimento em {date}. Qualquer dúvida sobre o pagamento, estamos à disposição.',
 }
 
 export function WhatsAppAutomations() {
@@ -33,7 +36,7 @@ export function WhatsAppAutomations() {
     setLoading(true); setError(null)
     const [aRes, nRes] = await Promise.all([
       supabase.from('whatsapp_automations')
-        .select('whatsapp_number_id, reminder_enabled, reminder_days_before, reminder_template, followup_enabled, followup_days_after, followup_template')
+        .select('whatsapp_number_id, reminder_enabled, reminder_days_before, reminder_template, followup_enabled, followup_days_after, followup_template, payment_enabled, payment_offset_days, payment_template')
         .maybeSingle(),
       supabase.from('whatsapp_numbers').select('id, label, phone').order('created_at', { ascending: true }),
     ])
@@ -58,6 +61,9 @@ export function WhatsAppAutomations() {
       followup_enabled: !!cfg.followup_enabled,
       followup_days_after: Number(cfg.followup_days_after) || 0,
       followup_template: cfg.followup_template,
+      payment_enabled: !!cfg.payment_enabled,
+      payment_offset_days: Number(cfg.payment_offset_days) || 0,
+      payment_template: cfg.payment_template,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
     setSaving(false)
@@ -160,6 +166,31 @@ export function WhatsAppAutomations() {
               <textarea rows={3} style={s.textarea} value={cfg.followup_template}
                 onChange={e => set('followup_template', e.target.value)} />
               <div style={s.vars}>Variáveis: {'{patient_name}'}, {'{date}'}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Cobrança no vencimento */}
+      <div style={s.card}>
+        <div style={s.head}>
+          <div>
+            <div style={s.name}>Cobrança de pagamento</div>
+            <div style={s.desc}>Enviada conforme o <strong>vencimento</strong> da conta a receber, só para quem ainda não pagou.</div>
+          </div>
+          <Toggle checked={cfg.payment_enabled} onChange={v => set('payment_enabled', v)} />
+        </div>
+        {cfg.payment_enabled && (
+          <div style={s.body}>
+            <div style={{ maxWidth: 260 }}>
+              <FInput label="Dias após o vencimento (0 = no dia)" type="number"
+                value={cfg.payment_offset_days} onChange={v => set('payment_offset_days', v)} />
+            </div>
+            <div>
+              <label style={s.label}>Mensagem</label>
+              <textarea rows={3} style={s.textarea} value={cfg.payment_template}
+                onChange={e => set('payment_template', e.target.value)} />
+              <div style={s.vars}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'} (vencimento)</div>
             </div>
           </div>
         )}

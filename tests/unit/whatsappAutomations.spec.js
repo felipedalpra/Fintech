@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   addDays, formatBR, renderTemplate, planReminders, planFollowups,
+  formatBRL, receivableDueDate, planPayments,
 } from '../../api/_lib/whatsappAutomations.js'
 
 test('addDays: soma/subtrai sem drift de fuso, cruza mês e ano', () => {
@@ -51,4 +52,35 @@ test('planFollowups: sem eventos -> lista vazia; evento sem nome usa fallback', 
     targetDate: '2026-10-09',
   })
   expect(plan[0].message).toBe('Olá tudo bem!')
+})
+
+test('formatBRL: moeda determinística pt-BR', () => {
+  expect(formatBRL(1234.5)).toBe('R$ 1.234,50')
+  expect(formatBRL(0)).toBe('R$ 0,00')
+  expect(formatBRL(999)).toBe('R$ 999,00')
+  expect(formatBRL('2500')).toBe('R$ 2.500,00')
+})
+
+test('receivableDueDate: usa due_date (vencimento) com fallback igual à migração', () => {
+  // cirurgia: due_date || date
+  expect(receivableDueDate({ due_date: '2026-10-20', date: '2026-10-01' }, 'surgery')).toBe('2026-10-20')
+  expect(receivableDueDate({ due_date: null, date: '2026-10-01' }, 'surgery')).toBe('2026-10-01')
+  // consulta: due_date || forecast_payment_date || date
+  expect(receivableDueDate({ due_date: null, forecast_payment_date: '2026-10-15', date: '2026-10-02' }, 'consultation')).toBe('2026-10-15')
+  expect(receivableDueDate({ due_date: null, forecast_payment_date: null, date: '2026-10-02' }, 'consultation')).toBe('2026-10-02')
+})
+
+test('planPayments: só vencimento = alvo, com telefone; usa valor e data do vencimento', () => {
+  const items = [
+    // vence no alvo (consulta, por forecast) -> entra
+    { id: 'c1', source: 'consultation', patient_id: 'p1', due_date: null, forecast_payment_date: '2026-10-20', date: '2026-10-01', value: 300, patients: { full_name: 'Ana Souza', phone: '5511999' } },
+    // vence no alvo (cirurgia por due_date) mas sem telefone -> pula
+    { id: 's1', source: 'surgery', patient_id: 'p2', due_date: '2026-10-20', date: '2026-10-05', value: 5000, patients: { full_name: 'João', phone: null } },
+    // vence em outro dia -> fora
+    { id: 'c2', source: 'consultation', patient_id: 'p3', due_date: '2026-10-25', date: '2026-10-03', value: 400, patients: { full_name: 'Bia', phone: '5511888' } },
+  ]
+  const plan = planPayments({ items, template: '{patient_name}: {value} vence {date}', targetDueDate: '2026-10-20' })
+  expect(plan).toHaveLength(1)
+  expect(plan[0]).toMatchObject({ ref_type: 'consultation', ref_id: 'c1', patient_id: 'p1', phone: '5511999' })
+  expect(plan[0].message).toBe('Ana: R$ 300,00 vence 20/10/2026')
 })

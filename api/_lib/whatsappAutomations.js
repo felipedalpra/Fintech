@@ -34,6 +34,21 @@ function firstName(full) {
   return String(full || '').trim().split(/\s+/)[0] || 'tudo bem'
 }
 
+// Formata número como moeda BRL de forma determinística: 1234.5 -> 'R$ 1.234,50'.
+export function formatBRL(value) {
+  const n = Number(value || 0)
+  const [intPart, decPart] = Math.abs(n).toFixed(2).split('.')
+  const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${n < 0 ? '-' : ''}R$ ${withThousands},${decPart}`
+}
+
+// Vencimento canônico de uma conta a receber (regime de VENCIMENTO, nunca competência/caixa).
+// Replica exatamente o backfill de competence_date_migration.sql → robusto mesmo sem a migração.
+export function receivableDueDate(row, source) {
+  if (source === 'surgery') return row.due_date || row.date
+  return row.due_date || row.forecast_payment_date || row.date
+}
+
 // Substitui {var} por valor; variáveis desconhecidas e faltantes viram ''.
 export function renderTemplate(template, vars = {}) {
   return String(template || '').replace(/\{(\w+)\}/g, (_, key) =>
@@ -71,6 +86,29 @@ export function planFollowups({ events, template, targetDate }) {
   return planEvents({ events, template, targetDate })
 }
 
+// Cobrança: conta a receber cujo VENCIMENTO cai na data-alvo, ainda não paga e com telefone.
+// items: [{ id, source, patient_id, date, due_date, forecast_payment_date?, value, patients:{full_name,phone} }]
+export function planPayments({ items, template, targetDueDate }) {
+  const out = []
+  for (const it of items || []) {
+    if (receivableDueDate(it, it.source) !== targetDueDate) continue // vencimento != alvo
+    const phone = it.patients?.phone
+    if (!phone) continue
+    out.push({
+      ref_type: it.source,
+      ref_id: it.id,
+      patient_id: it.patient_id ?? null,
+      phone,
+      message: renderTemplate(template, {
+        patient_name: firstName(it.patients?.full_name),
+        value: formatBRL(it.value),
+        date: formatBR(targetDueDate),
+      }),
+    })
+  }
+  return out
+}
+
 // ---------- Orquestração ----------
 
 const EVENT_SELECT = 'id, date, start_time, patient_id, patients(full_name, phone)'
@@ -86,6 +124,24 @@ async function fetchEvents(admin, userId, targetDate, { consultations = true, su
   return [
     ...((cRes.data || []).map(e => ({ ...e, ref_type: 'consultation' }))),
     ...((sRes.data || []).map(e => ({ ...e, ref_type: 'surgery' }))),
+  ]
+}
+
+// Contas a receber ainda não pagas (mesmo filtro da view accounts_receivable: not in pago/cancelado),
+// com paciente vinculado. O vencimento é calculado em JS (receivableDueDate) para filtrar a data-alvo.
+async function fetchReceivables(admin, userId) {
+  const notPaid = q => q.not('payment_status', 'in', '("pago","cancelado")').not('patient_id', 'is', null)
+  const [cRes, sRes] = await Promise.all([
+    notPaid(admin.from('consultations')
+      .select('id, date, forecast_payment_date, due_date, value, patient_id, patients(full_name, phone)')
+      .eq('user_id', userId)),
+    notPaid(admin.from('surgeries')
+      .select('id, date, due_date, total_value, patient_id, patients(full_name, phone)')
+      .eq('user_id', userId)),
+  ])
+  return [
+    ...((cRes.data || []).map(r => ({ ...r, source: 'consultation', value: r.value }))),
+    ...((sRes.data || []).map(r => ({ ...r, source: 'surgery', value: r.total_value }))),
   ]
 }
 
@@ -144,6 +200,16 @@ async function runForOwner(admin, auto, todayISO, summary) {
     const planned = planFollowups({ events, template: auto.followup_template, targetDate })
     for (const item of planned) {
       await dispatchOne(admin, { userId: auto.user_id, number, item, automationType: 'followup', targetDate }, summary)
+    }
+  }
+
+  // COBRANÇA: contas a receber cujo VENCIMENTO cai em (hoje − offset). offset>0 = dias após o vencimento.
+  if (auto.payment_enabled) {
+    const targetDueDate = addDays(todayISO, -Number(auto.payment_offset_days || 0))
+    const items = await fetchReceivables(admin, auto.user_id)
+    const planned = planPayments({ items, template: auto.payment_template, targetDueDate })
+    for (const item of planned) {
+      await dispatchOne(admin, { userId: auto.user_id, number, item, automationType: 'payment', targetDate: targetDueDate }, summary)
     }
   }
 }

@@ -26,6 +26,15 @@ create table if not exists public.whatsapp_automations (
   updated_at           timestamptz not null default timezone('utc', now())
 );
 
+-- Cobrança no vencimento (4b-2). Alters idempotentes: valem para base nova ou já existente.
+alter table public.whatsapp_automations
+  add column if not exists payment_enabled     boolean not null default false;
+alter table public.whatsapp_automations
+  add column if not exists payment_offset_days int not null default 0;   -- dias após o vencimento (0 = no dia; negativo = antes)
+alter table public.whatsapp_automations
+  add column if not exists payment_template    text not null default
+    'Olá {patient_name}! Consta um pagamento de {value} com vencimento em {date}. Qualquer dúvida sobre o pagamento, estamos à disposição.';
+
 alter table public.whatsapp_automations enable row level security;
 do $$ begin
   begin
