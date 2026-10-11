@@ -184,6 +184,7 @@ export function OpportunityPipeline() {
         stages={STAGES}
         members={members}
         ownerId={effectiveUserId}
+        userId={user?.id}
         onSaved={onSaved}
       />
     </div>

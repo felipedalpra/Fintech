@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { Modal, Btn, FInput } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
+import { OpportunityTasks } from './OpportunityTasks.jsx'
+import { OpportunityTimeline } from './OpportunityTimeline.jsx'
 import { createOpportunity, updateOpportunity, setOpportunityOutcome } from '../lib/opportunityActions.js'
 
 // Modal de criar/editar oportunidade (+ fechar como ganho/perdido).
+// Ao editar, ganha abas: Dados / Tarefas / Timeline.
 // Estágio só é escolhido na criação; depois muda por mover/arrastar (RPC auditada).
 const BLANK = { patient_id: '', patient_name: '', title: '', value: '', stage: '', source: '', responsible_user_id: '', tags: [] }
 
-export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, onSaved }) {
+export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved }) {
   const isEdit = !!opp
+  const [tab, setTab] = useState('dados')
   const [form, setForm] = useState(BLANK)
   const [tagDraft, setTagDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -19,7 +23,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
 
   useEffect(() => {
     if (!open) return
-    setError(null); setLosing(false); setLostReason(''); setTagDraft('')
+    setError(null); setLosing(false); setLostReason(''); setTagDraft(''); setTab('dados')
     if (opp) {
       setForm({
         patient_id: opp.patient_id || '', patient_name: opp.patients?.full_name || '',
@@ -63,9 +67,29 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
   const memberOpts = [{ v: '', l: 'Sem responsável' }, ...(members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]
   const sourceOpts = SOURCE_SUGGESTIONS.map(s => ({ v: s, l: s }))
 
+  const tabBtn = active => ({
+    padding: '6px 14px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+    background: active ? C.accent + '18' : 'transparent', color: active ? C.accent : C.textSub,
+  })
+
   return (
-    <Modal open={open} onClose={onClose} title={isEdit ? 'Editar oportunidade' : 'Nova oportunidade'} width={480}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <Modal open={open} onClose={onClose} title={isEdit ? `${form.title || 'Oportunidade'} · ${form.patient_name || ''}` : 'Nova oportunidade'} width={520}>
+      {isEdit && (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
+          <button type="button" style={tabBtn(tab === 'dados')} onClick={() => setTab('dados')}>Dados</button>
+          <button type="button" style={tabBtn(tab === 'tarefas')} onClick={() => setTab('tarefas')}>Tarefas</button>
+          <button type="button" style={tabBtn(tab === 'timeline')} onClick={() => setTab('timeline')}>Timeline</button>
+        </div>
+      )}
+
+      {isEdit && tab === 'tarefas' && (
+        <OpportunityTasks ownerId={ownerId} opportunityId={opp.id} patientId={opp.patient_id} members={members} userId={userId} />
+      )}
+      {isEdit && tab === 'timeline' && (
+        <OpportunityTimeline ownerId={ownerId} opp={opp} userId={userId} />
+      )}
+
+      <div style={{ display: tab === 'dados' ? 'flex' : 'none', flexDirection: 'column', gap: 14 }}>
         {isEdit
           ? <div><label style={base.label}>Paciente</label>
               <div style={{ ...base.input, display: 'flex', alignItems: 'center', color: C.text }}>{form.patient_name || '—'}</div></div>

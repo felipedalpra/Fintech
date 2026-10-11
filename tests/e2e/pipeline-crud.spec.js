@@ -43,8 +43,9 @@ test('botão abre o editor de nova oportunidade', async ({ page }) => {
 test('clicar num card abre o editor com o paciente e opções ganho/perdido', async ({ page }) => {
   await page.goto('/app/funnel')
   await page.getByText('Ana Silva').click()
-  await expect(page.getByRole('heading', { name: 'Editar oportunidade' })).toBeVisible()
-  // Nome do paciente aparece no editor (leitura) e as ações de fechar existem.
+  // O título do editor passa a mostrar a oportunidade · paciente; abas e ações de fechar existem.
+  await expect(page.getByRole('heading', { name: /Ana Silva/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible()
   await expect(page.getByRole('button', { name: '✓ Ganho' })).toBeVisible()
   await expect(page.getByRole('button', { name: '✗ Perdido' })).toBeVisible()
 })
