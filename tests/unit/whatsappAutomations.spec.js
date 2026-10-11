@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   addDays, formatBR, renderTemplate, planReminders, planFollowups,
-  formatBRL, receivableDueDate, planPayments,
+  formatBRL, receivableDueDate, planPayments, planAnamnese,
 } from '../../api/_lib/whatsappAutomations.js'
 
 test('addDays: soma/subtrai sem drift de fuso, cruza mês e ano', () => {
@@ -83,4 +83,19 @@ test('planPayments: só vencimento = alvo, com telefone; usa valor e data do ven
   expect(plan).toHaveLength(1)
   expect(plan[0]).toMatchObject({ ref_type: 'consultation', ref_id: 'c1', patient_id: 'p1', phone: '5511999' })
   expect(plan[0].message).toBe('Ana: R$ 300,00 vence 20/10/2026')
+})
+
+test('planAnamnese: injeta {link} junto de nome e data; pula sem telefone', () => {
+  const events = [
+    { id: 'c1', ref_type: 'consultation', patient_id: 'p1', start_time: null, patients: { full_name: 'Ana Souza', phone: '5511999' } },
+    { id: 'c2', ref_type: 'consultation', patient_id: 'p2', start_time: null, patients: { full_name: 'Bia', phone: null } }, // sem telefone -> pula
+  ]
+  const plan = planAnamnese({
+    events,
+    template: 'Oi {patient_name}, consulta {date}, ficha: {link}',
+    targetDate: '2026-10-13',
+    link: 'https://clinica.com/anamnese',
+  })
+  expect(plan).toHaveLength(1)
+  expect(plan[0].message).toBe('Oi Ana, consulta 13/10/2026, ficha: https://clinica.com/anamnese')
 })

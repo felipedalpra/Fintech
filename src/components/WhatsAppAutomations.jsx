@@ -18,6 +18,10 @@ const DEFAULTS = {
   payment_enabled: false,
   payment_offset_days: 0,
   payment_template: 'Olá {patient_name}! Consta um pagamento de {value} com vencimento em {date}. Qualquer dúvida sobre o pagamento, estamos à disposição.',
+  anamnese_enabled: false,
+  anamnese_days_before: 2,
+  anamnese_link: '',
+  anamnese_template: 'Olá {patient_name}! Antes da sua consulta no dia {date}, por favor preencha sua ficha de anamnese: {link}',
 }
 
 export function WhatsAppAutomations() {
@@ -36,7 +40,7 @@ export function WhatsAppAutomations() {
     setLoading(true); setError(null)
     const [aRes, nRes] = await Promise.all([
       supabase.from('whatsapp_automations')
-        .select('whatsapp_number_id, reminder_enabled, reminder_days_before, reminder_template, followup_enabled, followup_days_after, followup_template, payment_enabled, payment_offset_days, payment_template')
+        .select('whatsapp_number_id, reminder_enabled, reminder_days_before, reminder_template, followup_enabled, followup_days_after, followup_template, payment_enabled, payment_offset_days, payment_template, anamnese_enabled, anamnese_days_before, anamnese_link, anamnese_template')
         .maybeSingle(),
       supabase.from('whatsapp_numbers').select('id, label, phone').order('created_at', { ascending: true }),
     ])
@@ -64,6 +68,10 @@ export function WhatsAppAutomations() {
       payment_enabled: !!cfg.payment_enabled,
       payment_offset_days: Number(cfg.payment_offset_days) || 0,
       payment_template: cfg.payment_template,
+      anamnese_enabled: !!cfg.anamnese_enabled,
+      anamnese_days_before: Number(cfg.anamnese_days_before) || 0,
+      anamnese_link: (cfg.anamnese_link || '').trim(),
+      anamnese_template: cfg.anamnese_template,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
     setSaving(false)
@@ -191,6 +199,37 @@ export function WhatsAppAutomations() {
               <textarea rows={3} style={s.textarea} value={cfg.payment_template}
                 onChange={e => set('payment_template', e.target.value)} />
               <div style={s.vars}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'} (vencimento)</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Link de anamnese */}
+      <div style={s.card}>
+        <div style={s.head}>
+          <div>
+            <div style={s.name}>Link de anamnese</div>
+            <div style={s.desc}>Enviado antes da consulta com o link para o paciente preencher a ficha de anamnese.</div>
+          </div>
+          <Toggle checked={cfg.anamnese_enabled} onChange={v => set('anamnese_enabled', v)} />
+        </div>
+        {cfg.anamnese_enabled && (
+          <div style={s.body}>
+            <div style={{ maxWidth: 220 }}>
+              <FInput label="Enviar quantos dias antes" type="number"
+                value={cfg.anamnese_days_before} onChange={v => set('anamnese_days_before', v)} />
+            </div>
+            <FInput label="Link do formulário de anamnese"
+              value={cfg.anamnese_link} onChange={v => set('anamnese_link', v)}
+              placeholder="https://…" />
+            {!cfg.anamnese_link?.trim() && (
+              <div style={s.vars}>Sem um link preenchido, esta automação não envia (fica salva e pronta).</div>
+            )}
+            <div>
+              <label style={s.label}>Mensagem</label>
+              <textarea rows={3} style={s.textarea} value={cfg.anamnese_template}
+                onChange={e => set('anamnese_template', e.target.value)} />
+              <div style={s.vars}>Variáveis: {'{patient_name}'}, {'{date}'}, {'{link}'}</div>
             </div>
           </div>
         )}

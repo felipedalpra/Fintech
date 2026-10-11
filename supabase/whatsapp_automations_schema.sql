@@ -35,6 +35,17 @@ alter table public.whatsapp_automations
   add column if not exists payment_template    text not null default
     'Olá {patient_name}! Consta um pagamento de {value} com vencimento em {date}. Qualquer dúvida sobre o pagamento, estamos à disposição.';
 
+-- Link de anamnese (4b-3). Base do link é configurada pela clínica; sem link, nada é enviado.
+alter table public.whatsapp_automations
+  add column if not exists anamnese_enabled     boolean not null default false;
+alter table public.whatsapp_automations
+  add column if not exists anamnese_days_before int not null default 2;   -- enviar N dias antes da consulta
+alter table public.whatsapp_automations
+  add column if not exists anamnese_link        text not null default '';  -- URL do formulário de anamnese (interno/externo)
+alter table public.whatsapp_automations
+  add column if not exists anamnese_template    text not null default
+    'Olá {patient_name}! Antes da sua consulta no dia {date}, por favor preencha sua ficha de anamnese: {link}';
+
 alter table public.whatsapp_automations enable row level security;
 do $$ begin
   begin
@@ -49,7 +60,7 @@ end $$;
 create table if not exists public.whatsapp_automation_log (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null references auth.users(id) on delete cascade,
-  automation_type text not null,                 -- 'reminder' | 'followup'
+  automation_type text not null,                 -- 'reminder' | 'followup' | 'payment' | 'anamnese'
   ref_type        text not null,                 -- 'consultation' | 'surgery'
   ref_id          uuid not null,
   target_date     date not null,                 -- data-alvo (evento) que gerou o envio

@@ -58,7 +58,7 @@ export function renderTemplate(template, vars = {}) {
 
 // Monta a lista de mensagens a enviar para uma data-alvo.
 // events: [{ id, ref_type, patient_id, start_time, patients: { full_name, phone } }]
-function planEvents({ events, template, targetDate }) {
+function planEvents({ events, template, targetDate, extraVars = {} }) {
   const out = []
   for (const e of events || []) {
     const phone = e.patients?.phone
@@ -72,6 +72,7 @@ function planEvents({ events, template, targetDate }) {
         patient_name: firstName(e.patients?.full_name),
         date: formatBR(targetDate),
         time: e.start_time ? String(e.start_time).slice(0, 5) : '',
+        ...extraVars,
       }),
     })
   }
@@ -84,6 +85,11 @@ export function planReminders({ events, template, targetDate }) {
 
 export function planFollowups({ events, template, targetDate }) {
   return planEvents({ events, template, targetDate })
+}
+
+// Link de anamnese: como o lembrete, mas injeta {link} (base configurada pela clínica).
+export function planAnamnese({ events, template, targetDate, link }) {
+  return planEvents({ events, template, targetDate, extraVars: { link: link || '' } })
 }
 
 // Cobrança: conta a receber cujo VENCIMENTO cai na data-alvo, ainda não paga e com telefone.
@@ -200,6 +206,17 @@ async function runForOwner(admin, auto, todayISO, summary) {
     const planned = planFollowups({ events, template: auto.followup_template, targetDate })
     for (const item of planned) {
       await dispatchOne(admin, { userId: auto.user_id, number, item, automationType: 'followup', targetDate }, summary)
+    }
+  }
+
+  // LINK DE ANAMNESE: N dias antes da consulta, com o link configurado pela clínica.
+  // Sem link configurado → pronto-pra-credencial: não envia (config fica salva).
+  if (auto.anamnese_enabled && auto.anamnese_link) {
+    const targetDate = addDays(todayISO, auto.anamnese_days_before)
+    const events = await fetchEvents(admin, auto.user_id, targetDate, { consultations: true, surgeries: false })
+    const planned = planAnamnese({ events, template: auto.anamnese_template, targetDate, link: auto.anamnese_link })
+    for (const item of planned) {
+      await dispatchOne(admin, { userId: auto.user_id, number, item, automationType: 'anamnese', targetDate }, summary)
     }
   }
 
