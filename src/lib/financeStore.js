@@ -1,4 +1,5 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
+import { computeIdsToDelete } from './financeSync.js'
 import { supabase } from './supabase.js'
 
 const LEGACY_APP_KEY = 'startupfinance_v1'
@@ -401,12 +402,10 @@ function mapGoalsRows(userId, data) {
   }))
 }
 
-async function syncTable(table, userId, rows) {
-  const { data: existing, error: existingError } = await supabase.from(table).select('id').eq('user_id', userId)
-  if (existingError) throw existingError
-
-  const nextIds = new Set(rows.map(item => item.id))
-  const idsToDelete = (existing || []).map(item => item.id).filter(id => !nextIds.has(id))
+// computeIdsToDelete vem de ./financeSync.js (puro, testável). Apaga SOMENTE o que o cliente
+// conhecia (baseline) e removeu — nunca por diferença contra o banco (concorrência/estado defasado).
+async function syncTable(table, userId, rows, baselineIds) {
+  const idsToDelete = computeIdsToDelete(baselineIds, rows)
 
   if (idsToDelete.length > 0) {
     const { error } = await supabase.from(table).delete().eq('user_id', userId).in('id', idsToDelete)
@@ -439,7 +438,7 @@ export async function fetchFinanceData(userId) {
   return fetchLegacyPayload(userId)
 }
 
-export async function saveFinanceData(userId, financeData) {
+export async function saveFinanceData(userId, financeData, baselineData = null) {
   const payload = normalizeData(financeData)
 
   // 🔒 Trava de fidedignidade: um dataset TOTALMENTE vazio quase nunca é intencional e, no modo
@@ -465,20 +464,29 @@ export async function saveFinanceData(userId, financeData) {
     return
   }
 
+  // baselineData = o que ESTE cliente tinha persistido/carregado antes desta gravação.
+  // A deleção é calculada contra ele (não contra o banco), para nunca apagar linhas que o
+  // cliente não conhecia (outro usuário da clínica, estado defasado). Sem baseline → só upsert.
+  const base = baselineData ? normalizeData(baselineData) : null
+  const tables = [
+    ['procedures',        p => mapProceduresRows(userId, p)],
+    ['products',          p => mapProductsRows(userId, p)],
+    ['surgeries',         p => mapSurgeriesRows(userId, p)],
+    ['consultations',     p => mapConsultationsRows(userId, p)],
+    ['product_sales',     p => mapProductSalesRows(userId, p)],
+    ['product_purchases', p => mapProductPurchasesRows(userId, p)],
+    ['extra_revenues',    p => mapExtraRevenuesRows(userId, p)],
+    ['expenses',          p => mapExpensesRows(userId, p)],
+    ['assets',            p => mapBalanceRows(userId, p.assets)],
+    ['liabilities',       p => mapBalanceRows(userId, p.liabilities)],
+    ['goals',             p => mapGoalsRows(userId, p)],
+  ]
+
   try {
-    await Promise.all([
-      syncTable('procedures', userId, mapProceduresRows(userId, payload)),
-      syncTable('products', userId, mapProductsRows(userId, payload)),
-      syncTable('surgeries', userId, mapSurgeriesRows(userId, payload)),
-      syncTable('consultations', userId, mapConsultationsRows(userId, payload)),
-      syncTable('product_sales', userId, mapProductSalesRows(userId, payload)),
-      syncTable('product_purchases', userId, mapProductPurchasesRows(userId, payload)),
-      syncTable('extra_revenues', userId, mapExtraRevenuesRows(userId, payload)),
-      syncTable('expenses', userId, mapExpensesRows(userId, payload)),
-      syncTable('assets', userId, mapBalanceRows(userId, payload.assets)),
-      syncTable('liabilities', userId, mapBalanceRows(userId, payload.liabilities)),
-      syncTable('goals', userId, mapGoalsRows(userId, payload)),
-    ])
+    await Promise.all(tables.map(([table, mapRows]) => {
+      const baselineIds = base ? new Set(mapRows(base).map(r => r.id)) : null
+      return syncTable(table, userId, mapRows(payload), baselineIds)
+    }))
   } catch (syncError) {
     relationalBackendAvailable = null
     relationalBackendCheckedAt = 0

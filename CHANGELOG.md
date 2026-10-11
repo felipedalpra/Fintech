@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-11 (47)
+### Fixed
+- **Fim do delete-sync destrutivo no Financeiro (Fase B — correção estrutural de fidedignidade)**: o salvamento do dataset financeiro/operacional não apaga mais linhas "ausentes na memória" comparando com o **banco** — agora a deleção é calculada contra o **baseline do próprio cliente** (o que ele carregou/persistiu nesta sessão). Consequência: **nunca mais se apaga uma linha que o cliente não conhecia** — acaba a perda por **concorrência** (dois usuários da mesma clínica somando lançamentos diferentes não se sobrescrevem; a adição de um não é apagada pelo save do outro) e por **estado defasado/parcial**. Deleção legítima (usuário remove um item que estava no baseline) continua funcionando; sem baseline, o save é **somente upsert** (nunca apaga). Lógica pura extraída para `src/lib/financeSync.js` (`computeIdsToDelete`, testada); `src/lib/financeStore.js` (`syncTable`/`saveFinanceData` recebem o baseline) e `src/pages/FinanceWorkspace.jsx` (`baselineRef` = dado carregado/persistido) ligados. Testes: `tests/unit/financeStoreDeletion.spec.js` (5, incl. caso de concorrência). Plano em `docs/superpowers/specs/2026-10-11-data-persistence-safety-review.md`.
+
 ## [Unreleased] - 2026-10-11 (46)
 ### Added
 - **Feedback real de salvamento no Financeiro** (Fase A da revisão de persistência): o indicador de status agora mostra **Salvando… / Sincronizado / Erro ao salvar (com botão Repetir)** em `src/pages/FinanceWorkspace.jsx` (`SyncStatus`), em vez do antigo "Sincronizado" fixo. O usuário passa a ter confirmação visível de que gravou e consegue repetir em caso de falha (nada mais é fire-and-forget silencioso).

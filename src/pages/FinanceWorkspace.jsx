@@ -590,6 +590,7 @@ export function FinanceWorkspace() {
   const hydratedRef = useRef(false)
   const saveTimerRef = useRef(null)
   const pendingRef = useRef(false)      // há edição aguardando persistência?
+  const baselineRef = useRef(null)      // o que este cliente carregou/persistiu (base p/ deleção segura)
   const latestRef = useRef({ data, ownerId })
   latestRef.current = { data, ownerId }
 
@@ -599,7 +600,8 @@ export function FinanceWorkspace() {
     if (!owner) return
     setSaveStatus('saving')
     try {
-      await saveFinanceData(owner, snapshot)
+      await saveFinanceData(owner, snapshot, baselineRef.current)
+      baselineRef.current = snapshot   // o que acabou de persistir vira o novo baseline
       setSaveError('')
       setSaveStatus('ok')
       pendingRef.current = false
@@ -645,6 +647,7 @@ export function FinanceWorkspace() {
         // sobrescrever o dado carregado: era isso que fazia o autosave apagar lançamentos no banco
         // (rascunho sem a linha -> delete-sync remove a linha do servidor).
         setRaw(nextData)
+        baselineRef.current = nextData   // baseline inicial = o que veio do servidor
         hydratedRef.current = true
       } catch (error) {
         if (!active) return
@@ -682,7 +685,7 @@ export function FinanceWorkspace() {
   // Flush da última edição ao desmontar (navegar pra fora) — não perder o que estava no debounce.
   useEffect(() => () => {
     const { data: d, ownerId: o } = latestRef.current
-    if (o && pendingRef.current) saveFinanceData(o, d).catch(() => {})
+    if (o && pendingRef.current) saveFinanceData(o, d, baselineRef.current).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
