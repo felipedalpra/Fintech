@@ -60,6 +60,10 @@ const AREAS = [
         { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
         { id:'tarefas',  label:'Tarefas',   icon:'tasks',    hint:'Tarefas e follow-ups da equipe' },
       ] },
+      { title:'Atendimentos', items:[
+        { id:'consultations', label:'Consultas', icon:'consultations', hint:'Atendimentos e convênios' },
+        { id:'sales',         label:'Cirurgias', icon:'surgery',       hint:'Agenda e resultados' },
+      ] },
     ],
   },
   {
@@ -73,8 +77,6 @@ const AREAS = [
         { id:'finance', label:'Financeiro', icon:'finance', hint:'Caixa, DRE e balanço' },
       ] },
       { title:'Operação', items:[
-        { id:'sales',         label:'Cirurgias',     icon:'surgery',       hint:'Agenda e resultados' },
-        { id:'consultations', label:'Consultas',     icon:'consultations', hint:'Atendimentos e convênios' },
         { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
         { id:'plans',         label:'Procedimentos', icon:'procedures',    hint:'Catálogo cirúrgico' },
         { id:'recurrences',   label:'Recorrências',  icon:'recurrences',   hint:'Despesas e receitas fixas' },

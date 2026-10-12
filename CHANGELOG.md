@@ -11,6 +11,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Changed
 - A navegação e o cabeçalho de `/app/reports` agora apresentam a página como **Central de Relatórios** e deixam explícito que as exportações são em Excel. A tela passa a carregar pacientes e recorrências no mesmo escopo da clínica (`ownerId`) e bloqueia exportações incompletas se uma dessas fontes falhar. `src/pages/FinanceWorkspace.jsx`, `src/components/Reports.jsx`.
+- **Cirurgias e Consultas movidas do bloco Financeiro para o bloco Pacientes/CRM** (organização): na navegação (`src/pages/FinanceWorkspace.jsx`, `AREAS`), **Consultas** e **Cirurgias** saíram da seção "Operação" do Financeiro e entraram numa nova seção **"Atendimentos"** dentro da área **Pacientes**. Mesma funcionalidade e rotas (`sales`/`consultations` inalterados) — só mudança de lugar, mais organizado. **Efeito colateral positivo:** a área Pacientes é visível a todos os perfis, então agora Consultas/Cirurgias respeitam a permissão **por item** (`ROLE_ACCESS`) — ex.: concierge/equipe passam a ver o que já tinham direito (antes ficavam escondidas porque a área Financeiro é só admin/gestão). Produtos, Procedimentos e Recorrências seguem no Financeiro.
 
 ### Fixed
 - Cirurgias e consultas canceladas deixam de compor receita, custos, resultado e caixa nos cálculos financeiros compartilhados. Antes, o status cancelado era removido apenas de alguns contadores e contas em aberto, mas ainda podia contaminar DRE e fluxo. `src/financialMetrics.js`.
