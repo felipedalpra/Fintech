@@ -13,6 +13,7 @@ import { Goals } from '../components/Goals.jsx'
 import { AIAssistant } from '../components/AIAssistant.jsx'
 import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
+import { LedgerCheck } from '../components/LedgerCheck.jsx'
 import { Recurrences } from '../components/Recurrences.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
@@ -85,6 +86,7 @@ const AREAS = [
         { id:'impostos', label:'Impostos',   icon:'taxes',   hint:'Carnê-Leão, IRPF e DAS' },
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
         { id:'reports',  label:'Relatórios', icon:'reports', hint:'Central de exportações em Excel' },
+        { id:'ledger-check', label:'Conferência do razão', icon:'reports', hint:'Validação razão × dashboard' },
       ] },
     ],
   },
@@ -134,6 +136,7 @@ const TITLES = {
   goals:'Metas',
   recurrences:'Recorrências',
   reports:'Central de Relatórios',
+  'ledger-check':'Conferência do Razão',
   ai:'Central de IA',
   billing:'Assinatura',
   settings:'Configurações',
@@ -159,6 +162,7 @@ const SUBTITLES = {
   goals:'Metas financeiras com progresso automático.',
   recurrences:'Cadastre receitas e despesas fixas com geração automática.',
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
+  'ledger-check':'Valida o razão (projeção) contra o dashboard antes de virar a fonte de verdade.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
@@ -183,6 +187,7 @@ const PAGES = {
   goals:Goals,
   recurrences:Recurrences,
   reports:Reports,
+  'ledger-check':LedgerCheck,
   ai:AIAssistant,
   billing:BillingPage,
   settings:Settings,

@@ -193,6 +193,48 @@ export function buildLedger(data = {}) {
   return { entries, installments } // installments[i] pertence a entries[i]
 }
 
+// Reconciliação RAZÃO × FONTE: por tipo de origem, soma do dado bruto vs soma dos títulos do razão.
+// Deve bater a centavo (prova que o razão capturou todos os registros, sem perder nem duplicar).
+// Também devolve os totais derivados do razão (aberto/liquidado) para a comparação com o dashboard.
+export function reconcileLedger(data = {}) {
+  const notCanceled = (arr, statusKey) => (arr || []).filter(i => i[statusKey] !== 'cancelado')
+  const sumBy = (arr, f) => round2((arr || []).reduce((a, i) => a + num(f(i)), 0))
+  const { entries, installments } = buildLedger(data)
+  const ledgerSum = (type, component) => round2(entries
+    .filter(e => e.source_type === type && e.source_component === component && e.status !== 'canceled')
+    .reduce((a, e) => a + e.total_amount, 0))
+
+  const surgeries = data.surgeries || []
+  const consults = data.consultations || []
+  const rawSurgeryCost = sumBy(notCanceled(surgeries, 'paymentStatus'), s =>
+    num(s.hospitalCost) + num(s.anesthesiaCost) + num(s.materialCost) + num(s.otherCosts) + frozenOrDerivedTax(s, s.totalValue))
+  const rawConsultCost = sumBy(notCanceled(consults, 'paymentStatus'), c => frozenOrDerivedTax(c, c.value))
+
+  const sources = [
+    { label: 'Cirurgias (receita)', raw: sumBy(notCanceled(surgeries, 'paymentStatus'), s => s.totalValue), ledger: ledgerSum('surgery', 'revenue') },
+    { label: 'Consultas (receita)', raw: sumBy(notCanceled(consults, 'paymentStatus'), c => c.value), ledger: ledgerSum('consultation', 'revenue') },
+    { label: 'Vendas de produto', raw: sumBy(notCanceled(data.productSales, 'paymentStatus'), s => s.totalValue), ledger: ledgerSum('product_sale', 'revenue') },
+    { label: 'Receitas extras', raw: sumBy(notCanceled(data.extraRevenues, 'status'), r => r.value), ledger: ledgerSum('extra_revenue', 'revenue') },
+    { label: 'Despesas', raw: sumBy(notCanceled(data.expenses, 'status'), e => e.value), ledger: ledgerSum('expense', 'revenue') },
+    { label: 'Compras de produto', raw: sumBy(notCanceled(data.productPurchases, 'status'), p => p.totalValue), ledger: ledgerSum('product_purchase', 'revenue') },
+    { label: 'Custos de cirurgia', raw: rawSurgeryCost, ledger: round2(['hospital_cost', 'anesthesia_cost', 'material_cost', 'other_cost', 'invoice_tax'].reduce((a, c) => a + ledgerSum('surgery', c), 0)) },
+    { label: 'Custos de consulta (NF)', raw: rawConsultCost, ledger: ledgerSum('consultation', 'invoice_tax') },
+  ].map(r => ({ ...r, diff: round2(r.raw - r.ledger) }))
+
+  // Totais derivados do razão (para comparar com o dashboard).
+  let receivableOpen = 0, payableOpen = 0, receivablePaid = 0, payablePaid = 0
+  entries.forEach((e, i) => {
+    if (e.status === 'canceled') return
+    const rows = installments[i] || []
+    const paid = round2(rows.filter(r => r.status === 'paid').reduce((a, r) => a + r.amount, 0))
+    const open = round2(rows.filter(r => r.status === 'pending' || r.status === 'partially_paid').reduce((a, r) => a + r.amount, 0))
+    if (e.direction === 'receivable') { receivablePaid = round2(receivablePaid + paid); receivableOpen = round2(receivableOpen + open) }
+    else { payablePaid = round2(payablePaid + paid); payableOpen = round2(payableOpen + open) }
+  })
+
+  return { sources, totals: { receivableOpen, payableOpen, receivablePaid, payablePaid } }
+}
+
 // Invariantes de integridade por título (para testes e validação em runtime):
 // (1) soma das parcelas == total; (2) pago + aberto == total.
 export function checkLedgerInvariants({ entries, installments }) {

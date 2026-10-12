@@ -9,11 +9,11 @@ const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 const ROLE_ACCESS = {
   admin: [
     'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas',
-    'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ai', 'billing', 'settings',
+    'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ledger-check', 'ai', 'billing', 'settings',
   ],
   gestao: [
     'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas',
-    'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ai',
+    'finance', 'impostos', 'goals', 'recurrences', 'reports', 'ledger-check', 'ai',
   ],
   // Jonas (concierge): pode cadastrar cirurgias, consultas e orçamentos — sem acesso financeiro
   concierge: [

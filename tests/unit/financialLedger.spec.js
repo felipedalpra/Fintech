@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildLedger, checkLedgerInvariants } from '../../src/lib/financialLedger.js'
+import { buildLedger, checkLedgerInvariants, reconcileLedger } from '../../src/lib/financialLedger.js'
 
 const data = {
   surgeries: [
@@ -127,4 +127,13 @@ test('imposto de NF congelado (invoiceTaxAmount) prevalece sobre a alíquota', (
   })
   const tax = ledger.entries.find(e => e.source_type === 'surgery' && e.source_component === 'invoice_tax')
   expect(tax.total_amount).toBe(850)
+})
+
+test('reconcileLedger: razão × fonte bate a centavo (diff 0 em toda origem)', () => {
+  const { sources } = reconcileLedger(data)
+  for (const row of sources) {
+    expect(row.diff, `origem ${row.label}`).toBe(0)
+  }
+  // confirma que de fato comparou cirurgias (receita > 0 no dataset de exemplo)
+  expect(sources.find(s => s.label.startsWith('Cirurgias')).ledger).toBeGreaterThan(0)
 })

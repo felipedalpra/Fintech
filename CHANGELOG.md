@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (64)
+### Added
+- **Conferência do Razão (validação pré-Fase 10)**: nova tela admin **Financeiro → Conferência do razão** (`src/components/LedgerCheck.jsx`, nav/rotas em `FinanceWorkspace.jsx`, acesso admin/gestão em `UserRoleContext.jsx`) que valida o razão (projeção) antes de virar a fonte de verdade das métricas. **Seção A — Razão × Fonte:** reconciliação por origem (cirurgias, consultas, vendas, receitas, despesas, compras, custos) mostrando soma do dado bruto × soma dos títulos do razão; tem que **bater a centavo** (badge ✓/⚠). **Seção B — Razão × Dashboard:** compara contas a receber/pagar em aberto e receita bruta do razão com o `buildMetrics`, anotando as diferenças **esperadas** (recorrências não entram no razão; vendas/compras "a conferir" entram como aberto). Função pura `reconcileLedger` em `src/lib/financialLedger.js` (testada: diff 0 em toda origem). Não altera dados; é só leitura. É o pré-requisito para, com segurança, executar a Fase 10 (virar a leitura). Teste: `tests/unit/financialLedger.spec.js` (11).
+
 ## [Unreleased] - 2026-10-12 (63)
 ### Added
 - **Impostos/taxas/descontos por operação — Razão financeiro Fase 9 (aditivo, inerte)**: schema `supabase/operation_financials_schema.sql` adiciona a `surgeries`, `consultations` e `product_sales` os campos reais `discount_amount`, `fees_amount`, `commission_amount`, `tax_amount`, `net_amount`, `invoice_tax_rate` e `invoice_tax_amount` (nullable). No `src/lib/financialLedger.js`, o imposto de NF agora usa o **valor congelado** (`invoiceTaxAmount`) quando existir — assim mudar a alíquota no futuro não altera relatórios antigos — e **deriva** da alíquota quando não houver (projeção). A captura desses valores no formulário entra na fase de autoridade; por ora é inerte. Teste: `tests/unit/financialLedger.spec.js` (10 — inclui o imposto congelado).
