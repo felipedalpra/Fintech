@@ -5,6 +5,7 @@ import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { SupplierSelector } from './SupplierSelector.jsx'
+import { PatientSelector } from './PatientSelector.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const PRODUCT_EMPTY = {
@@ -21,6 +22,8 @@ const PRODUCT_EMPTY = {
 const SALE_EMPTY = {
   productId:'',
   patientName:'',
+  patientId:'',
+  paymentStatus:'recebido',
   quantity:1,
   unitValue:0,
   totalValue:0,
@@ -400,7 +403,8 @@ export function Products({ data, setData }) {
             const product = productsById.get(value)
             setForm(current => ({ ...current, productId:value, unitValue:product?.salePrice || current.unitValue, totalValue:(product?.salePrice || current.unitValue) * (current.quantity || 1) }))
           }} options={data.products.map(item => ({ v:item.id, l:item.name }))} />
-          <FInput label="Paciente ou ID interno" value={form.patientName} onChange={value => setForm(current => ({ ...current, patientName:value }))} placeholder="Opcional, use o mínimo necessário" />
+          <PatientSelector label="Cliente (opcional)" value={form.patientId} onChange={(id, name) => setForm(current => ({ ...current, patientId:id, patientName:name }))} />
+          <FInput label="Situação" value={form.paymentStatus || 'recebido'} onChange={value => setForm(current => ({ ...current, paymentStatus:value }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }]} />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
           <FInput label="Data da venda (competência / caixa)" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value, competenceDate:value }))} type="date" />

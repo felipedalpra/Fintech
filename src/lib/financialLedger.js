@@ -94,12 +94,14 @@ export function buildLedger(data = {}) {
     competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
   })))
 
-  // Venda de produto: modelo atual = caixa na data da venda (paga). (Fase 3 revisará p/ legacy_unverified.)
+  // Venda de produto: recebido → caixa na data da venda; pendente/legacy_unverified → em aberto
+  // (não assume recebimento sem confirmação); cancelado → cancelado. Cliente vinculado por patient_id.
   productSales.forEach(item => parts.push(singleEntry({
     sourceType: 'product_sale', direction: 'receivable', item, total: item.totalValue || 0,
     competenceDate: item.competenceDate || item.saleDate, issueDate: item.saleDate,
-    dueDate: item.saleDate, paidDate: item.saleDate, isPaid: true, canceled: false,
-    partyType: 'patient', partyName: item.patient, category: 'venda_produto',
+    dueDate: item.saleDate, paidDate: item.saleDate,
+    isPaid: item.paymentStatus === 'recebido', canceled: item.paymentStatus === 'cancelado',
+    partyType: 'patient', partyId: item.patientId || null, partyName: item.patientName || '', category: 'venda_produto',
   })))
 
   // Compra de produto: modelo atual = caixa na data da compra (paga).

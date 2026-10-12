@@ -61,3 +61,22 @@ test('invariantes: soma das parcelas = total e pago+aberto = total (sem problema
   const ledger = buildLedger(data)
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
+
+test('venda de produto: status define pago/aberto; legacy_unverified não vira recebido', () => {
+  const ledger = buildLedger({
+    productSales: [
+      { id: 'v1', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'recebido', patientId: 'p9', patientName: 'Ana' },
+      { id: 'v2', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'legacy_unverified', patientName: 'Antiga' },
+      { id: 'v3', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'pendente' },
+      { id: 'v4', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'cancelado' },
+    ],
+  })
+  const byId = id => ledger.entries.findIndex(e => e.source_id === id)
+  expect(ledger.entries[byId('v1')]).toMatchObject({ status: 'paid', party_id: 'p9', party_name_snapshot: 'Ana' })
+  expect(ledger.installments[byId('v1')][0].settlement_date).toBe('2026-09-07')
+  expect(ledger.entries[byId('v2')].status).toBe('pending')            // legacy NÃO é recebido
+  expect(ledger.installments[byId('v2')][0].settlement_date).toBe(null)
+  expect(ledger.entries[byId('v3')].status).toBe('pending')
+  expect(ledger.entries[byId('v4')].status).toBe('canceled')
+  expect(checkLedgerInvariants(ledger)).toEqual([])
+})

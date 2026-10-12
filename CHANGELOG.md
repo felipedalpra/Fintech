@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (57)
+### Added
+- **Vendas de produto: cliente + situação de recebimento — Razão financeiro Fase 3**: o form de venda (`Products.jsx`) ganhou **Cliente** (`PatientSelector`, substitui o texto livre "Paciente ou ID interno") e **Situação** (Recebido / A receber). Schema aditivo `supabase/product_sales_settlement.sql`: `product_sales.patient_id` (vínculo), `status` e `canceled_at`. **Regra do Codex respeitada:** o `status` nasce com DEFAULT `legacy_unverified`, então **vendas antigas ficam "a conferir" e NÃO são assumidas como recebidas** — só o que for confirmado conta como caixa. `financeStore` grava e lê `patient_id`/`status` (dois lados). No `financialLedger`, a venda agora respeita o status: **recebido → caixa na data; pendente/legacy_unverified → em aberto; cancelado → cancelado** (antes toda venda virava caixa na data), com `party_id` = cliente. (O `buildMetrics` atual segue tratando venda como caixa-na-data até a Fase 10 virar a leitura para o razão.) Testes: `tests/unit/financialLedger.spec.js` (7, inclui o status da venda).
+
 ## [Unreleased] - 2026-10-12 (56)
 ### Added
 - **Vínculo de parte nos lançamentos avulsos (fecha a Fase 2)**: o **form de despesa** agora tem **Fornecedor** (`SupplierSelector`) e o **form de receita extra** tem **Cliente** (`PatientSelector`, label "Cliente") — ambos em `Finance.jsx`, com escolher-ou-cadastrar-na-hora. Persistência nos dois lados (grava **e** lê, pra não perder no autosave): `expenses.supplier_id` e `extra_revenues.patient_id` (+ `received_date`) em `financeStore` (mappers e `fetchRelationalData`). `financialLedger` liga `party_id`/`party_type` corretos (despesa→fornecedor, receita→paciente). `PatientSelector` e `SupplierSelector` passam a resolver o `ownerId` sozinhos (prop `userId` opcional) e aceitam `label`. SQL aditivo: `extra_revenues.patient_id` em `supabase/suppliers_schema.sql` (coluna `expenses.supplier_id` já estava lá; `received_date` veio no `financial_ledger_schema.sql`).
