@@ -1,7 +1,7 @@
 -- financial_ledger_schema.sql
 -- Fase 1 (fundação) do razão financeiro canônico — ADITIVO, idempotente, reversível.
--- Cria as tabelas do razão (títulos + parcelas). NESTA fase o app ainda NÃO lê daqui (projeção):
--- as tabelas ficam prontas para o backfill e validação antes de migrar a autoridade.
+-- Cria as tabelas do razão (títulos + parcelas). O app já mantém estas tabelas por
+-- write-through, mas ainda lê a projeção canônica durante a transição de autoridade.
 -- Design: docs/superpowers/specs/2026-10-12-financial-core-ledger-design.md
 -- Executar DEPOIS de: access_control_schema.sql, erp_relational_schema.sql, competence_date_migration.sql.
 
@@ -55,12 +55,15 @@ create table if not exists public.financial_installments (
   status               text not null default 'pending'
                          check (status in ('pending','partially_paid','paid','canceled','refunded')),
   created_at           timestamptz not null default timezone('utc', now()),
-  updated_at           timestamptz not null default timezone('utc', now())
+  updated_at           timestamptz not null default timezone('utc', now()),
+  archived_at          timestamptz
 );
+alter table public.financial_installments add column if not exists archived_at timestamptz;
 create unique index if not exists uq_financial_installments_entry_num
   on public.financial_installments(financial_entry_id, installment_number);
 create index if not exists idx_financial_installments_entry on public.financial_installments(financial_entry_id);
 create index if not exists idx_financial_installments_due   on public.financial_installments(user_id, due_date) where settlement_date is null;
+create index if not exists idx_financial_installments_active on public.financial_installments(user_id, financial_entry_id) where archived_at is null;
 
 -- 3. RLS por clínica (data_owner_id()).
 alter table public.financial_entries enable row level security;
@@ -80,5 +83,5 @@ end $$;
 alter table public.extra_revenues add column if not exists received_date date;
 
 -- "Atrasado" é SEMPRE derivado (due_date < hoje e em aberto), nunca gravado como status fixo.
--- Backfill e sync (projeção) entram na implementação da Fase 1 (feito em JS, reusando a lógica canônica),
--- para não divergir do buildMetrics.
+-- O write-through foi implementado em JS reutilizando a projeção canônica, para que
+-- backfill, autosave e recorrências não divirjam das métricas exibidas pelo app.

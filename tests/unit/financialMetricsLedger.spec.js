@@ -117,3 +117,28 @@ test('Fase 10: compra forma estoque e só a venda reconhece CMV na DRE', () => {
   expect(metrics.cashOut).toBe(500)
   expect(metrics.inventoryAsset).toBe(500)
 })
+
+test('recorrências são títulos do razão e não duplicam quando materializadas', () => {
+  const recurring = structuredClone(data)
+  recurring.surgeries = []
+  recurring.consultations = []
+  recurring.productSales = []
+  recurring.productPurchases = []
+  recurring.extraRevenues = []
+  recurring.expenses = []
+  recurring.recurrences = [
+    { id:'11111111-1111-4111-8111-111111111111', tipo:'receita', descricao:'Mensalidade', valor:1000, categoria:'outras_receitas', frequencia:'mensal', diaExecucao:5, dataInicio:'2026-10-01', autoMarkAsPaid:false, ativo:true },
+    { id:'22222222-2222-4222-8222-222222222222', tipo:'despesa', descricao:'Software', valor:400, categoria:'softwares', frequencia:'mensal', diaExecucao:10, dataInicio:'2026-10-01', autoMarkAsPaid:true, ativo:true },
+  ]
+  const metrics = buildMetrics(recurring, { startDate:'2026-10-01', endDate:'2026-10-31', balanceDate:'2026-10-31' })
+
+  expect(metrics.extraRevenueTotal).toBe(1000)
+  expect(metrics.operationalExpenses).toBe(400)
+  expect(metrics.accountsReceivable.find(item => item.source === 'recorrencia')).toMatchObject({ value:1000, dueDate:'2026-10-05' })
+  expect(metrics.exitsFinancial.find(item => item.origin === 'recorrencia_despesa')).toMatchObject({ value:400, date:'2026-10-10' })
+
+  recurring.extraRevenues = [{ id:'r-materializada', description:'Mensalidade', value:1000, category:'outras_receitas', date:'2026-10-05', receivedDate:'', dueDate:'2026-10-05', competenceDate:'2026-10-05', status:'pendente' }]
+  const materialized = buildMetrics(recurring, { startDate:'2026-10-01', endDate:'2026-10-31', balanceDate:'2026-10-31' })
+  expect(materialized.extraRevenueTotal).toBe(1000)
+  expect(materialized.accountsReceivable.filter(item => item.value === 1000)).toHaveLength(1)
+})

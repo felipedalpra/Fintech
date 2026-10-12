@@ -1,6 +1,7 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
 import { computeIdsToDelete } from './financeSync.js'
 import { supabase } from './supabase.js'
+import { syncFinancialLedger } from './ledgerPersistence.js'
 
 const LEGACY_APP_KEY = 'startupfinance_v1'
 const LOCAL_USERS_KEY = 'startupfinance_users_v1'
@@ -525,6 +526,9 @@ export async function saveFinanceData(userId, financeData, baselineData = null) 
       const baselineIds = base ? new Set(mapRows(base).map(r => r.id)) : null
       return syncTable(table, userId, mapRows(payload), baselineIds)
     }))
+    // Write-through idempotente depois das origens operacionais. Títulos e parcelas removidos da
+    // origem são apenas arquivados, nunca apagados fisicamente.
+    await syncFinancialLedger(supabase, userId, payload, base)
   } catch (syncError) {
     relationalBackendAvailable = null
     relationalBackendCheckedAt = 0

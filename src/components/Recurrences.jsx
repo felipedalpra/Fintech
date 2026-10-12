@@ -5,6 +5,7 @@ import { fmt, today } from '../utils.js'
 import { Badge, Btn, Card, ConfirmModal, FInput, Modal } from './UI.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
 
 const EMPTY_FORM = {
   tipo:'despesa',
@@ -41,7 +42,7 @@ export function Recurrences() {
 
   useEffect(() => {
     loadRecurrences()
-  }, [])
+  }, [ownerId])
 
   async function loadRecurrences() {
     setLoading(true)
@@ -57,7 +58,16 @@ export function Recurrences() {
       return
     }
 
-    setRows(Array.isArray(data) ? data : [])
+    const nextRows = Array.isArray(data) ? data : []
+    setRows(nextRows)
+    if (ownerId) {
+      const year = today().slice(0, 4)
+      try {
+        await syncRecurringLedger(supabase, ownerId, nextRows, `${year}-01-01`, today())
+      } catch (syncError) {
+        toast(syncError.message || 'Recorrências carregadas, mas o razão persistido não foi atualizado.', 'warning')
+      }
+    }
     setLoading(false)
   }
 

@@ -12,6 +12,7 @@ export function paymentScheduleFlow(totalValueRaw, item) {
         index,
         date:String(entry?.date || '').trim(),
         amount:Math.max(0, Number(entry?.amount || 0)),
+        method:String(entry?.method || '').trim(),
       }))
       .filter(entry => entry.date && entry.amount > 0)
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -22,8 +23,8 @@ export function paymentScheduleFlow(totalValueRaw, item) {
     return {
       hasSchedule:false,
       installments:[],
-      paidInstallments:paid ? [{ index:0, date:item?.paymentDate || item?.date, amount:totalValue }] : [],
-      openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:item?.forecastPaymentDate || item?.dueDate || item?.date, amount:totalValue }],
+      paidInstallments:paid ? [{ index:0, date:item?.paymentDate || item?.date, amount:totalValue, method:decoded.paymentMethod || '' }] : [],
+      openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:item?.forecastPaymentDate || item?.dueDate || item?.date, amount:totalValue, method:decoded.paymentMethod || '' }],
       paidAmount:paid ? totalValue : 0,
       openAmount:paid ? 0 : totalValue,
     }
@@ -43,6 +44,7 @@ export function paymentScheduleFlow(totalValueRaw, item) {
       index:installments.length,
       date:item?.forecastPaymentDate || installments[installments.length - 1]?.date || item?.date,
       amount:remaining,
+      method:installments[installments.length - 1]?.method || decoded.paymentMethod || '',
     })
   }
 

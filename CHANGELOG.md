@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (71)
+### Added
+- **Write-through persistido do razão financeiro**: todo salvamento operacional agora projeta e faz upsert idempotente em `financial_entries` e `financial_installments`, preservando origem/componente, parte, competência, vencimento, liquidação real, forma de pagamento e valores pagos. Reduções de cronograma e exclusões da origem usam `archived_at` reversível, sem delete físico. Recorrências vencidas no ano também são sincronizadas ao abrir Financeiro/Recorrências e ocorrências removidas ou pausadas são arquivadas. Implementação em `src/lib/ledgerPersistence.js`; regressões em `tests/unit/ledgerPersistence.spec.js`.
+
+### Changed
+- `financial_installments` passa a ter `archived_at` e índice de linhas ativas; o cronograma canônico preserva a forma de pagamento em cada parcela. A leitura financeira permanece na projeção já validada durante a transição, enquanto a cópia persistida é alimentada em paralelo para backfill e reconciliação segura.
+
+## [Unreleased] - 2026-10-12 (70)
+### Changed
+- **Recorrências incorporadas ao razão canônico**: cada ocorrência mensal, semanal ou anual passa a gerar um título com componente estável `occurrence:AAAA-MM-DD`, participando da DRE, caixa, contas a pagar/receber, posição patrimonial, relatórios e conferência pela mesma projeção financeira. Regras com baixa automática geram liquidação na data da ocorrência; regras sem baixa permanecem abertas. Se a ocorrência já foi materializada como receita/despesa operacional, o razão a deduplica. O gerador puro foi extraído para `src/lib/recurrenceSchedule.js` e ganhou regressões de geração e não duplicação.
+
 ## [Unreleased] - 2026-10-12 (69)
 ### Added
 - **Liquidação independente de custos clínicos**: hospital, anestesia, material, outros custos e imposto/NF passam a ter, por componente, fornecedor/credor, situação, competência, vencimento, data real e forma de pagamento. Cirurgias, consultas e a edição no Financeiro compartilham o novo editor; cada componente continua gerando um título a pagar próprio no razão. Schema aditivo em `supabase/clinical_cost_settlements_schema.sql`, com metadados em `cost_settlements` sem inventar backfill para registros antigos.

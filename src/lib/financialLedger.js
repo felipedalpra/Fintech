@@ -9,6 +9,7 @@
 // Design: docs/superpowers/specs/2026-10-12-financial-core-ledger-design.md
 import { paymentScheduleFlow } from './paymentScheduleFlow.js'
 import { clinicalCostRows } from './clinicalCosts.js'
+import { generateRecurringOccurrences, matchesRecurringExpense, matchesRecurringRevenue } from './recurrenceSchedule.js'
 
 function num(v) { return Number(v) || 0 }
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100 }
@@ -23,8 +24,8 @@ function statusFromAmounts(paid, open, canceled) {
 // Numera e ordena as parcelas (pagas + abertas) de um item com cronograma.
 function installmentsFromFlow(flow, canceled) {
   const all = [
-    ...(flow.paidInstallments || []).map(p => ({ amount: round2(p.amount), due_date: p.date || null, settlement_date: p.date || null, status: 'paid' })),
-    ...(flow.openInstallments || []).map(o => ({ amount: round2(o.amount), due_date: o.date || null, settlement_date: null, status: 'pending' })),
+    ...(flow.paidInstallments || []).map(p => ({ amount: round2(p.amount), due_date: p.date || null, settlement_date: p.date || null, payment_method:p.method || null, status: 'paid' })),
+    ...(flow.openInstallments || []).map(o => ({ amount: round2(o.amount), due_date: o.date || null, settlement_date: null, payment_method:o.method || null, status: 'pending' })),
   ].sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
   all.forEach((x, i) => {
     x.installment_number = i + 1
@@ -115,13 +116,14 @@ function pushCostEntries(parts, item, sourceType) {
 }
 
 // Monta o razão (entries + installments) a partir do dataset. Puro.
-export function buildLedger(data = {}) {
+export function buildLedger(data = {}, options = {}) {
   const surgeries = data.surgeries || []
   const consultations = data.consultations || []
   const productSales = data.productSales || []
   const productPurchases = data.productPurchases || []
   const extraRevenues = data.extraRevenues || []
   const expenses = data.expenses || []
+  const recurrences = data.recurrences || []
 
   const parts = []
 
@@ -167,6 +169,7 @@ export function buildLedger(data = {}) {
     dueDate: item.dueDate || item.purchaseDate, paidDate: item.paymentDate || item.purchaseDate,
     isPaid: item.status === 'pago', canceled: item.status === 'cancelado',
     partyType: 'supplier', partyId: item.supplierId || null, partyName: item.supplier || '', category: 'compra_produto',
+    paymentMethod:item.paymentMethod || null,
   })))
 
   // Receita extra: recebida (status padrão 'recebido') → caixa em received_date||date; senão em aberto.
@@ -180,6 +183,7 @@ export function buildLedger(data = {}) {
       partyType: item.patientId ? 'patient' : 'other', partyId: item.patientId || null,
       partyName: item.patient || item.description || '', category: item.category || 'outras_receitas',
       costCenter: item.originLabel || null,
+      paymentMethod:item.paymentMethod || null,
     }))
   })
 
@@ -192,7 +196,29 @@ export function buildLedger(data = {}) {
     partyType: 'supplier', partyId: item.supplierId || null,
     partyName: item.supplier || item.description || '', category: item.category || null,
     costCenter: item.originLabel || null,
+    paymentMethod:item.paymentMethod || null,
   })))
+
+  // Cada ocorrência da regra vira um título próprio e idempotente pelo componente occurrence:data.
+  // Se a ocorrência já foi materializada como receita/despesa operacional, ela não é duplicada.
+  if (options.recurrenceFrom && options.recurrenceTo) {
+    generateRecurringOccurrences(recurrences, options.recurrenceFrom, options.recurrenceTo).forEach(item => {
+      const isRevenue = item.tipo === 'receita'
+      const materialized = isRevenue
+        ? extraRevenues.some(record => matchesRecurringRevenue(record, item))
+        : expenses.some(record => matchesRecurringExpense(record, item))
+      if (materialized) return
+      parts.push(singleEntry({
+        sourceType:'recurrence', sourceComponent:`occurrence:${item.dueDate}`,
+        direction:isRevenue ? 'receivable' : 'payable', item, total:item.valor || 0,
+        competenceDate:item.dueDate, issueDate:item.dueDate, dueDate:item.dueDate,
+        paidDate:item.autoMarkAsPaid ? item.dueDate : null,
+        isPaid:Boolean(item.autoMarkAsPaid), canceled:false,
+        partyType:'other', partyName:item.descricao || (isRevenue ? 'Receita recorrente' : 'Despesa recorrente'),
+        category:item.categoria || (isRevenue ? 'outras_receitas' : 'outros'),
+      }))
+    })
+  }
 
   const entries = parts.map(p => p.entry)
   const installments = parts.map(p => p.installments)
