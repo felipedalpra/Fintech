@@ -9,6 +9,7 @@
 // Design: docs/superpowers/specs/2026-10-12-financial-core-ledger-design.md
 import { paymentScheduleFlow } from '../financialMetrics.js'
 
+function num(v) { return Number(v) || 0 }
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100 }
 
 function statusFromAmounts(paid, open, canceled) {
@@ -50,7 +51,12 @@ function scheduledEntry({ sourceType, item, total, competenceDate, issueDate, pa
 }
 
 // Título de parcela única (venda/compra/receita extra/despesa).
-function singleEntry({ sourceType, direction, item, total, competenceDate, issueDate, dueDate,
+function invoiceTax(base, percent) {
+  const p = Math.max(0, Math.min(100, num(percent)))
+  return round2(num(base) * (p / 100))
+}
+
+function singleEntry({ sourceType, sourceComponent, direction, item, total, competenceDate, issueDate, dueDate,
   paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter }) {
   const paid = canceled ? 0 : (isPaid ? round2(total) : 0)
   const open = canceled ? 0 : (isPaid ? 0 : round2(total))
@@ -63,13 +69,43 @@ function singleEntry({ sourceType, direction, item, total, competenceDate, issue
   }
   return {
     entry: {
-      source_type: sourceType, source_id: item.id, source_component: 'revenue', direction,
+      source_type: sourceType, source_id: item.id, source_component: sourceComponent || 'revenue', direction,
       party_type: partyType || 'other', party_id: partyId || item.patientId || null, party_name_snapshot: partyName || '',
       category: category || null, cost_center: costCenter || null,
       competence_date: competenceDate || null, issue_date: issueDate || null,
       total_amount: round2(total), status: statusFromAmounts(paid, open, canceled),
     },
     installments: total > 0 ? [installment] : [],
+  }
+}
+
+// Custos de cirurgia/consulta como títulos A PAGAR independentes (hospital, anestesia, material,
+// outros, imposto de NF). Modelo atual = caixa na data do atendimento → projeção = pago nessa data.
+// Depois (autoridade) cada custo pode ganhar vencimento/fornecedor/status próprios.
+function pushCostEntries(parts, item, sourceType, baseValue) {
+  if (item.paymentStatus === 'cancelado') return
+  const date = item.date
+  const competence = item.competenceDate || item.date
+  const components = sourceType === 'surgery'
+    ? [
+      ['hospital_cost', item.hospitalCost],
+      ['anesthesia_cost', item.anesthesiaCost],
+      ['material_cost', item.materialCost],
+      ['other_cost', item.otherCosts],
+      ['invoice_tax', invoiceTax(baseValue, item.invoiceIssuancePercent)],
+    ]
+    : [['invoice_tax', invoiceTax(baseValue, item.invoiceIssuancePercent)]]
+  for (const [component, raw] of components) {
+    const value = round2(raw)
+    if (value <= 0) continue
+    parts.push(singleEntry({
+      sourceType, sourceComponent: component, direction: 'payable', item, total: value,
+      competenceDate: competence, issueDate: date, dueDate: date, paidDate: date,
+      isPaid: true, canceled: false,
+      partyType: 'other',
+      partyName: `${sourceType === 'surgery' ? 'Custo cirúrgico' : 'Custo consulta'} - ${item.patient || ''}`,
+      category: sourceType === 'surgery' ? 'custo_cirurgico' : 'custo_consulta',
+    }))
   }
 }
 
@@ -84,15 +120,21 @@ export function buildLedger(data = {}) {
 
   const parts = []
 
-  surgeries.forEach(item => parts.push(scheduledEntry({
-    sourceType: 'surgery', item, total: item.totalValue || 0,
-    competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
-  })))
+  surgeries.forEach(item => {
+    parts.push(scheduledEntry({
+      sourceType: 'surgery', item, total: item.totalValue || 0,
+      competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
+    }))
+    pushCostEntries(parts, item, 'surgery', item.totalValue || 0)
+  })
 
-  consultations.forEach(item => parts.push(scheduledEntry({
-    sourceType: 'consultation', item, total: item.value || 0,
-    competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
-  })))
+  consultations.forEach(item => {
+    parts.push(scheduledEntry({
+      sourceType: 'consultation', item, total: item.value || 0,
+      competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
+    }))
+    pushCostEntries(parts, item, 'consultation', item.value || 0)
+  })
 
   // Venda de produto: recebido → caixa na data da venda; pendente/legacy_unverified → em aberto
   // (não assume recebimento sem confirmação); cancelado → cancelado. Cliente vinculado por patient_id.

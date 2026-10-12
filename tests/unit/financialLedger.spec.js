@@ -97,3 +97,23 @@ test('compra de produto: status define pago/aberto; legacy não vira pago; forne
   expect(ledger.entries[byId('cp3')].status).toBe('pending') // legacy NÃO é pago
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
+
+test('custos de cirurgia viram títulos a pagar por componente (0 não gera)', () => {
+  const ledger = buildLedger({
+    surgeries: [{
+      id: 'sx', totalValue: 10000, date: '2026-09-10', paymentStatus: 'pendente',
+      hospitalCost: 2000, anesthesiaCost: 1000, materialCost: 0, otherCosts: 500,
+      invoiceIssuancePercent: 10, patient: 'Ana',
+    }],
+  })
+  const costs = ledger.entries.filter(e => e.source_type === 'surgery' && e.direction === 'payable')
+  const byComp = Object.fromEntries(costs.map(e => [e.source_component, e.total_amount]))
+  expect(byComp.hospital_cost).toBe(2000)
+  expect(byComp.anesthesia_cost).toBe(1000)
+  expect(byComp.other_cost).toBe(500)
+  expect(byComp.invoice_tax).toBe(1000)          // 10% de 10.000
+  expect(byComp.material_cost).toBeUndefined()   // 0 → não gera entrada
+  // o título de receita da cirurgia continua existindo
+  expect(ledger.entries.some(e => e.source_type === 'surgery' && e.source_component === 'revenue')).toBe(true)
+  expect(checkLedgerInvariants(ledger)).toEqual([])
+})
