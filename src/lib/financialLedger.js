@@ -24,8 +24,8 @@ function statusFromAmounts(paid, open, canceled) {
 // Numera e ordena as parcelas (pagas + abertas) de um item com cronograma.
 function installmentsFromFlow(flow, canceled) {
   const all = [
-    ...(flow.paidInstallments || []).map(p => ({ amount: round2(p.amount), due_date: p.date || null, settlement_date: p.date || null, status: 'paid' })),
-    ...(flow.openInstallments || []).map(o => ({ amount: round2(o.amount), due_date: o.date || null, settlement_date: null, status: 'pending' })),
+    ...(flow.paidInstallments || []).map(p => ({ amount: round2(p.amount), due_date: p.date || null, settlement_date: p.date || null, payment_method:p.method || null, status: 'paid' })),
+    ...(flow.openInstallments || []).map(o => ({ amount: round2(o.amount), due_date: o.date || null, settlement_date: null, payment_method:o.method || null, status: 'pending' })),
   ].sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
   all.forEach((x, i) => {
     x.installment_number = i + 1
@@ -169,6 +169,7 @@ export function buildLedger(data = {}, options = {}) {
     dueDate: item.dueDate || item.purchaseDate, paidDate: item.paymentDate || item.purchaseDate,
     isPaid: item.status === 'pago', canceled: item.status === 'cancelado',
     partyType: 'supplier', partyId: item.supplierId || null, partyName: item.supplier || '', category: 'compra_produto',
+    paymentMethod:item.paymentMethod || null,
   })))
 
   // Receita extra: recebida (status padrão 'recebido') → caixa em received_date||date; senão em aberto.
@@ -182,6 +183,7 @@ export function buildLedger(data = {}, options = {}) {
       partyType: item.patientId ? 'patient' : 'other', partyId: item.patientId || null,
       partyName: item.patient || item.description || '', category: item.category || 'outras_receitas',
       costCenter: item.originLabel || null,
+      paymentMethod:item.paymentMethod || null,
     }))
   })
 
@@ -194,6 +196,7 @@ export function buildLedger(data = {}, options = {}) {
     partyType: 'supplier', partyId: item.supplierId || null,
     partyName: item.supplier || item.description || '', category: item.category || null,
     costCenter: item.originLabel || null,
+    paymentMethod:item.paymentMethod || null,
   })))
 
   // Cada ocorrência da regra vira um título próprio e idempotente pelo componente occurrence:data.

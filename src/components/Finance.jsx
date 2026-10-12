@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase.js'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
+import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -252,7 +253,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         toast('Não foi possível carregar as recorrências. Tente recarregar a página.', 'warning')
         return
       }
-      setRecurrences((rows || []).map(item => ({
+      const normalizedRows = (rows || []).map(item => ({
         id:item.id,
         tipo:item.tipo || 'despesa',
         descricao:item.descricao || '',
@@ -264,11 +265,20 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         dataFim:item.data_fim || '',
         autoMarkAsPaid:Boolean(item.auto_mark_as_paid),
         ativo:item.ativo !== false,
-      })))
+      }))
+      setRecurrences(normalizedRows)
+      if (ownerId) {
+        const year = today().slice(0, 4)
+        try {
+          await syncRecurringLedger(supabase, ownerId, rows || [], `${year}-01-01`, today())
+        } catch {
+          toast('Recorrências carregadas, mas o razão persistido não foi atualizado.', 'warning')
+        }
+      }
     }
     loadRecurrences()
     return () => { active = false }
-  }, [])
+  }, [ownerId])
 
   // FAB quick-add events
   useEffect(() => {
