@@ -162,7 +162,7 @@ const SUBTITLES = {
   goals:'Metas financeiras com progresso automático.',
   recurrences:'Cadastre receitas e despesas fixas com geração automática.',
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
-  'ledger-check':'Valida o razão (projeção) contra o dashboard antes de virar a fonte de verdade.',
+  'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',

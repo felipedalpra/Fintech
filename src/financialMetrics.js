@@ -1,5 +1,7 @@
 import { inRange, monthKey, onOrBefore, today } from './utils.js'
-import { decodePaymentMethod } from './lib/paymentMethodCodec.js'
+import { buildLedger } from './lib/financialLedger.js'
+
+export { paymentScheduleFlow } from './lib/paymentScheduleFlow.js'
 
 function resolvePercent(value) {
   const n = Number(value || 0)
@@ -13,11 +15,16 @@ function invoiceIssuanceCost(baseValue, percentValue) {
 }
 
 function surgeryCosts(item) {
-  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
+  const invoiceTax = item.invoiceTaxAmount != null
+    ? Number(item.invoiceTaxAmount || 0)
+    : invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
+  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + invoiceTax
 }
 
 function consultationCosts(item) {
-  return invoiceIssuanceCost(item.value || 0, item.invoiceIssuancePercent || 0)
+  return item.invoiceTaxAmount != null
+    ? Number(item.invoiceTaxAmount || 0)
+    : invoiceIssuanceCost(item.value || 0, item.invoiceIssuancePercent || 0)
 }
 
 function mapProcedureName(procedures, id) {
@@ -32,76 +39,6 @@ function accumulateByMonth(target, date, value) {
   const key = monthKey(date)
   if (!key) return
   target[key] = (target[key] || 0) + (value || 0)
-}
-
-function patientLabel(value, fallback = '') {
-  return value || fallback || 'Paciente não informado'
-}
-
-// Fluxo de parcelas genérico (consultas e cirurgias): decodifica o cronograma
-// de pagamentos (payments) e separa parcelas pagas x em aberto. Parcelas pagas
-// entram no caixa pela sua data; em aberto viram contas a receber pelo vencimento.
-export function paymentScheduleFlow(totalValueRaw, item, balanceDate) {
-  const totalValue = Math.max(0, Number(totalValueRaw || 0))
-  const decoded = decodePaymentMethod(item?.paymentMethod)
-  const schedule = decoded.paymentScheduleMode === 'duas_datas' && Array.isArray(decoded.payments)
-    ? decoded.payments
-      .map((entry, index) => ({
-        index,
-        date:String(entry?.date || '').trim(),
-        amount:Math.max(0, Number(entry?.amount || 0)),
-      }))
-      .filter(entry => entry.date && entry.amount > 0)
-      .sort((a, b) => a.date.localeCompare(b.date))
-    : []
-
-  if (schedule.length === 0) {
-    const paid = item?.paymentStatus === 'pago'
-    return {
-      hasSchedule:false,
-      installments:[],
-      paidInstallments:paid ? [{ index:0, date:item?.paymentDate || item?.date, amount:totalValue }] : [],
-      openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:item?.forecastPaymentDate || item?.dueDate || item?.date, amount:totalValue }],
-      paidAmount:paid ? totalValue : 0,
-      openAmount:paid ? 0 : totalValue,
-    }
-  }
-
-  let remaining = totalValue
-  const installments = schedule
-    .map(entry => {
-      const amount = Math.min(entry.amount, remaining)
-      remaining = Math.max(0, remaining - amount)
-      return { ...entry, amount }
-    })
-    .filter(entry => entry.amount > 0)
-
-  if (remaining > 0) {
-    installments.push({
-      index:installments.length,
-      date:item?.forecastPaymentDate || installments[installments.length - 1]?.date || item?.date,
-      amount:remaining,
-    })
-    remaining = 0
-  }
-
-  const paymentDateCutoff = String(item?.paymentDate || '').trim()
-  const paidByDate = item?.paymentStatus === 'pago'
-    ? installments
-    : (paymentDateCutoff ? installments.filter(entry => onOrBefore(entry.date, paymentDateCutoff)) : [])
-  const paidIndexes = new Set(paidByDate.map(entry => entry.index))
-  const openInstallments = installments.filter(entry => !paidIndexes.has(entry.index))
-  const paidAmount = Math.min(totalValue, paidByDate.reduce((acc, entry) => acc + entry.amount, 0))
-  const openAmount = Math.max(0, totalValue - paidAmount)
-
-  return {
-    hasSchedule:true,
-    installments,
-    paidInstallments:paidByDate,
-    openInstallments,
-    paidAmount,
-    openAmount,
-  }
 }
 
 function parseDate(value) {
@@ -203,6 +140,141 @@ function matchesRecurringRevenue(record, recurring) {
     && (record.date || '') === (recurring.dueDate || '')
 }
 
+const LEDGER_COMPONENT_CATEGORY = {
+  hospital_cost:'hospital',
+  anesthesia_cost:'anestesia',
+  material_cost:'material',
+  other_cost:'outros',
+  invoice_tax:'nota_fiscal',
+}
+
+function ledgerSourceMaps(data) {
+  const asMap = rows => new Map((rows || []).map(item => [item.id, item]))
+  return {
+    surgery:asMap(data.surgeries),
+    consultation:asMap(data.consultations),
+    product_sale:asMap(data.productSales),
+    product_purchase:asMap(data.productPurchases),
+    extra_revenue:asMap(data.extraRevenues),
+    expense:asMap(data.expenses),
+  }
+}
+
+function ledgerPresentation(entry, source, data) {
+  const products = data.products || []
+  const procedures = data.procedures || []
+  const cost = entry.source_component !== 'revenue'
+  const type = entry.source_type
+  const patient = entry.party_name_snapshot || source?.patient || source?.patientName || 'Paciente não informado'
+  const product = mapProduct(products, source?.productId)
+
+  if (cost && type === 'surgery') return {
+    origin:'custo_cirurgico', source:'custo_cirurgico', category:LEDGER_COMPONENT_CATEGORY[entry.source_component] || 'outros',
+    description:`Custo cirúrgico - ${patient}`, accountDescription:`Custo cirúrgico - ${patient}`,
+  }
+  if (cost && type === 'consultation') return {
+    origin:'custo_consulta', source:'custo_consulta', category:'nota_fiscal_consulta',
+    description:`Custo NF consulta - ${patient}`, accountDescription:`Custo NF consulta - ${patient}`,
+  }
+  if (type === 'surgery') return {
+    origin:'cirurgia', source:'cirurgia', category:'cirurgia', description:`Cirurgia - ${patient}`,
+    accountDescription:mapProcedureName(procedures, source?.procedureId),
+  }
+  if (type === 'consultation') return {
+    origin:'consulta', source:'consulta', category:source?.paymentType || 'consulta', description:`Consulta - ${patient}`,
+    accountDescription:source?.consultationType || 'Consulta',
+  }
+  if (type === 'product_sale') return {
+    origin:'venda_produto', source:'venda_produto', category:'venda_produto',
+    description:`Venda de produto - ${product?.name || 'Produto'}`, accountDescription:product?.name || 'Produto',
+  }
+  if (type === 'product_purchase') return {
+    origin:'compra_produto', source:'compra_produto', category:'compra_produto',
+    description:`Compra de produto - ${product?.name || 'Produto'}`, accountDescription:product?.name || 'Produto',
+  }
+  if (type === 'extra_revenue') return {
+    origin:'outra_receita', source:'outra_receita', category:entry.category || source?.category || 'outras_receitas',
+    description:source?.description || 'Receita', accountDescription:source?.description || 'Receita',
+  }
+  return {
+    origin:'despesa', source:'despesa', category:entry.category || source?.category || 'outros',
+    description:source?.description || 'Despesa', accountDescription:source?.description || 'Despesa',
+  }
+}
+
+function buildLedgerProjection(data, { startDate, endDate, balanceDate }) {
+  const ledger = buildLedger(data)
+  const sourceMaps = ledgerSourceMaps(data)
+  const competenceEntries = ledger.entries.filter(entry =>
+    entry.status !== 'canceled' && entry.competence_date && inRange(entry.competence_date, startDate, endDate))
+  const entriesFinancial = []
+  const exitsFinancial = []
+  const accountsReceivable = []
+  const accountsPayable = []
+  const cumulativeEntries = []
+
+  ledger.entries.forEach((entry, index) => {
+    if (entry.status === 'canceled') return
+    const rows = ledger.installments[index] || []
+    const source = sourceMaps[entry.source_type]?.get(entry.source_id)
+    const presentation = ledgerPresentation(entry, source, data)
+
+    rows.forEach(row => {
+      const paidValue = row.paid_amount != null ? Number(row.paid_amount || 0) : Number(row.amount || 0)
+      const settledByBalance = row.status === 'paid' && row.settlement_date && onOrBefore(row.settlement_date, balanceDate)
+      if (settledByBalance) {
+        const cashRow = {
+          id:`ledger-${entry.direction}-${entry.source_type}-${entry.source_id}-${entry.source_component}-${row.installment_number}`,
+          description:rows.length > 1 ? `${presentation.description} (parcela ${row.installment_number}/${rows.length})` : presentation.description,
+          category:presentation.category,
+          value:paidValue,
+          date:row.settlement_date,
+          origin:presentation.origin,
+          originLabel:source?.originLabel || '',
+          referenceId:entry.source_id,
+          sourceComponent:entry.source_component,
+        }
+        cumulativeEntries.push({ type:entry.direction === 'receivable' ? 'entrada' : 'saida', value:paidValue })
+        if (inRange(row.settlement_date, startDate, endDate)) {
+          if (entry.direction === 'receivable') entriesFinancial.push(cashRow)
+          else exitsFinancial.push(cashRow)
+        }
+      }
+    })
+
+    if (entry.issue_date && !onOrBefore(entry.issue_date, balanceDate)) return
+    const openRows = rows.filter(row => !row.settlement_date || !onOrBefore(row.settlement_date, balanceDate))
+    const openValue = openRows.reduce((sum, row) => {
+      const paid = row.status === 'partially_paid' ? Number(row.paid_amount || 0) : 0
+      return sum + Math.max(0, Number(row.amount || 0) - paid)
+    }, 0)
+    if (openValue <= 0) return
+    const dueDates = openRows.map(row => row.due_date).filter(Boolean).sort()
+    const rawStatus = source?.paymentStatus || source?.status
+    const account = {
+      id:`ledger-${entry.source_type}-${entry.source_id}-${entry.source_component}`,
+      source:presentation.source,
+      sourceId:entry.source_id,
+      category:presentation.category,
+      costCenter:entry.cost_center || '',
+      value:openValue,
+      competenceDate:entry.competence_date,
+      dueDate:dueDates[0] || entry.issue_date,
+      openInstallments:openRows.length,
+      installmentsTotal:rows.length,
+      status:rawStatus && !['pago', 'recebido'].includes(rawStatus) ? rawStatus : 'pendente',
+      description:presentation.accountDescription,
+    }
+    if (entry.direction === 'receivable') {
+      accountsReceivable.push({ ...account, patient:entry.party_name_snapshot || presentation.description })
+    } else {
+      accountsPayable.push({ ...account, supplier:entry.party_name_snapshot || presentation.description })
+    }
+  })
+
+  return { ...ledger, competenceEntries, entriesFinancial, exitsFinancial, accountsReceivable, accountsPayable, cumulativeEntries }
+}
+
 export function buildMetrics(rawData, options = {}) {
   const data = rawData || {}
   const procedures = data.procedures || []
@@ -228,10 +300,10 @@ export function buildMetrics(rawData, options = {}) {
   // independente de quando o dinheiro entra (caixa) ou de quando vence (vencimento).
   const surgeriesInRange = surgeries.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
   const consultationsInRange = consultations.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
-  const productSalesInRange = productSales.filter(item => (item.competenceDate || item.saleDate) && inRange(item.competenceDate || item.saleDate, startDate, endDate))
-  const productPurchasesInRange = productPurchases.filter(item => (item.competenceDate || item.purchaseDate) && inRange(item.competenceDate || item.purchaseDate, startDate, endDate))
-  const extraRevenuesInRange = extraRevenues.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
-  const expensesInRange = expenses.filter(item => (item.competenceDate || item.dueDate) && inRange(item.competenceDate || item.dueDate, startDate, endDate))
+  const productSalesInRange = productSales.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.saleDate) && inRange(item.competenceDate || item.saleDate, startDate, endDate))
+  const productPurchasesInRange = productPurchases.filter(item => item.status !== 'cancelado' && (item.competenceDate || item.purchaseDate) && inRange(item.competenceDate || item.purchaseDate, startDate, endDate))
+  const extraRevenuesInRange = extraRevenues.filter(item => item.status !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
+  const expensesInRange = expenses.filter(item => item.status !== 'cancelado' && (item.competenceDate || item.dueDate) && inRange(item.competenceDate || item.dueDate, startDate, endDate))
   const recurringInRange = generateRecurringOccurrences(recurrences, recurringRangeStart, recurringRangeEnd)
   const recurringUntilBalance = generateRecurringOccurrences(recurrences, recurringBalanceStart, balanceDate)
   const recurringRevenueOpenInRange = recurringInRange.filter(item => item.tipo === 'receita' && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item)))
@@ -239,18 +311,24 @@ export function buildMetrics(rawData, options = {}) {
   const recurringRevenueTotal = recurringRevenueOpenInRange.reduce((acc, item) => acc + (Number(item.valor) || 0), 0)
   const recurringExpenseTotal = recurringExpenseOpenInRange.reduce((acc, item) => acc + (Number(item.valor) || 0), 0)
 
-  const surgeryRevenue = surgeriesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
-  const surgeryCostTotal = surgeriesInRange.reduce((acc, item) => acc + surgeryCosts(item), 0)
+  // Fase 10: competência, caixa e obrigações passam a ler da projeção canônica do razão.
+  // Recorrências continuam anexadas aqui até ganharem títulos próprios no razão.
+  const ledger = buildLedgerProjection(data, { startDate, endDate, balanceDate })
+  const sumLedger = predicate => ledger.competenceEntries
+    .filter(predicate)
+    .reduce((acc, entry) => acc + Number(entry.total_amount || 0), 0)
+  const surgeryRevenue = sumLedger(entry => entry.source_type === 'surgery' && entry.source_component === 'revenue')
+  const surgeryCostTotal = sumLedger(entry => entry.source_type === 'surgery' && entry.direction === 'payable')
   const surgeryNetRevenue = surgeryRevenue - surgeryCostTotal
-  const consultationRevenue = consultationsInRange.reduce((acc, item) => acc + (item.value || 0), 0)
-  const consultationCostTotal = consultationsInRange.reduce((acc, item) => acc + consultationCosts(item), 0)
-  const productSalesRevenue = productSalesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
-  const productPurchaseTotal = productPurchasesInRange.reduce((acc, item) => acc + (item.totalValue || 0), 0)
-  const extraRevenueTotal = extraRevenuesInRange.reduce((acc, item) => acc + (item.value || 0), 0) + recurringRevenueTotal
+  const consultationRevenue = sumLedger(entry => entry.source_type === 'consultation' && entry.source_component === 'revenue')
+  const consultationCostTotal = sumLedger(entry => entry.source_type === 'consultation' && entry.direction === 'payable')
+  const productSalesRevenue = sumLedger(entry => entry.source_type === 'product_sale' && entry.direction === 'receivable')
+  const productPurchaseTotal = sumLedger(entry => entry.source_type === 'product_purchase' && entry.direction === 'payable')
+  const extraRevenueTotal = sumLedger(entry => entry.source_type === 'extra_revenue' && entry.direction === 'receivable') + recurringRevenueTotal
   const grossRevenue = surgeryRevenue + consultationRevenue + productSalesRevenue + extraRevenueTotal
 
-  const taxExpenses = expensesInRange.filter(item => item.category === 'impostos').reduce((acc, item) => acc + (item.value || 0), 0)
-  const operationalExpenses = expensesInRange.filter(item => item.category !== 'impostos').reduce((acc, item) => acc + (item.value || 0), 0) + recurringExpenseTotal
+  const taxExpenses = sumLedger(entry => entry.source_type === 'expense' && entry.category === 'impostos')
+  const operationalExpenses = sumLedger(entry => entry.source_type === 'expense' && entry.category !== 'impostos') + recurringExpenseTotal
   const operatingProfit = grossRevenue - surgeryCostTotal - consultationCostTotal - productPurchaseTotal - operationalExpenses
   const netProfit = operatingProfit - taxExpenses
 
@@ -258,91 +336,8 @@ export function buildMetrics(rawData, options = {}) {
   const consultationsCompleted = consultationsInRange.filter(item => item.paymentStatus !== 'cancelado').length
   const averageTicket = surgeriesCompleted > 0 ? surgeryRevenue / surgeriesCompleted : 0
 
-  const entriesFinancial = []
-  const exitsFinancial = []
-
-  surgeries.forEach(item => {
-    if (item.paymentStatus !== 'cancelado') {
-      const flow = paymentScheduleFlow(item.totalValue, item, balanceDate)
-      flow.paidInstallments.forEach((payment, index) => {
-        if (!payment.date || !inRange(payment.date, startDate, endDate)) return
-        entriesFinancial.push({
-          id:`entry-surgery-${item.id}-${index}`,
-          description:flow.hasSchedule
-            ? `Cirurgia - ${patientLabel(item.patient, item.id)} (parcela ${index + 1}/${flow.installments.length})`
-            : `Cirurgia - ${patientLabel(item.patient, item.id)}`,
-          category:'cirurgia', value:payment.amount || 0, date:payment.date, origin:'cirurgia', referenceId:item.id,
-        })
-      })
-    }
-    if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
-      const surgeryInvoiceCost = invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
-      ;[
-        ['hospital', item.hospitalCost || 0],
-        ['anestesia', item.anesthesiaCost || 0],
-        ['material', item.materialCost || 0],
-        ['outros', item.otherCosts || 0],
-        ['nota_fiscal_cirurgia', surgeryInvoiceCost],
-      ].forEach(([category, value]) => {
-        if (value > 0) exitsFinancial.push({ id:`exit-surgery-${item.id}-${category}`, description:`Custo cirúrgico - ${patientLabel(item.patient, item.id)}`, category, value, date:item.date, origin:'custo_cirurgico', referenceId:item.id })
-      })
-    }
-  })
-
-  consultations.forEach(item => {
-    if (item.paymentStatus === 'cancelado') return
-    const flow = paymentScheduleFlow(item.value, item, balanceDate)
-    flow.paidInstallments.forEach((payment, index) => {
-      if (!payment.date || !inRange(payment.date, startDate, endDate)) return
-      entriesFinancial.push({
-        id:`entry-consultation-${item.id}-${index}`,
-        description:flow.hasSchedule
-          ? `Consulta - ${patientLabel(item.patient, item.id)} (pagamento ${index + 1}/${flow.installments.length})`
-          : `Consulta - ${patientLabel(item.patient, item.id)}`,
-        category:'consulta',
-        value:payment.amount || 0,
-        date:payment.date,
-        origin:'consulta',
-        referenceId:item.id,
-      })
-    })
-    if (item.paymentStatus !== 'cancelado' && inRange(item.date, startDate, endDate)) {
-      const nfCost = consultationCosts(item)
-      if (nfCost > 0) {
-        exitsFinancial.push({ id:`exit-consultation-${item.id}-nf`, description:`Custo NF consulta - ${patientLabel(item.patient, item.id)}`, category:'nota_fiscal_consulta', value:nfCost, date:item.date, origin:'custo_consulta', referenceId:item.id })
-      }
-    }
-  })
-
-  productSales.forEach(item => {
-    if (inRange(item.saleDate, startDate, endDate)) {
-      const product = mapProduct(products, item.productId)
-      entriesFinancial.push({ id:`entry-product-sale-${item.id}`, description:`Venda de produto - ${product?.name || 'Produto'}`, category:'venda_produto', value:item.totalValue || 0, date:item.saleDate, origin:'venda_produto', referenceId:item.id })
-    }
-  })
-
-  productPurchases.forEach(item => {
-    if (inRange(item.purchaseDate, startDate, endDate)) {
-      const product = mapProduct(products, item.productId)
-      exitsFinancial.push({ id:`exit-product-purchase-${item.id}`, description:`Compra de produto - ${product?.name || 'Produto'}`, category:'compra_produto', value:item.totalValue || 0, date:item.purchaseDate, origin:'compra_produto', referenceId:item.id })
-    }
-  })
-
-  extraRevenues.forEach(item => {
-    // Só entra no caixa quando efetivamente recebida (status 'recebido').
-    // Receitas sem status (dados antigos) contam como recebidas (retrocompat).
-    const received = (item.status || 'recebido') === 'recebido'
-    const cashDate = item.date || item.dueDate
-    if (received && inRange(cashDate, startDate, endDate) && onOrBefore(cashDate, balanceDate)) {
-      entriesFinancial.push({ id:`entry-extra-${item.id}`, description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:cashDate, origin:'outra_receita', originLabel:item.originLabel || '', referenceId:item.id })
-    }
-  })
-
-  expenses.forEach(item => {
-    if (item.status === 'pago' && inRange(item.paymentDate || item.dueDate, startDate, endDate)) {
-      exitsFinancial.push({ id:`exit-expense-${item.id}`, description:item.description, category:item.category, value:item.value || 0, date:item.paymentDate || item.dueDate, origin:'despesa', originLabel:item.originLabel || '', referenceId:item.id })
-    }
-  })
+  const entriesFinancial = [...ledger.entriesFinancial]
+  const exitsFinancial = [...ledger.exitsFinancial]
 
   recurringInRange.forEach(item => {
     const value = Number(item.valor || 0)
@@ -362,92 +357,19 @@ export function buildMetrics(rawData, options = {}) {
   const cashBalance = cashIn - cashOut
 
   const accountsReceivable = [
-    ...surgeries
-      .filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate))
-      .flatMap(item => {
-        const flow = paymentScheduleFlow(item.totalValue, item, balanceDate)
-        if (flow.openAmount <= 0) return []
-        const pendingDates = flow.openInstallments.map(entry => entry.date).filter(Boolean)
-        const scheduleSummary = flow.hasSchedule
-          ? `${flow.installments.length} parcelas · recebido ${flow.paidInstallments.length}/${flow.installments.length}`
-          : ''
-        return [{
-          id:`surgery-${item.id}`,
-          source:'cirurgia',
-          sourceId:item.id,
-          patient:patientLabel(item.patient, item.id),
-          category:'cirurgia',
-          value:flow.openAmount,
-          competenceDate:item.competenceDate || item.date,
-          dueDate:pendingDates[0] || item.dueDate || item.date,
-          status:item.paymentStatus,
-          description:flow.hasSchedule ? `${mapProcedureName(procedures, item.procedureId)} (${scheduleSummary})` : mapProcedureName(procedures, item.procedureId),
-        }]
-      }),
-    ...consultations
-      .filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate))
-      .flatMap(item => {
-        const flow = paymentScheduleFlow(item.value, item, balanceDate)
-        if (flow.openAmount <= 0) return []
-        const pendingDates = flow.openInstallments.map(entry => entry.date).filter(Boolean)
-        const scheduleSummary = flow.hasSchedule
-          ? `2 datas: ${flow.installments.map(entry => entry.date).join(' / ')} · recebido ${flow.paidInstallments.length}/${flow.installments.length}`
-          : item.consultationType
-        return [{
-          id:`consultation-${item.id}`,
-          source:'consulta',
-          sourceId:item.id,
-          patient:patientLabel(item.patient, item.id),
-          category:item.paymentType || 'consulta',
-          value:flow.openAmount,
-          competenceDate:item.competenceDate || item.date,
-          dueDate:pendingDates[0] || item.dueDate || item.forecastPaymentDate || item.date,
-          status:item.paymentStatus,
-          description:flow.hasSchedule ? `${item.consultationType} (${scheduleSummary})` : item.consultationType,
-        }]
-      }),
-    ...extraRevenues.filter(item => (item.status || 'recebido') !== 'recebido' && onOrBefore(item.competenceDate || item.dueDate || item.date, balanceDate)).map(item => ({ id:`extra-${item.id}`, source:'outra_receita', sourceId:item.id, patient:item.originLabel || 'Receita', category:item.category || 'outras_receitas', value:Number(item.value || 0), competenceDate:item.competenceDate || item.date, dueDate:item.dueDate || item.date, status:'pendente', description:item.description })),
+    ...ledger.accountsReceivable,
     ...recurringUntilBalance.filter(item => item.tipo === 'receita' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item))).map(item => ({ id:`recurrence-income-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, patient:'Recorrência', category:item.categoria || 'outras_receitas', value:Number(item.valor || 0), competenceDate:item.dueDate, dueDate:item.dueDate, status:'pendente', description:item.descricao || 'Receita fixa' })),
   ]
 
   const accountsPayable = [
-    ...expenses.filter(item => item.status !== 'pago' && item.status !== 'cancelado' && onOrBefore(item.dueDate, balanceDate)).map(item => ({ id:`expense-${item.id}`, source:'despesa', sourceId:item.id, supplier:item.description, category:item.category, value:item.value || 0, competenceDate:item.competenceDate || item.dueDate, dueDate:item.dueDate, status:item.status })),
+    ...ledger.accountsPayable,
     ...recurringUntilBalance.filter(item => item.tipo === 'despesa' && !item.autoMarkAsPaid && onOrBefore(item.dueDate, balanceDate) && !expenses.some(entry => matchesRecurringExpense(entry, item))).map(item => ({ id:`recurrence-expense-${item.id}-${item.dueDate}`, source:'recorrencia', sourceId:item.id, supplier:item.descricao || 'Despesa fixa', category:item.categoria || 'outros', value:Number(item.valor || 0), competenceDate:item.dueDate, dueDate:item.dueDate, status:'pendente' })),
   ]
 
   const receivablesOpenTotal = accountsReceivable.reduce((acc, item) => acc + item.value, 0)
   const payablesOpenTotal = accountsPayable.reduce((acc, item) => acc + item.value, 0)
 
-  const cumulativeEntries = []
-  surgeries.forEach(item => {
-    if (item.paymentStatus === 'cancelado') return
-    const flow = paymentScheduleFlow(item.totalValue, item, balanceDate)
-    flow.paidInstallments.filter(payment => onOrBefore(payment.date, balanceDate)).forEach(payment => {
-      cumulativeEntries.push({ type:'entrada', value:payment.amount || 0 })
-    })
-  })
-  consultations.forEach(item => {
-    const flow = paymentScheduleFlow(item.value, item, balanceDate)
-    flow.paidInstallments.filter(payment => onOrBefore(payment.date, balanceDate)).forEach(payment => {
-      cumulativeEntries.push({ type:'entrada', value:payment.amount || 0 })
-    })
-  })
-  productSales.filter(item => onOrBefore(item.saleDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.totalValue || 0 }))
-  extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && onOrBefore(item.date || item.dueDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'entrada', value:item.value || 0 }))
-  expenses.filter(item => item.status === 'pago' && onOrBefore(item.paymentDate || item.dueDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'saida', value:item.value || 0 }))
-  productPurchases.filter(item => onOrBefore(item.purchaseDate, balanceDate)).forEach(item => cumulativeEntries.push({ type:'saida', value:item.totalValue || 0 }))
-  surgeries.filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).forEach(item => {
-    if (item.hospitalCost) cumulativeEntries.push({ type:'saida', value:item.hospitalCost })
-    if (item.anesthesiaCost) cumulativeEntries.push({ type:'saida', value:item.anesthesiaCost })
-    if (item.materialCost) cumulativeEntries.push({ type:'saida', value:item.materialCost })
-    if (item.otherCosts) cumulativeEntries.push({ type:'saida', value:item.otherCosts })
-    const surgeryInvoiceCost = invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
-    if (surgeryInvoiceCost > 0) cumulativeEntries.push({ type:'saida', value:surgeryInvoiceCost })
-  })
-  consultations.filter(item => item.paymentStatus !== 'cancelado' && onOrBefore(item.date, balanceDate)).forEach(item => {
-    const consultationInvoiceCost = consultationCosts(item)
-    if (consultationInvoiceCost > 0) cumulativeEntries.push({ type:'saida', value:consultationInvoiceCost })
-  })
+  const cumulativeEntries = [...ledger.cumulativeEntries]
   recurringUntilBalance.filter(item => item.autoMarkAsPaid).forEach(item => {
     const value = Number(item.valor || 0)
     if (value <= 0) return
@@ -480,8 +402,11 @@ export function buildMetrics(rawData, options = {}) {
     return { id:product.id, name:product.name, revenue, cost, profit:revenue - cost, soldQty, stock }
   }).sort((a, b) => b.profit - a.profit)
 
-  const expensesByCategory = expensesInRange.reduce((acc, item) => {
-    acc[item.category] = (acc[item.category] || 0) + (item.value || 0)
+  const expensesByCategory = ledger.competenceEntries
+    .filter(entry => entry.source_type === 'expense')
+    .reduce((acc, entry) => {
+    const key = entry.category || 'outros'
+    acc[key] = (acc[key] || 0) + Number(entry.total_amount || 0)
     return acc
   }, {})
   recurringInRange.filter(item => item.tipo === 'despesa').forEach(item => {
@@ -549,6 +474,7 @@ export function buildMetrics(rawData, options = {}) {
     surgeriesByMonth,
     consultationsByInsurance,
     prediction:cashBalance + receivablesOpenTotal - payablesOpenTotal,
+    financialSource:'ledger_projection',
     goals,
   }
 }

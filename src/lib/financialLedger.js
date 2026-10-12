@@ -4,10 +4,10 @@
 // do dataset atual, reusando a MESMA função canônica de cronograma (`paymentScheduleFlow`) que o
 // `buildMetrics` e os relatórios já usam — então o razão bate com o resto do sistema por construção.
 //
-// Nesta fase é uma PROJEÇÃO (derivada dos registros atuais). Ainda NÃO é a fonte de verdade: o app não
-// lê daqui. Serve para validar o modelo (invariantes) antes de persistir/migrar a autoridade.
+// É uma PROJEÇÃO canônica derivada dos registros operacionais. Desde a Fase 10, buildMetrics e seus
+// consumidores financeiros leem desta projeção; a autoridade de cada campo migra gradualmente.
 // Design: docs/superpowers/specs/2026-10-12-financial-core-ledger-design.md
-import { paymentScheduleFlow } from '../financialMetrics.js'
+import { paymentScheduleFlow } from './paymentScheduleFlow.js'
 
 function num(v) { return Number(v) || 0 }
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100 }
@@ -143,15 +143,22 @@ export function buildLedger(data = {}) {
     pushCostEntries(parts, item, 'consultation', item.value || 0)
   })
 
-  // Venda de produto: recebido → caixa na data da venda; pendente/legacy_unverified → em aberto
-  // (não assume recebimento sem confirmação); cancelado → cancelado. Cliente vinculado por patient_id.
-  productSales.forEach(item => parts.push(singleEntry({
-    sourceType: 'product_sale', direction: 'receivable', item, total: item.totalValue || 0,
-    competenceDate: item.competenceDate || item.saleDate, issueDate: item.saleDate,
-    dueDate: item.saleDate, paidDate: item.saleDate,
-    isPaid: item.paymentStatus === 'recebido', canceled: item.paymentStatus === 'cancelado',
-    partyType: 'patient', partyId: item.patientId || null, partyName: item.patientName || '', category: 'venda_produto',
-  })))
+  // Venda de produto: usa o mesmo cronograma canônico das demais receitas. "Recebido" quita as
+  // parcelas nas datas declaradas; pendente/legacy_unverified permanece em aberto; cancelado não
+  // entra nos resultados. A ausência de uma data real de recebimento segue sinalizada pela auditoria.
+  productSales.forEach(item => {
+    const normalized = {
+      ...item,
+      date:item.saleDate,
+      dueDate:item.dueDate || item.saleDate,
+      paymentStatus:item.paymentStatus === 'recebido' ? 'pago' : item.paymentStatus,
+      paymentDate:item.receivedDate || item.paymentDate || '',
+    }
+    parts.push(scheduledEntry({
+      sourceType:'product_sale', item:normalized, total:item.totalValue || 0,
+      competenceDate:item.competenceDate || item.saleDate, issueDate:item.saleDate, partyName:item.patientName,
+    }))
+  })
 
   // Compra de produto: paga → caixa em paymentDate||purchaseDate; a pagar/legacy_unverified → em
   // aberto no vencimento; cancelada → cancelada. Fornecedor vinculado por supplier_id.
@@ -159,7 +166,7 @@ export function buildLedger(data = {}) {
     sourceType: 'product_purchase', direction: 'payable', item, total: item.totalValue || 0,
     competenceDate: item.competenceDate || item.purchaseDate, issueDate: item.purchaseDate,
     dueDate: item.dueDate || item.purchaseDate, paidDate: item.paymentDate || item.purchaseDate,
-    isPaid: (item.status || 'pago') === 'pago', canceled: item.status === 'cancelado',
+    isPaid: item.status === 'pago', canceled: item.status === 'cancelado',
     partyType: 'supplier', partyId: item.supplierId || null, partyName: item.supplier || '', category: 'compra_produto',
   })))
 
@@ -168,7 +175,7 @@ export function buildLedger(data = {}) {
     const received = (item.status || 'recebido') === 'recebido'
     parts.push(singleEntry({
       sourceType: 'extra_revenue', direction: 'receivable', item, total: item.value || 0,
-      competenceDate: item.competenceDate || item.date, issueDate: item.date,
+      competenceDate: item.competenceDate || item.date, issueDate: item.date || item.competenceDate || item.dueDate,
       dueDate: item.dueDate || item.date, paidDate: item.receivedDate || item.date,
       isPaid: received, canceled: item.status === 'cancelado',
       partyType: item.patientId ? 'patient' : 'other', partyId: item.patientId || null,
@@ -235,9 +242,9 @@ export function reconcileLedger(data = {}) {
   return { sources, totals: { receivableOpen, payableOpen, receivablePaid, payablePaid } }
 }
 
-// Gate de prontidão para a Fase 10. Além de conferir totais, aponta registros cuja liquidação
-// ainda é inferida pelo modelo legado. Enquanto houver bloqueios, trocar a leitura do dashboard
-// para o razão faria números aparentemente mais precisos sem existir um fato financeiro confiável.
+// Auditoria contínua da fonte canônica. Além de conferir totais, aponta registros cuja liquidação
+// ainda é inferida pelo modelo legado. Bloqueios indicam que os consumidores devem tratar a métrica
+// como não confiável até a correção do fato financeiro de origem.
 export function auditLedgerReadiness(data = {}) {
   const ledger = buildLedger(data)
   const reconciliation = reconcileLedger(data)
@@ -305,10 +312,10 @@ export function auditLedgerReadiness(data = {}) {
     extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate && item.date),
     'A data é válida e continua sendo usada no caixa; ao editar o registro ela pode ser migrada para received_date.')
 
-  // O modelo atual de venda não possui received_date: toda venda marcada recebida usa sale_date.
-  addIssue('product_sale_assumed_settlement', 'blocking', 'Vendas recebidas usam a data da venda',
+  // O modelo atual de venda não possui received_date: usa o cronograma declarado ou sale_date.
+  addIssue('product_sale_assumed_settlement', 'blocking', 'Vendas recebidas sem data real própria',
     productSales.filter(item => item.paymentStatus === 'recebido'),
-    'É necessário capturar a data real do recebimento antes de tornar o razão autoritativo.')
+    'O caixa usa as datas declaradas no cronograma ou a data da venda; capture a liquidação real para autoridade plena.')
 
   const costsWithoutSettlement = []
   surgeries.filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
@@ -343,15 +350,6 @@ export function auditLedgerReadiness(data = {}) {
     ...productPurchases.filter(item => item.status !== 'cancelado' && !item.supplierId),
     ...expenses.filter(item => item.status !== 'cancelado' && !item.supplierId),
   ], 'O valor é preservado, mas relatórios por fornecedor podem ficar fragmentados.')
-
-  const canceledRecords = [
-    ...productSales.filter(item => item.paymentStatus === 'cancelado'),
-    ...productPurchases.filter(item => item.status === 'cancelado'),
-    ...extraRevenues.filter(item => item.status === 'cancelado'),
-    ...expenses.filter(item => item.status === 'cancelado'),
-  ]
-  addIssue('canceled_dashboard_behavior', 'warning', 'Cancelados mudarão o resultado atual', canceledRecords,
-    'O dashboard legado ainda reconhece alguns itens cancelados; o razão corretamente os exclui.')
 
   const blockers = issues.filter(item => item.severity === 'blocking')
   const warnings = issues.filter(item => item.severity === 'warning')

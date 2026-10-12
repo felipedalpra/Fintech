@@ -4,11 +4,10 @@ import { Card } from './UI.jsx'
 import { buildMetrics } from '../financialMetrics.js'
 import { auditLedgerReadiness } from '../lib/financialLedger.js'
 
-// Conferência do razão (pré-requisito da Fase 10). Um gate + duas reconciliações:
-//  Gate) integridade e cobertura dos dados de autoridade — sem bloqueios antes da virada.
+// Conferência contínua da fonte financeira canônica. Um gate + duas reconciliações:
+//  Gate) integridade e cobertura dos dados de autoridade — sem bloqueios na fonte ativa.
 //  A) Razão × Fonte — deve bater a centavo (prova que o razão capturou todos os registros).
-//  B) Razão × Dashboard — comparativo informativo (algumas diferenças são esperadas: recorrências
-//     não entram no razão ainda; vendas/compras "a conferir" contam como aberto no razão).
+//  B) Razão × Métricas — garante que os consumidores seguem a projeção canônica.
 export function LedgerCheck({ data }) {
   const audit = auditLedgerReadiness(data)
   const recon = audit.reconciliation
@@ -48,29 +47,28 @@ export function LedgerCheck({ data }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={s.intro}>
-        Validação do <strong>razão financeiro</strong> (projeção) antes de virar a fonte de verdade das
-        métricas. A seção <strong>A</strong> prova que o razão capturou todos os registros (tem que bater
-        a centavo). A seção <strong>B</strong> compara com o dashboard atual — algumas diferenças são
-        esperadas e estão explicadas.
+        Auditoria contínua do <strong>razão financeiro</strong>, que agora alimenta as métricas e os
+        relatórios. A seção <strong>A</strong> prova que todos os registros foram capturados a centavo;
+        a seção <strong>B</strong> verifica se os principais indicadores continuam coerentes.
       </div>
 
       <Card>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
           <div>
-            <div style={s.h}>Gate da Fase 10 — prontidão dos dados</div>
+            <div style={s.h}>Integridade da fonte financeira</div>
             <div style={{ fontSize:12, color:C.textSub, lineHeight:1.5, maxWidth:720 }}>
-              A troca da fonte de verdade só é segura quando não há parcelas divergentes nem liquidações
-              inferidas pelo modelo antigo.
+              A fonte canônica permanece íntegra quando não há parcelas divergentes nem liquidações
+              sem data financeira verificável.
             </div>
           </div>
           <span style={s.badge(audit.ready)}>
-            {audit.ready ? '✓ Pronto para revisão final' : `⚠ Bloqueado · ${audit.blockers.reduce((sum, item) => sum + item.count, 0)} ocorrência(s)`}
+            {audit.ready ? '✓ Fonte ativa · dados íntegros' : `⚠ Bloqueado · ${audit.blockers.reduce((sum, item) => sum + item.count, 0)} ocorrência(s)`}
           </span>
         </div>
 
         {audit.issues.length === 0 ? (
           <div style={{ marginTop:14, padding:'12px 14px', borderRadius:10, color:C.green, background:`${C.green}12`, fontSize:13 }}>
-            Nenhuma pendência estrutural encontrada. Ainda revise os valores reais da seção B antes da troca.
+            Nenhuma pendência estrutural encontrada. O razão está apto a alimentar os indicadores financeiros.
           </div>
         ) : (
           <div style={{ display:'grid', gap:8, marginTop:14 }}>
@@ -117,24 +115,24 @@ export function LedgerCheck({ data }) {
       </Card>
 
       <Card>
-        <div style={s.h}>B) Razão × Dashboard — comparativo (diferenças esperadas anotadas)</div>
+        <div style={s.h}>B) Razão × Métricas — consistência dos consumidores</div>
         <div style={{ overflowX:'auto' }}>
           <table style={{ ...s.table, minWidth:680 }}>
             <thead><tr><th style={s.th}>Indicador</th><th style={{ ...s.th, textAlign: 'right' }}>Dashboard</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Δ</th></tr></thead>
             <tbody>
               <CompareRow label="Contas a receber (aberto)" dash={mReceivableOpen} led={recon.totals.receivableOpen}
-                note="Δ esperado: recorrências não entram no razão, itens futuros não entram no dashboard e vendas a conferir entram abertas no razão." />
+                note="Recorrências ainda são anexadas às métricas fora do razão; os títulos operacionais vêm da fonte canônica." />
               <CompareRow label="Contas a pagar (aberto)" dash={mPayableOpen} led={recon.totals.payableOpen}
-                note="Δ esperado: recorrências não entram no razão, itens futuros não entram no dashboard e compras a conferir entram abertas no razão." />
+                note="Recorrências ainda são anexadas às métricas fora do razão; os títulos operacionais vêm da fonte canônica." />
               <CompareRow label="Receita bruta (competência)" dash={m.grossRevenue} led={round2SourcesRevenue(recon)}
-                note="Δ possível: recorrências e registros cancelados ainda tratados de forma diferente pelo dashboard legado." />
+                note="Uma diferença só é esperada quando existirem receitas recorrentes ainda não materializadas em lançamento." />
             </tbody>
           </table>
         </div>
         <div style={s.note}>
-          A seção B é informativa: o razão só vira a fonte de verdade (Fase 10) depois que a seção A
-          estiver 100% reconciliada e as diferenças da B forem só as esperadas (recorrências e itens
-          "a conferir"). Nada aqui altera dados.
+          Esta tela é somente leitura. A seção A reconcilia a origem; a seção B monitora os principais
+          consumidores da fonte canônica. Recorrências continuam identificadas separadamente até ganharem
+          títulos próprios no razão.
         </div>
       </Card>
     </div>

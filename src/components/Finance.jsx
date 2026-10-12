@@ -480,15 +480,20 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       if (!exists) {
         setData(current => ({
           ...current,
-          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.dueDate }],
+          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.dueDate, receivedDate:item.dueDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido' }],
         }))
       }
       toast('Recorrência marcada como recebida.')
       return
     }
     if (item.source === 'outra_receita') {
-      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', date:today() } : record) }))
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', date:record.date || today(), receivedDate:today() } : record) }))
       toast('Receita marcada como recebida.')
+      return
+    }
+    if (item.source === 'venda_produto') {
+      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'recebido' } : record) }))
+      toast('Venda de produto marcada como recebida.')
       return
     }
     if (item.source === 'cirurgia') {
@@ -556,7 +561,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   const markReceivableAsPending = item => {
     if (item.source === 'outra_receita') {
-      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'pendente', date:'' } : record) }))
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'pendente', receivedDate:null } : record) }))
       toast('Receita marcada como a receber.', 'warning')
       return
     }
@@ -586,6 +591,11 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         }))
       }
       toast('Recorrência marcada como paga.')
+      return
+    }
+    if (item.source === 'compra_produto') {
+      setData(current => ({ ...current, productPurchases:current.productPurchases.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
+      toast('Compra de produto marcada como paga.')
       return
     }
     setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
@@ -1103,7 +1113,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       </>}
 
       {tab === 'receber' && <>
-        <SectionTitle title="Contas a receber" subtitle="Valores ainda não recebidos de cirurgias, consultas e recorrências." />
+        <SectionTitle title="Contas a receber" subtitle="Títulos ainda não recebidos de cirurgias, consultas, produtos, receitas extras e recorrências." />
         <MonthlyAccountsSummary
           title="Recebíveis por mês"
           color={C.green}
@@ -1115,7 +1125,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       </>}
 
       {tab === 'pagar' && <>
-        <SectionTitle title="Contas a pagar" subtitle="Despesas ainda não liquidadas da clínica, incluindo recorrências fixas." />
+        <SectionTitle title="Contas a pagar" subtitle="Despesas e compras ainda não liquidadas, incluindo recorrências fixas." />
         <MonthlyAccountsSummary
           title="Pagáveis por mês"
           color={C.red}

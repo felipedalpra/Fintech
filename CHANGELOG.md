@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (67)
+### Changed
+- **Razão financeiro — Fase 10 ativada como fonte das métricas**: `buildMetrics` agora deriva DRE por competência, caixa por liquidação, contas a receber/pagar e posição patrimonial da projeção canônica de `financialLedger`, eliminando cálculos paralelos no Dashboard, Financeiro, metas, alertas e IA. A posição histórica mantém um título aberto até sua data real de liquidação; cancelados são excluídos; impostos de NF congelados prevalecem sobre a alíquota atual; vendas de produtos respeitam o cronograma de parcelas. Recorrências continuam anexadas de forma identificada até ganharem títulos próprios. `paymentScheduleFlow` foi extraído para módulo independente para evitar dependência circular.
+- **Relatórios Excel ligados à mesma fonte financeira**: contas a pagar/receber e fluxo projetado passam a consumir as obrigações do `buildMetrics`, incluindo vendas e compras de produtos. Relatórios detalhados de receitas/despesas excluem cancelados, mostram a situação financeira dos produtos e respeitam o imposto congelado; relatórios de estoque, Curva ABC, margem e clientes também deixam de contar vendas/compras canceladas. A tela **Conferência do razão** passa de gate pré-Fase 10 para auditoria contínua da fonte ativa.
+
+### Fixed
+- **Ações rápidas coerentes com o razão**: marcar receita recorrente/extra, venda de produto ou compra de produto como liquidada agora grava os campos de situação e data usados pela projeção canônica; voltar receita extra para pendente preserva a data histórica de competência/registro.
+
+### Added
+- **Regressão da fonte canônica**: testes garantem separação entre competência e caixa, posição histórica de títulos, exclusão de cancelados e presença de vendas/compras abertas nos Excel (`tests/unit/financialMetricsLedger.spec.js`, `tests/unit/reportCatalog.spec.js`).
+
 ## [Unreleased] - 2026-10-12 (66)
 ### Fixed
 - **Falso bloqueio no gate do razão**: receitas extras antigas guardavam a data real do recebimento em `date`, campo historicamente apresentado na UI como **Data do recebimento**. O auditor exigia exclusivamente o novo `received_date` e marcou 18 lançamentos válidos como “liquidações sem data real”. `auditLedgerReadiness` agora aceita `receivedDate || date`, igual ao próprio razão, e apresenta esses registros apenas como aviso de migração. Nenhum valor ou data financeira foi alterado. Teste de regressão em `tests/unit/financialLedger.spec.js`.

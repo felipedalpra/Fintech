@@ -43,6 +43,25 @@ test('contas a receber exporta somente parcelas ainda abertas no vencimento sele
   expect(report.rows[0]).toMatchObject({ customer:'Ana', value:1000, dueDate:'2026-10-20' })
 })
 
+test('contas a receber e pagar exportam vendas e compras abertas do razão', () => {
+  const data = baseData()
+  data.products = [{ id:'product-1', name:'Cinta' }]
+  data.productSales = [{
+    id:'sale-open', productId:'product-1', patientName:'Ana', totalValue:500,
+    saleDate:'2026-10-10', competenceDate:'2026-10-10', paymentStatus:'pendente',
+  }]
+  data.productPurchases = [{
+    id:'purchase-open', productId:'product-1', supplier:'Fornecedor A', totalValue:200,
+    purchaseDate:'2026-10-05', competenceDate:'2026-10-05', dueDate:'2026-10-25', status:'pendente',
+  }]
+
+  const receivable = buildReport('accounts-receivable', { data, range:RANGE })
+  const payable = buildReport('accounts-payable', { data, range:RANGE })
+
+  expect(receivable.rows).toContainEqual(expect.objectContaining({ source:'Venda de produto', document:'sale-open', value:500 }))
+  expect(payable.rows).toContainEqual(expect.objectContaining({ source:'Compra de produto', document:'purchase-open', value:200 }))
+})
+
 test('DRE usa competência e não a data de recebimento', () => {
   const data = baseData()
   data.surgeries = [{
