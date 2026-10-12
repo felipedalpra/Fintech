@@ -43,7 +43,7 @@ const EXPENSE_EMPTY = { description:'', category:'outros', value:0, supplierId:'
 
 // Origem exibida: rótulo livre preenchido pelo usuário (ex: "Indicação") ou,
 // na falta dele, a origem automática do sistema (ex: "cirurgia", "despesa").
-const resolveOrigin = item => (String(item.originLabel || '').trim() || String(item.origin || ''))
+const resolveOrigin = item => (String(item.originLabel || '').trim() || String(item.origin || item.source || ''))
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
@@ -401,7 +401,20 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           return
         }
       }
-      setData(current => ({ ...current, extraRevenues: editing ? current.extraRevenues.map(item => item.id === editing ? { ...form, id:editing } : item) : [...current.extraRevenues, { ...form, id:uid() }] }))
+      const received = form.status !== 'pendente'
+      const competenceDate = form.competenceDate || form.date || form.dueDate || today()
+      const dueDate = form.dueDate || form.date || competenceDate
+      const receiptDate = received ? (form.date || form.receivedDate || today()) : ''
+      const normalizedRevenue = {
+        ...form,
+        originLabel:String(form.originLabel || '').trim(),
+        status:received ? 'recebido' : 'pendente',
+        competenceDate,
+        dueDate,
+        date:receiptDate,
+        receivedDate:received ? receiptDate : null,
+      }
+      setData(current => ({ ...current, extraRevenues: editing ? current.extraRevenues.map(item => item.id === editing ? { ...normalizedRevenue, id:editing } : item) : [...current.extraRevenues, { ...normalizedRevenue, id:uid() }] }))
     }
     if (modalType === 'expense') {
       if (!form.description) {
@@ -513,7 +526,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       return
     }
     if (item.source === 'outra_receita') {
-      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', date:record.date || today(), receivedDate:today() } : record) }))
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', date:today(), receivedDate:today() } : record) }))
       toast('Receita marcada como recebida.')
       return
     }
@@ -785,10 +798,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
-      if (listFilters.origin !== 'all' && item.source !== listFilters.origin) return false
+      if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
       if (listFilters.status !== 'all' && item.status !== listFilters.status) return false
       if (!search) return true
-      const haystack = `${item.patient || ''} ${item.description || ''} ${item.category || ''} ${item.source || ''} ${item.dueDate || ''}`.toLowerCase()
+      const haystack = `${item.patient || ''} ${item.description || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''}`.toLowerCase()
       return haystack.includes(search)
     })
   }, [m.accountsReceivable, listFilters])
@@ -799,10 +812,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
-      if (listFilters.origin !== 'all' && item.source !== listFilters.origin) return false
+      if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
       if (listFilters.status !== 'all' && item.status !== listFilters.status) return false
       if (!search) return true
-      const haystack = `${item.supplier || ''} ${item.category || ''} ${item.source || ''} ${item.dueDate || ''}`.toLowerCase()
+      const haystack = `${item.supplier || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''}`.toLowerCase()
       return haystack.includes(search)
     })
   }, [m.accountsPayable, listFilters])
@@ -820,13 +833,13 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     }
     if (tab === 'receber') {
       const categories = [...new Set(m.accountsReceivable.map(item => item.category).filter(Boolean))].sort()
-      const origins = [...new Set(m.accountsReceivable.map(item => item.source).filter(Boolean))].sort()
+      const origins = [...new Set(m.accountsReceivable.map(item => resolveOrigin(item)).filter(Boolean))].sort()
       const statuses = [...new Set(m.accountsReceivable.map(item => item.status).filter(Boolean))].sort()
       return { show:true, showStatus:true, categories, origins, statuses }
     }
     if (tab === 'pagar') {
       const categories = [...new Set(m.accountsPayable.map(item => item.category).filter(Boolean))].sort()
-      const origins = [...new Set(m.accountsPayable.map(item => item.source).filter(Boolean))].sort()
+      const origins = [...new Set(m.accountsPayable.map(item => resolveOrigin(item)).filter(Boolean))].sort()
       const statuses = [...new Set(m.accountsPayable.map(item => item.status).filter(Boolean))].sort()
       return { show:true, showStatus:true, categories, origins, statuses }
     }
@@ -1148,10 +1161,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           color={C.green}
           rows={groupAccountsByMonth(filteredAccountsReceivable)}
           money={money}
-          onOpen={item => openDrilldown(`Recebíveis de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.patient || '', origin:row.source, description:row.description || row.patient || 'Conta a receber' })), item.total)}
+          onOpen={item => openDrilldown(`Recebíveis de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.patient || '', origin:resolveOrigin(row), description:row.description || row.patient || 'Conta a receber' })), item.total)}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, ['recorrencia','outra_receita'].includes(item.source) ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, ['recorrencia','outra_receita'].includes(item.source) ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -1423,7 +1436,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               <>
                 <FInput label="Data de competência" required value={form.competenceDate || ''} onChange={value => setForm(current => ({ ...current, competenceDate:value }))} type="date" />
                 <div style={{ fontSize:11, color:C.textDim, marginTop:-10 }}>Mês a que a receita pertence na DRE (regime de competência), mesmo que o dinheiro entre em outra data.</div>
-                <FInput label="Situação" value={form.status || 'recebido'} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'recebido', l:'Já recebi' }, { v:'pendente', l:'A receber' }]} />
+                <FInput label="Situação" value={form.status || 'recebido'} onChange={value => setForm(current => ({ ...current, status:value, ...(value === 'pendente' ? { date:'', receivedDate:null } : { date:current.receivedDate || '' }) }))} options={[{ v:'recebido', l:'Já recebi' }, { v:'pendente', l:'A receber' }]} />
                 {form.status === 'pendente' ? (
                   <>
                     <FInput label="Vencimento (previsão de recebimento)" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value, date:'' }))} type="date" />

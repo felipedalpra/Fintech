@@ -22,7 +22,7 @@ export function FinancialDrilldownModal({ detail, onClose }) {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return rows
-    return rows.filter(item => `${item.date || ''} ${item.origin || ''} ${item.description || ''} ${item.party || ''} ${item.category || ''} ${item.status || ''}`.toLowerCase().includes(query))
+    return rows.filter(item => `${item.date || ''} ${item.originLabel || item.origin || ''} ${item.description || ''} ${item.party || ''} ${item.category || ''} ${item.status || ''}`.toLowerCase().includes(query))
   }, [rows, search])
   const calculatedTotal = rows.reduce((sum, item) => sum + Number(item.value || 0), 0)
   const reconciled = Math.abs(calculatedTotal - Number(detail?.total || 0)) <= 0.01
@@ -72,7 +72,7 @@ export function FinancialDrilldownModal({ detail, onClose }) {
             {filtered.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).map((item, index) => (
               <tr key={`${item.id || 'row'}-${index}`} style={{ borderBottom:`1px solid ${C.border}33` }}>
                 <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12, whiteSpace:'nowrap' }}>{formatDateBR(item.date || item.competenceDate || item.dueDate)}</td>
-                <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12 }}>{labelize(item.origin || item.sourceType)}</td>
+                <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12 }}>{labelize(item.originLabel || item.origin || item.sourceType)}</td>
                 <td style={{ padding:'11px 12px', color:C.text, fontSize:12, fontWeight:600 }}>{item.description || 'Lançamento financeiro'}</td>
                 <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12 }}>{item.party || '—'}</td>
                 <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12 }}>{labelize(item.category)}</td>

@@ -1,5 +1,6 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
 import { computeIdsToDelete } from './financeSync.js'
+import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
 
@@ -374,24 +375,6 @@ function mapProductPurchasesRows(userId, data) {
     purchase_date:item.purchaseDate,
     competence_date:item.competenceDate || item.purchaseDate || null,
     due_date:item.dueDate || item.purchaseDate || null,
-  }))
-}
-
-function mapExtraRevenuesRows(userId, data) {
-  return data.extraRevenues.map(item => ({
-    id:item.id,
-    user_id:userId,
-    description:item.description,
-    category:item.category || 'outras_receitas',
-    value:item.value || 0,
-    date:item.date,
-    received_date:item.receivedDate || null,
-    patient_id:item.patientId || null,
-    competence_date:item.competenceDate || item.date || null,
-    due_date:item.dueDate || item.date || null,
-    cost_center:item.costCenter || null,
-    origin_label:item.originLabel || null,
-    status:item.status || 'recebido',
   }))
 }
 

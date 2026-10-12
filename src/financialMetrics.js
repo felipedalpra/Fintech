@@ -168,6 +168,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
     const account = {
       id:`ledger-${entry.source_type}-${entry.source_id}-${entry.source_component}`,
       source:presentation.source,
+      originLabel:source?.originLabel || '',
       sourceId:entry.source_id,
       category:presentation.category,
       costCenter:entry.cost_center || '',
@@ -195,6 +196,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       competenceDate:entry.competence_date,
       dueDate:null,
       origin:presentation.origin,
+      originLabel:source?.originLabel || '',
       description:presentation.accountDescription || presentation.description,
       party:entry.party_name_snapshot || '',
       category:presentation.category || entry.category || '',
@@ -396,8 +398,8 @@ export function buildMetrics(rawData, options = {}) {
   const cashOutDetails = exitsFinancial.map(item => ({ ...item, party:'', status:'liquidado', direction:'payable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || 'expense' }))
   const cashBalanceDetails = [...signed(cashInDetails), ...signed(cashOutDetails, -1)]
   const cumulativeCashDetails = cumulativeEntries.map(item => ({ ...item, party:'', status:'liquidado', direction:item.type === 'entrada' ? 'receivable' : 'payable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || (item.type === 'entrada' ? 'revenue' : 'expense'), value:Number(item.value || 0) * (item.type === 'entrada' ? 1 : -1) }))
-  const receivableDetails = accountsReceivable.map(item => ({ ...item, date:item.dueDate, party:item.patient || '', origin:item.source, direction:'receivable', sourceType:item.source, sourceId:item.sourceId, sourceComponent:'open', description:item.description || item.patient || 'Conta a receber' }))
-  const payableDetails = accountsPayable.map(item => ({ ...item, date:item.dueDate, party:item.supplier || '', origin:item.source, direction:'payable', sourceType:item.source, sourceId:item.sourceId, sourceComponent:'open', description:item.description || item.supplier || 'Conta a pagar' }))
+  const receivableDetails = accountsReceivable.map(item => ({ ...item, date:item.dueDate, party:item.patient || '', origin:item.originLabel || item.source, direction:'receivable', sourceType:item.source, sourceId:item.sourceId, sourceComponent:'open', description:item.description || item.patient || 'Conta a receber' }))
+  const payableDetails = accountsPayable.map(item => ({ ...item, date:item.dueDate, party:item.supplier || '', origin:item.originLabel || item.source, direction:'payable', sourceType:item.source, sourceId:item.sourceId, sourceComponent:'open', description:item.description || item.supplier || 'Conta a pagar' }))
   const assetDetails = (assets || []).map(item => ({ id:`asset-${item.id}`, date:balanceDate, origin:'ativo', description:item.name || 'Ativo complementar', party:'', category:item.category || 'ativo', status:'ativo', value:Number(item.value || 0), direction:'receivable', sourceType:'asset', sourceId:item.id, sourceComponent:'balance' }))
   const liabilityDetails = (liabilities || []).map(item => ({ id:`liability-${item.id}`, date:balanceDate, origin:'passivo', description:item.name || 'Passivo complementar', party:'', category:item.category || 'passivo', status:'aberto', value:Number(item.value || 0), direction:'payable', sourceType:'liability', sourceId:item.id, sourceComponent:'balance' }))
   const inventoryDetails = products.map(product => {
