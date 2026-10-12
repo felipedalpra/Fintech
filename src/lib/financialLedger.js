@@ -104,11 +104,13 @@ export function buildLedger(data = {}) {
     partyType: 'patient', partyId: item.patientId || null, partyName: item.patientName || '', category: 'venda_produto',
   })))
 
-  // Compra de produto: modelo atual = caixa na data da compra (paga).
+  // Compra de produto: paga → caixa em paymentDate||purchaseDate; a pagar/legacy_unverified → em
+  // aberto no vencimento; cancelada → cancelada. Fornecedor vinculado por supplier_id.
   productPurchases.forEach(item => parts.push(singleEntry({
     sourceType: 'product_purchase', direction: 'payable', item, total: item.totalValue || 0,
     competenceDate: item.competenceDate || item.purchaseDate, issueDate: item.purchaseDate,
-    dueDate: item.purchaseDate, paidDate: item.purchaseDate, isPaid: true, canceled: false,
+    dueDate: item.dueDate || item.purchaseDate, paidDate: item.paymentDate || item.purchaseDate,
+    isPaid: (item.status || 'pago') === 'pago', canceled: item.status === 'cancelado',
     partyType: 'supplier', partyId: item.supplierId || null, partyName: item.supplier || '', category: 'compra_produto',
   })))
 

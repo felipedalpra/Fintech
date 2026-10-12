@@ -80,3 +80,20 @@ test('venda de produto: status define pago/aberto; legacy_unverified não vira r
   expect(ledger.entries[byId('v4')].status).toBe('canceled')
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
+
+test('compra de produto: status define pago/aberto; legacy não vira pago; fornecedor vinculado', () => {
+  const ledger = buildLedger({
+    productPurchases: [
+      { id: 'cp1', totalValue: 1000, purchaseDate: '2026-09-03', paymentDate: '2026-09-04', status: 'pago', supplierId: 'f1', supplier: 'Forn X' },
+      { id: 'cp2', totalValue: 500, purchaseDate: '2026-09-03', dueDate: '2026-10-03', status: 'pendente', supplierId: 'f1', supplier: 'Forn X' },
+      { id: 'cp3', totalValue: 700, purchaseDate: '2026-08-01', status: 'legacy_unverified', supplier: 'Antigo' },
+    ],
+  })
+  const byId = id => ledger.entries.findIndex(e => e.source_id === id)
+  expect(ledger.entries[byId('cp1')]).toMatchObject({ direction: 'payable', status: 'paid', party_id: 'f1', party_name_snapshot: 'Forn X' })
+  expect(ledger.installments[byId('cp1')][0].settlement_date).toBe('2026-09-04')
+  expect(ledger.entries[byId('cp2')].status).toBe('pending')
+  expect(ledger.installments[byId('cp2')][0]).toMatchObject({ due_date: '2026-10-03', settlement_date: null })
+  expect(ledger.entries[byId('cp3')].status).toBe('pending') // legacy NÃO é pago
+  expect(checkLedgerInvariants(ledger)).toEqual([])
+})

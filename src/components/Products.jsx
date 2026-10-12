@@ -50,6 +50,9 @@ const PURCHASE_EMPTY = {
   totalValue:0,
   supplier:'',
   supplierId:'',
+  status:'pago',
+  paymentDate:today(),
+  documentNumber:'',
   purchaseDate:today(),
   competenceDate:today(),
   dueDate:today(),
@@ -448,8 +451,12 @@ export function Products({ data, setData }) {
           <SupplierSelector value={form.supplierId} onChange={(id, name) => setForm(current => ({ ...current, supplierId:id, supplier:name }))} />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(productsById.get(current.productId)?.purchasePrice || 0) * value }))} type="number" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" />
-          <FInput label="Data da compra (competência / caixa)" value={form.purchaseDate} onChange={value => setForm(current => ({ ...current, purchaseDate:value, competenceDate:value }))} type="date" />
-          <div />
+          <FInput label="Data da compra (competência)" value={form.purchaseDate} onChange={value => setForm(current => ({ ...current, purchaseDate:value, competenceDate:value }))} type="date" />
+          <FInput label="Situação" value={form.status || 'pago'} onChange={value => setForm(current => ({ ...current, status:value }))} options={[{ v:'pago', l:'Pago' }, { v:'pendente', l:'A pagar' }]} />
+          {form.status === 'pendente'
+            ? <FInput label="Vencimento" value={form.dueDate} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
+            : <FInput label="Data do pagamento (caixa)" value={form.paymentDate || form.purchaseDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />}
+          <FInput label="Nº da nota (opcional)" value={form.documentNumber || ''} onChange={value => setForm(current => ({ ...current, documentNumber:value }))} placeholder="NF / recibo" />
           <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId}>Salvar compra</Btn></div>
         </div>
       </Modal>
