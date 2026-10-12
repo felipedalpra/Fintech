@@ -41,7 +41,7 @@ function patientLabel(value, fallback = '') {
 // Fluxo de parcelas genérico (consultas e cirurgias): decodifica o cronograma
 // de pagamentos (payments) e separa parcelas pagas x em aberto. Parcelas pagas
 // entram no caixa pela sua data; em aberto viram contas a receber pelo vencimento.
-function paymentScheduleFlow(totalValueRaw, item, balanceDate) {
+export function paymentScheduleFlow(totalValueRaw, item, balanceDate) {
   const totalValue = Math.max(0, Number(totalValueRaw || 0))
   const decoded = decodePaymentMethod(item?.paymentMethod)
   const schedule = decoded.paymentScheduleMode === 'duas_datas' && Array.isArray(decoded.payments)
@@ -130,7 +130,7 @@ function daysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate()
 }
 
-function generateRecurringOccurrences(recurrences, fromDate, toDate) {
+export function generateRecurringOccurrences(recurrences, fromDate, toDate) {
   const from = parseDate(fromDate || '1900-01-01')
   const to = parseDate(toDate || '2999-12-31')
   if (!from || !to || from > to) return []
@@ -226,8 +226,8 @@ export function buildMetrics(rawData, options = {}) {
 
   // Regime de COMPETÊNCIA: a DRE/resultado reconhece o fato no mês de competência,
   // independente de quando o dinheiro entra (caixa) ou de quando vence (vencimento).
-  const surgeriesInRange = surgeries.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
-  const consultationsInRange = consultations.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
+  const surgeriesInRange = surgeries.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
+  const consultationsInRange = consultations.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
   const productSalesInRange = productSales.filter(item => (item.competenceDate || item.saleDate) && inRange(item.competenceDate || item.saleDate, startDate, endDate))
   const productPurchasesInRange = productPurchases.filter(item => (item.competenceDate || item.purchaseDate) && inRange(item.competenceDate || item.purchaseDate, startDate, endDate))
   const extraRevenuesInRange = extraRevenues.filter(item => (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
@@ -290,6 +290,7 @@ export function buildMetrics(rawData, options = {}) {
   })
 
   consultations.forEach(item => {
+    if (item.paymentStatus === 'cancelado') return
     const flow = paymentScheduleFlow(item.value, item, balanceDate)
     flow.paidInstallments.forEach((payment, index) => {
       if (!payment.date || !inRange(payment.date, startDate, endDate)) return

@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (53)
+### Added
+- **Central de Relatórios com exportação Excel**: a antiga tela de Relatórios Analíticos virou um catálogo com 22 relatórios exportáveis, filtros por período/categoria/busca e pacote consolidado `.xlsx`. Inclui contas a pagar e receber, caixa realizado e projetado, DRE, receitas/despesas, balanço gerencial, estoque, movimentações, vendas, compras, Curvas ABC, margem de contribuição, cirurgias, consultas, procedimentos, pacientes, metas e auditoria de qualidade. Cada planilha leva resumo, dados tipados, metodologia, fontes e alertas de integridade. Referência funcional: relatórios financeiros, de vendas, clientes e estoque do ERP Olist. Arquivos principais: `src/components/Reports.jsx`, `src/lib/reportCatalog.js`, `src/lib/reportWorkbook.js` e `tests/unit/reportCatalog.spec.js`.
+
+### Changed
+- A navegação e o cabeçalho de `/app/reports` agora apresentam a página como **Central de Relatórios** e deixam explícito que as exportações são em Excel. A tela passa a carregar pacientes e recorrências no mesmo escopo da clínica (`ownerId`) e bloqueia exportações incompletas se uma dessas fontes falhar. `src/pages/FinanceWorkspace.jsx`, `src/components/Reports.jsx`.
+
+### Fixed
+- Cirurgias e consultas canceladas deixam de compor receita, custos, resultado e caixa nos cálculos financeiros compartilhados. Antes, o status cancelado era removido apenas de alguns contadores e contas em aberto, mas ainda podia contaminar DRE e fluxo. `src/financialMetrics.js`.
+
 ## [Unreleased] - 2026-10-11 (52)
 ### Added
 - **Funil: estágios de cirurgia + oportunidade nasce no estágio certo** (CRM, Fase 2 — revisão da automação do funil): (1) **dois estágios novos** no pipeline — **Cirurgia Marcada** e **Cirurgia Feita** (entre Reserva Paga e Follow-up), para acompanhar a cirurgia no funil; (2) a automação agora **cria a oportunidade se ela ainda não existe** — paciente cadastrado já com consulta/cirurgia **entra no funil no estágio certo** em vez de sumir ou cair em "primeiro contato" (resolve o caso da secretária que cadastra alguém já marcado); (3) mapeamento revisto: consulta criada → **Consulta Agendada**, cirurgia criada → **Cirurgia Marcada**, pagamento (pago/parcelado) → **Reserva Paga**, e data da cirurgia já passada → **Cirurgia Feita** (rotina diária no cron de alertas). Tudo **forward-only por rank** (`funnel_stage_rank` — nunca regride/pula pra trás, não sobrescreve avanço manual), **auditável** (`opportunity_stage_history`, `source='automacao'`) e **fail-safe**. Paciente sem evento não entra no funil (é só contato, estilo Kommo). Estágios atualizados em `opportunities` (constraint), `OpportunityPipeline.jsx`, `FollowupRules.jsx`, `src/lib/timeline.js` e `api/_lib/stageSuggest.js` (ordem/rank + descrições + palavras-chave). SQL (constraint + `funnel_stage_rank` + `auto_funnel_set_stage` com criar-se-não-existe + 3 triggers + `process_funnel_daily`) em `supabase/funnel_automation_schema.sql`; chamada diária em `api/alerts/process.js`. Testes: `tests/unit/stageSuggest.spec.js` (ranks atualizados). Design em `docs/superpowers/specs/2026-10-11-funnel-automation-opportunities-design.md`.
