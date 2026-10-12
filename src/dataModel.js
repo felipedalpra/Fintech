@@ -45,6 +45,7 @@ export function normalizeData(data) {
         procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
         competenceDate:item.competenceDate || item.date || '',
         dueDate:item.dueDate || item.date || '',
+        costSettlements:item.costSettlements && typeof item.costSettlements === 'object' ? item.costSettlements : {},
       }))
     : Array.isArray(data?.sales)
       ? data.sales.map(sale => ({
@@ -81,6 +82,7 @@ export function normalizeData(data) {
       id:normalizeUuid(item.id, 'consultation'),
       competenceDate:item.competenceDate || item.date || '',
       dueDate:item.dueDate || item.forecastPaymentDate || item.date || '',
+      costSettlements:item.costSettlements && typeof item.costSettlements === 'object' ? item.costSettlements : {},
     })) : [],
     products,
     productSales: Array.isArray(data?.productSales) ? data.productSales.map(item => ({

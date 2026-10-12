@@ -7,6 +7,8 @@ import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCo
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
+import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
+import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -128,6 +130,7 @@ export function Sales({ data, setData }) {
     materialCost:0,
     otherCosts:0,
     invoiceIssuancePercent:0,
+    costSettlements:{},
     paymentDate:'',
     notes:'',
     referredBy:'',
@@ -253,7 +256,7 @@ export function Sales({ data, setData }) {
       schedulePayments,
       ...baseForm
     } = form
-    const nextRecord = {
+    const nextRecord = withClinicalCostSettlementDefaults({
       ...baseForm,
       patientId: form.patientId || null,
       totalValue:resolvedTotal,
@@ -262,7 +265,7 @@ export function Sales({ data, setData }) {
       paymentDate:form.paymentStatus === 'pago' ? (form.paymentDate || form.date) : '',
       netRevenue:resolvedTotal - totalCosts,
       installmentValue,
-    }
+    }, 'surgery')
 
     setData(current => ({
       ...current,
@@ -532,6 +535,7 @@ export function Sales({ data, setData }) {
           <FInput label="Custo material" value={form.materialCost} onChange={value => setForm(current => ({ ...current, materialCost:value }))} type="number" placeholder="0" />
           <FInput label="Custo outros" value={form.otherCosts} onChange={value => setForm(current => ({ ...current, otherCosts:value }))} type="number" placeholder="0" />
           <FInput label="Emissão NF (%)" value={form.invoiceIssuancePercent} onChange={value => setForm(current => ({ ...current, invoiceIssuancePercent:value }))} type="number" placeholder="0" />
+          <ClinicalCostSettlementFields sourceType="surgery" form={form} setForm={setForm} />
           <div style={{ gridColumn:'1 / -1' }}>
             <FInput label="Observações operacionais" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} placeholder="Evite inserir dados clínicos sensíveis" />
           </div>

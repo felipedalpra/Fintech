@@ -11,6 +11,8 @@ import { useToast } from '../context/ToastContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { supabase } from '../lib/supabase.js'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
+import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
+import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -443,14 +445,16 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     }
     if (modalType === 'surgery') {
       if (!editing) return
-      setData(current => ({ ...current, surgeries: current.surgeries.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      const normalized = withClinicalCostSettlementDefaults(form, 'surgery')
+      setData(current => ({ ...current, surgeries: current.surgeries.map(item => item.id === editing ? { ...item, ...normalized, id:editing } : item) }))
       toast('Cirurgia atualizada com sucesso.')
       setShowModal(false)
       return
     }
     if (modalType === 'consultation') {
       if (!editing) return
-      setData(current => ({ ...current, consultations: current.consultations.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      const normalized = withClinicalCostSettlementDefaults(form, 'consultation')
+      setData(current => ({ ...current, consultations: current.consultations.map(item => item.id === editing ? { ...item, ...normalized, id:editing } : item) }))
       toast('Consulta atualizada com sucesso.')
       setShowModal(false)
       return
@@ -1493,6 +1497,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             <FInput label="Custo material (R$)" value={form.materialCost || 0} onChange={value => setForm(c => ({ ...c, materialCost:value }))} type="number" />
             <FInput label="Outros custos (R$)" value={form.otherCosts || 0} onChange={value => setForm(c => ({ ...c, otherCosts:value }))} type="number" />
             <FInput label="NF / ISSQN (%)" value={form.invoiceIssuancePercent || 0} onChange={value => setForm(c => ({ ...c, invoiceIssuancePercent:value }))} type="number" />
+            <ClinicalCostSettlementFields sourceType="surgery" form={form} setForm={setForm} />
             <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />
             <FormActions onCancel={() => setShowModal(false)} onSave={save} />
           </div>
@@ -1507,6 +1512,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             <FInput label="Status de pagamento" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value }))} options={SURGERY_PAYMENT_STATUS} />
             {form.paymentStatus === 'pago' && <FInput label="Data de pagamento" value={form.paymentDate || ''} onChange={value => setForm(c => ({ ...c, paymentDate:value }))} type="date" />}
             <FInput label="Valor (R$)" value={form.value || 0} onChange={value => setForm(c => ({ ...c, value:value }))} type="number" />
+            <ClinicalCostSettlementFields sourceType="consultation" form={form} setForm={setForm} />
             <FInput label="Forma de pagamento" value={form.paymentMethod || 'pix'} onChange={value => setForm(c => ({ ...c, paymentMethod:value }))} options={PAYMENT_METHODS} />
             <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />
             <FormActions onCancel={() => setShowModal(false)} onSave={save} />

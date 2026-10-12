@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (69)
+### Added
+- **Liquidação independente de custos clínicos**: hospital, anestesia, material, outros custos e imposto/NF passam a ter, por componente, fornecedor/credor, situação, competência, vencimento, data real e forma de pagamento. Cirurgias, consultas e a edição no Financeiro compartilham o novo editor; cada componente continua gerando um título a pagar próprio no razão. Schema aditivo em `supabase/clinical_cost_settlements_schema.sql`, com metadados em `cost_settlements` sem inventar backfill para registros antigos.
+
+### Changed
+- Razão, contas a pagar, caixa, relatórios Excel, auditoria de qualidade e assistente financeiro passam a respeitar a liquidação de cada custo clínico. Custos antigos sem metadados preservam temporariamente o comportamento histórico, mas seguem identificados como bloqueio até conferência; custos novos/editados nascem conservadoramente em aberto.
+
 ## [Unreleased] - 2026-10-12 (68)
 ### Added
 - **Vendas de produto com as três datas financeiras**: `product_sales` passa a guardar `competence_date`/`sale_date`, `due_date` e `received_date` separadamente. O formulário exige a data real de recebimento quando a venda estiver recebida ou o vencimento quando estiver em aberto; as ações rápidas também gravam a liquidação real. O razão, a Central de Relatórios e o assistente financeiro passam a consumir esses campos sem transformar automaticamente vendas antigas em recebidas. Migração aditiva em `supabase/product_sales_settlement.sql`.

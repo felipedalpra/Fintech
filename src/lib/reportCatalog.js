@@ -1,6 +1,7 @@
 import { buildMetrics, generateRecurringOccurrences } from '../financialMetrics.js'
 import { decodePaymentMethod } from './paymentMethodCodec.js'
 import { buildProductCosting } from './inventoryCosting.js'
+import { clinicalCostRows } from './clinicalCosts.js'
 
 const CATEGORY_LABELS = {
   financeiro:'Financeiro',
@@ -291,11 +292,29 @@ function buildExpenses(ctx) {
   const products = productMap(data)
   const productCosting = buildProductCosting(data)
   const rows = []
-  ;(data.surgeries || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.date, range)).forEach(item => {
-    const date = item.competenceDate || item.date
-    ;[['Hospital',item.hospitalCost],['Anestesia',item.anesthesiaCost],['Material',item.materialCost],['Outros custos',item.otherCosts],['Emissão de nota',item.invoiceTaxAmount != null ? item.invoiceTaxAmount : num(item.totalValue) * num(item.invoiceIssuancePercent) / 100]].forEach(([description,value]) => { if (num(value)) rows.push({ competenceDate:date, source:'Cirurgia', category:description, description:`${description} — ${item.patient || 'Paciente'}`, costCenter:'Cirurgias', supplier:'Não informado', status:'Liquidado na data clínica', value:num(value) }) })
+  ;(data.surgeries || []).filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
+    clinicalCostRows(item, 'surgery').forEach(component => {
+      const settlement = component.settlement || {}
+      const competenceDate = settlement.competenceDate || item.competenceDate || item.date
+      if (settlement.status === 'cancelado' || !inRange(competenceDate, range)) return
+      rows.push({
+        competenceDate,
+        source:'Cirurgia', category:component.label,
+        description:`${component.label} — ${item.patient || 'Paciente'}`,
+        costCenter:'Cirurgias', supplier:settlement.supplier || 'Não informado',
+        status:settlement.status ? labelize(settlement.status) : 'Legado — liquidação a conferir',
+        value:component.amount,
+      })
+    })
   })
-  ;(data.consultations || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.date, range)).forEach(item => { const value = item.invoiceTaxAmount != null ? num(item.invoiceTaxAmount) : num(item.value) * num(item.invoiceIssuancePercent) / 100; if (value) rows.push({ competenceDate:item.competenceDate || item.date, source:'Consulta', category:'Emissão de nota', description:`Emissão de nota — ${item.patient || 'Paciente'}`, costCenter:'Consultas', supplier:'Não informado', status:'Liquidado na data clínica', value }) })
+  ;(data.consultations || []).filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
+    clinicalCostRows(item, 'consultation').forEach(component => {
+      const settlement = component.settlement || {}
+      const competenceDate = settlement.competenceDate || item.competenceDate || item.date
+      if (settlement.status === 'cancelado' || !inRange(competenceDate, range)) return
+      rows.push({ competenceDate, source:'Consulta', category:component.label, description:`${component.label} — ${item.patient || 'Paciente'}`, costCenter:'Consultas', supplier:settlement.supplier || 'Não informado', status:settlement.status ? labelize(settlement.status) : 'Legado — liquidação a conferir', value:component.amount })
+    })
+  })
   ;(data.productSales || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.saleDate, range)).forEach(item => {
     const value = num(productCosting.salesCost[item.id]?.totalCost)
     if (value) rows.push({ competenceDate:item.competenceDate || item.saleDate, source:'CMV', category:labelize(products.get(item.productId)?.category), description:products.get(item.productId)?.name || 'Produto', costCenter:'Estoque', supplier:'Custo médio móvel', status:'Reconhecido na venda', value })
@@ -303,7 +322,7 @@ function buildExpenses(ctx) {
   ;(data.expenses || []).filter(item => item.status !== 'cancelado' && inRange(item.competenceDate || item.dueDate, range)).forEach(item => rows.push({ competenceDate:item.competenceDate || item.dueDate, source:'Despesa', category:labelize(item.category), description:item.description || '', costCenter:item.costCenter || 'Não informado', supplier:item.originLabel || 'Não informado', status:labelize(item.status), value:num(item.value) }))
   generateRecurringOccurrences(recurrences, range.start, range.end).filter(item => item.tipo === 'despesa' && !(data.expenses || []).some(entry => recurringMatch(entry, item, 'despesa'))).forEach(item => rows.push({ competenceDate:item.dueDate, source:'Recorrência', category:labelize(item.categoria), description:item.descricao || '', costCenter:'Não informado', supplier:'Recorrência', status:item.autoMarkAsPaid ? 'Pago automaticamente' : 'Pendente', value:num(item.valor) }))
   rows.sort((a, b) => (a.competenceDate || '').localeCompare(b.competenceDate || ''))
-  return result([col('competenceDate','Competência','date',14), col('source','Origem'), col('category','Categoria'), col('description','Descrição','text',36), col('costCenter','Centro de custo'), col('supplier','Fornecedor','text',24), col('status','Situação'), col('value','Valor','currency',16)], rows, [['Custos e despesas', sum(rows,'value')], ['Lançamentos', rows.length]], [], 'Detalhamento de custos e despesas pelo regime de competência, com impostos de nota congelados e cancelados excluídos.')
+  return result([col('competenceDate','Competência','date',14), col('source','Origem'), col('category','Categoria'), col('description','Descrição','text',36), col('costCenter','Centro de custo'), col('supplier','Fornecedor','text',24), col('status','Situação'), col('value','Valor','currency',16)], rows, [['Custos e despesas', sum(rows,'value')], ['Lançamentos', rows.length]], [], 'Detalhamento de custos e despesas por competência; custos clínicos usam credor e situação próprios, e registros legados permanecem identificados para conferência.')
 }
 
 function buildBalanceSheet(ctx) {
@@ -408,18 +427,19 @@ function buildContributionMargin(ctx) {
 }
 
 function surgeryCost(item) {
-  const invoiceTax = item.invoiceTaxAmount != null ? num(item.invoiceTaxAmount) : num(item.totalValue)*num(item.invoiceIssuancePercent)/100
-  return num(item.hospitalCost)+num(item.anesthesiaCost)+num(item.materialCost)+num(item.otherCosts)+invoiceTax
+  return clinicalCostRows(item, 'surgery')
+    .filter(component => component.settlement?.status !== 'cancelado')
+    .reduce((total, component) => total + component.amount, 0)
 }
 
 function buildSurgeries(ctx) {
   const procedures=procedureMap(ctx.data)
   const rows=(ctx.data.surgeries||[]).filter(item=>inRange(item.date,ctx.range)).map(item=>{const cost=surgeryCost(item);const canceled=item.paymentStatus==='cancelado';return { date:item.date, competenceDate:item.competenceDate||item.date, patient:item.patient||'', procedure:procedures.get(item.procedureId)||'Não informado', surgeon:item.surgeon||'Não informado', status:labelize(item.paymentStatus), paymentDate:item.paymentDate||'', dueDate:item.dueDate||item.date, paymentMethod:paymentMethodLabel(item.paymentMethod), revenue:canceled?0:num(item.totalValue), cost:canceled?0:cost, profit:canceled?0:num(item.totalValue)-cost }}).sort((a,b)=>a.date.localeCompare(b.date))
-  return result([col('date','Data','date',14),col('competenceDate','Competência','date',14),col('patient','Paciente','text',28),col('procedure','Procedimento','text',28),col('surgeon','Cirurgião','text',24),col('status','Pagamento'),col('paymentDate','Recebimento','date',14),col('dueDate','Vencimento','date',14),col('paymentMethod','Forma de pagamento','text',20),col('revenue','Receita','currency',16),col('cost','Custo','currency',16),col('profit','Resultado','currency',16)],rows,[['Receita',sum(rows,'revenue')],['Custos',sum(rows,'cost')],['Resultado',sum(rows,'profit')],['Cirurgias',rows.length]],['Os custos cirúrgicos não possuem status/data própria de pagamento; são atribuídos à cirurgia.'],'Cirurgias pela data operacional; valores de resultado usam receita menos custos informados e percentual de emissão de nota.')
+  return result([col('date','Data','date',14),col('competenceDate','Competência','date',14),col('patient','Paciente','text',28),col('procedure','Procedimento','text',28),col('surgeon','Cirurgião','text',24),col('status','Pagamento'),col('paymentDate','Recebimento','date',14),col('dueDate','Vencimento','date',14),col('paymentMethod','Forma de pagamento','text',20),col('revenue','Receita','currency',16),col('cost','Custo','currency',16),col('profit','Resultado','currency',16)],rows,[['Receita',sum(rows,'revenue')],['Custos',sum(rows,'cost')],['Resultado',sum(rows,'profit')],['Cirurgias',rows.length]],[], 'Cirurgias pela data operacional; valores de resultado usam os componentes de custo não cancelados e o imposto de nota congelado quando disponível.')
 }
 
 function buildConsultations(ctx) {
-  const rows=(ctx.data.consultations||[]).filter(item=>inRange(item.date,ctx.range)).map(item=>{const cost=item.invoiceTaxAmount != null ? num(item.invoiceTaxAmount) : num(item.value)*num(item.invoiceIssuancePercent)/100;return { date:item.date, competenceDate:item.competenceDate||item.date, patient:item.patient||'', type:labelize(item.consultationType), paymentType:labelize(item.paymentType), insurance:item.insurance||'', status:labelize(item.paymentStatus), forecastDate:item.forecastPaymentDate||'', paymentDate:item.paymentDate||'', paymentMethod:paymentMethodLabel(item.paymentMethod), revenue:item.paymentStatus==='cancelado'?0:num(item.value), cost:item.paymentStatus==='cancelado'?0:cost, net:item.paymentStatus==='cancelado'?0:num(item.value)-cost }}).sort((a,b)=>a.date.localeCompare(b.date))
+  const rows=(ctx.data.consultations||[]).filter(item=>inRange(item.date,ctx.range)).map(item=>{const cost=clinicalCostRows(item,'consultation').filter(component=>component.settlement?.status!=='cancelado').reduce((total,component)=>total+component.amount,0);return { date:item.date, competenceDate:item.competenceDate||item.date, patient:item.patient||'', type:labelize(item.consultationType), paymentType:labelize(item.paymentType), insurance:item.insurance||'', status:labelize(item.paymentStatus), forecastDate:item.forecastPaymentDate||'', paymentDate:item.paymentDate||'', paymentMethod:paymentMethodLabel(item.paymentMethod), revenue:item.paymentStatus==='cancelado'?0:num(item.value), cost:item.paymentStatus==='cancelado'?0:cost, net:item.paymentStatus==='cancelado'?0:num(item.value)-cost }}).sort((a,b)=>a.date.localeCompare(b.date))
   return result([col('date','Data','date',14),col('competenceDate','Competência','date',14),col('patient','Paciente','text',28),col('type','Tipo'),col('paymentType','Atendimento'),col('insurance','Convênio'),col('status','Pagamento'),col('forecastDate','Previsão','date',14),col('paymentDate','Recebimento','date',14),col('paymentMethod','Forma de pagamento','text',20),col('revenue','Receita','currency',16),col('cost','Custo NF','currency',16),col('net','Resultado','currency',16)],rows,[['Receita',sum(rows,'revenue')],['Resultado',sum(rows,'net')],['Consultas',rows.length]],[], 'Consultas pela data operacional, com situação de pagamento e custo de emissão de nota informado.')
 }
 
@@ -465,6 +485,8 @@ function buildDataQuality(ctx) {
   const add=(severity,domain,recordId,record,issue,impact)=>rows.push({severity,domain,recordId,record,issue,impact})
   ;(ctx.data.surgeries||[]).forEach(i=>{if(!i.patientId)add('Atenção','Cirurgias',i.id,i.patient,'Paciente sem vínculo por ID','Pode duplicar relatórios por cliente.');if(!i.competenceDate)add('Atenção','Cirurgias',i.id,i.patient,'Competência ausente','O sistema usa a data da cirurgia.');if(i.paymentStatus==='pago'&&!i.paymentDate)add('Crítico','Cirurgias',i.id,i.patient,'Pago sem data de recebimento','Fluxo de caixa usa data operacional.');if(num(i.totalValue)<0)add('Crítico','Cirurgias',i.id,i.patient,'Valor negativo','Distorce faturamento e resultado.')})
   ;(ctx.data.consultations||[]).forEach(i=>{if(!i.patientId)add('Atenção','Consultas',i.id,i.patient,'Paciente sem vínculo por ID','Pode duplicar relatórios por cliente.');if(i.paymentStatus==='pago'&&!i.paymentDate)add('Crítico','Consultas',i.id,i.patient,'Pago sem data de recebimento','Fluxo de caixa pode usar data operacional.');if(i.paymentType!=='particular'&&!i.insurance)add('Atenção','Consultas',i.id,i.patient,'Convênio não informado','Análise por convênio fica incompleta.')})
+  ;(ctx.data.surgeries||[]).forEach(i=>clinicalCostRows(i,'surgery').forEach(component=>{const settlement=component.settlement;if(!settlement?.status)add('Estrutural','Custos clínicos',`${i.id}:${component.key}`,component.label,'Liquidação independente ausente','Caixa ainda usa a data clínica como aproximação.');else if(settlement.status==='pago'&&!settlement.paymentDate)add('Crítico','Custos clínicos',`${i.id}:${component.key}`,component.label,'Pago sem data real','Não é possível posicionar a saída no caixa.')}))
+  ;(ctx.data.consultations||[]).forEach(i=>clinicalCostRows(i,'consultation').forEach(component=>{const settlement=component.settlement;if(!settlement?.status)add('Estrutural','Custos clínicos',`${i.id}:${component.key}`,component.label,'Liquidação independente ausente','Caixa ainda usa a data clínica como aproximação.');else if(settlement.status==='pago'&&!settlement.paymentDate)add('Crítico','Custos clínicos',`${i.id}:${component.key}`,component.label,'Pago sem data real','Não é possível posicionar a saída no caixa.')}))
   ;(ctx.data.productSales||[]).forEach(i=>{if(!i.patientName)add('Atenção','Vendas de produtos',i.id,'Venda','Cliente não informado','Relatório por cliente fica incompleto.');if(!i.paymentStatus||i.paymentStatus==='legacy_unverified')add('Estrutural','Vendas de produtos',i.id,'Venda','Sem status/data de recebimento','Não é possível provar se o valor entrou no caixa.');else if(i.paymentStatus==='recebido'&&!i.receivedDate)add('Estrutural','Vendas de produtos',i.id,'Venda','Recebimento sem data própria','O caixa usa temporariamente a data declarada no cronograma ou na venda; informe a data real.')})
   ;(ctx.data.productPurchases||[]).forEach(i=>{if(!i.supplier)add('Atenção','Compras de produtos',i.id,'Compra','Fornecedor não informado','Relatório por fornecedor fica incompleto.');if(!i.status||i.status==='legacy_unverified')add('Estrutural','Compras de produtos',i.id,'Compra','Sem status/data de pagamento','Não é possível classificar a obrigação com fidelidade.');else if(i.status==='pago'&&!i.paymentDate)add('Crítico','Compras de produtos',i.id,'Compra','Paga sem data de pagamento','O caixa usa a data da compra como aproximação.')})
   ;(ctx.data.expenses||[]).forEach(i=>{if(!i.competenceDate)add('Atenção','Despesas',i.id,i.description,'Competência ausente','O sistema usa o vencimento.');if(i.status==='pago'&&!i.paymentDate)add('Crítico','Despesas',i.id,i.description,'Paga sem data de pagamento','Fluxo usa o vencimento como aproximação.')})

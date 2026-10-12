@@ -118,6 +118,45 @@ test('custos de cirurgia viram títulos a pagar por componente (0 não gera)', (
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
 
+test('custos clínicos respeitam fornecedor, vencimento e liquidação próprios', () => {
+  const ledger = buildLedger({
+    surgeries:[{
+      id:'s-custos', totalValue:0, date:'2026-09-10', competenceDate:'2026-09-10', paymentStatus:'pendente',
+      hospitalCost:1200, anesthesiaCost:800, materialCost:300,
+      costSettlements:{
+        hospital_cost:{ status:'pendente', dueDate:'2026-10-15', competenceDate:'2026-09-10', supplierId:'f-hospital', supplier:'Hospital X' },
+        anesthesia_cost:{ status:'pago', dueDate:'2026-09-12', paymentDate:'2026-09-18', competenceDate:'2026-09-10', supplierId:'f-anestesia', supplier:'Anestesista Y', paymentMethod:'pix' },
+        material_cost:{ status:'cancelado', dueDate:'2026-09-20', competenceDate:'2026-09-10', supplierId:'f-material', supplier:'Material Z' },
+      },
+    }],
+  })
+  const indexByComponent = component => ledger.entries.findIndex(entry => entry.source_component === component)
+  const hospital = indexByComponent('hospital_cost')
+  const anesthesia = indexByComponent('anesthesia_cost')
+  const material = indexByComponent('material_cost')
+
+  expect(ledger.entries[hospital]).toMatchObject({ status:'pending', party_id:'f-hospital', party_name_snapshot:'Hospital X' })
+  expect(ledger.installments[hospital][0]).toMatchObject({ due_date:'2026-10-15', settlement_date:null, status:'pending' })
+  expect(ledger.entries[anesthesia]).toMatchObject({ status:'paid', party_id:'f-anestesia' })
+  expect(ledger.installments[anesthesia][0]).toMatchObject({ settlement_date:'2026-09-18', payment_method:'pix', status:'paid' })
+  expect(ledger.entries[material].status).toBe('canceled')
+  expect(checkLedgerInvariants(ledger)).toEqual([])
+})
+
+test('auditoria aceita custos clínicos com liquidação independente confirmada', () => {
+  const audit = auditLedgerReadiness({
+    consultations:[{
+      id:'c-custo', value:500, date:'2026-09-10', competenceDate:'2026-09-10', dueDate:'2026-09-10',
+      paymentStatus:'pendente', invoiceIssuancePercent:10, patientId:'p1', patient:'Ana',
+      costSettlements:{ invoice_tax:{ status:'pago', competenceDate:'2026-09-10', dueDate:'2026-09-15', paymentDate:'2026-09-16', supplierId:'f1', supplier:'Prefeitura' } },
+    }],
+  })
+
+  expect(audit.blockers.map(item => item.code)).not.toContain('cost_assumed_settlement')
+  expect(audit.blockers.map(item => item.code)).not.toContain('missing_settlement_date')
+  expect(audit.reconciliation.sources.find(item => item.label === 'Custos de consulta (NF)').diff).toBe(0)
+})
+
 test('imposto de NF congelado (invoiceTaxAmount) prevalece sobre a alíquota', () => {
   const ledger = buildLedger({
     surgeries: [{

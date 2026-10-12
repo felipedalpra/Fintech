@@ -7,6 +7,8 @@ import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCo
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
+import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
+import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 
 const TYPES = [
   { v:'avaliacao', l:'Avaliação' },
@@ -78,6 +80,7 @@ export function Consultations({ data, setData }) {
     consultationType:'avaliacao',
     value:0,
     invoiceIssuancePercent:0,
+    costSettlements:{},
     paymentType:'particular',
     paymentMethod:'pix',
     paymentMode:'unico',
@@ -194,7 +197,7 @@ export function Consultations({ data, setData }) {
       mixAmountB,
       ...baseForm
     } = form
-    const nextRecord = {
+    const nextRecord = withClinicalCostSettlementDefaults({
       ...baseForm,
       patientId: form.patientId || null,
       invoiceIssuancePercent:Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0))),
@@ -203,7 +206,7 @@ export function Consultations({ data, setData }) {
       paymentDate:form.paymentStatus === 'pago'
         ? (form.paymentDate || (form.paymentScheduleMode === 'duas_datas' ? [form.payment1Date, form.payment2Date].filter(Boolean).sort().slice(-1)[0] : form.date))
         : '',
-    }
+    }, 'consultation')
     setData(current => ({
       ...current,
       consultations: editing
@@ -329,6 +332,7 @@ export function Consultations({ data, setData }) {
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
           <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" placeholder="0" />
           <FInput label="Emissão NF (%)" value={form.invoiceIssuancePercent} onChange={value => setForm(current => ({ ...current, invoiceIssuancePercent:value }))} type="number" placeholder="0" />
+          <ClinicalCostSettlementFields sourceType="consultation" form={form} setForm={setForm} />
           <FInput label="Forma / convênio" value={form.paymentType} onChange={value => setForm(current => ({ ...current, paymentType:value }))} options={PAYMENT_TYPES} />
           <FInput label="Convênio" value={form.insurance} onChange={value => setForm(current => ({ ...current, insurance:value }))} placeholder="Nome do convênio" />
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />

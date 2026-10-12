@@ -8,6 +8,7 @@
 // consumidores financeiros leem desta projeção; a autoridade de cada campo migra gradualmente.
 // Design: docs/superpowers/specs/2026-10-12-financial-core-ledger-design.md
 import { paymentScheduleFlow } from './paymentScheduleFlow.js'
+import { clinicalCostRows } from './clinicalCosts.js'
 
 function num(v) { return Number(v) || 0 }
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100 }
@@ -64,7 +65,7 @@ function frozenOrDerivedTax(item, base) {
 }
 
 function singleEntry({ sourceType, sourceComponent, direction, item, total, competenceDate, issueDate, dueDate,
-  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter }) {
+  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter, paymentMethod }) {
   const paid = canceled ? 0 : (isPaid ? round2(total) : 0)
   const open = canceled ? 0 : (isPaid ? 0 : round2(total))
   const installment = {
@@ -72,6 +73,7 @@ function singleEntry({ sourceType, sourceComponent, direction, item, total, comp
     amount: round2(total),
     due_date: dueDate || null,
     settlement_date: isPaid && !canceled ? (paidDate || dueDate || null) : null,
+    payment_method:paymentMethod || null,
     status: canceled ? 'canceled' : (isPaid ? 'paid' : 'pending'),
   }
   return {
@@ -86,32 +88,28 @@ function singleEntry({ sourceType, sourceComponent, direction, item, total, comp
   }
 }
 
-// Custos de cirurgia/consulta como títulos A PAGAR independentes (hospital, anestesia, material,
-// outros, imposto de NF). Modelo atual = caixa na data do atendimento → projeção = pago nessa data.
-// Depois (autoridade) cada custo pode ganhar vencimento/fornecedor/status próprios.
-function pushCostEntries(parts, item, sourceType, baseValue) {
+// Custos de cirurgia/consulta como títulos A PAGAR independentes. Dados novos usam metadados reais
+// por componente; custos legados sem metadados preservam temporariamente o comportamento histórico
+// (pagamento na data clínica) e permanecem bloqueados pela auditoria até confirmação.
+function pushCostEntries(parts, item, sourceType) {
   if (item.paymentStatus === 'cancelado') return
   const date = item.date
-  const competence = item.competenceDate || item.date
-  const components = sourceType === 'surgery'
-    ? [
-      ['hospital_cost', item.hospitalCost],
-      ['anesthesia_cost', item.anesthesiaCost],
-      ['material_cost', item.materialCost],
-      ['other_cost', item.otherCosts],
-      ['invoice_tax', frozenOrDerivedTax(item, baseValue)],
-    ]
-    : [['invoice_tax', frozenOrDerivedTax(item, baseValue)]]
-  for (const [component, raw] of components) {
-    const value = round2(raw)
-    if (value <= 0) continue
+  for (const component of clinicalCostRows(item, sourceType)) {
+    const settlement = component.settlement || {}
+    const legacy = !settlement.status
+    const status = legacy ? 'pago' : settlement.status
     parts.push(singleEntry({
-      sourceType, sourceComponent: component, direction: 'payable', item, total: value,
-      competenceDate: competence, issueDate: date, dueDate: date, paidDate: date,
-      isPaid: true, canceled: false,
-      partyType: 'other',
-      partyName: `${sourceType === 'surgery' ? 'Custo cirúrgico' : 'Custo consulta'} - ${item.patient || ''}`,
+      sourceType, sourceComponent: component.key, direction: 'payable', item, total: component.amount,
+      competenceDate:settlement.competenceDate || item.competenceDate || date,
+      issueDate:date,
+      dueDate:settlement.dueDate || date,
+      paidDate:legacy ? date : settlement.paymentDate,
+      isPaid:status === 'pago', canceled:status === 'cancelado',
+      partyType:settlement.supplierId ? 'supplier' : 'other',
+      partyId:settlement.supplierId || null,
+      partyName:settlement.supplier || `${component.label} - ${item.patient || ''}`,
       category: sourceType === 'surgery' ? 'custo_cirurgico' : 'custo_consulta',
+      paymentMethod:settlement.paymentMethod || null,
     }))
   }
 }
@@ -132,7 +130,7 @@ export function buildLedger(data = {}) {
       sourceType: 'surgery', item, total: item.totalValue || 0,
       competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
     }))
-    pushCostEntries(parts, item, 'surgery', item.totalValue || 0)
+    pushCostEntries(parts, item, 'surgery')
   })
 
   consultations.forEach(item => {
@@ -140,7 +138,7 @@ export function buildLedger(data = {}) {
       sourceType: 'consultation', item, total: item.value || 0,
       competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
     }))
-    pushCostEntries(parts, item, 'consultation', item.value || 0)
+    pushCostEntries(parts, item, 'consultation')
   })
 
   // Venda de produto: usa o mesmo cronograma canônico das demais receitas. "Recebido" quita as
@@ -214,9 +212,14 @@ export function reconcileLedger(data = {}) {
 
   const surgeries = data.surgeries || []
   const consults = data.consultations || []
-  const rawSurgeryCost = sumBy(notCanceled(surgeries, 'paymentStatus'), s =>
-    num(s.hospitalCost) + num(s.anesthesiaCost) + num(s.materialCost) + num(s.otherCosts) + frozenOrDerivedTax(s, s.totalValue))
-  const rawConsultCost = sumBy(notCanceled(consults, 'paymentStatus'), c => frozenOrDerivedTax(c, c.value))
+  const rawSurgeryCost = sumBy(notCanceled(surgeries, 'paymentStatus'), surgery =>
+    clinicalCostRows(surgery, 'surgery')
+      .filter(component => component.settlement?.status !== 'cancelado')
+      .reduce((sum, component) => sum + component.amount, 0))
+  const rawConsultCost = sumBy(notCanceled(consults, 'paymentStatus'), consultation =>
+    clinicalCostRows(consultation, 'consultation')
+      .filter(component => component.settlement?.status !== 'cancelado')
+      .reduce((sum, component) => sum + component.amount, 0))
 
   const sources = [
     { label: 'Cirurgias (receita)', raw: sumBy(notCanceled(surgeries, 'paymentStatus'), s => s.totalValue), ledger: ledgerSum('surgery', 'revenue') },
@@ -307,6 +310,12 @@ export function auditLedgerReadiness(data = {}) {
     // liquidação real válida para registros anteriores à coluna received_date, não uma estimativa.
     ...extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate && !item.date),
     ...expenses.filter(item => item.status === 'pago' && !item.paymentDate),
+    ...surgeries.flatMap(item => clinicalCostRows(item, 'surgery')
+      .filter(component => component.settlement?.status === 'pago' && !component.settlement?.paymentDate)
+      .map(component => ({ id:`${item.id}:${component.key}` }))),
+    ...consultations.flatMap(item => clinicalCostRows(item, 'consultation')
+      .filter(component => component.settlement?.status === 'pago' && !component.settlement?.paymentDate)
+      .map(component => ({ id:`${item.id}:${component.key}` }))),
   ], 'O caixa está usando a data operacional ou o vencimento como aproximação.')
 
   addIssue('legacy_extra_revenue_date', 'warning', 'Receitas usam o campo histórico de recebimento',
@@ -317,17 +326,17 @@ export function auditLedgerReadiness(data = {}) {
     productSales.filter(item => item.paymentStatus === 'recebido' && !item.receivedDate),
     'O caixa ainda usa as datas declaradas no cronograma ou a data da venda; informe received_date para confirmar a liquidação.')
 
-  const costsWithoutSettlement = []
-  surgeries.filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
-    if ([item.hospitalCost, item.anesthesiaCost, item.materialCost, item.otherCosts]
-      .some(value => num(value) > 0) || frozenOrDerivedTax(item, item.totalValue) > 0) costsWithoutSettlement.push(item)
-  })
-  consultations.filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
-    if (frozenOrDerivedTax(item, item.value) > 0) costsWithoutSettlement.push(item)
-  })
+  const costsWithoutSettlement = [
+    ...surgeries.filter(item => item.paymentStatus !== 'cancelado').flatMap(item => clinicalCostRows(item, 'surgery')
+      .filter(component => !component.settlement?.status)
+      .map(component => ({ id:`${item.id}:${component.key}` }))),
+    ...consultations.filter(item => item.paymentStatus !== 'cancelado').flatMap(item => clinicalCostRows(item, 'consultation')
+      .filter(component => !component.settlement?.status)
+      .map(component => ({ id:`${item.id}:${component.key}` }))),
+  ]
   addIssue('cost_assumed_settlement', 'blocking', 'Custos usam a data do atendimento',
     costsWithoutSettlement,
-    'Custos cirúrgicos e impostos ainda não têm situação, vencimento e data de pagamento próprios.')
+    'Confirme fornecedor, situação, vencimento e data de pagamento de cada componente.')
 
   const entriesMissingDates = ledger.entries.flatMap((entry, index) => {
     if (entry.status === 'canceled' || entry.total_amount <= 0) return []
@@ -349,6 +358,12 @@ export function auditLedgerReadiness(data = {}) {
   addIssue('missing_supplier_link', 'warning', 'Saídas sem fornecedor vinculado', [
     ...productPurchases.filter(item => item.status !== 'cancelado' && !item.supplierId),
     ...expenses.filter(item => item.status !== 'cancelado' && !item.supplierId),
+    ...surgeries.flatMap(item => clinicalCostRows(item, 'surgery')
+      .filter(component => component.settlement?.status && component.settlement.status !== 'cancelado' && !component.settlement.supplierId)
+      .map(component => ({ id:`${item.id}:${component.key}` }))),
+    ...consultations.flatMap(item => clinicalCostRows(item, 'consultation')
+      .filter(component => component.settlement?.status && component.settlement.status !== 'cancelado' && !component.settlement.supplierId)
+      .map(component => ({ id:`${item.id}:${component.key}` }))),
   ], 'O valor é preservado, mas relatórios por fornecedor podem ficar fragmentados.')
 
   const blockers = issues.filter(item => item.severity === 'blocking')
