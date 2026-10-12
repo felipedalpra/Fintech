@@ -8,6 +8,8 @@ const STAGE_LABELS = {
   consultado: 'Consultado',
   orcamento_enviado: 'Orçamento Enviado',
   reserva_paga: 'Reserva Paga',
+  cirurgia_marcada: 'Cirurgia Marcada',
+  cirurgia_feita: 'Cirurgia Feita',
   follow_up: 'Follow-up',
 }
 const stageLabel = k => STAGE_LABELS[k] || k || '—'

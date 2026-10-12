@@ -5,15 +5,23 @@
 > vestigial) para o modelo atual de **Oportunidades** (`opportunities.stage` + `move_opportunity`).
 
 ## 1. Objetivo
-Avançar a **oportunidade** de estágio automaticamente quando um evento claro acontece, sem trabalho
-manual — estilo Kommo (avança quando a condição é inequívoca).
+Pôr a **oportunidade** no estágio certo automaticamente quando um evento claro acontece — **criando a
+oportunidade se ela ainda não existe** (paciente cadastrado já com consulta/cirurgia entra no funil no
+lugar certo, não some nem cai em "primeiro contato") e **avançando** se existe e está atrás. Estilo Kommo.
 
-| Evento | De → Para |
+**Estágios (ordem confirmada pelo cliente):** primeiro_contato → consulta_agendada → consultado →
+orcamento_enviado → reserva_paga → **cirurgia_marcada** → **cirurgia_feita** → follow_up.
+(Os dois de cirurgia são novos.)
+
+| Evento | Estágio-alvo (cria se não existe; avança se está atrás; nunca regride) |
 |--------|-----------|
-| Consulta criada (com paciente/oportunidade) | `consulta_agendada` → `consultado` |
-| Cirurgia criada | `consultado` → `orcamento_enviado` |
-| Pagamento da cirurgia vira `pago`/`parcelado` | `orcamento_enviado` → `reserva_paga` |
-| 3 dias após a cirurgia (futuro) | `reserva_paga` → `follow_up` (cron, fora deste incremento) |
+| Consulta criada | `consulta_agendada` |
+| Cirurgia criada | `cirurgia_marcada` |
+| Pagamento da cirurgia vira `pago`/`parcelado` | `reserva_paga` |
+| Data da cirurgia já passou (rotina diária) | `cirurgia_feita` |
+
+> "Consultado" e "follow_up" seguem manuais/pela IA (não há sinal de evento inequívoco para eles).
+> Paciente cadastrado SEM evento não entra no funil (é só um contato, estilo Kommo).
 
 ## 2. Arquitetura
 Triggers Postgres (SQL puro, **sem mudança no frontend** — o pipeline já lê `opportunities.stage`).

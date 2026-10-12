@@ -6,7 +6,10 @@ import {
 
 test('stageRank/isForward: ordem do funil', () => {
   expect(stageRank('primeiro_contato')).toBe(0)
-  expect(stageRank('follow_up')).toBe(5)
+  expect(stageRank('reserva_paga')).toBe(4)
+  expect(stageRank('cirurgia_marcada')).toBe(5)
+  expect(stageRank('cirurgia_feita')).toBe(6)
+  expect(stageRank('follow_up')).toBe(7)
   expect(stageRank('inexistente')).toBe(-1)
   expect(isForward('primeiro_contato', 'consulta_agendada')).toBe(true)
   expect(isForward('consultado', 'primeiro_contato')).toBe(false) // não retrocede

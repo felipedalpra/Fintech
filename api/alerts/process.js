@@ -151,7 +151,18 @@ export default async function handler(req, res) {
       whatsapp = { error: waErr?.message || 'erro nas automações de WhatsApp' }
     }
 
-    return res.status(200).json({ ok:true, referenceDate:today, ...summary, whatsapp })
+    // Automação do funil: cirurgias cuja data já passou → estágio "Cirurgia Feita".
+    // Fail-safe e idempotente (a RPC só avança quem está em cirurgia_marcada).
+    let funnel = null
+    try {
+      const { data: advanced, error: funnelErr } = await admin.rpc('process_funnel_daily')
+      funnel = funnelErr ? { error: funnelErr.message } : { advanced }
+    } catch (fErr) {
+      console.error('funnel daily error:', fErr?.message)
+      funnel = { error: fErr?.message || 'erro na automação do funil' }
+    }
+
+    return res.status(200).json({ ok:true, referenceDate:today, ...summary, whatsapp, funnel })
   } catch (error) {
     return res.status(500).json({ error:error?.message || 'Erro interno ao processar alertas' })
   }

@@ -14,6 +14,8 @@ const STAGES = [
   { key: 'consultado',        label: 'Consultado',        color: '#0ea5e9' },
   { key: 'orcamento_enviado', label: 'Orçamento Enviado', color: '#f59e0b' },
   { key: 'reserva_paga',      label: 'Reserva Paga',      color: '#10b981' },
+  { key: 'cirurgia_marcada',  label: 'Cirurgia Marcada',  color: '#14b8a6' },
+  { key: 'cirurgia_feita',    label: 'Cirurgia Feita',    color: '#22c55e' },
   { key: 'follow_up',         label: 'Follow-up',         color: '#8b5cf6' },
 ]
 const STAGE_LABEL = Object.fromEntries(STAGES.map(s => [s.key, s.label]))

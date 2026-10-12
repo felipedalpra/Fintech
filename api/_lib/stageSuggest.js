@@ -10,6 +10,8 @@ export const STAGE_ORDER = [
   'consultado',
   'orcamento_enviado',
   'reserva_paga',
+  'cirurgia_marcada',
+  'cirurgia_feita',
   'follow_up',
 ]
 
@@ -20,6 +22,8 @@ export const STAGE_DEFS = [
   { key: 'consultado',        label: 'Consultado',        desc: 'a consulta já aconteceu' },
   { key: 'orcamento_enviado', label: 'Orçamento Enviado', desc: 'perguntou valores/preço ou já recebeu o orçamento do procedimento' },
   { key: 'reserva_paga',      label: 'Reserva Paga',      desc: 'confirmou pagamento/sinal/pix, fechou e quer reservar a cirurgia' },
+  { key: 'cirurgia_marcada',  label: 'Cirurgia Marcada',  desc: 'a cirurgia já tem data marcada/agendada' },
+  { key: 'cirurgia_feita',    label: 'Cirurgia Feita',    desc: 'a cirurgia já foi realizada' },
   { key: 'follow_up',         label: 'Follow-up',         desc: 'adiou a decisão ("vou pensar", "mais pra frente") — acompanhar depois' },
 ]
 
@@ -31,6 +35,8 @@ const SIGNALS = {
   consulta_agendada: ['marcar', 'agendar', 'que dia', 'qual dia', 'horario', 'disponibilidade', 'consulta', 'avaliacao'],
   orcamento_enviado: ['quanto custa', 'quanto fica', 'valor', 'valores', 'preco', 'orcamento', 'parcel', 'quanto e', 'quanto sai'],
   reserva_paga:      ['paguei', 'fiz o pix', 'pix feito', 'fechado', 'pode reservar', 'sinal', 'deposito', 'transferi', 'comprovante'],
+  cirurgia_marcada:  ['cirurgia dia', 'cirurgia marcada', 'data da cirurgia', 'marcar a cirurgia', 'agendar a cirurgia', 'operar dia'],
+  cirurgia_feita:    ['ja operei', 'fiz a cirurgia', 'cirurgia foi', 'pos operatorio', 'pos-operatorio', 'operada', 'operado'],
   follow_up:         ['vou pensar', 'depois eu vejo', 'mais pra frente', 'ano que vem', 'te aviso', 'ainda nao sei', 'talvez'],
 }
 
