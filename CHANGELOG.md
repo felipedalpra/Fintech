@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (66)
+### Fixed
+- **Falso bloqueio no gate do razão**: receitas extras antigas guardavam a data real do recebimento em `date`, campo historicamente apresentado na UI como **Data do recebimento**. O auditor exigia exclusivamente o novo `received_date` e marcou 18 lançamentos válidos como “liquidações sem data real”. `auditLedgerReadiness` agora aceita `receivedDate || date`, igual ao próprio razão, e apresenta esses registros apenas como aviso de migração. Nenhum valor ou data financeira foi alterado. Teste de regressão em `tests/unit/financialLedger.spec.js`.
+
 ## [Unreleased] - 2026-10-12 (65)
 ### Added
 - **Gate de prontidão do razão**: a tela **Financeiro → Conferência do razão** agora audita, além da reconciliação a centavo, os pré-requisitos para a Fase 10: invariantes das parcelas, vendas/compras antigas sem situação confirmada, liquidações sem data real, custos ainda liquidados por aproximação e títulos sem datas obrigatórias. Vínculos ausentes de cliente/fornecedor e impacto de cancelamentos aparecem como alertas separados. Enquanto existir bloqueio, a tela deixa explícito que o razão ainda não pode virar a fonte de verdade. Implementação pura em `src/lib/financialLedger.js`, apresentação responsiva em `src/components/LedgerCheck.jsx` e cobertura em `tests/unit/financialLedger.spec.js`/`tests/e2e/ledger-check.spec.js`. Nenhuma leitura ou valor do financeiro foi alterado.

@@ -295,9 +295,15 @@ export function auditLedgerReadiness(data = {}) {
     ...surgeries.filter(item => item.paymentStatus === 'pago' && !item.paymentDate),
     ...consultations.filter(item => item.paymentStatus === 'pago' && !item.paymentDate),
     ...productPurchases.filter(item => item.status === 'pago' && !item.paymentDate),
-    ...extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate),
+    // `date` era exibido historicamente como "Data do recebimento". Portanto ele é uma
+    // liquidação real válida para registros anteriores à coluna received_date, não uma estimativa.
+    ...extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate && !item.date),
     ...expenses.filter(item => item.status === 'pago' && !item.paymentDate),
   ], 'O caixa está usando a data operacional ou o vencimento como aproximação.')
+
+  addIssue('legacy_extra_revenue_date', 'warning', 'Receitas usam o campo histórico de recebimento',
+    extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate && item.date),
+    'A data é válida e continua sendo usada no caixa; ao editar o registro ela pode ser migrada para received_date.')
 
   // O modelo atual de venda não possui received_date: toda venda marcada recebida usa sale_date.
   addIssue('product_sale_assumed_settlement', 'blocking', 'Vendas recebidas usam a data da venda',

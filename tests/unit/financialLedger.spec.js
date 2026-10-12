@@ -139,7 +139,13 @@ test('reconcileLedger: razão × fonte bate a centavo (diff 0 em toda origem)', 
 })
 
 test('auditLedgerReadiness bloqueia a virada quando a liquidação ainda é inferida', () => {
-  const audit = auditLedgerReadiness(data)
+  const audit = auditLedgerReadiness({
+    ...data,
+    expenses:[...data.expenses, {
+      id:'e-sem-data', value:100, dueDate:'2026-09-18', competenceDate:'2026-09-18',
+      status:'pago', description:'Despesa paga sem data',
+    }],
+  })
   const codes = audit.blockers.map(item => item.code)
 
   expect(audit.ready).toBe(false)
@@ -147,6 +153,19 @@ test('auditLedgerReadiness bloqueia a virada quando a liquidação ainda é infe
   expect(codes).toContain('legacy_product_purchase')
   expect(codes).toContain('missing_settlement_date')
   expect(audit.invariantProblems).toEqual([])
+})
+
+test('data legada da receita extra é liquidação válida e vira somente aviso', () => {
+  const audit = auditLedgerReadiness({
+    extraRevenues:[{
+      id:'r-legada', value:500, date:'2026-09-04', competenceDate:'2026-09-01',
+      dueDate:'2026-09-04', status:'recebido', receivedDate:'',
+    }],
+  })
+
+  expect(audit.ready).toBe(true)
+  expect(audit.blockers.map(item => item.code)).not.toContain('missing_settlement_date')
+  expect(audit.warnings.map(item => item.code)).toContain('legacy_extra_revenue_date')
 })
 
 test('auditLedgerReadiness libera revisão final com situações e datas confirmadas', () => {
