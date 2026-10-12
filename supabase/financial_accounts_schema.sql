@@ -31,11 +31,14 @@ do $$ begin
 end $$;
 create index if not exists idx_financial_accounts_owner on public.financial_accounts(user_id) where archived_at is null;
 
--- FK da parcela para a conta (a coluna financial_account_id já existe em financial_installments).
+-- FK da parcela para a conta. Só adiciona se financial_installments já existir (depende da Fase 1).
+-- Assim este schema roda em qualquer ordem; quando a Fase 1 rodar, rode este de novo para criar a FK.
 do $$ begin
-  begin
-    alter table public.financial_installments
-      add constraint fk_installment_account
-      foreign key (financial_account_id) references public.financial_accounts(id) on delete set null;
-  exception when duplicate_object then null; end;
+  if to_regclass('public.financial_installments') is not null then
+    begin
+      alter table public.financial_installments
+        add constraint fk_installment_account
+        foreign key (financial_account_id) references public.financial_accounts(id) on delete set null;
+    exception when duplicate_object then null; end;
+  end if;
 end $$;
