@@ -1,8 +1,8 @@
 import { C } from '../theme.js'
-import { fmt } from '../utils.js'
+import { fmt, today } from '../utils.js'
 import { Card } from './UI.jsx'
 import { buildMetrics } from '../financialMetrics.js'
-import { auditLedgerReadiness } from '../lib/financialLedger.js'
+import { auditLedgerReadiness, buildLedger } from '../lib/financialLedger.js'
 
 // Conferência contínua da fonte financeira canônica. Um gate + duas reconciliações:
 //  Gate) integridade e cobertura dos dados de autoridade — sem bloqueios na fonte ativa.
@@ -14,6 +14,13 @@ export function LedgerCheck({ data }) {
   const m = buildMetrics(data)
   const mReceivableOpen = (m.accountsReceivable || []).reduce((a, x) => a + (x.value || 0), 0)
   const mPayableOpen = (m.accountsPayable || []).reduce((a, x) => a + (x.value || 0), 0)
+  const currentDate = today()
+  const recurrenceStart = `${currentDate.slice(0, 4)}-01-01`
+  const comparisonLedger = buildLedger(data, { recurrenceFrom:recurrenceStart, recurrenceTo:currentDate })
+  const comparisonTotals = ledgerOpenTotals(comparisonLedger, currentDate)
+  const currentRecurringRevenue = comparisonLedger.entries
+    .filter(entry => entry.source_type === 'recurrence' && entry.direction === 'receivable' && entry.competence_date === currentDate && entry.status !== 'canceled')
+    .reduce((sum, entry) => sum + Number(entry.total_amount || 0), 0)
 
   const allMatch = recon.sources.every(s => Math.abs(s.diff) < 0.01)
 
@@ -120,19 +127,19 @@ export function LedgerCheck({ data }) {
           <table style={{ ...s.table, minWidth:680 }}>
             <thead><tr><th style={s.th}>Indicador</th><th style={{ ...s.th, textAlign: 'right' }}>Dashboard</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Δ</th></tr></thead>
             <tbody>
-              <CompareRow label="Contas a receber (aberto)" dash={mReceivableOpen} led={recon.totals.receivableOpen}
-                note="Recorrências ainda são anexadas às métricas fora do razão; os títulos operacionais vêm da fonte canônica." />
-              <CompareRow label="Contas a pagar (aberto)" dash={mPayableOpen} led={recon.totals.payableOpen}
-                note="Recorrências ainda são anexadas às métricas fora do razão; os títulos operacionais vêm da fonte canônica." />
-              <CompareRow label="Receita bruta (competência)" dash={m.grossRevenue} led={round2SourcesRevenue(recon)}
-                note="Uma diferença só é esperada quando existirem receitas recorrentes ainda não materializadas em lançamento." />
+              <CompareRow label="Contas a receber (aberto)" dash={mReceivableOpen} led={comparisonTotals.receivableOpen}
+                note="Inclui ocorrências recorrentes ainda não materializadas." />
+              <CompareRow label="Contas a pagar (aberto)" dash={mPayableOpen} led={comparisonTotals.payableOpen}
+                note="Inclui ocorrências recorrentes ainda não materializadas." />
+              <CompareRow label="Receita bruta (competência)" dash={m.grossRevenue} led={round2SourcesRevenue(recon) + currentRecurringRevenue}
+                note="Receitas operacionais e ocorrências recorrentes usam a mesma projeção canônica." />
             </tbody>
           </table>
         </div>
         <div style={s.note}>
           Esta tela é somente leitura. A seção A reconcilia a origem; a seção B monitora os principais
-          consumidores da fonte canônica. Recorrências continuam identificadas separadamente até ganharem
-          títulos próprios no razão.
+          consumidores da fonte canônica. Cada ocorrência recorrente também é um título do razão e não é
+          duplicada quando já existe como lançamento operacional.
         </div>
       </Card>
     </div>
@@ -142,4 +149,17 @@ export function LedgerCheck({ data }) {
 function round2SourcesRevenue(recon) {
   const rev = ['Cirurgias (receita)', 'Consultas (receita)', 'Vendas de produto', 'Receitas extras']
   return recon.sources.filter(s => rev.includes(s.label)).reduce((a, s) => a + s.ledger, 0)
+}
+
+function ledgerOpenTotals(ledger, balanceDate) {
+  return ledger.entries.reduce((totals, entry, index) => {
+    if (entry.status === 'canceled' || (entry.issue_date && entry.issue_date > balanceDate)) return totals
+    const open = (ledger.installments[index] || []).reduce((sum, row) => {
+      if (row.settlement_date && row.settlement_date <= balanceDate) return sum
+      return sum + Math.max(0, Number(row.amount || 0) - Number(row.paid_amount || 0))
+    }, 0)
+    if (entry.direction === 'receivable') totals.receivableOpen += open
+    else totals.payableOpen += open
+    return totals
+  }, { receivableOpen:0, payableOpen:0 })
 }

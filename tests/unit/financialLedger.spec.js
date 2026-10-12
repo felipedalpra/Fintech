@@ -62,6 +62,23 @@ test('invariantes: soma das parcelas = total e pago+aberto = total (sem problema
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
 
+test('recorrências geram títulos por ocorrência sem duplicar lançamento materializado', () => {
+  const ledger = buildLedger({
+    recurrences:[
+      { id:'11111111-1111-4111-8111-111111111111', tipo:'receita', descricao:'Mensalidade', valor:1000, categoria:'outras_receitas', frequencia:'mensal', diaExecucao:5, dataInicio:'2026-09-01', autoMarkAsPaid:false, ativo:true },
+      { id:'22222222-2222-4222-8222-222222222222', tipo:'despesa', descricao:'Software', valor:200, categoria:'softwares', frequencia:'mensal', diaExecucao:10, dataInicio:'2026-09-01', autoMarkAsPaid:true, ativo:true },
+    ],
+    extraRevenues:[{ id:'r-materializada', description:'Mensalidade', value:1000, category:'outras_receitas', date:'2026-10-05', dueDate:'2026-10-05', competenceDate:'2026-10-05', status:'pendente' }],
+  }, { recurrenceFrom:'2026-10-01', recurrenceTo:'2026-10-31' })
+  const recurring = ledger.entries.filter(entry => entry.source_type === 'recurrence')
+
+  expect(recurring).toHaveLength(1)
+  expect(recurring[0]).toMatchObject({ source_id:'22222222-2222-4222-8222-222222222222', source_component:'occurrence:2026-10-10', direction:'payable', status:'paid', total_amount:200 })
+  const index = ledger.entries.indexOf(recurring[0])
+  expect(ledger.installments[index][0]).toMatchObject({ due_date:'2026-10-10', settlement_date:'2026-10-10', status:'paid' })
+  expect(checkLedgerInvariants(ledger)).toEqual([])
+})
+
 test('venda de produto: status define pago/aberto; legacy_unverified não vira recebido', () => {
   const ledger = buildLedger({
     productSales: [
