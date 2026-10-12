@@ -25,15 +25,17 @@ test('trocar de área troca a sub-navegação e navega', async ({ page }) => {
 
   await bar.getByRole('button', { name: /Financeiro/ }).click()
   await expect(page).toHaveURL(/\/app\/finance$/)
-  await expect(subNav.getByText('Cirurgias')).toBeVisible()
-  await expect(subNav.getByText('Impostos')).toBeVisible()
+  await expect(subNav.getByText('Financeiro', { exact:true })).toBeVisible()
+  await expect(subNav.getByText('Relatórios')).toBeVisible()
+  await expect(subNav.getByText('Impostos')).toHaveCount(0)
 
   await bar.getByRole('button', { name: /Pacientes/ }).click()
   await expect(page).toHaveURL(/\/app\/funnel$/)
   await expect(subNav.getByText('Funil')).toBeVisible()
   await expect(subNav.getByText('Agenda')).toBeVisible()
-  // Itens do Financeiro saíram da sub-nav da área Pacientes.
-  await expect(subNav.getByText('Cirurgias')).toHaveCount(0)
+  await expect(subNav.getByText('Cirurgias')).toBeVisible()
+  // Itens exclusivos do Financeiro saíram da sub-nav da área Pacientes.
+  await expect(subNav.getByText('Relatórios')).toHaveCount(0)
 })
 
 test('área "em breve" (Clínico) mostra placeholder', async ({ page }) => {
@@ -49,6 +51,12 @@ test('deep-link /app/finance abre na área Financeiro', async ({ page }) => {
   const subNav = page.getByTestId('sub-nav')
   await expect(subNav.getByText('Procedimentos')).toBeVisible()
   await expect(subNav.getByText('Relatórios')).toBeVisible()
+})
+
+test('deep-link antigo de impostos redireciona para o dashboard', async ({ page }) => {
+  await page.goto('/app/impostos')
+  await expect(page).toHaveURL(/\/app\/dashboard$/)
+  await expect(page.getByTestId('sub-nav').getByText('Impostos')).toHaveCount(0)
 })
 
 test('funil continua acessível na área Pacientes', async ({ page }) => {

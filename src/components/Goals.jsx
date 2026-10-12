@@ -4,6 +4,7 @@ import { getPeriodRange, today, uid, fmt, fmtN } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
+import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 
 const GOAL_PULSE_STYLE = `
 @keyframes goalPulse {
@@ -51,6 +52,7 @@ export function Goals({ data, setData }) {
   const [editing, setEditing] = useState(null)
   const [showModal, setShowModal] = useState(false)
   const [confirmId, setConfirmId] = useState(null)
+  const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
   const isCountMetric = metric => metric === 'cirurgias' || metric === 'consultas'
   const displayValue = (metric, value) => isCountMetric(metric) ? fmtN(value) : maskFinancialValue(value, financialPrivacyMode, fmt)
@@ -76,7 +78,14 @@ export function Goals({ data, setData }) {
       const prevTotalExpenses = prevMetrics.operationalExpenses + prevMetrics.taxExpenses + prevMetrics.surgeryCostTotal + prevMetrics.productPurchaseTotal
       const reduction = prevTotalExpenses - currentTotalExpenses
 
-      return { ...goal, current: reduction }
+      return {
+        ...goal,
+        current:reduction,
+        detailRows:[
+          ...(prevMetrics.drilldowns?.totalExpenses || []),
+          ...(currentMetrics.drilldowns?.totalExpenses || []).map(item => ({ ...item, value:-Number(item.value || 0) })),
+        ],
+      }
     }
 
     const metrics = buildMetrics(data, { startDate:range.start, endDate:range.end || goal.dueDate, balanceDate:goal.dueDate })
@@ -88,7 +97,8 @@ export function Goals({ data, setData }) {
       ticket_medio:metrics.averageTicket,
       fluxo_caixa:metrics.cashBalance,
     }[goal.metric] || 0
-    return { ...goal, current }
+    const detailsKey = { faturamento:'grossRevenue', lucro:'netProfit', fluxo_caixa:'cashBalance' }[goal.metric]
+    return { ...goal, current, detailRows:detailsKey ? metrics.drilldowns?.[detailsKey] || [] : null }
   }), [data])
 
   const openAdd = () => { setForm(empty); setEditing(null); setShowModal(true) }
@@ -104,6 +114,7 @@ export function Goals({ data, setData }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
+      <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
       <div style={{ display:'flex', justifyContent:'flex-end' }}><Btn onClick={openAdd}>+ Nova Meta</Btn></div>
       {computedGoals.length === 0 && <Card><p style={{ color:C.textDim, textAlign:'center', padding:'32px 0', fontSize:14 }}>Nenhuma meta cadastrada. Clique em "+ Nova Meta".</p></Card>}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))', gap:16 }}>
@@ -159,7 +170,7 @@ export function Goals({ data, setData }) {
                 <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
                   <div>
                     <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:3 }}>Atual</div>
-                    <div style={{ fontSize:22, fontWeight:800, color }}>{displayValue(goal.metric, goal.current)}</div>
+                    <div role={goal.detailRows ? 'button' : undefined} tabIndex={goal.detailRows ? 0 : undefined} onClick={goal.detailRows ? () => openDrilldown(`Meta — ${goal.name}`, goal.detailRows, goal.current, 'Lançamentos que formam o valor atual desta meta.') : undefined} onKeyDown={goal.detailRows ? event => { if (event.key === 'Enter' || event.key === ' ') event.currentTarget.click() } : undefined} title={goal.detailRows ? 'Clique para ver os lançamentos' : undefined} style={{ fontSize:22, fontWeight:800, color, cursor:goal.detailRows ? 'pointer' : undefined }}>{displayValue(goal.metric, goal.current)}</div>
                   </div>
                   <div style={{ textAlign:'right' }}>
                     <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:3 }}>Meta</div>

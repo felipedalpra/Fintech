@@ -9,6 +9,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
+import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -151,6 +152,7 @@ export function Sales({ data, setData }) {
   const [filterStatus, setFilterStatus] = useState('todos')
   const [sortBy, setSortBy] = useState('recentes') // 'recentes' | 'antigas' | 'valor'
   const [installmentModal, setInstallmentModal] = useState(null)
+  const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -305,8 +307,19 @@ export function Sales({ data, setData }) {
   const installmentValueCalc = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
     ? (form.totalValue || 0) / form.installmentCount
     : 0
+  const surgeryDetails = rows => rows.map(item => ({
+    id:item.id,
+    date:item.competenceDate || item.date,
+    origin:'cirurgia',
+    description:data.procedures.find(procedure => procedure.id === item.procedureId)?.name || 'Cirurgia',
+    party:item.patient || '',
+    category:'cirurgia',
+    status:item.paymentStatus,
+    value:Number(item.totalValue || 0),
+  }))
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
       <FilterBar
         isMobile={isMobile}
         search={search}
@@ -328,13 +341,13 @@ export function Sales({ data, setData }) {
 
       {/* Summary stats bar */}
       <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'repeat(3,minmax(0,1fr))', gap:12 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, background:C.yellow+'18', border:`1px solid ${C.yellow}33`, borderRadius:12, padding:'10px 18px', flex:1, minWidth:160 }}>
+        <div role="button" tabIndex={0} onClick={() => openDrilldown('Cirurgias a receber', surgeryDetails(data.surgeries.filter(item => item.paymentStatus === 'pendente' || item.paymentStatus === 'parcelado')), totalAReceber)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.currentTarget.click() }} title="Clique para ver os lançamentos" style={{ display:'flex', alignItems:'center', gap:10, background:C.yellow+'18', border:`1px solid ${C.yellow}33`, borderRadius:12, padding:'10px 18px', flex:1, minWidth:160, cursor:'pointer' }}>
           <div>
             <div style={{ fontSize:11, fontWeight:700, color:C.yellow, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:2 }}>Total a receber</div>
             <div style={{ fontSize:18, fontWeight:700, color:C.text }}>{fmt(totalAReceber)}</div>
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10, background:C.green+'18', border:`1px solid ${C.green}33`, borderRadius:12, padding:'10px 18px', flex:1, minWidth:160 }}>
+        <div role="button" tabIndex={0} onClick={() => openDrilldown('Cirurgias recebidas', surgeryDetails(data.surgeries.filter(item => item.paymentStatus === 'pago')), totalRecebido)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.currentTarget.click() }} title="Clique para ver os lançamentos" style={{ display:'flex', alignItems:'center', gap:10, background:C.green+'18', border:`1px solid ${C.green}33`, borderRadius:12, padding:'10px 18px', flex:1, minWidth:160, cursor:'pointer' }}>
           <div>
             <div style={{ fontSize:11, fontWeight:700, color:C.green, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:2 }}>Total recebido</div>
             <div style={{ fontSize:18, fontWeight:700, color:C.text }}>{fmt(totalRecebido)}</div>

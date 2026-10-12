@@ -23,7 +23,6 @@ import { NavIcon } from '../components/NavIcon.jsx'
 import { AlertsBell } from '../components/AlertsBell.jsx'
 import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
-import { TaxCalculator } from '../components/TaxCalculator.jsx'
 import { Patients } from '../components/Patients.jsx'
 import { OpportunityPipeline } from '../components/OpportunityPipeline.jsx'
 import { WhatsAppInbox } from '../components/WhatsAppInbox.jsx'
@@ -83,7 +82,6 @@ const AREAS = [
         { id:'recurrences',   label:'Recorrências',  icon:'recurrences',   hint:'Despesas e receitas fixas' },
       ] },
       { title:'Análise', items:[
-        { id:'impostos', label:'Impostos',   icon:'taxes',   hint:'Carnê-Leão, IRPF e DAS' },
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
         { id:'reports',  label:'Relatórios', icon:'reports', hint:'Central de exportações em Excel' },
         { id:'ledger-check', label:'Conferência do razão', icon:'reports', hint:'Validação razão × dashboard' },
@@ -129,7 +127,6 @@ const TITLES = {
   calendar:'Agenda',
   products:'Modeladores e Produtos Pós-Operatórios',
   finance:'Financeiro',
-  impostos:'Impostos & Tributos',
   cashflow:'Fluxo de Caixa',
   dre:'DRE',
   balance:'Balanço Patrimonial',
@@ -155,7 +152,6 @@ const SUBTITLES = {
   calendar:'Visualize cirurgias e consultas no calendário.',
   products:'Gerencie modeladores, compras, vendas e estoque.',
   finance:'Centralize entradas, saídas, contas, DRE e balanço.',
-  impostos:'Calcule Carnê-Leão, IRPF e tributos baseados nas suas receitas.',
   cashflow:'Movimentações realizadas e saldo por período.',
   dre:'Resultado do período por competência.',
   balance:'Ativos, passivos e patrimônio da clínica.',
@@ -180,7 +176,6 @@ const PAGES = {
   calendar:Calendar,
   products:Products,
   finance:props => <Finance {...props} defaultTab="entradas" />,
-  impostos:props => <TaxCalculator {...props} />,
   cashflow:props => <Finance {...props} defaultTab="fluxo" />,
   dre:props => <Finance {...props} defaultTab="dre" />,
   balance:props => <Finance {...props} defaultTab="balanco" />,

@@ -14,6 +14,7 @@ import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
+import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -156,7 +157,7 @@ function buildIndicatorPeriodKey(range) {
 export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const SUMMARY_CARDS = [
-    ['Recebido no período', 'cashBalance', C.cyan],
+    ['Resultado de caixa', 'cashBalance', C.cyan],
     ['Lucro líquido', 'netProfit', 'dynamic-profit'],
     ['A receber', 'receivablesOpenTotal', C.accent],
     ['A pagar', 'payablesOpenTotal', C.yellow],
@@ -183,6 +184,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
   const [formError, setFormError] = useState('')
   const range = getPeriodRange(period, customRange)
   const indicatorPeriodKey = useMemo(() => buildIndicatorPeriodKey(range), [range.start, range.end])
@@ -296,9 +298,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     const grouped = {}
     m.cashFlowEntries.forEach(item => {
       const key = item.date
-      if (!grouped[key]) grouped[key] = { date:key, entradas:0, saidas:0, saldo:0 }
+      if (!grouped[key]) grouped[key] = { date:key, entradas:0, saidas:0, saldo:0, items:[] }
       if (item.type === 'entrada') grouped[key].entradas += item.value
       if (item.type === 'saida') grouped[key].saidas += item.value
+      grouped[key].items.push(item)
       grouped[key].saldo = grouped[key].entradas - grouped[key].saidas
     })
     return Object.values(grouped).sort((a, b) => (a.date || '').localeCompare(b.date || ''))
@@ -723,18 +726,18 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   // DRE rows definition
   const dreRows = [
-    { label: 'Receita bruta total', getValue: mx => mx.surgeryRevenue + mx.consultationRevenue + mx.productSalesRevenue + mx.extraRevenueTotal, color: C.green, bold: false },
-    { label: '(-) Custos de cirurgias', getValue: mx => mx.surgeryCostTotal, color: C.red, bold: false },
-    { label: 'Receita líquida de cirurgias', getValue: mx => mx.surgeryRevenue - mx.surgeryCostTotal, color: null, bold: false },
-    { label: 'Receita de consultas', getValue: mx => mx.consultationRevenue, color: C.green, bold: false },
-    { label: '(-) Custos de consultas (NF)', getValue: mx => mx.consultationCostTotal, color: C.red, bold: false },
-    { label: 'Receita líquida de consultas', getValue: mx => mx.consultationRevenue - mx.consultationCostTotal, color: null, bold: false },
-    { label: 'Receita de produtos', getValue: mx => mx.productSalesRevenue, color: C.green, bold: false },
-    { label: '(-) CMV de produtos', getValue: mx => mx.productCostOfSales, color: C.red, bold: false },
-    { label: 'Outras receitas', getValue: mx => mx.extraRevenueTotal, color: C.green, bold: false },
-    { label: '= Receita operacional total', getValue: mx => mx.grossRevenue, color: C.accent, bold: true },
-    { label: '(-) Despesas operacionais', getValue: mx => mx.operationalExpenses, color: C.red, bold: false },
-    { label: '= Lucro operacional', getValue: mx => mx.operatingProfit, color: mx => mx.operatingProfit >= 0 ? C.accent : C.red, bold: true },
+    { label: 'Receita bruta total', getValue: mx => mx.surgeryRevenue + mx.consultationRevenue + mx.productSalesRevenue + mx.extraRevenueTotal, detailsKey:'grossRevenue', color: C.green, bold: false },
+    { label: '(-) Custos de cirurgias', getValue: mx => mx.surgeryCostTotal, detailsKey:'surgeryCostTotal', color: C.red, bold: false },
+    { label: 'Receita líquida de cirurgias', getValue: mx => mx.surgeryRevenue - mx.surgeryCostTotal, detailsKey:'surgeryNetRevenue', color: null, bold: false },
+    { label: 'Receita de consultas', getValue: mx => mx.consultationRevenue, detailsKey:'consultationRevenue', color: C.green, bold: false },
+    { label: '(-) Custos de consultas (NF)', getValue: mx => mx.consultationCostTotal, detailsKey:'consultationCostTotal', color: C.red, bold: false },
+    { label: 'Receita líquida de consultas', getValue: mx => mx.consultationRevenue - mx.consultationCostTotal, detailsKey:'consultationNetRevenue', color: null, bold: false },
+    { label: 'Receita de produtos', getValue: mx => mx.productSalesRevenue, detailsKey:'productSalesRevenue', color: C.green, bold: false },
+    { label: '(-) CMV de produtos', getValue: mx => mx.productCostOfSales, detailsKey:'productCostOfSales', color: C.red, bold: false },
+    { label: 'Outras receitas', getValue: mx => mx.extraRevenueTotal, detailsKey:'extraRevenueTotal', color: C.green, bold: false },
+    { label: '= Receita operacional total', getValue: mx => mx.grossRevenue, detailsKey:'grossRevenue', color: C.accent, bold: true },
+    { label: '(-) Despesas operacionais', getValue: mx => mx.operationalExpenses, detailsKey:'operationalExpenses', color: C.red, bold: false },
+    { label: '= Lucro operacional', getValue: mx => mx.operatingProfit, detailsKey:'operatingProfit', color: mx => mx.operatingProfit >= 0 ? C.accent : C.red, bold: true },
     { label: 'Margem operacional %', getValue: mx => mx.grossRevenue > 0 ? (mx.operatingProfit / mx.grossRevenue * 100) : 0, isPercent: true, color: mx => mx.operatingProfit >= 0 ? C.green : C.red, bold: false },
   ]
 
@@ -899,15 +902,16 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     const outras = m.extraRevenueTotal
     const total = cirurgias + consultas + produtos + outras || 1
     return [
-      { label: 'Cirurgias', value: cirurgias, color: C.accent },
-      { label: 'Consultas', value: consultas, color: C.cyan },
-      { label: 'Produtos', value: produtos, color: C.yellow },
-      { label: 'Outras receitas', value: outras, color: C.purple },
+      { label: 'Cirurgias', value: cirurgias, detailsKey:'surgeryRevenue', color: C.accent },
+      { label: 'Consultas', value: consultas, detailsKey:'consultationRevenue', color: C.cyan },
+      { label: 'Produtos', value: produtos, detailsKey:'productSalesRevenue', color: C.yellow },
+      { label: 'Outras receitas', value: outras, detailsKey:'extraRevenueTotal', color: C.purple },
     ].map(item => ({ ...item, pct: total > 0 ? item.value / total * 100 : 0, total }))
   })()
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
       <div style={{ position:'sticky', top:0, zIndex:5, marginBottom:2 }}>
         <div style={{ background:`linear-gradient(180deg, ${C.bg}FA, ${C.bg}EB)`, border:`1px solid ${C.border}66`, borderRadius:18, padding:16, backdropFilter:'blur(12px)' }}>
           <div style={{ marginBottom:12 }}>
@@ -968,9 +972,10 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           const value = m[key]
           const resolvedColor = color === 'dynamic-profit' ? (value >= 0 ? C.green : C.red) : color
           return (
-            <Card key={label} style={{ padding:isMobile ? 14 : 18, background:`linear-gradient(135deg, ${resolvedColor}0A, transparent)`, border:`1px solid ${resolvedColor}22` }}>
+            <Card key={label} onClick={() => openDrilldown(label, m.drilldowns?.[key] || [], value, 'Lançamentos considerados no período e regime deste indicador.')} title="Clique para ver os lançamentos" style={{ padding:isMobile ? 14 : 18, background:`linear-gradient(135deg, ${resolvedColor}0A, transparent)`, border:`1px solid ${resolvedColor}22` }}>
               <div style={{ fontSize:10, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>{label}</div>
               <div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color:resolvedColor, letterSpacing:'-0.02em' }}>{money(value)}</div>
+              <div style={{ fontSize:10, color:C.accentLight, marginTop:7, fontWeight:700 }}>Ver lançamentos →</div>
             </Card>
           )
         })}
@@ -1039,7 +1044,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:16 }}>Receita por origem</div>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             {revenueOrigins.map(item => (
-              <div key={item.label}>
+              <div key={item.label} role="button" tabIndex={0} onClick={() => openDrilldown(`Receita de ${item.label.toLowerCase()}`, m.drilldowns?.[item.detailsKey] || [], item.value)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openDrilldown(`Receita de ${item.label.toLowerCase()}`, m.drilldowns?.[item.detailsKey] || [], item.value) }} title="Clique para ver os lançamentos" style={{ cursor:'pointer' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
                   <span style={{ fontSize:12, color:C.textSub, fontWeight:600 }}>{item.label}</span>
                   <span style={{ fontSize:12, color:C.textSub }}>
@@ -1100,7 +1105,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                 const barColors = [C.red, C.yellow, C.purple, C.cyan, C.accent]
                 const barColor = barColors[idx % barColors.length]
                 return (
-                  <div key={item.cat}>
+                  <div key={item.cat} role="button" tabIndex={0} onClick={() => openDrilldown(`Despesas — ${item.cat.replaceAll('_', ' ')}`, m.drilldowns?.byExpenseCategory?.[item.cat] || [], item.total)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.currentTarget.click() }} title="Clique para ver os lançamentos" style={{ cursor:'pointer' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
                       <span style={{ fontSize:12, color:C.textSub, fontWeight:600, textTransform:'capitalize' }}>{item.cat}</span>
                       <span style={{ fontSize:12, color:barColor, fontWeight:700 }}>{money(item.total)}</span>
@@ -1143,6 +1148,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           color={C.green}
           rows={groupAccountsByMonth(filteredAccountsReceivable)}
           money={money}
+          onOpen={item => openDrilldown(`Recebíveis de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.patient || '', origin:row.source, description:row.description || row.patient || 'Conta a receber' })), item.total)}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
         <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[item.source, item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, ['recorrencia','outra_receita'].includes(item.source) ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
@@ -1155,6 +1161,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
           color={C.red}
           rows={groupAccountsByMonth(filteredAccountsPayable)}
           money={money}
+          onOpen={item => openDrilldown(`Contas a pagar de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.supplier || '', origin:row.source, description:row.description || row.supplier || 'Conta a pagar' })), item.total)}
           emptyMessage="Sem contas a pagar agrupadas por mês."
         />
         <RecordTable columns={['Categoria', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
@@ -1225,7 +1232,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                   }
 
                   return (
-                    <tr key={row.label} style={{ borderTop:`1px solid ${C.border}22` }}>
+                    <tr
+                      key={row.label}
+                      onClick={row.detailsKey ? () => openDrilldown(row.label.replace(/^\W+/, ''), m.drilldowns?.[row.detailsKey] || [], currentVal, 'Composição por competência do período selecionado.') : undefined}
+                      title={row.detailsKey ? 'Clique para ver os lançamentos' : undefined}
+                      style={{ borderTop:`1px solid ${C.border}22`, cursor:row.detailsKey ? 'pointer' : undefined }}
+                    >
                       <td style={{ padding:'12px 0', color:C.textSub, fontSize:13, fontWeight: row.bold ? 700 : 400 }}>{row.label}</td>
                       <td style={{ padding:'12px 12px', textAlign:'right', color:currentColor, fontWeight: row.bold ? 800 : 700, fontSize:13 }}>
                         {formatVal(currentVal)}
@@ -1253,7 +1265,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         </Card>
       )}
 
-      {tab === 'balanco' && <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:16 }}><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Ativos complementares" subtitle="Banco, aplicações e outros ativos fora do caixa operacional." compact /><Btn onClick={() => openAdd('asset')} style={{ padding:'7px 12px' }}>+ Ativo</Btn></div><BalanceList items={data.assets} color={C.green} onEdit={item => openEdit('asset', item)} onDelete={item => setConfirmState({ type:'asset', id:item.id })} emptyMessage="Nenhum ativo complementar." hidden={financialPrivacyMode} /></Card><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Passivos complementares" subtitle="Empréstimos, obrigações e passivos extras." compact /><Btn onClick={() => openAdd('liability')} style={{ padding:'7px 12px' }}>+ Passivo</Btn></div><BalanceList items={data.liabilities} color={C.red} onEdit={item => openEdit('liability', item)} onDelete={item => setConfirmState({ type:'liability', id:item.id })} emptyMessage="Nenhum passivo complementar." hidden={financialPrivacyMode} /></Card><Card style={{ gridColumn:'1 / -1' }}><SectionTitle title="Balanço patrimonial automático" subtitle="Posição financeira consolidada na data selecionada." /><div style={{ marginTop:8 }}>{[['Caixa', m.cashBalance, C.cyan], ['Contas a receber', m.receivablesOpenTotal, C.green], ['Banco e outros ativos', data.assets.reduce((acc, item) => acc + (item.value || 0), 0), C.accent], ['Contas a pagar', m.payablesOpenTotal, C.red], ['Passivos complementares', data.liabilities.reduce((acc, item) => acc + (item.value || 0), 0), C.red], ['Lucros acumulados / patrimônio', m.equity, m.equity >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'12px 0', borderTop:`1px solid ${C.border}22`, alignItems:'center', flexWrap:'wrap' }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{money(value)}</span></div>)}</div></Card></div>}
+      {tab === 'balanco' && <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:16 }}><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Ativos complementares" subtitle="Banco, aplicações e outros ativos fora do caixa operacional." compact /><Btn onClick={() => openAdd('asset')} style={{ padding:'7px 12px' }}>+ Ativo</Btn></div><BalanceList items={data.assets} color={C.green} onEdit={item => openEdit('asset', item)} onDelete={item => setConfirmState({ type:'asset', id:item.id })} emptyMessage="Nenhum ativo complementar." hidden={financialPrivacyMode} /></Card><Card><div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18, gap:12, flexWrap:'wrap' }}><SectionTitle title="Passivos complementares" subtitle="Empréstimos, obrigações e passivos extras." compact /><Btn onClick={() => openAdd('liability')} style={{ padding:'7px 12px' }}>+ Passivo</Btn></div><BalanceList items={data.liabilities} color={C.red} onEdit={item => openEdit('liability', item)} onDelete={item => setConfirmState({ type:'liability', id:item.id })} emptyMessage="Nenhum passivo complementar." hidden={financialPrivacyMode} /></Card><Card style={{ gridColumn:'1 / -1' }}><SectionTitle title="Balanço patrimonial automático" subtitle="Posição financeira consolidada na data selecionada." /><div style={{ marginTop:8 }}>{[['Caixa', m.cashBalance, C.cyan, 'cashBalance'], ['Contas a receber', m.receivablesOpenTotal, C.green, 'receivablesOpenTotal'], ['Banco e outros ativos', data.assets.reduce((acc, item) => acc + (item.value || 0), 0), C.accent, 'bankAssets'], ['Contas a pagar', m.payablesOpenTotal, C.red, 'payablesOpenTotal'], ['Passivos complementares', data.liabilities.reduce((acc, item) => acc + (item.value || 0), 0), C.red, 'complementaryLiabilities'], ['Lucros acumulados / patrimônio', m.equity, m.equity >= 0 ? C.green : C.red, 'equity']].map(([label, value, color, detailsKey]) => <div key={label} role="button" tabIndex={0} onClick={() => openDrilldown(label, m.drilldowns?.[detailsKey] || [], value, 'Composição da posição financeira na data selecionada.')} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openDrilldown(label, m.drilldowns?.[detailsKey] || [], value) }} title="Clique para ver os lançamentos" style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'12px 0', borderTop:`1px solid ${C.border}22`, alignItems:'center', flexWrap:'wrap', cursor:'pointer' }}><span style={{ color:C.textSub }}>{label}</span><span style={{ color, fontWeight:700 }}>{money(value)}</span></div>)}</div></Card></div>}
 
       {tab === 'inadimplencia' && <>
         <SectionTitle
@@ -1334,20 +1346,20 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       {tab === 'fluxo' && <>
         <SectionTitle title="Fluxo de caixa" subtitle="Entradas e saídas efetivamente realizadas, agrupadas por data." />
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:12, marginBottom:12 }}>
-          <Card style={{ padding:16 }}>
+          <Card onClick={() => openDrilldown('Entradas no período', m.drilldowns?.cashIn || [], flowSummary.entradas)} title="Clique para ver os lançamentos" style={{ padding:16 }}>
             <div style={{ color:C.textSub, fontSize:12, marginBottom:4 }}>Entradas no período</div>
             <div style={{ color:C.green, fontSize:20, fontWeight:700 }}>{money(flowSummary.entradas)}</div>
           </Card>
-          <Card style={{ padding:16 }}>
+          <Card onClick={() => openDrilldown('Saídas no período', m.drilldowns?.cashOut || [], flowSummary.saidas)} title="Clique para ver os lançamentos" style={{ padding:16 }}>
             <div style={{ color:C.textSub, fontSize:12, marginBottom:4 }}>Saídas no período</div>
             <div style={{ color:C.red, fontSize:20, fontWeight:700 }}>{money(flowSummary.saidas)}</div>
           </Card>
-          <Card style={{ padding:16 }}>
+          <Card onClick={() => openDrilldown('Resultado de caixa do período', m.drilldowns?.cashBalance || [], flowSummary.resultado)} title="Clique para ver os lançamentos" style={{ padding:16 }}>
             <div style={{ color:C.textSub, fontSize:12, marginBottom:4 }}>Resultado de caixa do período</div>
             <div style={{ color:flowSummary.resultado >= 0 ? C.green : C.red, fontSize:20, fontWeight:700 }}>{money(flowSummary.resultado)}</div>
           </Card>
         </div>
-        <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => ({ key:item.date, cells:[formatDateBR(item.date), <span style={{ color:C.green, fontWeight:700 }}>{money(item.entradas)}</span>, <span style={{ color:C.red, fontWeight:700 }}>{money(item.saidas)}</span>, <span style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700 }}>{money(item.saldo)}</span>] }))} emptyMessage="Nenhuma movimentação de caixa realizada no período." />
+        <RecordTable columns={['Data', 'Entradas', 'Saídas', 'Saldo']} rows={flowRows.map(item => { const openDay = () => openDrilldown(`Movimentações de ${formatDateBR(item.date)}`, item.items.map(row => ({ ...row, party:'', status:'liquidado', value:Number(row.value || 0) * (row.type === 'entrada' ? 1 : -1) })), item.saldo); return { key:item.date, cells:[formatDateBR(item.date), <span role="button" tabIndex={0} onClick={openDay} style={{ color:C.green, fontWeight:700, cursor:'pointer' }}>{money(item.entradas)}</span>, <span role="button" tabIndex={0} onClick={openDay} style={{ color:C.red, fontWeight:700, cursor:'pointer' }}>{money(item.saidas)}</span>, <span role="button" tabIndex={0} onClick={openDay} style={{ color:item.saldo >= 0 ? C.green : C.red, fontWeight:700, cursor:'pointer' }}>{money(item.saldo)}</span>] } })} emptyMessage="Nenhuma movimentação de caixa realizada no período." />
 
         <div style={{ marginTop:8 }}>
           <SectionTitle title="Projeção — próximos 3 meses" subtitle="Estimativa baseada nas recorrências cadastradas e cirurgias/consultas agendadas." />
@@ -2001,14 +2013,15 @@ function groupAccountsByMonth(items) {
     const dueDate = String(item.dueDate || '')
     const key = dueDate.length >= 7 ? dueDate.slice(0, 7) : dueDate
     if (!key) return
-    if (!grouped[key]) grouped[key] = { month:key, total:0, count:0 }
+    if (!grouped[key]) grouped[key] = { month:key, total:0, count:0, items:[] }
     grouped[key].total += Number(item.value || 0)
     grouped[key].count += 1
+    grouped[key].items.push(item)
   })
   return Object.values(grouped).sort((a, b) => a.month.localeCompare(b.month))
 }
 
-function MonthlyAccountsSummary({ title, color, rows, money, emptyMessage }) {
+function MonthlyAccountsSummary({ title, color, rows, money, emptyMessage, onOpen }) {
   return (
     <Card style={{ padding:16 }}>
       <div style={{ fontSize:12, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:700, marginBottom:10 }}>{title}</div>
@@ -2017,7 +2030,7 @@ function MonthlyAccountsSummary({ title, color, rows, money, emptyMessage }) {
       ) : (
         <div style={{ display:'grid', gap:8 }}>
           {rows.map(item => (
-            <div key={item.month} style={{ display:'flex', justifyContent:'space-between', gap:16, alignItems:'center', borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
+            <div key={item.month} role="button" tabIndex={0} onClick={() => onOpen?.(item)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onOpen?.(item) }} title="Clique para ver os lançamentos" style={{ display:'flex', justifyContent:'space-between', gap:16, alignItems:'center', borderTop:`1px solid ${C.border}33`, paddingTop:8, cursor:onOpen ? 'pointer' : undefined }}>
               <span style={{ color:C.textSub }}>{item.month} · {item.count} lançamento(s)</span>
               <span style={{ color, fontWeight:700 }}>{money(item.total)}</span>
             </div>

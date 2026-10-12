@@ -148,7 +148,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           referenceId:entry.source_id,
           sourceComponent:entry.source_component,
         }
-        cumulativeEntries.push({ type:entry.direction === 'receivable' ? 'entrada' : 'saida', value:paidValue })
+        cumulativeEntries.push({ ...cashRow, type:entry.direction === 'receivable' ? 'entrada' : 'saida' })
         if (inRange(row.settlement_date, startDate, endDate)) {
           if (entry.direction === 'receivable') entriesFinancial.push(cashRow)
           else exitsFinancial.push(cashRow)
@@ -186,7 +186,28 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
     }
   })
 
-  return { ...ledger, competenceEntries, entriesFinancial, exitsFinancial, accountsReceivable, accountsPayable, cumulativeEntries }
+  const competenceDetails = competenceEntries.map(entry => {
+    const source = sourceMaps[entry.source_type]?.get(entry.source_id)
+    const presentation = ledgerPresentation(entry, source, data)
+    return {
+      id:`competence-${entry.source_type}-${entry.source_id}-${entry.source_component}`,
+      date:entry.competence_date,
+      competenceDate:entry.competence_date,
+      dueDate:null,
+      origin:presentation.origin,
+      description:presentation.accountDescription || presentation.description,
+      party:entry.party_name_snapshot || '',
+      category:presentation.category || entry.category || '',
+      status:entry.status,
+      value:Number(entry.total_amount || 0),
+      direction:entry.direction,
+      sourceType:entry.source_type,
+      sourceId:entry.source_id,
+      sourceComponent:entry.source_component,
+    }
+  })
+
+  return { ...ledger, competenceEntries, competenceDetails, entriesFinancial, exitsFinancial, accountsReceivable, accountsPayable, cumulativeEntries }
 }
 
 export function buildMetrics(rawData, options = {}) {
@@ -232,6 +253,27 @@ export function buildMetrics(rawData, options = {}) {
   const productPurchasesTotal = sumLedger(entry => entry.source_type === 'product_purchase' && entry.direction === 'payable')
   const productCosting = buildProductCosting(data)
   const productCostOfSales = productSalesInRange.reduce((acc, sale) => acc + Number(productCosting.salesCost[sale.id]?.totalCost || 0), 0)
+  const productCostOfSalesDetails = productSalesInRange
+    .map(sale => {
+      const product = mapProduct(products, sale.productId)
+      return {
+        id:`cmv-${sale.id}`,
+        date:sale.competenceDate || sale.saleDate,
+        competenceDate:sale.competenceDate || sale.saleDate,
+        origin:'cmv_produto',
+        description:`CMV - ${product?.name || 'Produto'}`,
+        party:sale.patientName || '',
+        category:'cmv_produto',
+        status:sale.paymentStatus || 'a_conferir',
+        value:Number(productCosting.salesCost[sale.id]?.totalCost || 0),
+        direction:'payable',
+        sourceType:'product_sale',
+        sourceId:sale.id,
+        sourceComponent:'cost_of_sales',
+        productId:sale.productId,
+      }
+    })
+    .filter(item => item.value > 0)
   // Compatibilidade: consumidores antigos usam productPurchaseTotal como a linha de custo da DRE.
   // A partir da Fase 10, o campo representa CMV histórico; compras ficam em productPurchasesTotal.
   const productPurchaseTotal = productCostOfSales
@@ -328,6 +370,80 @@ export function buildMetrics(rawData, options = {}) {
     if (item.type === 'saida') accumulateByMonth(expenseByMonth, item.date, item.value)
   })
 
+  const detailRows = ledger.competenceDetails || []
+  const pick = predicate => detailRows.filter(predicate)
+  const signed = (rows, sign = 1) => rows.map(item => ({ ...item, value:Number(item.value || 0) * sign }))
+  const revenueDetails = pick(entry => entry.direction === 'receivable')
+  const surgeryRevenueDetails = pick(entry => entry.sourceType === 'surgery' && entry.sourceComponent === 'revenue')
+  const surgeryCostDetails = pick(entry => entry.sourceType === 'surgery' && entry.direction === 'payable')
+  const consultationRevenueDetails = pick(entry => entry.sourceType === 'consultation' && entry.sourceComponent === 'revenue')
+  const consultationCostDetails = pick(entry => entry.sourceType === 'consultation' && entry.direction === 'payable')
+  const productRevenueDetails = pick(entry => entry.sourceType === 'product_sale' && entry.direction === 'receivable')
+  const productPurchaseDetails = pick(entry => entry.sourceType === 'product_purchase' && entry.direction === 'payable')
+  const extraRevenueDetails = pick(entry => ['extra_revenue', 'recurrence'].includes(entry.sourceType) && entry.direction === 'receivable')
+  const operationalExpenseDetails = pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.category !== 'impostos')
+  const taxExpenseDetails = pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.category === 'impostos')
+  const totalExpenseDetails = [...surgeryCostDetails, ...consultationCostDetails, ...productCostOfSalesDetails, ...operationalExpenseDetails, ...taxExpenseDetails]
+  const operatingProfitDetails = [
+    ...signed(revenueDetails),
+    ...signed(surgeryCostDetails, -1),
+    ...signed(consultationCostDetails, -1),
+    ...signed(productCostOfSalesDetails, -1),
+    ...signed(operationalExpenseDetails, -1),
+  ]
+  const netProfitDetails = [...operatingProfitDetails, ...signed(taxExpenseDetails, -1)]
+  const cashInDetails = entriesFinancial.map(item => ({ ...item, party:'', status:'liquidado', direction:'receivable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || 'revenue' }))
+  const cashOutDetails = exitsFinancial.map(item => ({ ...item, party:'', status:'liquidado', direction:'payable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || 'expense' }))
+  const cashBalanceDetails = [...signed(cashInDetails), ...signed(cashOutDetails, -1)]
+  const cumulativeCashDetails = cumulativeEntries.map(item => ({ ...item, party:'', status:'liquidado', direction:item.type === 'entrada' ? 'receivable' : 'payable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || (item.type === 'entrada' ? 'revenue' : 'expense'), value:Number(item.value || 0) * (item.type === 'entrada' ? 1 : -1) }))
+  const receivableDetails = accountsReceivable.map(item => ({ ...item, date:item.dueDate, party:item.patient || '', origin:item.source, direction:'receivable', sourceType:item.source, sourceId:item.sourceId, sourceComponent:'open', description:item.description || item.patient || 'Conta a receber' }))
+  const payableDetails = accountsPayable.map(item => ({ ...item, date:item.dueDate, party:item.supplier || '', origin:item.source, direction:'payable', sourceType:item.source, sourceId:item.sourceId, sourceComponent:'open', description:item.description || item.supplier || 'Conta a pagar' }))
+  const assetDetails = (assets || []).map(item => ({ id:`asset-${item.id}`, date:balanceDate, origin:'ativo', description:item.name || 'Ativo complementar', party:'', category:item.category || 'ativo', status:'ativo', value:Number(item.value || 0), direction:'receivable', sourceType:'asset', sourceId:item.id, sourceComponent:'balance' }))
+  const liabilityDetails = (liabilities || []).map(item => ({ id:`liability-${item.id}`, date:balanceDate, origin:'passivo', description:item.name || 'Passivo complementar', party:'', category:item.category || 'passivo', status:'aberto', value:Number(item.value || 0), direction:'payable', sourceType:'liability', sourceId:item.id, sourceComponent:'balance' }))
+  const inventoryDetails = products.map(product => {
+    const stock = Math.max(0, Number(inventoryStockAtBalance[product.id] || 0))
+    const unitCost = Number(inventoryCostingAtBalance.averageByProduct[product.id] || 0)
+    return { id:`inventory-${product.id}`, date:balanceDate, origin:'estoque', description:product.name || 'Produto', party:'', category:product.category || 'estoque', status:'em_estoque', value:stock * unitCost, quantity:stock, direction:'receivable', sourceType:'inventory', sourceId:product.id, sourceComponent:'stock' }
+  }).filter(item => item.value > 0)
+  const balanceAssetDetails = [...cumulativeCashDetails, ...receivableDetails, ...assetDetails, ...inventoryDetails]
+  const balanceLiabilityDetails = [...payableDetails, ...liabilityDetails]
+
+  const drilldowns = {
+    grossRevenue:revenueDetails,
+    surgeryRevenue:surgeryRevenueDetails,
+    surgeryCostTotal:surgeryCostDetails,
+    surgeryNetRevenue:[...signed(surgeryRevenueDetails), ...signed(surgeryCostDetails, -1)],
+    consultationRevenue:consultationRevenueDetails,
+    consultationCostTotal:consultationCostDetails,
+    consultationNetRevenue:[...signed(consultationRevenueDetails), ...signed(consultationCostDetails, -1)],
+    productSalesRevenue:productRevenueDetails,
+    productPurchasesTotal:productPurchaseDetails,
+    productCostOfSales:productCostOfSalesDetails,
+    extraRevenueTotal:extraRevenueDetails,
+    operationalExpenses:operationalExpenseDetails,
+    taxExpenses:taxExpenseDetails,
+    totalExpenses:totalExpenseDetails,
+    operatingProfit:operatingProfitDetails,
+    netProfit:netProfitDetails,
+    cashIn:cashInDetails,
+    cashOut:cashOutDetails,
+    cashBalance:cashBalanceDetails,
+    receivablesOpenTotal:receivableDetails,
+    payablesOpenTotal:payableDetails,
+    prediction:[...cashBalanceDetails, ...receivableDetails, ...signed(payableDetails, -1)],
+    inventoryAsset:inventoryDetails,
+    bankAssets:assetDetails,
+    complementaryLiabilities:liabilityDetails,
+    assetsTotal:balanceAssetDetails,
+    liabilitiesTotal:balanceLiabilityDetails,
+    equity:[...balanceAssetDetails, ...signed(balanceLiabilityDetails, -1)],
+    byExpenseCategory:Object.fromEntries(Object.keys(expensesByCategory).map(category => [category, operationalExpenseDetails.concat(taxExpenseDetails).filter(item => item.category === category)])),
+    byProduct:Object.fromEntries(products.map(product => [product.id, {
+      revenue:productRevenueDetails.filter(item => item.sourceId && productSalesInRange.some(sale => sale.id === item.sourceId && sale.productId === product.id)),
+      cost:productCostOfSalesDetails.filter(item => item.productId === product.id),
+    }])),
+  }
+
   return {
     grossRevenue,
     surgeryRevenue,
@@ -369,6 +485,7 @@ export function buildMetrics(rawData, options = {}) {
     surgeriesByMonth,
     consultationsByInsurance,
     prediction:cashBalance + receivablesOpenTotal - payablesOpenTotal,
+    drilldowns,
     financialSource:'ledger_projection',
     goals,
   }

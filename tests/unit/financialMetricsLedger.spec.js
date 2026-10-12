@@ -51,6 +51,28 @@ test('Fase 10: DRE lê competência do razão e caixa lê liquidação', () => {
   expect(metrics.cashBalance).toBe(110)
 })
 
+test('drill-downs reconciliam a centavo com os indicadores financeiros', () => {
+  const metrics = buildMetrics(data, {
+    startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31',
+  })
+  const sum = key => metrics.drilldowns[key].reduce((total, item) => total + Number(item.value || 0), 0)
+  const totalExpenses = metrics.surgeryCostTotal + metrics.consultationCostTotal + metrics.productCostOfSales + metrics.operationalExpenses + metrics.taxExpenses
+
+  expect(sum('grossRevenue')).toBeCloseTo(metrics.grossRevenue, 2)
+  expect(sum('totalExpenses')).toBeCloseTo(totalExpenses, 2)
+  expect(sum('operatingProfit')).toBeCloseTo(metrics.operatingProfit, 2)
+  expect(sum('netProfit')).toBeCloseTo(metrics.netProfit, 2)
+  expect(sum('cashIn')).toBeCloseTo(metrics.cashIn, 2)
+  expect(sum('cashOut')).toBeCloseTo(metrics.cashOut, 2)
+  expect(sum('cashBalance')).toBeCloseTo(metrics.cashBalance, 2)
+  expect(sum('receivablesOpenTotal')).toBeCloseTo(metrics.receivablesOpenTotal, 2)
+  expect(sum('payablesOpenTotal')).toBeCloseTo(metrics.payablesOpenTotal, 2)
+  expect(sum('prediction')).toBeCloseTo(metrics.prediction, 2)
+  expect(sum('assetsTotal')).toBeCloseTo(metrics.assetsTotal, 2)
+  expect(sum('liabilitiesTotal')).toBeCloseTo(metrics.liabilitiesTotal, 2)
+  expect(sum('equity')).toBeCloseTo(metrics.equity, 2)
+})
+
 test('Fase 10: posição histórica mantém título aberto até a data da liquidação', () => {
   const january = buildMetrics(data, {
     startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31',

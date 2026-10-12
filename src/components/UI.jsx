@@ -32,13 +32,27 @@ if (typeof document !== 'undefined') {
   }
 }
 
-export function Card({ children, style, glow }) {
+export function Card({ children, style, glow, onClick, title, ariaLabel }) {
   const lightTheme = isLightHexColor(C.bg)
   const defaultShadow = lightTheme ? '0 10px 26px rgba(15,23,42,0.08)' : '0 2px 16px rgba(0,0,0,0.5)'
   const glowShadow = lightTheme
     ? `0 0 0 1px ${glow}40, 0 12px 26px rgba(15,23,42,0.08)`
     : `0 0 32px ${glow}`
-  return <div style={{ ...base.card, boxShadow: glow ? glowShadow : defaultShadow, ...style }}>{children}</div>
+  const interactive = typeof onClick === 'function'
+  return <div
+    onClick={onClick}
+    onKeyDown={interactive ? event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        onClick(event)
+      }
+    } : undefined}
+    role={interactive ? 'button' : undefined}
+    tabIndex={interactive ? 0 : undefined}
+    title={title}
+    aria-label={ariaLabel}
+    style={{ ...base.card, boxShadow: glow ? glowShadow : defaultShadow, cursor:interactive ? 'pointer' : undefined, ...style }}
+  >{children}</div>
 }
 
 export function Btn({ children, onClick, variant='primary', disabled, style }) {
@@ -148,7 +162,7 @@ export function Badge({ color, children, small }) {
   )
 }
 
-export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=true }) {
+export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=true, trackDirty=true }) {
   const [dirty, setDirty] = useState(false)
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
 
@@ -189,7 +203,7 @@ export function Modal({ open, onClose, title, children, width=520, closeOnBackdr
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)',
       display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}
       onClick={e=>closeOnBackdrop&&e.target===e.currentTarget&&requestClose()}>
-      <div onInput={()=>setDirty(true)} onChange={()=>setDirty(true)} onClickCapture={interceptCancel}
+      <div onInput={()=>trackDirty&&setDirty(true)} onChange={()=>trackDirty&&setDirty(true)} onClickCapture={trackDirty ? interceptCancel : undefined}
         style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:20,
         padding:28, width:'100%', maxWidth:width, maxHeight:'90vh', overflowY:'auto',
         boxShadow: lightTheme ? '0 24px 60px rgba(15,23,42,0.18)' : '0 24px 80px rgba(0,0,0,0.7)' }}>

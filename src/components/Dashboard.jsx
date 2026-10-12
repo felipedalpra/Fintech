@@ -6,6 +6,7 @@ import { Card, Progress } from './UI.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 import { CompareModal } from './CompareModal.jsx'
 import { InsuranceBreakdown } from './InsuranceBreakdown.jsx'
+import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 
 const PERIOD_OPTIONS = [
   { value:'day', label:'Hoje' },
@@ -163,6 +164,7 @@ export function Dashboard({ data, saveError }) {
   const [showCompareModal, setShowCompareModal] = useState(false)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
+  const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
   const periodRange = useMemo(() => getDashboardPeriodRange(period, customRange), [period, customRange])
   const prevRange = useMemo(() => getPreviousPeriodRange(period, periodRange), [period, periodRange])
@@ -208,6 +210,7 @@ export function Dashboard({ data, saveError }) {
       glow: C.green + '22',
       sparkline: revenueSparkValues,
       sparkColor: C.green,
+      detailsKey:'grossRevenue',
     },
     {
       label: 'Lucro líquido',
@@ -222,6 +225,7 @@ export function Dashboard({ data, saveError }) {
       glow: netProfitColor + '22',
       sparkline: null,
       sparkColor: netProfitColor,
+      detailsKey:'netProfit',
     },
     {
       label: 'Total de despesas',
@@ -236,6 +240,7 @@ export function Dashboard({ data, saveError }) {
       glow: C.red + '22',
       sparkline: null,
       sparkColor: C.red,
+      detailsKey:'totalExpenses',
     },
     {
       label: 'Caixa atual',
@@ -250,6 +255,8 @@ export function Dashboard({ data, saveError }) {
       glow: cashColor + '22',
       sparkline: cashSparkValues,
       sparkColor: cashColor,
+      detailsKey:'cashBalance',
+      detailsSource:'allTime',
     },
   ]
 
@@ -266,7 +273,14 @@ export function Dashboard({ data, saveError }) {
       const curM = buildMetrics(data, { startDate:currentRange.start, endDate:currentRange.end, balanceDate:currentRange.end })
       const preM = buildMetrics(data, { startDate:prevStart, endDate:prevEnd, balanceDate:prevEnd })
       const reduction = (preM.operationalExpenses + preM.taxExpenses + preM.surgeryCostTotal + preM.productPurchaseTotal) - (curM.operationalExpenses + curM.taxExpenses + curM.surgeryCostTotal + curM.productPurchaseTotal)
-      return { ...goal, current:reduction }
+      return {
+        ...goal,
+        current:reduction,
+        detailRows:[
+          ...(preM.drilldowns?.totalExpenses || []),
+          ...(curM.drilldowns?.totalExpenses || []).map(item => ({ ...item, value:-Number(item.value || 0) })),
+        ],
+      }
     }
     const range = getPeriodRange(
       goal.period === 'mensal' ? 'month' : goal.period === 'trimestral' ? 'quarter' : goal.period === 'anual' ? 'year' : 'custom',
@@ -274,7 +288,8 @@ export function Dashboard({ data, saveError }) {
     )
     const metrics = buildMetrics(data, { startDate:range.start, endDate:range.end || goal.dueDate, balanceDate:goal.dueDate })
     const current = { faturamento:metrics.grossRevenue, cirurgias:metrics.surgeriesCompleted, consultas:metrics.consultationsCompleted, lucro:metrics.netProfit, ticket_medio:metrics.averageTicket, fluxo_caixa:metrics.cashBalance }[goal.metric] || 0
-    return { ...goal, current }
+    const detailsKey = { faturamento:'grossRevenue', lucro:'netProfit', fluxo_caixa:'cashBalance' }[goal.metric]
+    return { ...goal, current, detailRows:detailsKey ? metrics.drilldowns?.[detailsKey] || [] : null }
   }), [data])
 
   const topGoals = useMemo(() => [...computedGoals].sort((a, b) => {
@@ -286,6 +301,7 @@ export function Dashboard({ data, saveError }) {
   return (
     <>
     {showCompareModal && <CompareModal data={data} onClose={() => setShowCompareModal(false)} />}
+    <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
 
       {/* Seletor de período */}
@@ -392,7 +408,17 @@ export function Dashboard({ data, saveError }) {
       {/* KPI cards */}
       <div style={{ display:'grid', gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(auto-fill,minmax(240px,1fr))', gap:isMobile ? 10 : 16 }}>
         {kpis.map(item => (
-          <Card key={item.label} glow={item.glow} style={{ padding:isMobile ? 14 : 20 }}>
+          <Card
+            key={item.label}
+            glow={item.glow}
+            onClick={() => {
+              const source = item.detailsSource === 'allTime' ? allTimeM : m
+              openDrilldown(item.label, source.drilldowns?.[item.detailsKey] || [], item.value, `Lançamentos que compõem ${item.label.toLowerCase()} no período selecionado.`)
+            }}
+            title="Clique para ver os lançamentos"
+            ariaLabel={`Ver lançamentos de ${item.label}`}
+            style={{ padding:isMobile ? 14 : 20 }}
+          >
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
               <div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8, lineHeight:1.35 }}>{item.label}</div>
               {item.sparkline && item.sparkline.length >= 2 && (
@@ -405,6 +431,7 @@ export function Dashboard({ data, saveError }) {
             <div style={{ fontSize:isMobile ? 11 : 12, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
               {item.subLabel}: {item.subCustom != null ? item.subCustom : item.subIsCurrency ? formatMoney(item.subValue) : fmtN(item.subValue)}
             </div>
+            <div style={{ fontSize:10, color:C.accentLight, marginTop:8, fontWeight:700 }}>Ver lançamentos →</div>
           </Card>
         ))}
       </div>
@@ -429,7 +456,7 @@ export function Dashboard({ data, saveError }) {
               const daysColor = daysLeft === null ? C.textDim : daysLeft < 0 ? C.red : daysLeft <= 7 ? C.yellow : C.textDim
               const daysLabel = daysLeft === null ? '' : daysLeft < 0 ? 'Vencida' : daysLeft === 0 ? 'Vence hoje' : `${daysLeft}d restantes`
               return (
-                <div key={goal.id} style={{ padding:'14px 16px', borderRadius:12, background:color+'0d', border:`1px solid ${color}33` }}>
+                <div key={goal.id} role={goal.detailRows ? 'button' : undefined} tabIndex={goal.detailRows ? 0 : undefined} onClick={goal.detailRows ? () => openDrilldown(`Meta — ${goal.name}`, goal.detailRows, goal.current, 'Lançamentos que formam o valor atual desta meta.') : undefined} onKeyDown={goal.detailRows ? event => { if (event.key === 'Enter' || event.key === ' ') event.currentTarget.click() } : undefined} title={goal.detailRows ? 'Clique para ver os lançamentos' : undefined} style={{ padding:'14px 16px', borderRadius:12, background:color+'0d', border:`1px solid ${color}33`, cursor:goal.detailRows ? 'pointer' : undefined }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:8 }}>
                     <div style={{ fontSize:13, fontWeight:700, color:C.text, flex:1, paddingRight:8, lineHeight:1.35 }}>{goal.name}</div>
                     {done && <span style={{ fontSize:11, fontWeight:700, color:C.green, whiteSpace:'nowrap' }}>🎯 Atingida</span>}
@@ -487,10 +514,10 @@ export function Dashboard({ data, saveError }) {
             </div>
             <div style={{ padding:'14px 0', borderTop:`1px solid ${C.border}22` }}>
               <div style={{ fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:8 }}>Composição do faturamento</div>
-              <Stack label="Cirurgias" value={m.surgeryRevenue} total={m.grossRevenue} color={C.accent} hidden={financialPrivacyMode} />
-              <Stack label="Consultas" value={m.consultationRevenue} total={m.grossRevenue} color={C.cyan} hidden={financialPrivacyMode} />
-              <Stack label="Produtos" value={m.productSalesRevenue} total={m.grossRevenue} color={C.yellow} hidden={financialPrivacyMode} />
-              <Stack label="Outras receitas" value={m.extraRevenueTotal} total={m.grossRevenue} color={C.green} hidden={financialPrivacyMode} />
+              <Stack label="Cirurgias" value={m.surgeryRevenue} total={m.grossRevenue} color={C.accent} hidden={financialPrivacyMode} onClick={() => openDrilldown('Receita de cirurgias', m.drilldowns?.surgeryRevenue, m.surgeryRevenue)} />
+              <Stack label="Consultas" value={m.consultationRevenue} total={m.grossRevenue} color={C.cyan} hidden={financialPrivacyMode} onClick={() => openDrilldown('Receita de consultas', m.drilldowns?.consultationRevenue, m.consultationRevenue)} />
+              <Stack label="Produtos" value={m.productSalesRevenue} total={m.grossRevenue} color={C.yellow} hidden={financialPrivacyMode} onClick={() => openDrilldown('Receita de produtos', m.drilldowns?.productSalesRevenue, m.productSalesRevenue)} />
+              <Stack label="Outras receitas" value={m.extraRevenueTotal} total={m.grossRevenue} color={C.green} hidden={financialPrivacyMode} onClick={() => openDrilldown('Outras receitas', m.drilldowns?.extraRevenueTotal, m.extraRevenueTotal)} />
             </div>
           </div>
         </Card>
@@ -511,8 +538,8 @@ export function Dashboard({ data, saveError }) {
   )
 }
 
-function Stack({ label, value, total, color, hidden }) {
-  return <div style={{ marginBottom:10 }}><div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}><span style={{ color:C.textSub, fontSize:12 }}>{label}</span><span style={{ color, fontSize:12, fontWeight:700 }}>{hidden ? 'R$ XXXXX' : fmt(value)}</span></div><Progress val={value} max={Math.max(total || 1, 1)} color={color} h={7} /></div>
+function Stack({ label, value, total, color, hidden, onClick }) {
+  return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onClick?.() }} title="Clique para ver os lançamentos" style={{ marginBottom:10, cursor:'pointer', padding:'3px 0' }}><div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}><span style={{ color:C.textSub, fontSize:12 }}>{label}</span><span style={{ color, fontSize:12, fontWeight:700 }}>{hidden ? 'R$ XXXXX' : fmt(value)}</span></div><Progress val={value} max={Math.max(total || 1, 1)} color={color} h={7} /></div>
 }
 
 function EyeIcon({ off }) {
