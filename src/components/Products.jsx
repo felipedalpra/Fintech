@@ -4,6 +4,7 @@ import { fmt, fmtN, formatDateBR, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { FilterBar } from './FilterBar.jsx'
+import { SupplierSelector } from './SupplierSelector.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 
 const PRODUCT_EMPTY = {
@@ -45,6 +46,7 @@ const PURCHASE_EMPTY = {
   quantity:1,
   totalValue:0,
   supplier:'',
+  supplierId:'',
   purchaseDate:today(),
   competenceDate:today(),
   dueDate:today(),
@@ -439,7 +441,7 @@ export function Products({ data, setData }) {
             const product = productsById.get(value)
             setForm(current => ({ ...current, productId:value, totalValue:(product?.purchasePrice || 0) * (current.quantity || 1) }))
           }} options={data.products.map(item => ({ v:item.id, l:item.name }))} />
-          <FInput label="Fornecedor" value={form.supplier} onChange={value => setForm(current => ({ ...current, supplier:value }))} placeholder="Fornecedor" />
+          <SupplierSelector value={form.supplierId} onChange={(id, name) => setForm(current => ({ ...current, supplierId:id, supplier:name }))} />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(productsById.get(current.productId)?.purchasePrice || 0) * value }))} type="number" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" />
           <FInput label="Data da compra (competência / caixa)" value={form.purchaseDate} onChange={value => setForm(current => ({ ...current, purchaseDate:value, competenceDate:value }))} type="date" />

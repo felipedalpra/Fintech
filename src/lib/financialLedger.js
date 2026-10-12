@@ -51,7 +51,7 @@ function scheduledEntry({ sourceType, item, total, competenceDate, issueDate, pa
 
 // Título de parcela única (venda/compra/receita extra/despesa).
 function singleEntry({ sourceType, direction, item, total, competenceDate, issueDate, dueDate,
-  paidDate, isPaid, canceled, partyType, partyName, category, costCenter }) {
+  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter }) {
   const paid = canceled ? 0 : (isPaid ? round2(total) : 0)
   const open = canceled ? 0 : (isPaid ? 0 : round2(total))
   const installment = {
@@ -64,7 +64,7 @@ function singleEntry({ sourceType, direction, item, total, competenceDate, issue
   return {
     entry: {
       source_type: sourceType, source_id: item.id, source_component: 'revenue', direction,
-      party_type: partyType || 'other', party_id: item.patientId || null, party_name_snapshot: partyName || '',
+      party_type: partyType || 'other', party_id: partyId || item.patientId || null, party_name_snapshot: partyName || '',
       category: category || null, cost_center: costCenter || null,
       competence_date: competenceDate || null, issue_date: issueDate || null,
       total_amount: round2(total), status: statusFromAmounts(paid, open, canceled),
@@ -107,7 +107,7 @@ export function buildLedger(data = {}) {
     sourceType: 'product_purchase', direction: 'payable', item, total: item.totalValue || 0,
     competenceDate: item.competenceDate || item.purchaseDate, issueDate: item.purchaseDate,
     dueDate: item.purchaseDate, paidDate: item.purchaseDate, isPaid: true, canceled: false,
-    partyType: 'supplier', partyName: item.supplier || '', category: 'compra_produto',
+    partyType: 'supplier', partyId: item.supplierId || null, partyName: item.supplier || '', category: 'compra_produto',
   })))
 
   // Receita extra: recebida (status padrão 'recebido') → caixa em received_date||date; senão em aberto.
