@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (63)
+### Added
+- **Impostos/taxas/descontos por operação — Razão financeiro Fase 9 (aditivo, inerte)**: schema `supabase/operation_financials_schema.sql` adiciona a `surgeries`, `consultations` e `product_sales` os campos reais `discount_amount`, `fees_amount`, `commission_amount`, `tax_amount`, `net_amount`, `invoice_tax_rate` e `invoice_tax_amount` (nullable). No `src/lib/financialLedger.js`, o imposto de NF agora usa o **valor congelado** (`invoiceTaxAmount`) quando existir — assim mudar a alíquota no futuro não altera relatórios antigos — e **deriva** da alíquota quando não houver (projeção). A captura desses valores no formulário entra na fase de autoridade; por ora é inerte. Teste: `tests/unit/financialLedger.spec.js` (10 — inclui o imposto congelado).
+
 ## [Unreleased] - 2026-10-12 (62)
 ### Added
 - **Contas (caixa/banco/cartão) — Razão financeiro Fase 8 / fundação (aditivo, inerte)**: tabela `financial_accounts` (nome, tipo `cash`/`checking`/`savings`/`card`/`other`, saldo de abertura + data, ativo, soft-delete, RLS `data_owner_id()`) + FK de `financial_installments.financial_account_id` (coluna criada na Fase 1) para a conta. Base para saldo real por conta, transferências (2 movimentos vinculados fora da DRE) e conciliação com extrato — que entram na fase de autoridade (tela de liquidação). SQL `supabase/financial_accounts_schema.sql`. Sem mudança de comportamento no app.

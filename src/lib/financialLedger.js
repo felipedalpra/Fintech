@@ -56,6 +56,13 @@ function invoiceTax(base, percent) {
   return round2(num(base) * (p / 100))
 }
 
+// Imposto de NF: usa o valor CONGELADO (invoiceTaxAmount) quando existir — assim mudar a alíquota
+// no futuro não altera relatórios antigos. Sem o congelado, deriva da alíquota (projeção).
+function frozenOrDerivedTax(item, base) {
+  if (item.invoiceTaxAmount != null) return round2(item.invoiceTaxAmount)
+  return invoiceTax(base, item.invoiceIssuancePercent)
+}
+
 function singleEntry({ sourceType, sourceComponent, direction, item, total, competenceDate, issueDate, dueDate,
   paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter }) {
   const paid = canceled ? 0 : (isPaid ? round2(total) : 0)
@@ -92,9 +99,9 @@ function pushCostEntries(parts, item, sourceType, baseValue) {
       ['anesthesia_cost', item.anesthesiaCost],
       ['material_cost', item.materialCost],
       ['other_cost', item.otherCosts],
-      ['invoice_tax', invoiceTax(baseValue, item.invoiceIssuancePercent)],
+      ['invoice_tax', frozenOrDerivedTax(item, baseValue)],
     ]
-    : [['invoice_tax', invoiceTax(baseValue, item.invoiceIssuancePercent)]]
+    : [['invoice_tax', frozenOrDerivedTax(item, baseValue)]]
   for (const [component, raw] of components) {
     const value = round2(raw)
     if (value <= 0) continue

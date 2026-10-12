@@ -117,3 +117,14 @@ test('custos de cirurgia viram títulos a pagar por componente (0 não gera)', (
   expect(ledger.entries.some(e => e.source_type === 'surgery' && e.source_component === 'revenue')).toBe(true)
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
+
+test('imposto de NF congelado (invoiceTaxAmount) prevalece sobre a alíquota', () => {
+  const ledger = buildLedger({
+    surgeries: [{
+      id: 'sy', totalValue: 10000, date: '2026-09-10', paymentStatus: 'pendente',
+      invoiceIssuancePercent: 10, invoiceTaxAmount: 850, patient: 'Bia', // congelado 850, não 1000
+    }],
+  })
+  const tax = ledger.entries.find(e => e.source_type === 'surgery' && e.source_component === 'invoice_tax')
+  expect(tax.total_amount).toBe(850)
+})
