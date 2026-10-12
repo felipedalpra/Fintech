@@ -87,6 +87,27 @@ test('Fase 10: posição histórica mantém título aberto até a data da liquid
   expect(february.receivablesOpenTotal).toBe(300)
 })
 
+test('receita extra a receber preserva a origem informada na apresentação', () => {
+  const pending = structuredClone(data)
+  pending.extraRevenues = [{
+    id:'r-origem', description:'Mentoria', category:'outras_receitas', value:100,
+    date:'', competenceDate:'2026-10-12', dueDate:'2026-11-12', receivedDate:null,
+    status:'pendente', originLabel:'Instagram',
+  }]
+
+  const metrics = buildMetrics(pending, {
+    startDate:'2026-10-01', endDate:'2026-10-31', balanceDate:'2026-10-31',
+  })
+
+  expect(metrics.accountsReceivable.find(item => item.sourceId === 'r-origem')).toMatchObject({
+    source:'outra_receita',
+    originLabel:'Instagram',
+  })
+  expect(metrics.drilldowns.receivablesOpenTotal.find(item => item.sourceId === 'r-origem')).toMatchObject({
+    origin:'Instagram',
+  })
+})
+
 test('Fase 10: cancelados não entram em DRE, caixa nem obrigações', () => {
   const metrics = buildMetrics(data, { balanceDate:'2026-12-31' })
 
