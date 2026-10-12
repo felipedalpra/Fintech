@@ -3,6 +3,7 @@ import { C } from '../theme.js'
 import { fmt, getPeriodRange, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput } from './UI.jsx'
+import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 
 // ─── Tabelas IRPF 2024/2025 ──────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ export function TaxCalculator({ data }) {
   const [mesRef, setMesRef] = useState(() => today().slice(0, 7))
   const [showAnual, setShowAnual] = useState(false)
   const [aliquotaSimples, setAliquotaSimples] = useState(6) // % Simples Nacional
+  const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
   // Buscar receitas do mês de referência
   const range = useMemo(() => {
@@ -167,6 +169,7 @@ export function TaxCalculator({ data }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
 
       {/* Header */}
       <Card style={{ padding: 20, background: `linear-gradient(135deg, ${C.surface}, ${C.card})` }}>
@@ -227,15 +230,16 @@ export function TaxCalculator({ data }) {
       {/* Receita do mês */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         {[
-          ['Receita bruta', rendaBrutaMensal, C.green],
-          ['Cirurgias', m.surgeryRevenue, C.accent],
-          ['Consultas', m.consultationRevenue, C.cyan],
-          ['Produtos', m.productSalesRevenue, C.yellow],
-          ['Outras receitas', m.extraRevenueTotal, C.purple],
-        ].map(([label, value, color]) => (
-          <Card key={label} style={{ padding: 16 }}>
+          ['Receita bruta', rendaBrutaMensal, C.green, 'grossRevenue'],
+          ['Cirurgias', m.surgeryRevenue, C.accent, 'surgeryRevenue'],
+          ['Consultas', m.consultationRevenue, C.cyan, 'consultationRevenue'],
+          ['Produtos', m.productSalesRevenue, C.yellow, 'productSalesRevenue'],
+          ['Outras receitas', m.extraRevenueTotal, C.purple, 'extraRevenueTotal'],
+        ].map(([label, value, color, detailsKey]) => (
+          <Card key={label} onClick={() => openDrilldown(label, m.drilldowns?.[detailsKey] || [], value, `Receitas por competência usadas no cálculo tributário de ${mesLabel}.`)} title="Clique para ver os lançamentos" style={{ padding: 16 }}>
             <div style={{ fontSize: 11, color: C.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{label}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color }}>{fmt(value)}</div>
+            <div style={{ fontSize:10, color:C.accentLight, marginTop:7, fontWeight:700 }}>Ver lançamentos →</div>
           </Card>
         ))}
       </div>

@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (72)
+### Added
+- **Drill-down auditável dos indicadores financeiros**: cards e agrupamentos de faturamento, receitas, despesas, lucro, caixa, contas a pagar/receber, DRE, balanço, produtos, impostos, metas e resumos de cirurgias agora abrem um modal com cada lançamento que compõe o valor. O detalhamento mostra data, origem, descrição, pessoa, categoria, situação e valor, permite busca e confere automaticamente se a soma bate a centavo com o indicador. Resultados líquidos exibem receitas positivas e custos/saídas negativos, preservando o mesmo razão canônico dos relatórios.
+
+### Changed
+- `buildMetrics` passa a publicar `drilldowns` derivados durante o mesmo cálculo canônico de competência, caixa, obrigações, CMV e posição patrimonial; não há uma segunda regra de agregação na interface. `Card` ganhou interação acessível opcional por teclado e o modal base permite telas somente leitura sem alerta indevido de descarte.
+
+### Fixed
+- O resumo do Financeiro que exibia o saldo líquido de entradas menos saídas deixou de se chamar “Recebido no período” e passa a usar o nome correto “Resultado de caixa”.
+
 ## [Unreleased] - 2026-10-12 (71)
 ### Added
 - **Write-through persistido do razão financeiro**: todo salvamento operacional agora projeta e faz upsert idempotente em `financial_entries` e `financial_installments`, preservando origem/componente, parte, competência, vencimento, liquidação real, forma de pagamento e valores pagos. Reduções de cronograma e exclusões da origem usam `archived_at` reversível, sem delete físico. Recorrências vencidas no ano também são sincronizadas ao abrir Financeiro/Recorrências e ocorrências removidas ou pausadas são arquivadas. Implementação em `src/lib/ledgerPersistence.js`; regressões em `tests/unit/ledgerPersistence.spec.js`.

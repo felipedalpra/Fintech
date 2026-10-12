@@ -7,6 +7,7 @@ import { FilterBar } from './FilterBar.jsx'
 import { SupplierSelector } from './SupplierSelector.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
+import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 
 const PRODUCT_EMPTY = {
   name:'',
@@ -103,6 +104,7 @@ export function Products({ data, setData }) {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(PRODUCT_EMPTY)
   const [confirmState, setConfirmState] = useState(null)
+  const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
   const productsById = useMemo(() => new Map(data.products.map(item => [item.id, item])), [data.products])
   const performanceById = useMemo(() => new Map(m.productsByPerformance.map(item => [item.id, item])), [m.productsByPerformance])
@@ -240,13 +242,14 @@ export function Products({ data, setData }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
       <div style={{ display:'grid', gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(auto-fill,minmax(210px,1fr))', gap:14 }}>
         {[
-          ['Produtos ativos', fmtN(data.products.filter(item => item.active !== false).length), C.accent],
-          ['Estoque total', fmtN(m.productsByPerformance.reduce((acc, item) => acc + (item.stock || 0), 0)), C.cyan],
-          ['Receita com produtos', fmt(m.productSalesRevenue), C.green],
-          ['Compras acumuladas', fmt(m.productPurchasesTotal), C.red],
-        ].map(([label, value, color]) => <Card key={label} style={{ padding:isMobile ? 14 : 18 }}><div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8, lineHeight:1.35 }}>{label}</div><div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color }}>{value}</div></Card>)}
+          ['Produtos ativos', fmtN(data.products.filter(item => item.active !== false).length), C.accent, null, 0],
+          ['Estoque total', fmtN(m.productsByPerformance.reduce((acc, item) => acc + (item.stock || 0), 0)), C.cyan, null, 0],
+          ['Receita com produtos', fmt(m.productSalesRevenue), C.green, 'productSalesRevenue', m.productSalesRevenue],
+          ['Compras acumuladas', fmt(m.productPurchasesTotal), C.red, 'productPurchasesTotal', m.productPurchasesTotal],
+        ].map(([label, value, color, detailsKey, rawValue]) => <Card key={label} onClick={detailsKey ? () => openDrilldown(label, m.drilldowns?.[detailsKey] || [], rawValue) : undefined} title={detailsKey ? 'Clique para ver os lançamentos' : undefined} style={{ padding:isMobile ? 14 : 18 }}><div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8, lineHeight:1.35 }}>{label}</div><div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color }}>{value}</div>{detailsKey && <div style={{ fontSize:10, color:C.accentLight, marginTop:7, fontWeight:700 }}>Ver lançamentos →</div>}</Card>)}
       </div>
 
       <FilterBar
@@ -381,15 +384,18 @@ export function Products({ data, setData }) {
         <Card>
           <h3 style={{ margin:'0 0 18px', fontSize:13, fontWeight:700, color:C.textSub, textTransform:'uppercase', letterSpacing:'0.08em' }}>Margem e estoque por produto</h3>
           {m.productsByPerformance.length === 0 && <p style={{ color:C.textDim, fontSize:13 }}>Cadastre produtos e registre compras/vendas para ver a performance.</p>}
-          {m.productsByPerformance.map(item => (
+          {m.productsByPerformance.map(item => {
+            const productDetails = m.drilldowns?.byProduct?.[item.id] || { revenue:[], cost:[] }
+            const profitDetails = [...productDetails.revenue, ...productDetails.cost.map(row => ({ ...row, value:-Number(row.value || 0) }))]
+            return (
             <div key={item.id} style={{ padding:'12px 0', borderTop:`1px solid ${C.border}22`, display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(180px,1.2fr) repeat(4,1fr)', gap:12 }}>
               <div><div style={{ color:C.text, fontWeight:700 }}>{item.name}</div><div style={{ color:C.textDim, fontSize:12 }}>{fmtN(item.soldQty)} vendido(s) · estoque {fmtN(item.stock)}</div></div>
-              <MetricPill label="Receita" value={fmt(item.revenue)} color={C.green} />
-              <MetricPill label="Custo" value={fmt(item.cost)} color={C.red} />
-              <MetricPill label="Lucro" value={fmt(item.profit)} color={item.profit >= 0 ? C.accent : C.red} />
+              <MetricPill label="Receita" value={fmt(item.revenue)} color={C.green} onClick={() => openDrilldown(`Receita — ${item.name}`, productDetails.revenue, item.revenue)} />
+              <MetricPill label="Custo" value={fmt(item.cost)} color={C.red} onClick={() => openDrilldown(`CMV — ${item.name}`, productDetails.cost, item.cost)} />
+              <MetricPill label="Lucro" value={fmt(item.profit)} color={item.profit >= 0 ? C.accent : C.red} onClick={() => openDrilldown(`Lucro — ${item.name}`, profitDetails, item.profit)} />
               <MetricPill label="Margem" value={`${item.revenue > 0 ? ((item.profit / item.revenue) * 100).toFixed(1) : '0.0'}%`} color={C.cyan} />
             </div>
-          ))}
+          )})}
         </Card>
       )}
 
@@ -507,6 +513,6 @@ function LedgerTable({ title, columns, rows, emptyMessage }) {
   return <Card style={{ padding:0, overflow:'hidden' }}><div style={{ padding:'18px 20px', borderBottom:`1px solid ${C.border}` }}><h3 style={{ margin:0, fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{title}</h3></div><div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}><thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{columns.map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead><tbody>{rows.length === 0 && <tr><td colSpan={columns.length} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</td></tr>}{rows.map(row => <tr key={row.key} style={{ borderBottom:`1px solid ${C.border}` }}>{row.cells.map((cell, index) => <td key={index} style={{ padding:'13px 18px', color:C.textSub, fontSize:13 }}>{cell}</td>)}</tr>)}</tbody></table></div></Card>
 }
 
-function MetricPill({ label, value, color }) {
-  return <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:'12px 14px' }}><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>{label}</div><div style={{ fontSize:15, color, fontWeight:700 }}>{value}</div></div>
+function MetricPill({ label, value, color, onClick }) {
+  return <div role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick} onKeyDown={onClick ? event => { if (event.key === 'Enter' || event.key === ' ') onClick() } : undefined} title={onClick ? 'Clique para ver os lançamentos' : undefined} style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:'12px 14px', cursor:onClick ? 'pointer' : undefined }}><div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:4 }}>{label}</div><div style={{ fontSize:15, color, fontWeight:700 }}>{value}</div></div>
 }
