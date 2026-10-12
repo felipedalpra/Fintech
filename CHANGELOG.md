@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (62)
+### Added
+- **Contas (caixa/banco/cartão) — Razão financeiro Fase 8 / fundação (aditivo, inerte)**: tabela `financial_accounts` (nome, tipo `cash`/`checking`/`savings`/`card`/`other`, saldo de abertura + data, ativo, soft-delete, RLS `data_owner_id()`) + FK de `financial_installments.financial_account_id` (coluna criada na Fase 1) para a conta. Base para saldo real por conta, transferências (2 movimentos vinculados fora da DRE) e conciliação com extrato — que entram na fase de autoridade (tela de liquidação). SQL `supabase/financial_accounts_schema.sql`. Sem mudança de comportamento no app.
+
 ## [Unreleased] - 2026-10-12 (61)
 ### Added
 - **Custos de cirurgia/consulta como títulos a pagar — Razão financeiro Fase 7 (projeção, inerte)**: no `src/lib/financialLedger.js`, cada custo embutido de uma cirurgia (hospital, anestesia, material, outros e imposto de NF) e de uma consulta (imposto de NF) passa a virar um **título a pagar independente** no razão, com `source_component` próprio (`hospital_cost`/`anesthesia_cost`/`material_cost`/`other_cost`/`invoice_tax`), competência e valor — em vez de ficarem embutidos no registro da cirurgia. Componente com valor 0 não gera título. Projeção: pagos na data do atendimento (igual ao modelo atual de caixa); depois (autoridade) cada custo pode ganhar vencimento/fornecedor/status próprios. Sem schema novo (derivado; a tabela `financial_entries` da Fase 1 já tem `source_component`). **Inerte** (o `buildMetrics` segue com os custos embutidos até a Fase 10). Testes: `tests/unit/financialLedger.spec.js` (9 — inclui os custos por componente).
