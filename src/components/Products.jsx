@@ -29,6 +29,8 @@ const SALE_EMPTY = {
   totalValue:0,
   saleDate:today(),
   competenceDate:today(),
+  dueDate:today(),
+  receivedDate:today(),
   paymentMethod:'pix',
   paymentMode:'unico',
   paymentScheduleMode:'unica',
@@ -148,6 +150,8 @@ export function Products({ data, setData }) {
 
     if (modalType === 'sale') {
       if (!form.productId || !form.quantity) return
+      if (form.paymentStatus === 'recebido' && !form.receivedDate) return
+      if (form.paymentStatus === 'pendente' && !form.dueDate) return
       const product = productsById.get(form.productId)
       const unitValue = form.unitValue || product?.salePrice || 0
       const totalValue = form.totalValue || (unitValue * (form.quantity || 0))
@@ -327,7 +331,7 @@ export function Products({ data, setData }) {
       {tab === 'vendas' && (
         <LedgerTable
           title="Vendas de produtos"
-          columns={['Data', 'Produto', 'Paciente', 'Qtd', 'Valor total', 'Pagamento', 'Ações']}
+          columns={['Competência', 'Produto', 'Paciente', 'Qtd', 'Valor total', 'Situação', 'Liquidação / vencimento', 'Pagamento', 'Ações']}
           rows={data.productSales.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')).map(item => {
             const payment = decodePaymentMethod(item.paymentMethod)
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -343,6 +347,8 @@ export function Products({ data, setData }) {
                 item.patientName || 'Venda avulsa',
                 fmtN(item.quantity),
                 <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.totalValue)}</span>,
+                <Badge color={item.paymentStatus === 'recebido' ? C.green : C.yellow} small>{item.paymentStatus === 'recebido' ? 'recebido' : 'a receber'}</Badge>,
+                formatDateBR(item.paymentStatus === 'recebido' ? item.receivedDate : item.dueDate),
                 paymentLabel,
                 <Btn variant="danger" onClick={() => setConfirmState({ type:'sale', id:item.id })} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn>,
               ],
@@ -407,10 +413,18 @@ export function Products({ data, setData }) {
             setForm(current => ({ ...current, productId:value, unitValue:product?.salePrice || current.unitValue, totalValue:(product?.salePrice || current.unitValue) * (current.quantity || 1) }))
           }} options={data.products.map(item => ({ v:item.id, l:item.name }))} />
           <PatientSelector label="Cliente (opcional)" value={form.patientId} onChange={(id, name) => setForm(current => ({ ...current, patientId:id, patientName:name }))} />
-          <FInput label="Situação" value={form.paymentStatus || 'recebido'} onChange={value => setForm(current => ({ ...current, paymentStatus:value }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }]} />
+          <FInput label="Situação" value={form.paymentStatus || 'recebido'} onChange={value => setForm(current => ({
+            ...current,
+            paymentStatus:value,
+            receivedDate:value === 'recebido' ? (current.receivedDate || today()) : '',
+            dueDate:value === 'pendente' ? (current.dueDate || current.saleDate || today()) : current.dueDate,
+          }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }]} />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
-          <FInput label="Data da venda (competência / caixa)" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value, competenceDate:value }))} type="date" />
+          <FInput label="Data da venda (competência)" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value, competenceDate:value, dueDate:current.dueDate || value }))} type="date" />
+          {form.paymentStatus === 'recebido'
+            ? <FInput label="Data real do recebimento (caixa)" required value={form.receivedDate || ''} onChange={value => setForm(current => ({ ...current, receivedDate:value }))} type="date" />
+            : <FInput label="Vencimento (previsão de recebimento)" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />}
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
           {form.paymentScheduleMode === 'duas_datas' && (
             <>
@@ -438,7 +452,7 @@ export function Products({ data, setData }) {
             </>
           )}
           <div style={{ gridColumn:'1 / -1' }}><FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" /></div>
-          <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId}>Salvar venda</Btn></div>
+          <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId || (form.paymentStatus === 'recebido' ? !form.receivedDate : !form.dueDate)}>Salvar venda</Btn></div>
         </div>
       </Modal>
 

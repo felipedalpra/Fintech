@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (68)
+### Added
+- **Vendas de produto com as três datas financeiras**: `product_sales` passa a guardar `competence_date`/`sale_date`, `due_date` e `received_date` separadamente. O formulário exige a data real de recebimento quando a venda estiver recebida ou o vencimento quando estiver em aberto; as ações rápidas também gravam a liquidação real. O razão, a Central de Relatórios e o assistente financeiro passam a consumir esses campos sem transformar automaticamente vendas antigas em recebidas. Migração aditiva em `supabase/product_sales_settlement.sql`.
+
+### Changed
+- A listagem e a edição financeira de vendas de produto agora exibem situação e a data correspondente de liquidação/vencimento. O gate de prontidão deixa de bloquear vendas recebidas que já possuem `received_date`, mantendo apenas os registros legados sem comprovação como pendência.
+
 ## [Unreleased] - 2026-10-12 (67)
 ### Changed
 - **Razão financeiro — Fase 10 ativada como fonte das métricas**: `buildMetrics` agora deriva DRE por competência, caixa por liquidação, contas a receber/pagar e posição patrimonial da projeção canônica de `financialLedger`, eliminando cálculos paralelos no Dashboard, Financeiro, metas, alertas e IA. A posição histórica mantém um título aberto até sua data real de liquidação; cancelados são excluídos; impostos de NF congelados prevalecem sobre a alíquota atual; vendas de produtos respeitam o cronograma de parcelas. Recorrências continuam anexadas de forma identificada até ganharem títulos próprios. `paymentScheduleFlow` foi extraído para módulo independente para evitar dependência circular.

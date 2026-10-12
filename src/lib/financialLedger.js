@@ -145,7 +145,8 @@ export function buildLedger(data = {}) {
 
   // Venda de produto: usa o mesmo cronograma canônico das demais receitas. "Recebido" quita as
   // parcelas nas datas declaradas; pendente/legacy_unverified permanece em aberto; cancelado não
-  // entra nos resultados. A ausência de uma data real de recebimento segue sinalizada pela auditoria.
+  // entra nos resultados. receivedDate é a data real de caixa; saleDate nunca a substitui como fato
+  // confirmado, embora o legado ainda mantenha o fallback visível e bloqueado pela auditoria.
   productSales.forEach(item => {
     const normalized = {
       ...item,
@@ -312,10 +313,9 @@ export function auditLedgerReadiness(data = {}) {
     extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate && item.date),
     'A data é válida e continua sendo usada no caixa; ao editar o registro ela pode ser migrada para received_date.')
 
-  // O modelo atual de venda não possui received_date: usa o cronograma declarado ou sale_date.
   addIssue('product_sale_assumed_settlement', 'blocking', 'Vendas recebidas sem data real própria',
-    productSales.filter(item => item.paymentStatus === 'recebido'),
-    'O caixa usa as datas declaradas no cronograma ou a data da venda; capture a liquidação real para autoridade plena.')
+    productSales.filter(item => item.paymentStatus === 'recebido' && !item.receivedDate),
+    'O caixa ainda usa as datas declaradas no cronograma ou a data da venda; informe received_date para confirmar a liquidação.')
 
   const costsWithoutSettlement = []
   surgeries.filter(item => item.paymentStatus !== 'cancelado').forEach(item => {

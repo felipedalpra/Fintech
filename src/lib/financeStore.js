@@ -188,6 +188,8 @@ async function fetchRelationalData(userId) {
       unitValue:Number(item.unit_value || 0),
       totalValue:Number(item.total_value || 0),
       saleDate:item.sale_date || '',
+      dueDate:item.due_date || item.sale_date || '',
+      receivedDate:item.received_date || '',
       paymentMethod:item.payment_method || 'pix',
       competenceDate:item.competence_date || item.sale_date || '',
     })),
@@ -346,6 +348,8 @@ function mapProductSalesRows(userId, data) {
     total_value:item.totalValue || 0,
     sale_date:item.saleDate,
     competence_date:item.competenceDate || item.saleDate || null,
+    due_date:item.dueDate || item.saleDate || null,
+    received_date:item.receivedDate || null,
     payment_method:item.paymentMethod || null,
   }))
 }
