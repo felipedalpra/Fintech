@@ -7,10 +7,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-10-12 (72)
 ### Added
-- **Drill-down auditável dos indicadores financeiros**: cards e agrupamentos de faturamento, receitas, despesas, lucro, caixa, contas a pagar/receber, DRE, balanço, produtos, impostos, metas e resumos de cirurgias agora abrem um modal com cada lançamento que compõe o valor. O detalhamento mostra data, origem, descrição, pessoa, categoria, situação e valor, permite busca e confere automaticamente se a soma bate a centavo com o indicador. Resultados líquidos exibem receitas positivas e custos/saídas negativos, preservando o mesmo razão canônico dos relatórios.
+- **Drill-down auditável dos indicadores financeiros**: cards e agrupamentos de faturamento, receitas, despesas, lucro, caixa, contas a pagar/receber, DRE, balanço, produtos, metas e resumos de cirurgias agora abrem um modal com cada lançamento que compõe o valor. O detalhamento mostra data, origem, descrição, pessoa, categoria, situação e valor, permite busca e confere automaticamente se a soma bate a centavo com o indicador. Resultados líquidos exibem receitas positivas e custos/saídas negativos, preservando o mesmo razão canônico dos relatórios.
 
 ### Changed
 - `buildMetrics` passa a publicar `drilldowns` derivados durante o mesmo cálculo canônico de competência, caixa, obrigações, CMV e posição patrimonial; não há uma segunda regra de agregação na interface. `Card` ganhou interação acessível opcional por teclado e o modal base permite telas somente leitura sem alerta indevido de descarte.
+- A aba desatualizada **Impostos** e seu simulador de Carnê-Leão/IRPF/DAS foram removidos da navegação, busca, permissões e rotas. Categorias, lançamentos e valores tributários permanecem no razão, nas métricas e nos relatórios financeiros.
 
 ### Fixed
 - O resumo do Financeiro que exibia o saldo líquido de entradas menos saídas deixou de se chamar “Recebido no período” e passa a usar o nome correto “Resultado de caixa”.
