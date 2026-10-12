@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-11 (49)
+### Changed
+- **Soft-delete no núcleo financeiro/operacional (resiliência — regra #1 de não perder dados)**: excluir um registro financeiro (cirurgia, consulta, despesa, receita, venda, compra, procedimento, produto, meta, ativo, passivo) deixou de **apagar fisicamente** — agora marca `archived_at` e o app **oculta** os arquivados na leitura. Exclusão passa a ser **reversível** (recuperável por `update ... set archived_at = null`), como já era em pacientes/prontuário. `src/lib/financeStore.js`: `syncTable` faz UPDATE `archived_at` em vez de DELETE; `fetchRelationalData` filtra arquivados **em JS** (tolerante — se a coluna ainda não existe, nada quebra). **Tolerante à ordem do deploy:** sem risco de perda em nenhum cenário (sem a coluna, a exclusão apenas não propaga; nada é apagado). SQL idempotente em `supabase/finance_soft_delete.sql` (coluna `archived_at` nas 11 tabelas + índices parciais de ativos). Fecha a camada de resiliência da revisão `docs/superpowers/specs/2026-10-11-data-persistence-safety-review.md`.
+
 ## [Unreleased] - 2026-10-11 (48)
 ### Added
 - **Filtros padrão em todos os módulos de lista (Fase C)**: novo componente reutilizável `src/components/FilterBar.jsx` (busca + selects de filtro + ordenação + contador + ações à direita, padrão CRM, dark-mode safe), aplicado de forma consistente em:

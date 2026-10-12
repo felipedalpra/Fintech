@@ -111,6 +111,12 @@ async function fetchRelationalData(userId) {
   const failed = results.find(result => result.error)
   if (failed?.error) throw failed.error
 
+  // SOFT-DELETE: oculta registros arquivados (archived_at preenchido). Filtro em JS (tolerante:
+  // se a coluna ainda não existe no banco, archived_at vem undefined e nada é ocultado).
+  for (const result of results) {
+    if (Array.isArray(result.data)) result.data = result.data.filter(row => !row.archived_at)
+  }
+
   return normalizeData({
     procedures:(proceduresResult.data || []).map(item => ({
       id:item.id,
@@ -408,7 +414,13 @@ async function syncTable(table, userId, rows, baselineIds) {
   const idsToDelete = computeIdsToDelete(baselineIds, rows)
 
   if (idsToDelete.length > 0) {
-    const { error } = await supabase.from(table).delete().eq('user_id', userId).in('id', idsToDelete)
+    // SOFT-DELETE: nunca apaga fisicamente — marca archived_at. Exclusão fica reversível
+    // (recuperável por SQL/admin), como já é em pacientes/prontuário. Se a coluna archived_at
+    // ainda não existir, este UPDATE falha com segurança (a exclusão não propaga, mas NADA é perdido).
+    const { error } = await supabase.from(table)
+      .update({ archived_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .in('id', idsToDelete)
     if (error) throw error
   }
 
