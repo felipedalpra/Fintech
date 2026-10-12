@@ -10,6 +10,48 @@ import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
 import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
 
+export const config = {
+  api: {
+    // A assinatura da Meta é calculada sobre os bytes exatos recebidos.
+    // Como este endpoint também atende WhatsApp, o corpo é lido e convertido abaixo para todos os POSTs.
+    bodyParser: false,
+  },
+}
+
+const MAX_BODY_BYTES = 1_000_000
+
+async function hydrateRequestBody(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return
+
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    size += buffer.length
+    if (size > MAX_BODY_BYTES) {
+      const error = new Error('Request body too large')
+      error.statusCode = 413
+      throw error
+    }
+    chunks.push(buffer)
+  }
+
+  const rawBody = Buffer.concat(chunks)
+  req.rawBody = rawBody
+  if (!rawBody.length) {
+    req.body = {}
+    return
+  }
+
+  try {
+    req.body = JSON.parse(rawBody.toString('utf8'))
+  } catch {
+    const error = new Error('Invalid JSON body')
+    error.statusCode = 400
+    throw error
+  }
+}
+
 function adminSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 }
@@ -27,6 +69,12 @@ async function resolveOwnerId(supabase, userId) {
 }
 
 export default async function handler(req, res) {
+  try {
+    await hydrateRequestBody(req)
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({ error: error.message })
+  }
+
   const action = req.query.action
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
@@ -51,31 +99,39 @@ async function handleMetaWebhook(req, res) {
   }
   if (req.method !== 'POST') return res.status(405).end()
 
-  // 2) Assinatura (melhor esforço — o corpo cru pode diferir após o parse do Vercel; endurecer ao ir ao ar).
   const appSecret = process.env.META_APP_SECRET
-  if (appSecret) {
-    const sig = req.headers['x-hub-signature-256']
-    const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})
-    if (!verifyWebhookSignature(raw, sig, appSecret)) {
-      return res.status(401).json({ error: 'Invalid signature' })
-    }
+  const graphVersion = process.env.META_GRAPH_VERSION
+  if (!appSecret || !graphVersion) {
+    return res.status(503).json({ error: 'Meta integration is not configured' })
+  }
+
+  // 2) A assinatura é obrigatória e usa o corpo cru, antes de qualquer normalização do JSON.
+  const signature = req.headers['x-hub-signature-256']
+  if (!verifyWebhookSignature(req.rawBody, signature, appSecret)) {
+    return res.status(401).json({ error: 'Invalid signature' })
   }
 
   const supabase = adminSupabase()
   const leads = parseLeadgenWebhook(req.body)
+  const failedLeadIds = []
   for (const lead of leads) {
     try {
       // Descobre a clínica dona pela página do lead.
-      const { data: conn } = await supabase
+      const { data: conn, error: connectionError } = await supabase
         .from('meta_connections')
         .select('user_id, access_token')
         .eq('page_id', lead.pageId)
+        .in('status', ['configurado', 'conectado'])
         .maybeSingle()
-      if (!conn?.access_token) continue
+      if (connectionError) throw connectionError
+      if (!conn?.access_token) {
+        console.warn('meta lead ignored: page is not configured', lead.pageId)
+        continue
+      }
 
-      const full = await fetchLeadData(lead.leadgenId, conn.access_token)
+      const full = await fetchLeadData(lead.leadgenId, conn.access_token, graphVersion)
       const fields = mapLeadFields(full?.field_data)
-      await supabase.rpc('ensure_meta_lead', {
+      const { error: rpcError } = await supabase.rpc('ensure_meta_lead', {
         p_owner: conn.user_id,
         p_meta_lead_id: lead.leadgenId,
         p_name: fields.name,
@@ -85,12 +141,17 @@ async function handleMetaWebhook(req, res) {
         p_ad_id: lead.adId || full?.ad_id || null,
         p_form_id: lead.formId || full?.form_id || null,
       })
+      if (rpcError) throw rpcError
     } catch (e) {
-      // Nunca derruba o 200 (o Meta reenvia em erro; a RPC é idempotente).
+      failedLeadIds.push(lead.leadgenId)
       console.error('meta lead ingest error:', lead.leadgenId, e?.message)
     }
   }
-  // Sempre 200 rápido — o Meta exige resposta ágil; falhas são reprocessadas pelo reenvio + backfill.
+
+  // Um erro transitório precisa chegar à Meta para que a entrega seja tentada novamente.
+  if (failedLeadIds.length) {
+    return res.status(500).json({ error: 'Meta lead ingest failed', failed: failedLeadIds.length })
+  }
   return res.status(200).json({ ok: true })
 }
 

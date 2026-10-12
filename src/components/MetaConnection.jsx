@@ -5,10 +5,9 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { Btn, FInput } from './UI.jsx'
 
-// Conexão do Meta Ads (admin). Segredos (access_token/app_secret) são write-only — o SELECT deles é
-// revogado no banco, então aqui só gravamos; o status e os ids é que voltam. O webhook em tempo real
-// é servido por /api/whatsapp?action=meta-webhook (teto de 12 funções no Vercel Hobby).
-const WEBHOOK_URL = 'https://surgimetrics.com.br/api/whatsapp?action=meta-webhook'
+// Conexão do Meta Ads (admin). O token da página é write-only. App Secret e Verify Token pertencem
+// ao app global e ficam exclusivamente nas variáveis de ambiente da Vercel.
+const WEBHOOK_URL = 'https://www.surgimetrics.com.br/api/whatsapp?action=meta-webhook'
 
 export function MetaConnection() {
   const { user } = useAuth()
@@ -16,7 +15,7 @@ export function MetaConnection() {
   const effectiveUserId = ownerId || user?.id
 
   const [cfg, setCfg] = useState(null)
-  const [form, setForm] = useState({ ad_account_id: '', page_id: '', verify_token: '', access_token: '', app_secret: '' })
+  const [form, setForm] = useState({ ad_account_id: '', page_id: '', access_token: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -26,10 +25,10 @@ export function MetaConnection() {
     setLoading(true); setError(null)
     // NÃO seleciona access_token/app_secret (SELECT revogado).
     const { data, error: err } = await supabase.from('meta_connections')
-      .select('ad_account_id, page_id, verify_token, status').maybeSingle()
+      .select('ad_account_id, page_id, status').maybeSingle()
     if (err) { setError(err.message); setLoading(false); return }
     setCfg(data)
-    setForm(f => ({ ...f, ad_account_id: data?.ad_account_id || '', page_id: data?.page_id || '', verify_token: data?.verify_token || '' }))
+    setForm(f => ({ ...f, ad_account_id: data?.ad_account_id || '', page_id: data?.page_id || '' }))
     setLoading(false)
   }
   useEffect(() => { if (effectiveUserId) load() }, [effectiveUserId])
@@ -39,22 +38,24 @@ export function MetaConnection() {
   async function save() {
     if (saving) return
     setSaving(true); setError(null)
+    const hasStoredToken = cfg?.status === 'configurado' || cfg?.status === 'conectado'
+    const hasPageToken = Boolean(form.access_token.trim()) || hasStoredToken
     const payload = {
       user_id: effectiveUserId,
       ad_account_id: form.ad_account_id.trim() || null,
       page_id: form.page_id.trim() || null,
-      verify_token: form.verify_token.trim() || null,
-      status: (form.page_id && form.access_token) ? 'conectado' : (cfg?.status || 'desconectado'),
+      status: (form.page_id.trim() && hasPageToken)
+        ? (cfg?.status === 'conectado' ? 'conectado' : 'configurado')
+        : 'desconectado',
       updated_at: new Date().toISOString(),
     }
-    // Só grava os segredos se foram digitados (não apaga o que já existe ao salvar sem reinformar).
+    // Só grava o token se foi digitado (não apaga o existente ao salvar novamente).
     if (form.access_token.trim()) payload.access_token = form.access_token.trim()
-    if (form.app_secret.trim()) payload.app_secret = form.app_secret.trim()
 
     const { error: err } = await supabase.from('meta_connections').upsert(payload, { onConflict: 'user_id' })
     setSaving(false)
     if (err) { setError(err.message); return }
-    setForm(f => ({ ...f, access_token: '', app_secret: '' })) // limpa os segredos do formulário
+    setForm(f => ({ ...f, access_token: '' })) // limpa o segredo do formulário
     setSaved(true)
     load()
   }
@@ -69,7 +70,13 @@ export function MetaConnection() {
     note: { fontSize: 11.5, color: C.textDim, lineHeight: 1.5 },
     status: ok => ({ fontSize: 12, fontWeight: 700, color: ok ? (C.green || '#16a34a') : C.textSub }),
   }
-  const connected = cfg?.status === 'conectado'
+  const status = cfg?.status || 'desconectado'
+  const statusMeta = {
+    conectado: { label: '● Conectado e validado', ok: true },
+    configurado: { label: '◐ Configuração salva', ok: false },
+    erro: { label: '⚠ Erro de conexão', ok: false },
+    desconectado: { label: '○ Aguardando configuração', ok: false },
+  }[status] || { label: '○ Aguardando configuração', ok: false }
 
   return (
     <div>
@@ -83,7 +90,7 @@ export function MetaConnection() {
       <div style={s.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong style={{ fontSize: 14, color: C.text }}>Credenciais</strong>
-          <span style={s.status(connected)}>{connected ? '● Conectado' : '○ Desconectado'}</span>
+          <span style={s.status(statusMeta.ok)}>{statusMeta.label}</span>
         </div>
         <FInput label="Ad Account ID (act_…)" value={form.ad_account_id} onChange={v => set('ad_account_id', v)} placeholder="act_123456789" />
         <FInput label="Page ID (página do Facebook)" value={form.page_id} onChange={v => set('page_id', v)} placeholder="ID da página" />
@@ -92,12 +99,6 @@ export function MetaConnection() {
           <input type="password" value={form.access_token} onChange={e => set('access_token', e.target.value)}
             placeholder={cfg ? '•••• (deixe em branco para manter)' : 'colar token'} style={{ ...s.mono, width: '100%', boxSizing: 'border-box' }} />
         </div>
-        <div>
-          <label style={s.label}>App Secret (write-only, p/ validar o webhook)</label>
-          <input type="password" value={form.app_secret} onChange={e => set('app_secret', e.target.value)}
-            placeholder={cfg ? '•••• (deixe em branco para manter)' : 'colar app secret'} style={{ ...s.mono, width: '100%', boxSizing: 'border-box' }} />
-        </div>
-        <FInput label="Verify token do webhook" value={form.verify_token} onChange={v => set('verify_token', v)} placeholder="um segredo que você escolhe" />
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <Btn onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar conexão'}</Btn>
           {saved && <span style={{ fontSize: 12, color: C.green || '#16a34a' }}>Salvo ✓</span>}
@@ -112,9 +113,20 @@ export function MetaConnection() {
         </div>
         <div style={s.note}>
           No Meta for Developers → seu app → Webhooks → objeto <strong>Page</strong>, campo
-          <strong> leadgen</strong>: use a URL acima e o <strong>verify token</strong> informado.
+          <strong> leadgen</strong>: use a URL acima. O Verify Token e o App Secret ficam somente
+          no servidor e serão configurados na Vercel, nunca nesta tela.
           ⚠️ Ler leads reais exige <strong>App Review + Verificação de Negócio</strong> no Meta
           (permissões <code>leads_retrieval</code> e <code>ads_read</code>) — processo de semanas; inicie em paralelo.
+        </div>
+      </div>
+
+      <div style={s.card}>
+        <strong style={{ fontSize: 14, color: C.text }}>Ativação futura no servidor</strong>
+        <div style={s.note}>
+          A estrutura está preparada. Para ativar, cadastre na Vercel as variáveis
+          <code> META_VERIFY_TOKEN</code>, <code> META_APP_SECRET</code> e
+          <code> META_GRAPH_VERSION</code>, conclua a revisão do app e valide a assinatura do webhook.
+          Enquanto isso não acontecer, “Configuração salva” não será apresentada como conexão validada.
         </div>
       </div>
     </div>
