@@ -65,7 +65,7 @@ test('invariantes: soma das parcelas = total e pago+aberto = total (sem problema
 test('venda de produto: status define pago/aberto; legacy_unverified não vira recebido', () => {
   const ledger = buildLedger({
     productSales: [
-      { id: 'v1', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'recebido', patientId: 'p9', patientName: 'Ana' },
+      { id: 'v1', totalValue: 300, saleDate: '2026-09-07', receivedDate: '2026-09-09', paymentStatus: 'recebido', patientId: 'p9', patientName: 'Ana' },
       { id: 'v2', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'legacy_unverified', patientName: 'Antiga' },
       { id: 'v3', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'pendente' },
       { id: 'v4', totalValue: 300, saleDate: '2026-09-07', paymentStatus: 'cancelado' },
@@ -73,7 +73,7 @@ test('venda de produto: status define pago/aberto; legacy_unverified não vira r
   })
   const byId = id => ledger.entries.findIndex(e => e.source_id === id)
   expect(ledger.entries[byId('v1')]).toMatchObject({ status: 'paid', party_id: 'p9', party_name_snapshot: 'Ana' })
-  expect(ledger.installments[byId('v1')][0].settlement_date).toBe('2026-09-07')
+  expect(ledger.installments[byId('v1')][0].settlement_date).toBe('2026-09-09')
   expect(ledger.entries[byId('v2')].status).toBe('pending')            // legacy NÃO é recebido
   expect(ledger.installments[byId('v2')][0].settlement_date).toBe(null)
   expect(ledger.entries[byId('v3')].status).toBe('pending')
@@ -166,6 +166,20 @@ test('data legada da receita extra é liquidação válida e vira somente aviso'
   expect(audit.ready).toBe(true)
   expect(audit.blockers.map(item => item.code)).not.toContain('missing_settlement_date')
   expect(audit.warnings.map(item => item.code)).toContain('legacy_extra_revenue_date')
+})
+
+test('venda recebida com receivedDate usa a data real e não bloqueia a prontidão', () => {
+  const audit = auditLedgerReadiness({
+    productSales:[{
+      id:'v-confirmada', totalValue:250, saleDate:'2026-09-01', competenceDate:'2026-09-01',
+      dueDate:'2026-09-05', receivedDate:'2026-09-08', paymentStatus:'recebido',
+      patientId:'p1', patientName:'Ana',
+    }],
+  })
+  const index = audit.reconciliation.sources.findIndex(item => item.label === 'Vendas de produto')
+
+  expect(audit.blockers.map(item => item.code)).not.toContain('product_sale_assumed_settlement')
+  expect(audit.reconciliation.sources[index].diff).toBe(0)
 })
 
 test('auditLedgerReadiness libera revisão final com situações e datas confirmadas', () => {

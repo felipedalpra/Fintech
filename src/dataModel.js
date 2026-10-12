@@ -88,6 +88,8 @@ export function normalizeData(data) {
       id:normalizeUuid(item.id, 'product_sale'),
       productId:normalizeRelatedId(item.productId, 'product', productIdMap),
       competenceDate:item.competenceDate || item.saleDate || '',
+      dueDate:item.dueDate || item.saleDate || '',
+      receivedDate:item.receivedDate || '',
     })) : [],
     productPurchases: Array.isArray(data?.productPurchases) ? data.productPurchases.map(item => ({
       ...item,

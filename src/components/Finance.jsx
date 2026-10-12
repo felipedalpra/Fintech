@@ -457,6 +457,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     }
     if (modalType === 'product-sale') {
       if (!editing) return
+      if (form.paymentStatus === 'recebido' && !form.receivedDate) {
+        setFormError('Informe a data real do recebimento.')
+        return
+      }
+      if (form.paymentStatus === 'pendente' && !form.dueDate) {
+        setFormError('Informe o vencimento da venda.')
+        return
+      }
+      setFormError('')
       setData(current => ({ ...current, productSales: current.productSales.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
       toast('Venda atualizada com sucesso.')
       setShowModal(false)
@@ -492,7 +501,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       return
     }
     if (item.source === 'venda_produto') {
-      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'recebido' } : record) }))
+      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'recebido', receivedDate:today() } : record) }))
       toast('Venda de produto marcada como recebida.')
       return
     }
@@ -1506,10 +1515,13 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
         {modalType === 'product-sale' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            <FInput label="Data da venda (competência / caixa)" required value={form.competenceDate || form.saleDate || ''} onChange={value => setForm(c => ({ ...c, saleDate:value, competenceDate:value }))} type="date" />
+            <FInput label="Data da venda (competência)" required value={form.competenceDate || form.saleDate || ''} onChange={value => setForm(c => ({ ...c, saleDate:value, competenceDate:value, dueDate:c.dueDate || value }))} type="date" />
+            <FInput label="Situação" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value, receivedDate:value === 'recebido' ? (c.receivedDate || today()) : '' }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }, { v:'cancelado', l:'Cancelado' }]} />
+            {form.paymentStatus === 'recebido' && <FInput label="Data real do recebimento (caixa)" required value={form.receivedDate || ''} onChange={value => setForm(c => ({ ...c, receivedDate:value }))} type="date" />}
+            {form.paymentStatus === 'pendente' && <FInput label="Vencimento" required value={form.dueDate || ''} onChange={value => setForm(c => ({ ...c, dueDate:value }))} type="date" />}
             <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
             <FInput label="Quantidade" value={form.quantity || 1} onChange={value => setForm(c => ({ ...c, quantity:value }))} type="number" />
-            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={form.paymentStatus === 'recebido' ? !form.receivedDate : form.paymentStatus === 'pendente' ? !form.dueDate : false} />
           </div>
         )}
 
