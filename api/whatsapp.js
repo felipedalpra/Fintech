@@ -8,6 +8,7 @@ import { parseIncomingMessage, matchPatientId, normalizePhone } from './_lib/wha
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
+import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
 
 function adminSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -30,7 +31,67 @@ export default async function handler(req, res) {
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
   if (action === 'dispatch') return handleDispatch(req, res)
-  return res.status(400).json({ error: 'Ação inválida. Use ?action=message, ?action=webhook ou ?action=dispatch.' })
+  if (action === 'meta-webhook') return handleMetaWebhook(req, res)
+  return res.status(400).json({ error: 'Ação inválida. Use ?action=message, ?action=webhook, ?action=dispatch ou ?action=meta-webhook.' })
+}
+
+// ---- Meta Ads: webhook de Lead Ads (leadgen) → cria oportunidade no pipeline ----
+// Fica aqui (e não em api/meta.js) por causa do teto de 12 funções serverless do Vercel Hobby.
+// App único da Zentri: verificação por META_VERIFY_TOKEN (env); roteia o lead à clínica pelo page_id.
+async function handleMetaWebhook(req, res) {
+  // 1) Verificação do webhook (handshake do Meta).
+  if (req.method === 'GET') {
+    const mode = req.query['hub.mode']
+    const token = req.query['hub.verify_token']
+    const challenge = req.query['hub.challenge']
+    if (mode === 'subscribe' && token && token === process.env.META_VERIFY_TOKEN) {
+      return res.status(200).send(challenge)
+    }
+    return res.status(403).end()
+  }
+  if (req.method !== 'POST') return res.status(405).end()
+
+  // 2) Assinatura (melhor esforço — o corpo cru pode diferir após o parse do Vercel; endurecer ao ir ao ar).
+  const appSecret = process.env.META_APP_SECRET
+  if (appSecret) {
+    const sig = req.headers['x-hub-signature-256']
+    const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})
+    if (!verifyWebhookSignature(raw, sig, appSecret)) {
+      return res.status(401).json({ error: 'Invalid signature' })
+    }
+  }
+
+  const supabase = adminSupabase()
+  const leads = parseLeadgenWebhook(req.body)
+  for (const lead of leads) {
+    try {
+      // Descobre a clínica dona pela página do lead.
+      const { data: conn } = await supabase
+        .from('meta_connections')
+        .select('user_id, access_token')
+        .eq('page_id', lead.pageId)
+        .maybeSingle()
+      if (!conn?.access_token) continue
+
+      const full = await fetchLeadData(lead.leadgenId, conn.access_token)
+      const fields = mapLeadFields(full?.field_data)
+      await supabase.rpc('ensure_meta_lead', {
+        p_owner: conn.user_id,
+        p_meta_lead_id: lead.leadgenId,
+        p_name: fields.name,
+        p_phone: fields.phone,
+        p_email: fields.email,
+        p_campaign_id: lead.campaignId || full?.campaign_id || null,
+        p_ad_id: lead.adId || full?.ad_id || null,
+        p_form_id: lead.formId || full?.form_id || null,
+      })
+    } catch (e) {
+      // Nunca derruba o 200 (o Meta reenvia em erro; a RPC é idempotente).
+      console.error('meta lead ingest error:', lead.leadgenId, e?.message)
+    }
+  }
+  // Sempre 200 rápido — o Meta exige resposta ágil; falhas são reprocessadas pelo reenvio + backfill.
+  return res.status(200).json({ ok: true })
 }
 
 // ---- Disparo das automações de saída (gatilho manual/QA; o cron diário chama o motor direto) ----
