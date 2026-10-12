@@ -1,5 +1,6 @@
 import { buildMetrics, generateRecurringOccurrences } from '../financialMetrics.js'
 import { decodePaymentMethod } from './paymentMethodCodec.js'
+import { buildProductCosting } from './inventoryCosting.js'
 
 const CATEGORY_LABELS = {
   financeiro:'Financeiro',
@@ -258,7 +259,7 @@ function buildDre(ctx) {
     ['Receita de cirurgias', m.surgeryRevenue, 'Receita'], ['Receita de consultas', m.consultationRevenue, 'Receita'],
     ['Receita de produtos', m.productSalesRevenue, 'Receita'], ['Outras receitas', m.extraRevenueTotal, 'Receita'],
     ['Receita bruta', m.grossRevenue, 'Subtotal'], ['Custos de cirurgias', -m.surgeryCostTotal, 'Custo'],
-    ['Custos de consultas', -m.consultationCostTotal, 'Custo'], ['Compras de estoque', -m.productPurchaseTotal, 'Custo'],
+    ['Custos de consultas', -m.consultationCostTotal, 'Custo'], ['CMV — produtos vendidos', m.productCostOfSales ? -m.productCostOfSales : 0, 'Custo'],
     ['Despesas operacionais', -m.operationalExpenses, 'Despesa'], ['Resultado operacional', m.operatingProfit, 'Subtotal'],
     ['Impostos', -m.taxExpenses, 'Despesa'], ['Resultado líquido', m.netProfit, 'Total'],
   ].map(([description, value, group]) => ({ group, description, value }))
@@ -266,8 +267,8 @@ function buildDre(ctx) {
     [col('group','Grupo'), col('description','Descrição','text',38), col('value','Valor','currency',18)],
     rows,
     [['Receita bruta', m.grossRevenue], ['Resultado líquido', m.netProfit], ['Margem líquida', m.grossRevenue ? m.netProfit / m.grossRevenue : 0, 'percent']],
-    ['Compras de produtos são usadas como aproximação de custo no período; o modelo ainda não possui custo histórico/CMV por item vendido.', 'Este demonstrativo é gerencial e não substitui demonstração contábil assinada.'],
-    'Regime de competência. Receitas, custos e despesas usam competenceDate quando disponível. Registros cancelados devem ser excluídos da operação para não compor o resultado.',
+    ['Este demonstrativo é gerencial e não substitui demonstração contábil assinada.'],
+    'Regime de competência. Produtos reconhecem CMV pelo custo médio móvel vigente na data de cada venda; compras formam estoque e não são despesa imediata. Cancelados não compõem o resultado.',
   )
 }
 
@@ -288,13 +289,17 @@ function buildRevenues(ctx) {
 function buildExpenses(ctx) {
   const { data, recurrences, range } = ctx
   const products = productMap(data)
+  const productCosting = buildProductCosting(data)
   const rows = []
   ;(data.surgeries || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.date, range)).forEach(item => {
     const date = item.competenceDate || item.date
     ;[['Hospital',item.hospitalCost],['Anestesia',item.anesthesiaCost],['Material',item.materialCost],['Outros custos',item.otherCosts],['Emissão de nota',item.invoiceTaxAmount != null ? item.invoiceTaxAmount : num(item.totalValue) * num(item.invoiceIssuancePercent) / 100]].forEach(([description,value]) => { if (num(value)) rows.push({ competenceDate:date, source:'Cirurgia', category:description, description:`${description} — ${item.patient || 'Paciente'}`, costCenter:'Cirurgias', supplier:'Não informado', status:'Liquidado na data clínica', value:num(value) }) })
   })
   ;(data.consultations || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.date, range)).forEach(item => { const value = item.invoiceTaxAmount != null ? num(item.invoiceTaxAmount) : num(item.value) * num(item.invoiceIssuancePercent) / 100; if (value) rows.push({ competenceDate:item.competenceDate || item.date, source:'Consulta', category:'Emissão de nota', description:`Emissão de nota — ${item.patient || 'Paciente'}`, costCenter:'Consultas', supplier:'Não informado', status:'Liquidado na data clínica', value }) })
-  ;(data.productPurchases || []).filter(item => item.status !== 'cancelado' && inRange(item.competenceDate || item.purchaseDate, range)).forEach(item => rows.push({ competenceDate:item.competenceDate || item.purchaseDate, source:'Compra de produto', category:labelize(products.get(item.productId)?.category), description:products.get(item.productId)?.name || 'Produto', costCenter:'Estoque', supplier:item.supplier || 'Não informado', status:labelize(item.status || 'a conferir'), value:num(item.totalValue) }))
+  ;(data.productSales || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.saleDate, range)).forEach(item => {
+    const value = num(productCosting.salesCost[item.id]?.totalCost)
+    if (value) rows.push({ competenceDate:item.competenceDate || item.saleDate, source:'CMV', category:labelize(products.get(item.productId)?.category), description:products.get(item.productId)?.name || 'Produto', costCenter:'Estoque', supplier:'Custo médio móvel', status:'Reconhecido na venda', value })
+  })
   ;(data.expenses || []).filter(item => item.status !== 'cancelado' && inRange(item.competenceDate || item.dueDate, range)).forEach(item => rows.push({ competenceDate:item.competenceDate || item.dueDate, source:'Despesa', category:labelize(item.category), description:item.description || '', costCenter:item.costCenter || 'Não informado', supplier:item.originLabel || 'Não informado', status:labelize(item.status), value:num(item.value) }))
   generateRecurringOccurrences(recurrences, range.start, range.end).filter(item => item.tipo === 'despesa' && !(data.expenses || []).some(entry => recurringMatch(entry, item, 'despesa'))).forEach(item => rows.push({ competenceDate:item.dueDate, source:'Recorrência', category:labelize(item.categoria), description:item.descricao || '', costCenter:'Não informado', supplier:'Recorrência', status:item.autoMarkAsPaid ? 'Pago automaticamente' : 'Pendente', value:num(item.valor) }))
   rows.sort((a, b) => (a.competenceDate || '').localeCompare(b.competenceDate || ''))
@@ -305,8 +310,9 @@ function buildBalanceSheet(ctx) {
   const m = buildMetrics({ ...ctx.data, recurrences:ctx.recurrences }, { balanceDate:ctx.range.end, startDate:'', endDate:ctx.range.end })
   const rows = [
     ...(ctx.data.assets || []).map(item => ({ group:'Ativo cadastrado', description:item.name, category:labelize(item.category), value:num(item.value) })),
-    { group:'Ativo calculado', description:'Caixa acumulado', category:'Disponibilidades', value:m.assetsTotal - m.receivablesOpenTotal - sum(ctx.data.assets || [], 'value') },
+    { group:'Ativo calculado', description:'Caixa acumulado', category:'Disponibilidades', value:m.assetsTotal - m.receivablesOpenTotal - m.inventoryAsset - sum(ctx.data.assets || [], 'value') },
     { group:'Ativo calculado', description:'Contas a receber', category:'Créditos', value:m.receivablesOpenTotal },
+    { group:'Ativo calculado', description:'Estoque a custo médio', category:'Estoques', value:m.inventoryAsset },
     ...(ctx.data.liabilities || []).map(item => ({ group:'Passivo cadastrado', description:item.name, category:labelize(item.category), value:-num(item.value) })),
     { group:'Passivo calculado', description:'Contas a pagar', category:'Obrigações', value:-m.payablesOpenTotal },
     { group:'Patrimônio líquido', description:'Ativos menos passivos', category:'Patrimônio', value:m.equity },
@@ -321,11 +327,18 @@ function stockAt(data, product, endDate) {
 }
 
 function buildStockPosition(ctx) {
+  const snapshotData = {
+    ...ctx.data,
+    productPurchases:(ctx.data.productPurchases || []).filter(item => onOrBefore(item.purchaseDate, ctx.range.end)),
+    productSales:(ctx.data.productSales || []).filter(item => onOrBefore(item.saleDate, ctx.range.end)),
+  }
+  const costing = buildProductCosting(snapshotData)
   const rows = (ctx.data.products || []).map(item => {
     const stock = stockAt(ctx.data, item, ctx.range.end)
-    return { product:item.name, category:labelize(item.category), active:item.active === false ? 'Inativo' : 'Ativo', stock, purchasePrice:num(item.purchasePrice), inventoryValue:stock * num(item.purchasePrice), salePrice:num(item.salePrice), potentialRevenue:stock * num(item.salePrice), potentialMargin:stock * (num(item.salePrice) - num(item.purchasePrice)) }
+    const averageCost = num(costing.averageByProduct[item.id])
+    return { product:item.name, category:labelize(item.category), active:item.active === false ? 'Inativo' : 'Ativo', stock, purchasePrice:averageCost, inventoryValue:stock * averageCost, salePrice:num(item.salePrice), potentialRevenue:stock * num(item.salePrice), potentialMargin:stock * (num(item.salePrice) - averageCost) }
   }).sort((a,b) => b.inventoryValue - a.inventoryValue)
-  return result([col('product','Produto','text',30),col('category','Categoria'),col('active','Status', 'text', 12),col('stock','Saldo','number',12),col('purchasePrice','Custo unitário atual','currency',18),col('inventoryValue','Valor em estoque','currency',18),col('salePrice','Preço de venda','currency',16),col('potentialRevenue','Receita potencial','currency',18),col('potentialMargin','Margem potencial','currency',18)], rows, [['Unidades em estoque',sum(rows,'stock')],['Valor do estoque',sum(rows,'inventoryValue')],['Receita potencial',sum(rows,'potentialRevenue')]], ['A valorização usa o preço de compra atual do cadastro, pois ainda não existe histórico de custo médio por movimentação.'], 'Saldo na data-base = estoque inicial + compras até a data − vendas até a data.')
+  return result([col('product','Produto','text',30),col('category','Categoria'),col('active','Status', 'text', 12),col('stock','Saldo','number',12),col('purchasePrice','Custo médio histórico','currency',18),col('inventoryValue','Valor em estoque','currency',18),col('salePrice','Preço de venda','currency',16),col('potentialRevenue','Receita potencial','currency',18),col('potentialMargin','Margem potencial','currency',18)], rows, [['Unidades em estoque',sum(rows,'stock')],['Valor do estoque',sum(rows,'inventoryValue')],['Receita potencial',sum(rows,'potentialRevenue')]], [], 'Saldo e valorização na data-base pelo custo médio móvel das entradas históricas; cancelados são excluídos.')
 }
 
 function buildStockMovements(ctx) {
@@ -361,12 +374,14 @@ function buildProductPurchases(ctx) {
 
 function productSalesAggregation(ctx) {
   const products = productMap(ctx.data)
+  const costing = buildProductCosting(ctx.data)
   const grouped = new Map()
   ;(ctx.data.productSales || []).filter(item => item.paymentStatus !== 'cancelado' && inRange(item.competenceDate || item.saleDate,ctx.range)).forEach(item => {
     const product = products.get(item.productId)
-    const current = grouped.get(item.productId) || { product:product?.name || 'Produto não encontrado', category:labelize(product?.category), quantity:0, revenue:0, currentCost:num(product?.purchasePrice) }
+    const current = grouped.get(item.productId) || { product:product?.name || 'Produto não encontrado', category:labelize(product?.category), quantity:0, revenue:0, cost:0 }
     current.quantity += num(item.quantity)
     current.revenue += num(item.totalValue)
+    current.cost += num(costing.salesCost[item.id]?.totalCost)
     grouped.set(item.productId,current)
   })
   return [...grouped.values()].sort((a,b)=>b.revenue-a.revenue)
@@ -388,8 +403,8 @@ function buildProductAbc(ctx) {
 }
 
 function buildContributionMargin(ctx) {
-  const rows = productSalesAggregation(ctx).map(item => { const estimatedCost=item.quantity*item.currentCost; const margin=item.revenue-estimatedCost; return {...item,estimatedCost,margin,marginPercent:item.revenue?margin/item.revenue:0} })
-  return result([col('product','Produto','text',30),col('category','Categoria'),col('quantity','Quantidade','number',12),col('revenue','Faturamento','currency',16),col('currentCost','Custo unitário atual','currency',18),col('estimatedCost','Custo estimado','currency',16),col('margin','Margem de contribuição','currency',20),col('marginPercent','Margem %','percent',14)],rows,[['Faturamento',sum(rows,'revenue')],['Custo estimado',sum(rows,'estimatedCost')],['Margem estimada',sum(rows,'margin')]],['A margem usa o custo atual do produto, não o custo histórico na data da venda. Impostos, taxas e comissões não estão disponíveis por venda de produto.'],'Margem estimada = faturamento − quantidade vendida × custo unitário atual.')
+  const rows = productSalesAggregation(ctx).map(item => { const margin=item.revenue-item.cost; return {...item,margin,marginPercent:item.revenue?margin/item.revenue:0} })
+  return result([col('product','Produto','text',30),col('category','Categoria'),col('quantity','Quantidade','number',12),col('revenue','Faturamento','currency',16),col('cost','CMV histórico','currency',16),col('margin','Margem de contribuição','currency',20),col('marginPercent','Margem %','percent',14)],rows,[['Faturamento',sum(rows,'revenue')],['CMV',sum(rows,'cost')],['Margem',sum(rows,'margin')]],['Impostos, taxas e comissões específicos da venda ainda não estão abatidos nesta margem.'],'Margem = faturamento − CMV pelo custo médio móvel vigente na data de cada venda.')
 }
 
 function surgeryCost(item) {

@@ -241,7 +241,7 @@ export function Products({ data, setData }) {
           ['Produtos ativos', fmtN(data.products.filter(item => item.active !== false).length), C.accent],
           ['Estoque total', fmtN(m.productsByPerformance.reduce((acc, item) => acc + (item.stock || 0), 0)), C.cyan],
           ['Receita com produtos', fmt(m.productSalesRevenue), C.green],
-          ['Compra de estoque', fmt(m.productPurchaseTotal), C.red],
+          ['Compras acumuladas', fmt(m.productPurchasesTotal), C.red],
         ].map(([label, value, color]) => <Card key={label} style={{ padding:isMobile ? 14 : 18 }}><div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8, lineHeight:1.35 }}>{label}</div><div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color }}>{value}</div></Card>)}
       </div>
 

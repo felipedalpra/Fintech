@@ -13,12 +13,12 @@ const data = {
     date:'2026-01-12', competenceDate:'2026-01-12', dueDate:'2026-01-20', paymentStatus:'pendente',
   }],
   productSales:[
-    { id:'v1', productId:'pdt', totalValue:200, saleDate:'2026-01-05', competenceDate:'2026-01-05', paymentStatus:'recebido' },
-    { id:'v-cancelada', productId:'pdt', totalValue:500, saleDate:'2026-01-05', competenceDate:'2026-01-05', paymentStatus:'cancelado' },
+    { id:'v1', productId:'pdt', quantity:1, totalValue:200, saleDate:'2026-01-05', competenceDate:'2026-01-05', paymentStatus:'recebido' },
+    { id:'v-cancelada', productId:'pdt', quantity:1, totalValue:500, saleDate:'2026-01-05', competenceDate:'2026-01-05', paymentStatus:'cancelado' },
   ],
   productPurchases:[
-    { id:'cp1', productId:'pdt', totalValue:80, purchaseDate:'2026-01-03', competenceDate:'2026-01-03', dueDate:'2026-01-25', status:'pendente' },
-    { id:'cp-cancelada', productId:'pdt', totalValue:70, purchaseDate:'2026-01-03', competenceDate:'2026-01-03', status:'cancelado' },
+    { id:'cp1', productId:'pdt', quantity:1, totalValue:80, purchaseDate:'2026-01-03', competenceDate:'2026-01-03', dueDate:'2026-01-25', status:'pendente' },
+    { id:'cp-cancelada', productId:'pdt', quantity:1, totalValue:70, purchaseDate:'2026-01-03', competenceDate:'2026-01-03', status:'cancelado' },
   ],
   extraRevenues:[
     { id:'r1', description:'Receita', value:50, date:'2026-01-06', receivedDate:'2026-01-06', competenceDate:'2026-01-06', status:'recebido' },
@@ -29,7 +29,7 @@ const data = {
     { id:'e2', description:'Aberta', category:'outros', value:20, dueDate:'2026-01-22', competenceDate:'2026-01-08', status:'aberto' },
     { id:'e-cancelada', description:'Cancelada', category:'outros', value:60, dueDate:'2026-01-08', competenceDate:'2026-01-08', status:'cancelado' },
   ],
-  products:[{ id:'pdt', name:'Produto', stock:0 }],
+  products:[{ id:'pdt', name:'Produto', stock:0, purchasePrice:0 }],
   procedures:[], assets:[], liabilities:[], goals:[], recurrences:[],
 }
 
@@ -41,6 +41,7 @@ test('Fase 10: DRE lê competência do razão e caixa lê liquidação', () => {
   expect(metrics.grossRevenue).toBe(1550)
   expect(metrics.surgeryCostTotal).toBe(100)
   expect(metrics.productPurchaseTotal).toBe(80)
+  expect(metrics.productPurchasesTotal).toBe(80)
   expect(metrics.operationalExpenses).toBe(60)
   expect(metrics.netProfit).toBe(1310)
 
@@ -78,7 +79,7 @@ test('Fase 10: cancelados não entram em DRE, caixa nem obrigações', () => {
 test('Fase 10: cronograma de venda de produto gera caixa e saldo aberto por parcela', () => {
   const scheduled = structuredClone(data)
   scheduled.productSales = [{
-    id:'v-parcelada', productId:'pdt', patientName:'Ana', totalValue:300,
+    id:'v-parcelada', productId:'pdt', patientName:'Ana', quantity:1, totalValue:300,
     saleDate:'2026-01-05', competenceDate:'2026-01-05', paymentStatus:'recebido',
     paymentMethod:encodePaymentMethod({ payments:[
       { date:'2026-01-10', amount:100, method:'pix' },
@@ -92,4 +93,27 @@ test('Fase 10: cronograma de venda de produto gera caixa e saldo aberto por parc
 
   expect(january.entriesFinancial.filter(item => item.referenceId === 'v-parcelada').reduce((sum, item) => sum + item.value, 0)).toBe(100)
   expect(january.accountsReceivable.find(item => item.sourceId === 'v-parcelada')).toMatchObject({ value:200, dueDate:'2026-02-10' })
+})
+
+test('Fase 10: compra forma estoque e só a venda reconhece CMV na DRE', () => {
+  const inventoryOnly = structuredClone(data)
+  inventoryOnly.productSales = []
+  inventoryOnly.productPurchases = [{
+    id:'compra-estoque', productId:'pdt', quantity:5, totalValue:500,
+    purchaseDate:'2026-01-03', competenceDate:'2026-01-03', paymentDate:'2026-01-03', status:'pago',
+  }]
+  inventoryOnly.surgeries = []
+  inventoryOnly.consultations = []
+  inventoryOnly.extraRevenues = []
+  inventoryOnly.expenses = []
+
+  const metrics = buildMetrics(inventoryOnly, {
+    startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31',
+  })
+
+  expect(metrics.productPurchasesTotal).toBe(500)
+  expect(metrics.productCostOfSales).toBe(0)
+  expect(metrics.netProfit).toBe(0)
+  expect(metrics.cashOut).toBe(500)
+  expect(metrics.inventoryAsset).toBe(500)
 })

@@ -83,6 +83,27 @@ test('DRE usa competência e não a data de recebimento', () => {
   expect(report.summary[1]).toEqual(['Resultado líquido', 4000])
 })
 
+test('DRE reconhece CMV na venda e não transforma compra de estoque em despesa', () => {
+  const data = baseData()
+  data.products = [{ id:'product-1', name:'Cinta', stock:0, purchasePrice:0 }]
+  data.productPurchases = [{
+    id:'purchase-1', productId:'product-1', quantity:10, totalValue:500,
+    purchaseDate:'2026-10-01', competenceDate:'2026-10-01', status:'pago', paymentDate:'2026-10-01',
+  }]
+
+  const beforeSale = buildReport('dre', { data, range:RANGE })
+  expect(beforeSale.rows.find(item => item.description === 'CMV — produtos vendidos')?.value).toBe(0)
+  expect(beforeSale.summary[1]).toEqual(['Resultado líquido', 0])
+
+  data.productSales = [{
+    id:'sale-1', productId:'product-1', quantity:2, unitValue:100, totalValue:200,
+    saleDate:'2026-10-10', competenceDate:'2026-10-10', paymentStatus:'pendente',
+  }]
+  const afterSale = buildReport('dre', { data, range:RANGE })
+  expect(afterSale.rows.find(item => item.description === 'CMV — produtos vendidos')?.value).toBe(-100)
+  expect(afterSale.summary[1]).toEqual(['Resultado líquido', 100])
+})
+
 test('posição de estoque respeita a data-base', () => {
   const data = baseData()
   data.products = [{ id:'product-1', name:'Cinta', category:'modelador', stock:5, purchasePrice:100, salePrice:200, active:true }]

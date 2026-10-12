@@ -707,6 +707,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     { label: '(-) Custos de consultas (NF)', getValue: mx => mx.consultationCostTotal, color: C.red, bold: false },
     { label: 'Receita líquida de consultas', getValue: mx => mx.consultationRevenue - mx.consultationCostTotal, color: null, bold: false },
     { label: 'Receita de produtos', getValue: mx => mx.productSalesRevenue, color: C.green, bold: false },
+    { label: '(-) CMV de produtos', getValue: mx => mx.productCostOfSales, color: C.red, bold: false },
     { label: 'Outras receitas', getValue: mx => mx.extraRevenueTotal, color: C.green, bold: false },
     { label: '= Receita operacional total', getValue: mx => mx.grossRevenue, color: C.accent, bold: true },
     { label: '(-) Despesas operacionais', getValue: mx => mx.operationalExpenses, color: C.red, bold: false },
@@ -1605,20 +1606,17 @@ function IndicadoresTab({ m, data, money, setData, indicatorPeriodKey }) {
   const inventoryAvg = inputNumber('inventoryAvg')
   const receivablesOperational = inputNumber('receivablesOperational') || m.receivablesOpenTotal
   const suppliers = inputNumber('suppliers')
-  const purchases = inputNumber('purchases') || m.productPurchaseTotal
+  const purchases = inputNumber('purchases') || m.productPurchasesTotal
   const availableFunds = inputNumber('availableFunds') || (m.cashBalance + assetsExtra)
   const currentCash = inputNumber('currentCash') || availableFunds
   const burnRateManual = inputNumber('burnRateManual')
   const totalCosts = directCosts + m.operationalExpenses + m.taxExpenses
-  const totalAtivo = m.cashBalance + m.receivablesOpenTotal + assetsExtra
-  const ativoCirculante = m.cashBalance + m.receivablesOpenTotal
+  const totalAtivo = m.assetsTotal
+  const ativoCirculante = m.assetsTotal - assetsExtra
   const passivoCirculante = m.payablesOpenTotal
   const totalPassivo = passivoCirculante + liabExtra
 
-  const estoqueValor = (m.productsByPerformance || []).reduce((acc, p) => {
-    const prod = (data.products || []).find(x => x.id === p.id)
-    return acc + (p.stock > 0 ? p.stock * (prod?.purchasePrice || 0) : 0)
-  }, 0)
+  const estoqueValor = m.inventoryAsset
 
   const pct = (n, d) => (d !== 0 ? (n / d) * 100 : null)
   const rat = (n, d) => (d !== 0 ? n / d : null)

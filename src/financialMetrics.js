@@ -1,5 +1,7 @@
 import { inRange, monthKey, onOrBefore, today } from './utils.js'
 import { buildLedger } from './lib/financialLedger.js'
+import { buildProductCosting } from './lib/inventoryCosting.js'
+import { buildInventoryMovements, stockByProduct } from './lib/inventoryLedger.js'
 
 export { paymentScheduleFlow } from './lib/paymentScheduleFlow.js'
 
@@ -301,9 +303,6 @@ export function buildMetrics(rawData, options = {}) {
   const surgeriesInRange = surgeries.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
   const consultationsInRange = consultations.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
   const productSalesInRange = productSales.filter(item => item.paymentStatus !== 'cancelado' && (item.competenceDate || item.saleDate) && inRange(item.competenceDate || item.saleDate, startDate, endDate))
-  const productPurchasesInRange = productPurchases.filter(item => item.status !== 'cancelado' && (item.competenceDate || item.purchaseDate) && inRange(item.competenceDate || item.purchaseDate, startDate, endDate))
-  const extraRevenuesInRange = extraRevenues.filter(item => item.status !== 'cancelado' && (item.competenceDate || item.date) && inRange(item.competenceDate || item.date, startDate, endDate))
-  const expensesInRange = expenses.filter(item => item.status !== 'cancelado' && (item.competenceDate || item.dueDate) && inRange(item.competenceDate || item.dueDate, startDate, endDate))
   const recurringInRange = generateRecurringOccurrences(recurrences, recurringRangeStart, recurringRangeEnd)
   const recurringUntilBalance = generateRecurringOccurrences(recurrences, recurringBalanceStart, balanceDate)
   const recurringRevenueOpenInRange = recurringInRange.filter(item => item.tipo === 'receita' && !extraRevenues.some(entry => matchesRecurringRevenue(entry, item)))
@@ -323,7 +322,12 @@ export function buildMetrics(rawData, options = {}) {
   const consultationRevenue = sumLedger(entry => entry.source_type === 'consultation' && entry.source_component === 'revenue')
   const consultationCostTotal = sumLedger(entry => entry.source_type === 'consultation' && entry.direction === 'payable')
   const productSalesRevenue = sumLedger(entry => entry.source_type === 'product_sale' && entry.direction === 'receivable')
-  const productPurchaseTotal = sumLedger(entry => entry.source_type === 'product_purchase' && entry.direction === 'payable')
+  const productPurchasesTotal = sumLedger(entry => entry.source_type === 'product_purchase' && entry.direction === 'payable')
+  const productCosting = buildProductCosting(data)
+  const productCostOfSales = productSalesInRange.reduce((acc, sale) => acc + Number(productCosting.salesCost[sale.id]?.totalCost || 0), 0)
+  // Compatibilidade: consumidores antigos usam productPurchaseTotal como a linha de custo da DRE.
+  // A partir da Fase 10, o campo representa CMV histórico; compras ficam em productPurchasesTotal.
+  const productPurchaseTotal = productCostOfSales
   const extraRevenueTotal = sumLedger(entry => entry.source_type === 'extra_revenue' && entry.direction === 'receivable') + recurringRevenueTotal
   const grossRevenue = surgeryRevenue + consultationRevenue + productSalesRevenue + extraRevenueTotal
 
@@ -380,8 +384,19 @@ export function buildMetrics(rawData, options = {}) {
 
   const cashAsset = cumulativeEntries.reduce((acc, item) => acc + (item.type === 'entrada' ? item.value : -item.value), 0)
   const bankAssets = assets.reduce((acc, item) => acc + (item.value || 0), 0)
+  const inventoryDataAtBalance = {
+    ...data,
+    productPurchases:productPurchases.filter(item => onOrBefore(item.purchaseDate, balanceDate)),
+    productSales:productSales.filter(item => onOrBefore(item.saleDate, balanceDate)),
+  }
+  const inventoryCostingAtBalance = buildProductCosting(inventoryDataAtBalance)
+  const inventoryStockAtBalance = stockByProduct(buildInventoryMovements(inventoryDataAtBalance))
+  const inventoryAsset = products.reduce((acc, product) => {
+    const stock = Math.max(0, Number(inventoryStockAtBalance[product.id] || 0))
+    return acc + stock * Number(inventoryCostingAtBalance.averageByProduct[product.id] || 0)
+  }, 0)
   const liabilitiesTotal = liabilities.reduce((acc, item) => acc + (item.value || 0), 0) + payablesOpenTotal
-  const assetsTotal = cashAsset + bankAssets + receivablesOpenTotal
+  const assetsTotal = cashAsset + bankAssets + receivablesOpenTotal + inventoryAsset
   const equity = assetsTotal - liabilitiesTotal
 
   const byProcedure = procedures.map(procedure => {
@@ -393,12 +408,10 @@ export function buildMetrics(rawData, options = {}) {
 
   const productsByPerformance = products.map(product => {
     const sales = productSalesInRange.filter(item => item.productId === product.id)
-    const purchases = productPurchasesInRange.filter(item => item.productId === product.id)
     const soldQty = sales.reduce((acc, item) => acc + (item.quantity || 0), 0)
-    const purchaseQty = purchases.reduce((acc, item) => acc + (item.quantity || 0), 0)
     const revenue = sales.reduce((acc, item) => acc + (item.totalValue || 0), 0)
-    const cost = purchases.reduce((acc, item) => acc + (item.totalValue || 0), 0)
-    const stock = (product.stock || 0) + purchaseQty - soldQty
+    const cost = sales.reduce((acc, item) => acc + Number(productCosting.salesCost[item.id]?.totalCost || 0), 0)
+    const stock = Number(inventoryStockAtBalance[product.id] || 0)
     return { id:product.id, name:product.name, revenue, cost, profit:revenue - cost, soldQty, stock }
   }).sort((a, b) => b.profit - a.profit)
 
@@ -445,6 +458,8 @@ export function buildMetrics(rawData, options = {}) {
     consultationCostTotal,
     productSalesRevenue,
     productPurchaseTotal,
+    productPurchasesTotal,
+    productCostOfSales,
     extraRevenueTotal,
     operationalExpenses,
     taxExpenses,
@@ -466,6 +481,7 @@ export function buildMetrics(rawData, options = {}) {
     revenueByMonth,
     expenseByMonth,
     assetsTotal,
+    inventoryAsset,
     liabilitiesTotal,
     equity,
     byProcedure,

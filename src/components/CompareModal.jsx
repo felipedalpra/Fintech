@@ -220,7 +220,7 @@ function DreView({ mA, mB, formatMoney }) {
       <Row label="= Faturamento Bruto"      a={mA.grossRevenue}          b={mB.grossRevenue}          formatMoney={formatMoney} isSubtotal />
       <Row label="Custos de Cirurgias"      a={mA.surgeryCostTotal}      b={mB.surgeryCostTotal}      formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="Custos de Consultas"      a={mA.consultationCostTotal} b={mB.consultationCostTotal} formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
-      <Row label="Custo de Produtos"        a={mA.productPurchaseTotal}  b={mB.productPurchaseTotal}  formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
+      <Row label="CMV de Produtos"          a={mA.productPurchaseTotal}  b={mB.productPurchaseTotal}  formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="Despesas Operacionais"    a={mA.operationalExpenses}   b={mB.operationalExpenses}   formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="= Lucro Operacional"      a={mA.operatingProfit}       b={mB.operatingProfit}       formatMoney={formatMoney} isSubtotal />
       <Row label="Impostos"                 a={mA.taxExpenses}           b={mB.taxExpenses}           formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
@@ -262,7 +262,7 @@ function ExpensesView({ mA, mB, formatMoney }) {
     <>
       <Row label="Custos de Cirurgias"   a={mA.surgeryCostTotal}      b={mB.surgeryCostTotal}      formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="Custos de Consultas"   a={mA.consultationCostTotal} b={mB.consultationCostTotal} formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
-      <Row label="Custo de Produtos"     a={mA.productPurchaseTotal}  b={mB.productPurchaseTotal}  formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
+      <Row label="CMV de Produtos"       a={mA.productPurchaseTotal}  b={mB.productPurchaseTotal}  formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="Despesas Operacionais" a={mA.operationalExpenses}   b={mB.operationalExpenses}   formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="Impostos"              a={mA.taxExpenses}           b={mB.taxExpenses}           formatMoney={formatMoney} isPositiveGood={false} isExpense indent />
       <Row label="= Total de Despesas"   a={totA}                     b={totB}                     formatMoney={formatMoney} isPositiveGood={false} isTotal />
