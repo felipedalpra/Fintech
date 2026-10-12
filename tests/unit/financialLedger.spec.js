@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildLedger, checkLedgerInvariants, reconcileLedger } from '../../src/lib/financialLedger.js'
+import { auditLedgerReadiness, buildLedger, checkLedgerInvariants, reconcileLedger } from '../../src/lib/financialLedger.js'
 
 const data = {
   surgeries: [
@@ -136,4 +136,46 @@ test('reconcileLedger: razão × fonte bate a centavo (diff 0 em toda origem)', 
   }
   // confirma que de fato comparou cirurgias (receita > 0 no dataset de exemplo)
   expect(sources.find(s => s.label.startsWith('Cirurgias')).ledger).toBeGreaterThan(0)
+})
+
+test('auditLedgerReadiness bloqueia a virada quando a liquidação ainda é inferida', () => {
+  const audit = auditLedgerReadiness(data)
+  const codes = audit.blockers.map(item => item.code)
+
+  expect(audit.ready).toBe(false)
+  expect(codes).toContain('legacy_product_sale')
+  expect(codes).toContain('legacy_product_purchase')
+  expect(codes).toContain('missing_settlement_date')
+  expect(audit.invariantProblems).toEqual([])
+})
+
+test('auditLedgerReadiness libera revisão final com situações e datas confirmadas', () => {
+  const audit = auditLedgerReadiness({
+    surgeries:[{
+      id:'s-ok', totalValue:1000, date:'2026-09-01', competenceDate:'2026-09-01', dueDate:'2026-09-05',
+      paymentStatus:'pago', paymentDate:'2026-09-05', patient:'Ana', patientId:'p1',
+    }],
+    consultations:[{
+      id:'c-ok', value:300, date:'2026-09-02', competenceDate:'2026-09-02', dueDate:'2026-09-02',
+      paymentStatus:'pago', paymentDate:'2026-09-02', patient:'Bia', patientId:'p2',
+    }],
+    productSales:[{
+      id:'v-ok', totalValue:200, saleDate:'2026-09-03', competenceDate:'2026-09-03',
+      paymentStatus:'pendente', patientId:'p3', patientName:'Cida',
+    }],
+    productPurchases:[{
+      id:'cp-ok', totalValue:100, purchaseDate:'2026-09-03', competenceDate:'2026-09-03', dueDate:'2026-09-10',
+      status:'pendente', supplierId:'f1', supplier:'Fornecedor',
+    }],
+    extraRevenues:[{
+      id:'r-ok', value:50, date:'2026-09-04', competenceDate:'2026-09-04', dueDate:'2026-09-12', status:'pendente',
+    }],
+    expenses:[{
+      id:'e-ok', value:80, dueDate:'2026-09-15', competenceDate:'2026-09-05', status:'pendente', supplierId:'f2',
+    }],
+  })
+
+  expect(audit.ready).toBe(true)
+  expect(audit.blockers).toEqual([])
+  expect(audit.warnings).toEqual([])
 })

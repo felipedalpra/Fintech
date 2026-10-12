@@ -235,6 +235,130 @@ export function reconcileLedger(data = {}) {
   return { sources, totals: { receivableOpen, payableOpen, receivablePaid, payablePaid } }
 }
 
+// Gate de prontidão para a Fase 10. Além de conferir totais, aponta registros cuja liquidação
+// ainda é inferida pelo modelo legado. Enquanto houver bloqueios, trocar a leitura do dashboard
+// para o razão faria números aparentemente mais precisos sem existir um fato financeiro confiável.
+export function auditLedgerReadiness(data = {}) {
+  const ledger = buildLedger(data)
+  const reconciliation = reconcileLedger(data)
+  const issues = []
+
+  const addIssue = (code, severity, label, records, detail) => {
+    const rows = (records || []).filter(Boolean)
+    if (rows.length === 0) return
+    const ids = rows.slice(0, 3).map(item => item.id).filter(Boolean)
+    issues.push({
+      code,
+      severity,
+      label,
+      count:rows.length,
+      detail,
+      sampleIds:ids,
+    })
+  }
+
+  const invariantProblems = checkLedgerInvariants(ledger)
+  if (invariantProblems.length > 0) {
+    issues.push({
+      code:'ledger_invariant', severity:'blocking', label:'Parcelas inconsistentes',
+      count:invariantProblems.length,
+      detail:'A soma das parcelas ou a divisão entre pago e aberto não fecha com o total do título.',
+      sampleIds:invariantProblems.slice(0, 3).map(item => item.entry),
+    })
+  }
+
+  const sourceDifferences = reconciliation.sources.filter(item => Math.abs(item.diff) >= 0.01)
+  if (sourceDifferences.length > 0) {
+    issues.push({
+      code:'source_difference', severity:'blocking', label:'Razão diverge da fonte',
+      count:sourceDifferences.length,
+      detail:'Há origens cuja soma bruta não bate a centavo com os títulos projetados.',
+      sampleIds:sourceDifferences.slice(0, 3).map(item => item.label),
+    })
+  }
+
+  const surgeries = data.surgeries || []
+  const consultations = data.consultations || []
+  const productSales = data.productSales || []
+  const productPurchases = data.productPurchases || []
+  const extraRevenues = data.extraRevenues || []
+  const expenses = data.expenses || []
+
+  addIssue('legacy_product_sale', 'blocking', 'Vendas antigas sem situação confirmada',
+    productSales.filter(item => !item.paymentStatus || item.paymentStatus === 'legacy_unverified'),
+    'Confirme cada venda como recebida, a receber ou cancelada.')
+  addIssue('legacy_product_purchase', 'blocking', 'Compras antigas sem situação confirmada',
+    productPurchases.filter(item => !item.status || item.status === 'legacy_unverified'),
+    'Confirme cada compra como paga, a pagar ou cancelada.')
+
+  addIssue('missing_settlement_date', 'blocking', 'Liquidações sem data real', [
+    ...surgeries.filter(item => item.paymentStatus === 'pago' && !item.paymentDate),
+    ...consultations.filter(item => item.paymentStatus === 'pago' && !item.paymentDate),
+    ...productPurchases.filter(item => item.status === 'pago' && !item.paymentDate),
+    ...extraRevenues.filter(item => (item.status || 'recebido') === 'recebido' && !item.receivedDate),
+    ...expenses.filter(item => item.status === 'pago' && !item.paymentDate),
+  ], 'O caixa está usando a data operacional ou o vencimento como aproximação.')
+
+  // O modelo atual de venda não possui received_date: toda venda marcada recebida usa sale_date.
+  addIssue('product_sale_assumed_settlement', 'blocking', 'Vendas recebidas usam a data da venda',
+    productSales.filter(item => item.paymentStatus === 'recebido'),
+    'É necessário capturar a data real do recebimento antes de tornar o razão autoritativo.')
+
+  const costsWithoutSettlement = []
+  surgeries.filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
+    if ([item.hospitalCost, item.anesthesiaCost, item.materialCost, item.otherCosts]
+      .some(value => num(value) > 0) || frozenOrDerivedTax(item, item.totalValue) > 0) costsWithoutSettlement.push(item)
+  })
+  consultations.filter(item => item.paymentStatus !== 'cancelado').forEach(item => {
+    if (frozenOrDerivedTax(item, item.value) > 0) costsWithoutSettlement.push(item)
+  })
+  addIssue('cost_assumed_settlement', 'blocking', 'Custos usam a data do atendimento',
+    costsWithoutSettlement,
+    'Custos cirúrgicos e impostos ainda não têm situação, vencimento e data de pagamento próprios.')
+
+  const entriesMissingDates = ledger.entries.flatMap((entry, index) => {
+    if (entry.status === 'canceled' || entry.total_amount <= 0) return []
+    const rows = ledger.installments[index] || []
+    if (!entry.competence_date || !entry.issue_date || rows.some(row => !row.due_date)) {
+      return [{ id:`${entry.source_type}:${entry.source_id}` }]
+    }
+    return []
+  })
+  addIssue('missing_financial_dates', 'blocking', 'Títulos sem datas obrigatórias', entriesMissingDates,
+    'Preencha competência, emissão e vencimento para todos os títulos com valor.')
+
+  addIssue('missing_patient_link', 'warning', 'Receitas sem cliente vinculado', [
+    ...surgeries.filter(item => item.paymentStatus !== 'cancelado' && !item.patientId),
+    ...consultations.filter(item => item.paymentStatus !== 'cancelado' && !item.patientId),
+    ...productSales.filter(item => item.paymentStatus !== 'cancelado' && !item.patientId),
+  ], 'O nome em texto é preservado, mas relatórios por cliente podem ficar fragmentados.')
+
+  addIssue('missing_supplier_link', 'warning', 'Saídas sem fornecedor vinculado', [
+    ...productPurchases.filter(item => item.status !== 'cancelado' && !item.supplierId),
+    ...expenses.filter(item => item.status !== 'cancelado' && !item.supplierId),
+  ], 'O valor é preservado, mas relatórios por fornecedor podem ficar fragmentados.')
+
+  const canceledRecords = [
+    ...productSales.filter(item => item.paymentStatus === 'cancelado'),
+    ...productPurchases.filter(item => item.status === 'cancelado'),
+    ...extraRevenues.filter(item => item.status === 'cancelado'),
+    ...expenses.filter(item => item.status === 'cancelado'),
+  ]
+  addIssue('canceled_dashboard_behavior', 'warning', 'Cancelados mudarão o resultado atual', canceledRecords,
+    'O dashboard legado ainda reconhece alguns itens cancelados; o razão corretamente os exclui.')
+
+  const blockers = issues.filter(item => item.severity === 'blocking')
+  const warnings = issues.filter(item => item.severity === 'warning')
+  return {
+    ready:blockers.length === 0,
+    blockers,
+    warnings,
+    issues,
+    reconciliation,
+    invariantProblems,
+  }
+}
+
 // Invariantes de integridade por título (para testes e validação em runtime):
 // (1) soma das parcelas == total; (2) pago + aberto == total.
 export function checkLedgerInvariants({ entries, installments }) {

@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (65)
+### Added
+- **Gate de prontidão do razão**: a tela **Financeiro → Conferência do razão** agora audita, além da reconciliação a centavo, os pré-requisitos para a Fase 10: invariantes das parcelas, vendas/compras antigas sem situação confirmada, liquidações sem data real, custos ainda liquidados por aproximação e títulos sem datas obrigatórias. Vínculos ausentes de cliente/fornecedor e impacto de cancelamentos aparecem como alertas separados. Enquanto existir bloqueio, a tela deixa explícito que o razão ainda não pode virar a fonte de verdade. Implementação pura em `src/lib/financialLedger.js`, apresentação responsiva em `src/components/LedgerCheck.jsx` e cobertura em `tests/unit/financialLedger.spec.js`/`tests/e2e/ledger-check.spec.js`. Nenhuma leitura ou valor do financeiro foi alterado.
+
 ## [Unreleased] - 2026-10-12 (64)
 ### Added
 - **Conferência do Razão (validação pré-Fase 10)**: nova tela admin **Financeiro → Conferência do razão** (`src/components/LedgerCheck.jsx`, nav/rotas em `FinanceWorkspace.jsx`, acesso admin/gestão em `UserRoleContext.jsx`) que valida o razão (projeção) antes de virar a fonte de verdade das métricas. **Seção A — Razão × Fonte:** reconciliação por origem (cirurgias, consultas, vendas, receitas, despesas, compras, custos) mostrando soma do dado bruto × soma dos títulos do razão; tem que **bater a centavo** (badge ✓/⚠). **Seção B — Razão × Dashboard:** compara contas a receber/pagar em aberto e receita bruta do razão com o `buildMetrics`, anotando as diferenças **esperadas** (recorrências não entram no razão; vendas/compras "a conferir" entram como aberto). Função pura `reconcileLedger` em `src/lib/financialLedger.js` (testada: diff 0 em toda origem). Não altera dados; é só leitura. É o pré-requisito para, com segurança, executar a Fase 10 (virar a leitura). Teste: `tests/unit/financialLedger.spec.js` (11).

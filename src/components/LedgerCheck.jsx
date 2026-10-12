@@ -2,14 +2,16 @@ import { C } from '../theme.js'
 import { fmt } from '../utils.js'
 import { Card } from './UI.jsx'
 import { buildMetrics } from '../financialMetrics.js'
-import { reconcileLedger } from '../lib/financialLedger.js'
+import { auditLedgerReadiness } from '../lib/financialLedger.js'
 
-// Conferência do razão (pré-requisito da Fase 10). Duas seções:
+// Conferência do razão (pré-requisito da Fase 10). Um gate + duas reconciliações:
+//  Gate) integridade e cobertura dos dados de autoridade — sem bloqueios antes da virada.
 //  A) Razão × Fonte — deve bater a centavo (prova que o razão capturou todos os registros).
 //  B) Razão × Dashboard — comparativo informativo (algumas diferenças são esperadas: recorrências
 //     não entram no razão ainda; vendas/compras "a conferir" contam como aberto no razão).
 export function LedgerCheck({ data }) {
-  const recon = reconcileLedger(data)
+  const audit = auditLedgerReadiness(data)
+  const recon = audit.reconciliation
   const m = buildMetrics(data)
   const mReceivableOpen = (m.accountsReceivable || []).reduce((a, x) => a + (x.value || 0), 0)
   const mPayableOpen = (m.accountsPayable || []).reduce((a, x) => a + (x.value || 0), 0)
@@ -25,6 +27,7 @@ export function LedgerCheck({ data }) {
     tdL: { padding: '8px 10px', color: C.text, borderBottom: `1px solid ${C.border}` },
     note: { fontSize: 11.5, color: C.textDim, marginTop: 10, lineHeight: 1.5 },
     badge: ok => ({ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 999, color: ok ? (C.green || '#16a34a') : (C.red || '#ef4444'), background: `${ok ? (C.green || '#16a34a') : (C.red || '#ef4444')}18` }),
+    issue: severity => ({ padding:'10px 12px', borderRadius:10, border:`1px solid ${severity === 'blocking' ? C.red : C.yellow}44`, background:`${severity === 'blocking' ? C.red : C.yellow}0D` }),
   }
 
   const diffCell = diff => (
@@ -52,38 +55,82 @@ export function LedgerCheck({ data }) {
       </div>
 
       <Card>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
+          <div>
+            <div style={s.h}>Gate da Fase 10 — prontidão dos dados</div>
+            <div style={{ fontSize:12, color:C.textSub, lineHeight:1.5, maxWidth:720 }}>
+              A troca da fonte de verdade só é segura quando não há parcelas divergentes nem liquidações
+              inferidas pelo modelo antigo.
+            </div>
+          </div>
+          <span style={s.badge(audit.ready)}>
+            {audit.ready ? '✓ Pronto para revisão final' : `⚠ Bloqueado · ${audit.blockers.reduce((sum, item) => sum + item.count, 0)} ocorrência(s)`}
+          </span>
+        </div>
+
+        {audit.issues.length === 0 ? (
+          <div style={{ marginTop:14, padding:'12px 14px', borderRadius:10, color:C.green, background:`${C.green}12`, fontSize:13 }}>
+            Nenhuma pendência estrutural encontrada. Ainda revise os valores reais da seção B antes da troca.
+          </div>
+        ) : (
+          <div style={{ display:'grid', gap:8, marginTop:14 }}>
+            {audit.issues.map(issue => (
+              <div key={issue.code} style={s.issue(issue.severity)} data-testid={`ledger-issue-${issue.code}`}>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'baseline' }}>
+                  <strong style={{ color:issue.severity === 'blocking' ? C.red : C.yellow, fontSize:12.5 }}>
+                    {issue.severity === 'blocking' ? 'Bloqueio' : 'Atenção'} · {issue.label}
+                  </strong>
+                  <span style={{ color:C.text, fontWeight:800, fontSize:12 }}>{issue.count}</span>
+                </div>
+                <div style={{ color:C.textSub, fontSize:11.5, lineHeight:1.45, marginTop:3 }}>{issue.detail}</div>
+                {issue.sampleIds.length > 0 && (
+                  <div style={{ color:C.textDim, fontSize:10.5, marginTop:4 }}>
+                    Exemplos: {issue.sampleIds.join(', ')}{issue.count > issue.sampleIds.length ? '…' : ''}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
           <div style={s.h}>A) Razão × Fonte — reconciliação (deve bater a centavo)</div>
           <span style={s.badge(allMatch)}>{allMatch ? '✓ Tudo reconciliado' : '⚠ Há divergência'}</span>
         </div>
-        <table style={s.table}>
-          <thead><tr><th style={s.th}>Origem</th><th style={{ ...s.th, textAlign: 'right' }}>Fonte</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Diferença</th></tr></thead>
-          <tbody>
-            {recon.sources.map(row => (
-              <tr key={row.label}>
-                <td style={s.tdL}>{row.label}</td>
-                <td style={s.tdR}>{fmt(row.raw)}</td>
-                <td style={s.tdR}>{fmt(row.ledger)}</td>
-                <td style={s.tdR}>{diffCell(row.diff)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ ...s.table, minWidth:620 }}>
+            <thead><tr><th style={s.th}>Origem</th><th style={{ ...s.th, textAlign: 'right' }}>Fonte</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Diferença</th></tr></thead>
+            <tbody>
+              {recon.sources.map(row => (
+                <tr key={row.label}>
+                  <td style={s.tdL}>{row.label}</td>
+                  <td style={s.tdR}>{fmt(row.raw)}</td>
+                  <td style={s.tdR}>{fmt(row.ledger)}</td>
+                  <td style={s.tdR}>{diffCell(row.diff)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       <Card>
         <div style={s.h}>B) Razão × Dashboard — comparativo (diferenças esperadas anotadas)</div>
-        <table style={s.table}>
-          <thead><tr><th style={s.th}>Indicador</th><th style={{ ...s.th, textAlign: 'right' }}>Dashboard</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Δ</th></tr></thead>
-          <tbody>
-            <CompareRow label="Contas a receber (aberto)" dash={mReceivableOpen} led={recon.totals.receivableOpen}
-              note="Δ esperado: recorrências de receita não entram no razão; vendas 'a conferir' entram como aberto." />
-            <CompareRow label="Contas a pagar (aberto)" dash={mPayableOpen} led={recon.totals.payableOpen}
-              note="Δ esperado: recorrências de despesa não entram no razão; compras 'a conferir' entram como aberto." />
-            <CompareRow label="Receita bruta (competência)" dash={m.grossRevenue} led={round2SourcesRevenue(recon)}
-              note="Δ esperado = recorrências de receita (ainda não modeladas no razão)." />
-          </tbody>
-        </table>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ ...s.table, minWidth:680 }}>
+            <thead><tr><th style={s.th}>Indicador</th><th style={{ ...s.th, textAlign: 'right' }}>Dashboard</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Δ</th></tr></thead>
+            <tbody>
+              <CompareRow label="Contas a receber (aberto)" dash={mReceivableOpen} led={recon.totals.receivableOpen}
+                note="Δ esperado: recorrências não entram no razão, itens futuros não entram no dashboard e vendas a conferir entram abertas no razão." />
+              <CompareRow label="Contas a pagar (aberto)" dash={mPayableOpen} led={recon.totals.payableOpen}
+                note="Δ esperado: recorrências não entram no razão, itens futuros não entram no dashboard e compras a conferir entram abertas no razão." />
+              <CompareRow label="Receita bruta (competência)" dash={m.grossRevenue} led={round2SourcesRevenue(recon)}
+                note="Δ possível: recorrências e registros cancelados ainda tratados de forma diferente pelo dashboard legado." />
+            </tbody>
+          </table>
+        </div>
         <div style={s.note}>
           A seção B é informativa: o razão só vira a fonte de verdade (Fase 10) depois que a seção A
           estiver 100% reconciliada e as diferenças da B forem só as esperadas (recorrências e itens

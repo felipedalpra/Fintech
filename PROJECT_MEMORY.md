@@ -62,6 +62,7 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 > Atualize esta seção a cada merge importante.
 
 ### Histórico recente (resumo)
+- 2026-10-12 (branch `feat/ledger-readiness-audit`): Conferência do Razão ganhou um gate explícito para a Fase 10. Além da reconciliação fonte × razão, audita invariantes, situações legadas, datas reais de liquidação, custos ainda presumidos, datas obrigatórias e vínculos de cliente/fornecedor. A mudança é somente leitura e não vira a fonte dos números enquanto houver bloqueios.
 - 2026-10-12 (branch `feat/central-relatorios-excel`): Central de Relatórios com 22 exportações `.xlsx` financeiras, operacionais, de estoque e clientes; pacote consolidado; metodologia/fontes/alertas por planilha; auditoria automática de qualidade dos dados. Implementação cliente em `src/lib/reportCatalog.js` e `src/lib/reportWorkbook.js`, sem mudança de schema/backend. Limitações estruturais de liquidação de produtos e custo histórico são expostas nos relatórios em vez de ocultadas.
 - `a5105aa`: otimizações de performance (salvamentos paralelos, memoização, error boundary, UUID v4 estável)
 - `772cdd1`: robustez de `payment_method` em consultas com falhas transitórias de schema
