@@ -118,7 +118,8 @@ export function buildLedger(data = {}) {
       competenceDate: item.competenceDate || item.date, issueDate: item.date,
       dueDate: item.dueDate || item.date, paidDate: item.receivedDate || item.date,
       isPaid: received, canceled: item.status === 'cancelado',
-      partyType: 'other', partyName: item.description || '', category: item.category || 'outras_receitas',
+      partyType: item.patientId ? 'patient' : 'other', partyId: item.patientId || null,
+      partyName: item.patient || item.description || '', category: item.category || 'outras_receitas',
       costCenter: item.originLabel || null,
     }))
   })
@@ -129,7 +130,8 @@ export function buildLedger(data = {}) {
     competenceDate: item.competenceDate || item.dueDate, issueDate: item.dueDate,
     dueDate: item.dueDate, paidDate: item.paymentDate || item.dueDate,
     isPaid: item.status === 'pago', canceled: item.status === 'cancelado',
-    partyType: 'supplier', partyName: item.description || '', category: item.category || null,
+    partyType: 'supplier', partyId: item.supplierId || null,
+    partyName: item.supplier || item.description || '', category: item.category || null,
     costCenter: item.originLabel || null,
   })))
 

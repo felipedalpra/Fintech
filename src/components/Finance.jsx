@@ -3,6 +3,8 @@ import { C } from '../theme.js'
 import { fmt, formatDateBR, getPeriodRange, inRange, isIsoDateString, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { PatientSelector } from './PatientSelector.jsx'
+import { SupplierSelector } from './SupplierSelector.jsx'
 import { ExportModal } from './ExportModal.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
@@ -32,8 +34,8 @@ const DEFAULT_COST_CENTERS = [
   'Recursos Humanos',
   'Outros',
 ]
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, date:today(), competenceDate:today(), dueDate:today(), status:'recebido', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, patientId:'', patient:'', date:today(), competenceDate:today(), dueDate:today(), status:'recebido', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', value:0, supplierId:'', supplier:'', dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 
 // Origem exibida: rótulo livre preenchido pelo usuário (ex: "Indicação") ou,
 // na falta dele, a origem automática do sistema (ex: "cirurgia", "despesa").
@@ -1360,6 +1362,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
+            <PatientSelector label="Cliente (opcional)" value={form.patientId} onChange={(id, name) => setForm(current => ({ ...current, patientId:id, patient:name }))} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (
@@ -1414,6 +1417,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
             <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
+            <SupplierSelector value={form.supplierId} onChange={(id, name) => setForm(current => ({ ...current, supplierId:id, supplier:name }))} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
             {(!editing && form.launchType === 'fixa') ? (

@@ -2,24 +2,29 @@ import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { Btn, FInput, Modal } from './UI.jsx'
 import { supabase } from '../lib/supabase.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 
-export function PatientSelector({ userId, value, onChange }) {
+export function PatientSelector({ userId, value, onChange, label = 'Paciente' }) {
+  const { user } = useAuth()
+  const { ownerId } = useUserRole()
+  const effectiveUserId = userId || ownerId || user?.id
   const [patients, setPatients] = useState([])
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ full_name: '', cpf: '', phone: '' })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!userId) return
-    supabase.from('patients').select('id,full_name,cpf,phone').eq('user_id', userId).eq('active', true).order('full_name')
+    if (!effectiveUserId) return
+    supabase.from('patients').select('id,full_name,cpf,phone').eq('user_id', effectiveUserId).eq('active', true).order('full_name')
       .then(({ data }) => setPatients(data || []))
-  }, [userId])
+  }, [effectiveUserId])
 
   async function createPatient() {
     if (!form.full_name.trim()) return
     setSaving(true)
     const { data: created } = await supabase.from('patients').insert({
-      user_id: userId,
+      user_id: effectiveUserId,
       full_name: form.full_name.trim(),
       cpf: form.cpf || null,
       phone: form.phone || null,
@@ -38,7 +43,7 @@ export function PatientSelector({ userId, value, onChange }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={base.label}>Paciente</label>
+      <label style={base.label}>{label}</label>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <select
           value={value || ''}

@@ -37,3 +37,7 @@ alter table public.expenses          add column if not exists supplier_id uuid r
 
 create index if not exists idx_product_purchases_supplier on public.product_purchases(supplier_id);
 create index if not exists idx_expenses_supplier          on public.expenses(supplier_id);
+
+-- Cliente vinculado à receita extra (party do título a receber). Nullable, retrocompatível.
+alter table public.extra_revenues add column if not exists patient_id uuid references public.patients(id) on delete set null;
+create index if not exists idx_extra_revenues_patient on public.extra_revenues(patient_id);
