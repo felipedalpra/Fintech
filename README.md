@@ -33,6 +33,10 @@ STRIPE_WEBHOOK_SECRET=whsec_xxx
 STRIPE_PRICE_MENSAL=price_xxx
 STRIPE_PRICE_SEMESTRAL=price_xxx
 STRIPE_PRICE_ANUAL=price_xxx
+# Meta Ads: preencher somente na ativação do app Meta
+META_VERIFY_TOKEN=gere-um-token-aleatorio-forte
+META_APP_SECRET=app-secret-do-meta
+META_GRAPH_VERSION=vXX.X
 ```
 
 6. Em `Authentication > URL Configuration`, adicione:
@@ -81,6 +85,9 @@ A saída fica em `dist`.
 - `STRIPE_PRICE_MENSAL`
 - `STRIPE_PRICE_SEMESTRAL`
 - `STRIPE_PRICE_ANUAL`
+- `META_VERIFY_TOKEN` (somente quando ativar Meta Ads)
+- `META_APP_SECRET` (somente quando ativar Meta Ads)
+- `META_GRAPH_VERSION` (versão suportada escolhida na ativação)
 
 2. Confirmar Auth no Supabase:
 - `Site URL` da produção

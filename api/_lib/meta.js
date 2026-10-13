@@ -55,10 +55,15 @@ export function mapLeadFields(fieldData) {
 }
 
 // Busca o lead completo na Graph API a partir do leadgen_id (o webhook só manda o id).
-export async function fetchLeadData(leadgenId, accessToken, apiVersion = 'v21.0') {
+export async function fetchLeadData(leadgenId, accessToken, apiVersion) {
+  if (!leadgenId || !accessToken || !/^v\d+\.\d+$/.test(apiVersion || '')) {
+    throw new Error('Meta lead fetch configuration is incomplete')
+  }
   const url = `https://graph.facebook.com/${apiVersion}/${encodeURIComponent(leadgenId)}`
-    + `?fields=field_data,created_time,ad_id,form_id,campaign_id&access_token=${encodeURIComponent(accessToken)}`
-  const res = await fetch(url)
+    + '?fields=field_data,created_time,ad_id,form_id,campaign_id'
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
   if (!res.ok) {
     const err = await res.text().catch(() => String(res.status))
     throw new Error(`Meta lead fetch error: ${err}`)

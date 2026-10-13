@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import crypto from 'crypto'
-import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields } from '../../api/_lib/meta.js'
+import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from '../../api/_lib/meta.js'
 
 test('parseLeadgenWebhook: extrai leadgen, ignora outros campos e sem id', () => {
   const body = {
@@ -45,4 +45,24 @@ test('verifyWebhookSignature: HMAC correto passa, adulterado falha', () => {
   expect(verifyWebhookSignature(body, good, 'outro-secret')).toBe(false)
   expect(verifyWebhookSignature(body + 'x', good, secret)).toBe(false)
   expect(verifyWebhookSignature(body, null, secret)).toBe(false)
+})
+
+test('fetchLeadData: token vai no Authorization e versão precisa ser explícita', async () => {
+  const originalFetch = globalThis.fetch
+  let request
+  globalThis.fetch = async (url, options) => {
+    request = { url, options }
+    return { ok: true, json: async () => ({ id: 'L1' }) }
+  }
+
+  try {
+    await expect(fetchLeadData('L1', 'page-secret', '')).rejects.toThrow('configuration is incomplete')
+    await expect(fetchLeadData('L1', 'page-secret', '21.0')).rejects.toThrow('configuration is incomplete')
+    await expect(fetchLeadData('L1', 'page-secret', 'v99.0')).resolves.toEqual({ id: 'L1' })
+    expect(request.url).toBe('https://graph.facebook.com/v99.0/L1?fields=field_data,created_time,ad_id,form_id,campaign_id')
+    expect(request.url).not.toContain('page-secret')
+    expect(request.options.headers.Authorization).toBe('Bearer page-secret')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })

@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (75)
+### Changed
+- **Meta Ads preparado para credenciais futuras sem expor segredos globais**: a tela da clínica passa a salvar somente Ad Account ID, Page ID e o token write-only da Página; `META_VERIFY_TOKEN`, `META_APP_SECRET` e `META_GRAPH_VERSION` ficam exclusivamente no servidor e estão documentados sem valores reais em `.env.example`/`README.md`. O estado intermediário “Configuração salva” não é mais apresentado como conexão validada, e a callback usa o domínio TLS correto com `www`.
+
+### Fixed
+- **Webhook Meta Ads validado sobre o corpo bruto**: o endpoint consolidado preserva os bytes originais para conferir obrigatoriamente `X-Hub-Signature-256`, envia o token da Página no header `Authorization`, valida falhas do banco/RPC e retorna erro transitório para permitir nova tentativa em vez de perder leads silenciosamente. O schema restringe segredos write-only, torna `page_id` único e limita a RPC `SECURITY DEFINER` à `service_role` com `search_path` seguro.
+
 ## [Unreleased] - 2026-10-12 (74)
 ### Fixed
 - **Receita extra preserva a origem e salva títulos pendentes**: a origem livre digitada em “Nova receita” agora aparece em contas a receber, filtros e detalhamentos, mantendo `outra_receita` apenas como chave técnica interna. Receitas com situação “A receber” deixam de enviar `date = ''` ao Supabase; a coluna legada obrigatória recebe a competência como fallback estrutural, enquanto a liquidação real permanece nula até o recebimento.
