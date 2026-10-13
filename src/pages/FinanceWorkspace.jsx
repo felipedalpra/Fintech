@@ -574,8 +574,17 @@ function OnboardingWizard({ onClose }) {
 
 // ---- SyncStatus ----
 // status: 'ok' | 'saving' | 'error'. Dá feedback real de salvamento ao usuário.
-function SyncStatus({ status = 'ok', saveError, onRetry }) {
+function SyncStatus({ status = 'ok', saveError, onRetry, lastSavedAt }) {
   const base = { display:'flex', alignItems:'center', gap:5, fontSize:11, fontWeight:600, userSelect:'none' }
+
+  if (status === 'blocked') {
+    return (
+      <div style={{ ...base, color:C.red }} title="Suas alterações ainda não foram salvas — aguardando vincular sua clínica. Não feche a página.">
+        <span style={{ fontSize:13 }}>⚠</span>
+        Não salvo
+      </div>
+    )
+  }
 
   if (status === 'error') {
     return (
@@ -607,10 +616,11 @@ function SyncStatus({ status = 'ok', saveError, onRetry }) {
     )
   }
 
+  const hora = lastSavedAt ? new Date(lastSavedAt).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : null
   return (
     <div style={{ ...base, color:C.green }}>
       <span style={{ fontSize:10 }}>●</span>
-      Sincronizado
+      {hora ? `Salvo ${hora}` : 'Sincronizado'}
     </div>
   )
 }
@@ -639,7 +649,8 @@ export function FinanceWorkspace() {
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState('')
-  const [saveStatus, setSaveStatus] = useState('ok') // 'ok' | 'saving' | 'error'
+  const [saveStatus, setSaveStatus] = useState('ok') // 'ok' | 'saving' | 'error' | 'blocked'
+  const [lastSavedAt, setLastSavedAt] = useState(null) // horário da última confirmação no servidor
   const [loadError, setLoadError] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
@@ -676,6 +687,7 @@ export function FinanceWorkspace() {
         setSaveError('')
         if (revision >= revisionRef.current) {
           setSaveStatus('ok')
+          setLastSavedAt(new Date())
           pendingRef.current = false
         }
         return snapshot
@@ -770,9 +782,16 @@ export function FinanceWorkspace() {
   //   escopo errado para membros da clínica -> dado órfão).
   // - Debounce: coalesce várias edições em um único save (menos escritas, menos corrida).
   useEffect(() => {
-    if (!user?.id || !hydratedRef.current || !ownerId) return
+    if (!user?.id || !hydratedRef.current) return
     if (immediateSnapshotRef.current === data) {
       immediateSnapshotRef.current = null
+      return
+    }
+    // BLINDAGEM: escopo (ownerId) ainda não resolveu mas há edição não salva. Em vez de ignorar
+    // em silêncio (o bug que sumia dados), avisa ALTO e mantém pendente. Quando o ownerId resolver,
+    // este efeito re-roda (ownerId está nas deps) e grava de verdade.
+    if (!ownerId) {
+      if (pendingRef.current) setSaveStatus('blocked')
       return
     }
     pendingRef.current = true
@@ -1157,6 +1176,19 @@ export function FinanceWorkspace() {
       </aside>
 
       <main style={{ flex:1, overflowY:isMobile && mobileNavOpen ? 'hidden' : 'auto', pointerEvents:isMobile && mobileNavOpen ? 'none' : 'auto', padding:isMobile ? '20px 16px 56px' : '20px 22px 34px' }}>
+        {(saveStatus === 'blocked' || saveStatus === 'error') && (
+          <div role="alert" style={{ marginBottom:16, borderRadius:12, padding:'12px 16px', background:`${C.red}1a`, border:`1px solid ${C.red}`, color:C.red, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <span style={{ fontSize:18 }}>⚠️</span>
+            <div style={{ flex:1, minWidth:200, fontSize:13, fontWeight:600, lineHeight:1.5 }}>
+              {saveStatus === 'blocked'
+                ? <>Suas alterações <b>ainda não foram salvas</b> — estamos vinculando sua clínica à sessão. <b>Não feche esta página.</b> Elas serão gravadas automaticamente assim que resolver.</>
+                : <>Falha ao salvar no servidor. Suas alterações continuam na tela, mas <b>não foram confirmadas no banco</b>.{saveError ? ` Detalhe: ${saveError}` : ''}</>}
+            </div>
+            {saveStatus === 'error' && (
+              <button type="button" onClick={retrySave} style={{ background:C.red, border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>Tentar de novo</button>
+            )}
+          </div>
+        )}
         <div style={{ marginBottom:22 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
@@ -1164,7 +1196,7 @@ export function FinanceWorkspace() {
               <div>
                 <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', alignItems:isMobile ? 'flex-start' : 'center', gap:8, marginBottom:2 }}>
                   <h1 style={{ margin:0, fontSize:isMobile ? 24 : 28, fontWeight:900, letterSpacing:'-0.03em', color:C.text }}>{pageTitle}</h1>
-                  <SyncStatus status={saveStatus} saveError={saveError} onRetry={retrySave} />
+                  <SyncStatus status={saveStatus} saveError={saveError} onRetry={retrySave} lastSavedAt={lastSavedAt} />
                 </div>
                 <div style={{ fontSize:13, color:C.textDim, marginTop:4, textTransform:'capitalize' }}>{dateStr}</div>
                 <div style={{ fontSize:isMobile ? 13 : 14, color:C.textSub, marginTop:10, maxWidth:620, lineHeight:isMobile ? 1.55 : 1.5 }}>{pageSubtitle}</div>
@@ -1250,14 +1282,6 @@ export function FinanceWorkspace() {
         )}
 
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
-        {saveError && (
-          <Card style={{ marginBottom:16, border:`1px solid ${C.yellow}33` }}>
-            <div style={{ color:C.yellow, fontSize:13, lineHeight:1.7 }}>
-              <div>Falha ao sincronizar com o backend. As alterações continuam na tela, mas não foram confirmadas no Supabase.</div>
-              <div style={{ marginTop:6, color:C.textDim }}>Detalhe: {saveError}</div>
-            </div>
-          </Card>
-        )}
         {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
         <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
         <CopilotWidget data={safeData} />
