@@ -256,13 +256,15 @@ export function ConfirmModal({
   title = 'Confirmar Exclusao',
   confirmLabel = 'Excluir',
   confirmVariant = 'danger',
+  busy = false,
+  closeOnConfirm = true,
 }) {
   return (
-    <Modal open={open} onClose={onClose} title={title} width={400}>
+    <Modal open={open} onClose={busy ? () => {} : onClose} title={title} width={400}>
       <p style={{ color:C.textSub, marginBottom:24 }}>{message||'Tem certeza? Esta ação não pode ser desfeita.'}</p>
       <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn variant={confirmVariant} onClick={()=>{ onConfirm(); onClose() }}>{confirmLabel}</Btn>
+        <Btn variant="ghost" onClick={onClose} disabled={busy}>Cancelar</Btn>
+        <Btn variant={confirmVariant} disabled={busy} onClick={()=>{ onConfirm(); if (closeOnConfirm) onClose() }}>{busy ? 'Salvando…' : confirmLabel}</Btn>
       </div>
     </Modal>
   )

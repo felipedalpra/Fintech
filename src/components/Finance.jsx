@@ -48,7 +48,7 @@ const EXPENSE_EMPTY = { description:'', category:'outros', chartAccountId:'', va
 // na falta dele, a origem automática do sistema (ex: "cirurgia", "despesa").
 const resolveOrigin = item => (String(item.originLabel || '').trim() || String(item.origin || item.source || ''))
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
-const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
+export const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', saving:false, error:'' }
 
@@ -158,7 +158,7 @@ function buildIndicatorPeriodKey(range) {
   return `${t}:${t}`
 }
 
-export function Finance({ data, setData, defaultTab = 'entradas' }) {
+export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const SUMMARY_CARDS = [
     ['Resultado de caixa', 'cashBalance', C.cyan],
@@ -198,6 +198,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const [showExport, setShowExport] = useState(false)
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
   const [formError, setFormError] = useState('')
+  const [savingLaunch, setSavingLaunch] = useState(false)
   const [quickCategory, setQuickCategory] = useState(QUICK_CATEGORY_EMPTY)
   const range = getPeriodRange(period, customRange)
   const indicatorPeriodKey = useMemo(() => buildIndicatorPeriodKey(range), [range.start, range.end])
@@ -213,6 +214,23 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   const revenueGroupOptions = useMemo(() => postingGroupOptions(data?.chartAccounts || [], 'receivable'), [data?.chartAccounts])
   const expenseGroupOptions = useMemo(() => postingGroupOptions(data?.chartAccounts || [], 'payable'), [data?.chartAccounts])
   const canManageChartAccounts = role === 'admin' || role === 'gestao'
+
+  const persistLaunch = async (updater, pendingOperation) => {
+    if (savingLaunch) return false
+    setSavingLaunch(true)
+    try {
+      if (saveDataNow) await saveDataNow(updater, pendingOperation)
+      else setData(updater)
+      return true
+    } catch (error) {
+      const message = error.message || 'Nao foi possivel salvar o lancamento no banco.'
+      setFormError(message)
+      toast(message, 'warning')
+      return false
+    } finally {
+      setSavingLaunch(false)
+    }
+  }
 
   useEffect(() => {
     if (!ownerId || (data?.chartAccounts || []).length > 0) return
@@ -505,7 +523,15 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         date:receiptDate,
         receivedDate:received ? receiptDate : null,
       }
-      setData(current => ({ ...current, extraRevenues: editing ? current.extraRevenues.map(item => item.id === editing ? { ...normalizedRevenue, id:editing } : item) : [...current.extraRevenues, { ...normalizedRevenue, id:uid() }] }))
+      const revenueRecord = { ...normalizedRevenue, id:editing || uid() }
+      const saved = await persistLaunch(
+        current => ({ ...current, extraRevenues:editing ? current.extraRevenues.map(item => item.id === editing ? revenueRecord : item) : [...current.extraRevenues, revenueRecord] }),
+        { collection:'extraRevenues', record:revenueRecord },
+      )
+      if (!saved) return
+      toast(editing ? 'Receita atualizada com sucesso.' : 'Receita salva com sucesso.')
+      setShowModal(false)
+      return
     }
     if (modalType === 'expense') {
       if (!form.description) {
@@ -532,12 +558,14 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         status: isOpenExpense ? 'aberto' : 'pago',
       }
       if (isOpenExpense) {
-        setData(current => ({
+        const expenseRecord = { ...normalizedExpense, id:editing || uid() }
+        const saved = await persistLaunch(current => ({
           ...current,
           expenses: editing
-            ? current.expenses.map(record => record.id === editing ? { ...normalizedExpense, id:editing } : record)
-            : [...current.expenses, { ...normalizedExpense, id:uid() }],
-        }))
+            ? current.expenses.map(record => record.id === editing ? expenseRecord : record)
+            : [...current.expenses, expenseRecord],
+        }), { collection:'expenses', record:expenseRecord })
+        if (!saved) return
         toast(editing ? 'Despesa atualizada.' : 'Despesa registrada como a pagar.')
         setShowModal(false)
         return
@@ -548,7 +576,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         message:`Confirma lançar ${money(Number(normalizedExpense.value || 0))} em "${normalizedExpense.description || 'despesa'}"?`,
         confirmLabel:editing ? 'Confirmar e atualizar' : 'Confirmar e lançar',
         confirmVariant:'success',
-        payload:{ expense:normalizedExpense, editing },
+        payload:{ expense:{ ...normalizedExpense, id:editing || uid() }, editing },
       })
       return
     }
@@ -747,7 +775,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     toast('Registro removido.', 'warning')
   }
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
     if (!confirmState) return
     if (confirmState.action === 'delete-expense') {
       setData(current => ({ ...current, expenses:current.expenses.filter(record => record.id !== confirmState.id) }))
@@ -789,12 +817,13 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         return
       }
       const editingId = confirmState.payload?.editing
-      setData(current => ({
+      const saved = await persistLaunch(current => ({
         ...current,
         expenses:editingId
           ? current.expenses.map(record => record.id === editingId ? { ...payload, id:editingId } : record)
-          : [...current.expenses, { ...payload, id:uid() }],
-      }))
+          : [...current.expenses, payload],
+      }), { collection:'expenses', record:payload })
+      if (!saved) return
       toast(editingId ? 'Saída atualizada com sucesso.' : 'Saída lançada com sucesso.')
       setShowModal(false)
       setConfirmState(null)
@@ -1644,7 +1673,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               </>
             )}
 
-            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
+            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={savingLaunch || isSaveDisabled(modalType, form, editing)} saving={savingLaunch} />
           </div>
         )}
         {modalType === 'expense' && (
@@ -1714,7 +1743,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               </>
             )}
 
-            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={isSaveDisabled(modalType, form, editing)} />
+            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={savingLaunch || isSaveDisabled(modalType, form, editing)} saving={savingLaunch} />
           </div>
         )}
         {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}
@@ -1789,6 +1818,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         message={confirmState?.message}
         confirmLabel={confirmState?.confirmLabel}
         confirmVariant={confirmState?.confirmVariant}
+        busy={savingLaunch}
+        closeOnConfirm={false}
       />
       <Modal open={!!paymentConfirmState} onClose={() => setPaymentConfirmState(null)} title="Confirmar pagamento da despesa" width={460}>
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
@@ -2280,8 +2311,8 @@ function buildDueAlerts(accountsPayable, accountsReceivable) {
   return { overdue, dueSoon }
 }
 
-function FormActions({ onCancel, onSave, disabled }) {
-  return <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn onClick={onSave} disabled={disabled}>Salvar</Btn></div>
+function FormActions({ onCancel, onSave, disabled, saving = false }) {
+  return <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={onCancel} disabled={saving}>Cancelar</Btn><Btn onClick={onSave} disabled={disabled}>{saving ? 'Salvando…' : 'Salvar'}</Btn></div>
 }
 
 function ChartAccountPicker({ value, accountOptions, groupOptions, quickCategory, canCreate, onChange, onOpen, onQuickChange, onQuickSave, onQuickCancel }) {

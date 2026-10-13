@@ -108,6 +108,7 @@ test('cria, edita e persiste categorias no banco local real', async ({ page }) =
   await revenueValue.fill('12345')
   await revenueValue.press('Tab')
   await revenueModal.getByRole('button', { name:'Salvar', exact:true }).click()
+  await expect(revenueModal).toBeHidden()
   await expect(page.getByText('Receita E2E Plano', { exact:true })).toBeVisible()
 
   await expect.poll(async () => page.evaluate(async ({ userId, anonKey }) => {
@@ -152,6 +153,7 @@ test('cria, edita e persiste categorias no banco local real', async ({ page }) =
   await expenseValue.press('Tab')
   await expenseModal.getByRole('button', { name:'Salvar', exact:true }).click()
   await page.getByRole('button', { name:'Confirmar e lançar' }).click()
+  await expect(expenseModal).toBeHidden()
   await expect(page.getByText('Despesa E2E Plano', { exact:true })).toBeVisible()
 
   await expect.poll(async () => page.evaluate(async ({ userId, anonKey }) => {
@@ -175,6 +177,11 @@ test('cria, edita e persiste categorias no banco local real', async ({ page }) =
     linked:true,
   })
 
+  await page.reload()
+  await expect(page.getByText('Receita E2E Plano', { exact:true })).toBeVisible()
+  await page.getByRole('button', { name:'Saídas', exact:true }).click()
+  await expect(page.getByText('Despesa E2E Plano', { exact:true })).toBeVisible()
+
   await page.getByRole('button', { name:'DRE', exact:true }).click()
   const grossRevenueRow = page.getByText('Receita bruta', { exact:true }).locator('xpath=ancestor::tr')
   await expect(grossRevenueRow).toContainText('R$ 12.345,00')
@@ -189,4 +196,88 @@ test('cria, edita e persiste categorias no banco local real', async ({ page }) =
   await page.screenshot({ path:'test-results/e2e-real/dre-conta-detalhada-local.png', fullPage:true })
 
   expect({ errors, failedResponses }).toEqual({ errors:[], failedResponses:[] })
+})
+
+test('recupera os lancamentos ao recarregar durante a gravacao', async ({ page }) => {
+  const revenueDescription = 'Receita Recarga Protegida'
+  const expenseDescription = 'Despesa Recarga Protegida'
+  let delayedRevenue = false
+  let delayedExpense = false
+
+  await page.addInitScript(() => {
+    localStorage.setItem('surgimetrics_onboarded', 'true')
+  })
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({ connected:false }),
+  }))
+  await page.route('**/rest/v1/extra_revenues*', async route => {
+    const request = route.request()
+    if (request.method() !== 'GET' && request.postData()?.includes(revenueDescription) && !delayedRevenue) {
+      delayedRevenue = true
+      await new Promise(resolve => setTimeout(resolve, 1_500))
+    }
+    await route.continue()
+  })
+  await page.route('**/rest/v1/expenses*', async route => {
+    const request = route.request()
+    if (request.method() !== 'GET' && request.postData()?.includes(expenseDescription) && !delayedExpense) {
+      delayedExpense = true
+      await new Promise(resolve => setTimeout(resolve, 1_500))
+    }
+    await route.continue()
+  })
+  page.on('dialog', dialog => dialog.accept())
+
+  await page.goto('/app/finance')
+  await page.getByRole('button', { name:'+ Outra receita' }).click()
+  const modal = page.getByRole('heading', { name:'Novo registro' }).locator('../..')
+  await modal.getByPlaceholder('Ex: contrato mensal de consultoria').fill(revenueDescription)
+  const category = modal.locator('select').nth(1).locator('option').filter({ hasText:'4.07.99 ·' })
+  await expect(category).toHaveCount(1)
+  await modal.locator('select').nth(1).selectOption(await category.getAttribute('value'))
+  await modal.locator('input[inputmode="decimal"]').fill('321')
+
+  await modal.getByRole('button', { name:'Salvar', exact:true }).click()
+  await page.reload({ waitUntil:'domcontentloaded' })
+
+  expect(delayedRevenue).toBe(true)
+  await expect(page.getByText(revenueDescription, { exact:true })).toBeVisible({ timeout:30_000 })
+
+  await page.reload()
+  await expect(page.getByText(revenueDescription, { exact:true })).toBeVisible()
+
+  await page.evaluate(() => window.dispatchEvent(new Event('new-expense')))
+  const expenseModal = page.getByRole('heading', { name:'Novo registro' }).locator('../..')
+  await expenseModal.getByPlaceholder('Ex: aluguel do consultório').fill(expenseDescription)
+  const expenseCategory = expenseModal.locator('select').nth(1).locator('option').filter({ hasText:'7.02.99 ·' })
+  await expect(expenseCategory).toHaveCount(1)
+  await expenseModal.locator('select').nth(1).selectOption(await expenseCategory.getAttribute('value'))
+  await expenseModal.locator('input[inputmode="decimal"]').fill('654')
+  await expenseModal.getByRole('button', { name:'Salvar', exact:true }).click()
+  await page.getByRole('button', { name:'Confirmar e lançar' }).click()
+  await page.reload({ waitUntil:'domcontentloaded' })
+
+  expect(delayedExpense).toBe(true)
+  await page.getByRole('button', { name:'Saídas', exact:true }).click()
+  await expect(page.getByText(expenseDescription, { exact:true })).toBeVisible({ timeout:30_000 })
+
+  await page.reload()
+  await page.getByRole('button', { name:'Saídas', exact:true }).click()
+  await expect(page.getByText(expenseDescription, { exact:true })).toBeVisible()
+  await expect.poll(async () => page.evaluate(async ({ userId, anonKey, revenueDescription, expenseDescription }) => {
+    const headers = { apikey:anonKey, Authorization:`Bearer ${anonKey}` }
+    const [revenueResponse, expenseResponse] = await Promise.all([
+      fetch(`/rest/v1/extra_revenues?user_id=eq.${userId}&description=eq.${encodeURIComponent(revenueDescription)}&select=description,value`, { headers }),
+      fetch(`/rest/v1/expenses?user_id=eq.${userId}&description=eq.${encodeURIComponent(expenseDescription)}&select=description,value`, { headers }),
+    ])
+    return {
+      revenues:await revenueResponse.json(),
+      expenses:await expenseResponse.json(),
+    }
+  }, { userId:USER_ID, anonKey:ANON_KEY, revenueDescription, expenseDescription }), { timeout:15_000 }).toEqual({
+    revenues:[{ description:revenueDescription, value:321 }],
+    expenses:[{ description:expenseDescription, value:654 }],
+  })
 })

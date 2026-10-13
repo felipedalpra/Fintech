@@ -8,7 +8,7 @@ import { Dashboard } from '../components/Dashboard.jsx'
 import { Sales } from '../components/Sales.jsx'
 import { Plans } from '../components/Plans.jsx'
 import { Products } from '../components/Products.jsx'
-import { Finance } from '../components/Finance.jsx'
+import { Finance, FINANCE_MODAL_DRAFT_KEY } from '../components/Finance.jsx'
 import { Goals } from '../components/Goals.jsx'
 import { AIAssistant } from '../components/AIAssistant.jsx'
 import { Consultations } from '../components/Consultations.jsx'
@@ -35,6 +35,8 @@ import { useTheme } from '../context/ThemeContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
+import { mergePendingFinanceSave } from '../lib/pendingFinanceSave.js'
+import { createSerializedTaskQueue } from '../lib/serializedTaskQueue.js'
 import { useGoogleCalendarSync } from '../lib/useGoogleCalendarSync.js'
 
 // Navegação por ÁREAS de domínio (spec de arquitetura, seção 4).
@@ -205,9 +207,51 @@ const PAGES = {
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
 const LAST_APP_PATH_KEY = 'surgimetrics_last_app_path'
 const DRAFT_STORAGE_PREFIX = 'surgimetrics_workspace_draft_'
+const PENDING_SAVE_STORAGE_PREFIX = 'surgimetrics_pending_finance_save_'
 
 function getDraftStorageKey(userId) {
   return `${DRAFT_STORAGE_PREFIX}${userId}`
+}
+
+function getPendingSaveStorageKey(userId) {
+  return `${PENDING_SAVE_STORAGE_PREFIX}${userId}`
+}
+
+function readPendingSave(userId) {
+  if (typeof window === 'undefined' || !userId) return null
+  try {
+    const raw = window.localStorage.getItem(getPendingSaveStorageKey(userId))
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writePendingSave(userId, pendingSave) {
+  if (typeof window === 'undefined' || !userId) return
+  try {
+    window.localStorage.setItem(getPendingSaveStorageKey(userId), JSON.stringify(pendingSave))
+  } catch {
+    // O beforeunload ainda protege a saida quando o armazenamento local estiver indisponivel.
+  }
+}
+
+function clearPendingSave(userId, pendingId) {
+  if (typeof window === 'undefined' || !userId) return
+  try {
+    const current = readPendingSave(userId)
+    if (!pendingId || current?.pendingId === pendingId) {
+      window.localStorage.removeItem(getPendingSaveStorageKey(userId))
+    }
+  } catch {
+    // Nao bloquear uma gravacao confirmada por falha ao limpar o cache local.
+  }
+}
+
+function clearFinanceModalDraft() {
+  if (typeof window === 'undefined') return
+  window.localStorage.removeItem(FINANCE_MODAL_DRAFT_KEY)
+  window.sessionStorage.removeItem(FINANCE_MODAL_DRAFT_KEY)
 }
 
 // ---- QuickSearchModal ----
@@ -603,26 +647,43 @@ export function FinanceWorkspace() {
   const saveTimerRef = useRef(null)
   const pendingRef = useRef(false)      // há edição aguardando persistência?
   const baselineRef = useRef(null)      // o que este cliente carregou/persistiu (base p/ deleção segura)
+  const revisionRef = useRef(0)
+  const immediateSnapshotRef = useRef(null)
+  const enqueueSaveRef = useRef(createSerializedTaskQueue())
+  const durablePendingRef = useRef(null)
   const latestRef = useRef({ data, ownerId })
   latestRef.current = { data, ownerId }
 
   // Persistência central: NUNCA salva sob escopo indefinido (sem ownerId). Atualiza o status
   // de salvamento para a UI dar feedback real (Salvando/Sincronizado/Erro).
-  async function flushSave(owner, snapshot) {
-    if (!owner) return
+  function flushSave(owner, snapshot, revision = revisionRef.current) {
+    if (!owner) return Promise.reject(new Error('Clinica nao identificada para salvar os dados.'))
+    pendingRef.current = true
     setSaveStatus('saving')
-    try {
-      await saveFinanceData(owner, snapshot, baselineRef.current)
-      baselineRef.current = snapshot   // o que acabou de persistir vira o novo baseline
-      setSaveError('')
-      setSaveStatus('ok')
-      pendingRef.current = false
-    } catch (error) {
-      setSaveError(error.message || 'Nao foi possivel sincronizar os dados.')
-      setSaveStatus('error')
-    }
+    return enqueueSaveRef.current(async () => {
+      try {
+        await saveFinanceData(owner, snapshot, baselineRef.current)
+        baselineRef.current = snapshot   // o que acabou de persistir vira o novo baseline
+        if (durablePendingRef.current && revision >= durablePendingRef.current.revision) {
+          clearPendingSave(user?.id, durablePendingRef.current.pendingId)
+          durablePendingRef.current = null
+        }
+        setSaveError('')
+        if (revision >= revisionRef.current) {
+          setSaveStatus('ok')
+          pendingRef.current = false
+        }
+        return snapshot
+      } catch (error) {
+        setSaveError(error.message || 'Nao foi possivel sincronizar os dados.')
+        setSaveStatus('error')
+        throw error
+      }
+    })
   }
-  const retrySave = () => { flushSave(latestRef.current.ownerId, latestRef.current.data) }
+  const retrySave = () => {
+    flushSave(latestRef.current.ownerId, latestRef.current.data, revisionRef.current).catch(() => {})
+  }
 
   const safeData = useMemo(() => normalizeData(data || createEmptyData()), [data])
   const todayDate = today()
@@ -653,13 +714,33 @@ export function FinanceWorkspace() {
         }
       }
       try {
-        const nextData = await importLegacyDataIfNeeded(user, ownerId || user.id)
+        const serverData = await importLegacyDataIfNeeded(user, ownerId || user.id)
         if (!active) return
+        const pendingSave = readPendingSave(user.id)
+        let nextData = serverData
+        let baselineData = serverData
+        let initialRevision = 0
+        if (pendingSave?.ownerId === ownerId) {
+          nextData = normalizeData(mergePendingFinanceSave(serverData, pendingSave))
+          try {
+            await saveFinanceData(ownerId, nextData, serverData)
+            clearPendingSave(user.id, pendingSave.pendingId)
+          } catch (error) {
+            durablePendingRef.current = { ...pendingSave, revision:1 }
+            pendingRef.current = true
+            initialRevision = 1
+            setSaveError(error.message || 'Nao foi possivel recuperar o lancamento pendente.')
+            setSaveStatus('error')
+          }
+          if (!active) return
+          if (!durablePendingRef.current) baselineData = nextData
+        }
         // O servidor é a fonte de verdade. NUNCA deixar o rascunho (que pode estar vazio/defasado)
         // sobrescrever o dado carregado: era isso que fazia o autosave apagar lançamentos no banco
         // (rascunho sem a linha -> delete-sync remove a linha do servidor).
         setRaw(nextData)
-        baselineRef.current = nextData   // baseline inicial = o que veio do servidor
+        baselineRef.current = baselineData
+        revisionRef.current = initialRevision
         hydratedRef.current = true
       } catch (error) {
         if (!active) return
@@ -685,11 +766,17 @@ export function FinanceWorkspace() {
   // - Debounce: coalesce várias edições em um único save (menos escritas, menos corrida).
   useEffect(() => {
     if (!user?.id || !hydratedRef.current || !ownerId) return
+    if (immediateSnapshotRef.current === data) {
+      immediateSnapshotRef.current = null
+      return
+    }
     pendingRef.current = true
+    setSaveStatus('saving')
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     const snapshot = data
     const owner = ownerId
-    saveTimerRef.current = setTimeout(() => { flushSave(owner, snapshot) }, 800)
+    const revision = revisionRef.current
+    saveTimerRef.current = setTimeout(() => { flushSave(owner, snapshot, revision).catch(() => {}) }, 800)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, user?.id, ownerId])
@@ -697,8 +784,20 @@ export function FinanceWorkspace() {
   // Flush da última edição ao desmontar (navegar pra fora) — não perder o que estava no debounce.
   useEffect(() => () => {
     const { data: d, ownerId: o } = latestRef.current
-    if (o && pendingRef.current) saveFinanceData(o, d, baselineRef.current).catch(() => {})
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    if (o && pendingRef.current) flushSave(o, d, revisionRef.current).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const warnBeforeUnload = event => {
+      if (!pendingRef.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [])
 
   useEffect(() => {
@@ -787,7 +886,36 @@ export function FinanceWorkspace() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [page])
 
-  const setData = updater => setRaw(prev => normalizeData(typeof updater === 'function' ? updater(prev) : updater))
+  const applyDataUpdate = updater => {
+    const current = latestRef.current.data
+    const nextData = normalizeData(typeof updater === 'function' ? updater(current) : updater)
+    const revision = revisionRef.current + 1
+    revisionRef.current = revision
+    latestRef.current = { data:nextData, ownerId }
+    pendingRef.current = true
+    setSaveStatus('saving')
+    setRaw(nextData)
+    return { data:nextData, revision }
+  }
+  const setData = updater => { applyDataUpdate(updater) }
+  const saveDataNow = (updater, pendingOperation = null) => {
+    const update = applyDataUpdate(updater)
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    immediateSnapshotRef.current = update.data
+    if (pendingOperation?.collection && pendingOperation?.record?.id && user?.id) {
+      const pendingSave = {
+        ...pendingOperation,
+        ownerId,
+        pendingId:`${pendingOperation.collection}:${pendingOperation.record.id}:${Date.now()}`,
+        createdAt:new Date().toISOString(),
+        revision:update.revision,
+      }
+      durablePendingRef.current = pendingSave
+      writePendingSave(user.id, pendingSave)
+      clearFinanceModalDraft()
+    }
+    return flushSave(ownerId, update.data, update.revision)
+  }
   const google = useGoogleCalendarSync({ data:safeData, enabled:!loading })
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
@@ -1126,7 +1254,7 @@ export function FinanceWorkspace() {
           </Card>
         )}
         {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
-        <Page data={safeData} setData={setData} saveError={saveError} google={google} />
+        <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
         <CopilotWidget data={safeData} />
         <FAB currentPage={page} />
       </main>
