@@ -39,7 +39,7 @@ export function WhatsAppChat({ patient }) {
     setError(null)
     const { data, error: err } = await supabase
       .from('whatsapp_messages')
-      .select('id, direction, body, status, created_at')
+      .select('id, direction, body, status, created_at, msg_type, media_url, media_mime')
       .eq('patient_id', patient.id)
       .order('created_at', { ascending: true })
     if (err) { setError(err.message); setLoading(false); return }
@@ -98,10 +98,23 @@ export function WhatsAppChat({ patient }) {
     input: { flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 12px', color: C.text, fontSize: 13, outline: 'none', fontFamily: 'inherit' },
     btn: { padding: '9px 16px', borderRadius: 10, background: C.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.6 : 1, fontFamily: 'inherit' },
     err: { color: C.red || '#ef4444', fontSize: 12, padding: '6px 10px' },
+    mediaImg: { maxWidth: 180, maxHeight: 200, borderRadius: 8, display: 'block', cursor: 'pointer' },
+    mediaAudio: { width: 210, height: 34 },
+    mediaDoc: { display: 'flex', alignItems: 'center', gap: 8, color: C.accentLight || '#60a5fa', textDecoration: 'none', fontSize: 13, fontWeight: 600 },
+    cap: { fontSize: 12.5, marginTop: 5, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
   }
 
   function fmtTime(ts) {
     try { return new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) } catch { return '' }
+  }
+
+  const renderBody = (m) => {
+    const t = m.msg_type || 'text'
+    if (t === 'image' && m.media_url) return (<><a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt={m.body || 'imagem'} style={s.mediaImg} /></a>{m.body && <div style={s.cap}>{m.body}</div>}</>)
+    if (t === 'audio' && m.media_url) return <audio controls src={m.media_url} style={s.mediaAudio} />
+    if (t === 'video' && m.media_url) return (<><video controls src={m.media_url} style={{ ...s.mediaImg, maxHeight: 220 }} />{m.body && <div style={s.cap}>{m.body}</div>}</>)
+    if (t === 'document' && m.media_url) return <a href={m.media_url} target="_blank" rel="noreferrer" style={s.mediaDoc}>📄 {m.body || 'Documento'}</a>
+    return m.body
   }
 
   return (
@@ -113,7 +126,7 @@ export function WhatsAppChat({ patient }) {
             : messages.map(m => (
                 <div key={m.id} style={s.row(m.direction)}>
                   <div>
-                    <div style={s.bubble(m.direction)}>{m.body}</div>
+                    <div style={s.bubble(m.direction)}>{renderBody(m)}</div>
                     <div style={s.meta}>
                       {fmtTime(m.created_at)}{m.direction === 'outbound' && m.status === 'failed' ? ' · falhou' : ''}
                     </div>

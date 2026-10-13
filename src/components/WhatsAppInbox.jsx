@@ -8,6 +8,17 @@ import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggesti
 // Inbox central de WhatsApp (todas as conversas da clínica, estilo Chatwoot/Kommo).
 // Mostra conversas atribuídas e NÃO atribuídas (lead novo que chamou no zap), filtra por
 // número e permite responder escolhendo de qual dos números sair.
+// Emojis comuns para o seletor do composer (enviados como texto via send-text).
+const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','👍','🙏','🙌','👏','💪','🎉','❤️','🔥','✅','⚠️','😉','😅','😢','😎','🤔','👌','💜','🌟','⏰','📅','💉','🩹','👋','🙂','🤗']
+function mediaLabel(type) {
+  return { image: '📷 Foto', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Documento' }[type] || ''
+}
+// Texto de preview da conversa na lista (mídia vira rótulo).
+function previewText(m) {
+  if (m.msg_type && m.msg_type !== 'text') return m.body ? `${mediaLabel(m.msg_type)}: ${m.body}` : mediaLabel(m.msg_type)
+  return m.body
+}
+
 function fmtTime(ts) {
   try {
     const d = new Date(ts)
@@ -30,6 +41,7 @@ export function WhatsAppInbox() {
   const [filterNumber, setFilterNumber] = useState('all')
   const [filterResponsible, setFilterResponsible] = useState('all')
   const [replyText, setReplyText] = useState('')
+  const [showEmoji, setShowEmoji] = useState(false)
   const [replyNumberId, setReplyNumberId] = useState('')
   const [sending, setSending] = useState(false)
   const [suggestOpp, setSuggestOpp] = useState(null)
@@ -41,7 +53,7 @@ export function WhatsAppInbox() {
     setError(null)
     const [msgRes, numRes, memRes] = await Promise.all([
       supabase.from('whatsapp_messages')
-        .select('id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, patients(full_name)')
+        .select('id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)')
         .order('created_at', { ascending: false })
         .limit(500),
       supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id').eq('active', true).order('created_at', { ascending: true }),
@@ -193,6 +205,35 @@ export function WhatsAppInbox() {
     input: { flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 12px', color: C.text, fontSize: 13, outline: 'none', fontFamily: 'inherit' },
     btn: { padding: '9px 16px', borderRadius: 10, background: C.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.6 : 1, fontFamily: 'inherit' },
     empty: { margin: 'auto', color: C.textDim, fontSize: 13, textAlign: 'center', padding: 24 },
+    mediaImg: { maxWidth: 200, maxHeight: 220, borderRadius: 8, display: 'block', cursor: 'pointer' },
+    mediaAudio: { width: 230, height: 36 },
+    mediaDoc: { display: 'flex', alignItems: 'center', gap: 8, color: C.accentLight || '#60a5fa', textDecoration: 'none', fontSize: 13, fontWeight: 600 },
+    cap: { fontSize: 12.5, marginTop: 5, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
+    emojiBtn: { width: 34, height: 34, flexShrink: 0, borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, fontSize: 16, cursor: 'pointer', lineHeight: 1 },
+    emojiPop: { position: 'absolute', bottom: 46, left: 0, background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 10, padding: 8, display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 2, boxShadow: '0 8px 24px rgba(0,0,0,.4)', zIndex: 5, width: 260 },
+    emojiItem: { border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', padding: 3, borderRadius: 6, lineHeight: 1 },
+  }
+
+  // Renderiza o corpo da mensagem conforme o tipo (texto já é o padrão).
+  const renderBody = (m) => {
+    const t = m.msg_type || 'text'
+    if (t === 'image' && m.media_url) return (
+      <>
+        <a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt={m.body || 'imagem'} style={s.mediaImg} /></a>
+        {m.body && <div style={s.cap}>{m.body}</div>}
+      </>
+    )
+    if (t === 'audio' && m.media_url) return <audio controls src={m.media_url} style={s.mediaAudio} />
+    if (t === 'video' && m.media_url) return (
+      <>
+        <video controls src={m.media_url} style={{ ...s.mediaImg, maxHeight: 240 }} />
+        {m.body && <div style={s.cap}>{m.body}</div>}
+      </>
+    )
+    if (t === 'document' && m.media_url) return (
+      <a href={m.media_url} target="_blank" rel="noreferrer" style={s.mediaDoc}>📄 {m.body || 'Documento'}</a>
+    )
+    return m.body
   }
 
   return (
@@ -224,7 +265,7 @@ export function WhatsAppInbox() {
                     <span style={s.convName}>{c.name || c.phone}</span>
                     <span style={s.convTime}>{fmtTime(c.last.created_at)}</span>
                   </div>
-                  <div style={s.convPrev}>{c.last.direction === 'outbound' ? '→ ' : ''}{c.last.body}</div>
+                  <div style={s.convPrev}>{c.last.direction === 'outbound' ? '→ ' : ''}{previewText(c.last)}</div>
                   <div style={s.convMeta}>
                     {c.numberId && numberLabel[c.numberId] && <span style={s.numTag}>{numberLabel[c.numberId]}</span>}
                     {ownerName(c.numberId) && <span style={s.ownerTag}>{ownerName(c.numberId)}</span>}
@@ -255,7 +296,7 @@ export function WhatsAppInbox() {
                 {thread.map(m => (
                   <div key={m.id} style={s.row(m.direction)}>
                     <div>
-                      <div style={s.bubble(m.direction)}>{m.body}</div>
+                      <div style={s.bubble(m.direction)}>{renderBody(m)}</div>
                       <div style={s.meta}>{fmtTime(m.created_at)}{m.direction === 'outbound' && m.status === 'failed' ? ' · falhou' : ''}</div>
                     </div>
                   </div>
@@ -268,6 +309,16 @@ export function WhatsAppInbox() {
                     {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
                   </select>
                 )}
+                <div style={{ position: 'relative' }}>
+                  <button type="button" style={s.emojiBtn} onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Inserir emoji">😊</button>
+                  {showEmoji && (
+                    <div style={s.emojiPop}>
+                      {EMOJIS.map(e => (
+                        <button key={e} type="button" style={s.emojiItem} onClick={() => setReplyText(t => t + e)}>{e}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <input style={s.input} value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Responder..." disabled={sending} />
                 <button type="submit" style={s.btn} disabled={sending || !replyText.trim()}>{sending ? '...' : 'Enviar'}</button>
               </form>

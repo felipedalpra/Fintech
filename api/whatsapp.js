@@ -229,18 +229,7 @@ async function handleSend(req, res) {
     .maybeSingle()
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
 
-  // Escopo por usuário: só o admin (owner ou role='admin') envia por qualquer número; os demais
-  // só pelos números atribuídos a eles. Espelha a RLS de whatsapp_messages.
-  // Admin escopado À CLÍNICA (owned por ownerId) — não conta admin de outra clínica.
-  let isAdmin = user.id === ownerId
-  if (!isAdmin) {
-    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
-    if (clinic) {
-      const { data: adminMem } = await supabase.from('clinic_members')
-        .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).eq('role', 'admin').maybeSingle()
-      isAdmin = !!adminMem
-    }
-  }
+
   if (!isAdmin && num.assigned_user_id !== user.id) {
     return res.status(403).json({ error: 'Este número não está atribuído a você.' })
   }
@@ -313,6 +302,7 @@ async function handleWebhook(req, res) {
     user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: 'inbound',
     body: parsed.text, status: 'read', provider_message_id: parsed.providerMessageId,
     whatsapp_number_id: num.id,
+    msg_type: parsed.msgType || 'text', media_url: parsed.mediaUrl || null, media_mime: parsed.mediaMime || null,
   })
 
   // 23505 = índice único (mensagem duplicada) → idempotente, ignora.

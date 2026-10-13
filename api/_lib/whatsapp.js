@@ -16,26 +16,56 @@ export function phoneCore(raw) {
   return digits.slice(-8)
 }
 
+// Extrai mídia do payload recebido (cobre os formatos da Z-API). Retorna
+// { msgType, mediaUrl, mediaMime, caption } ou null quando não há mídia.
+function parseMedia(body) {
+  const kinds = [
+    { type: 'image',    obj: body.image,    url: o => o.imageUrl || o.url },
+    { type: 'audio',    obj: body.audio,    url: o => o.audioUrl || o.url },
+    { type: 'video',    obj: body.video,    url: o => o.videoUrl || o.url },
+    { type: 'document', obj: body.document, url: o => o.documentUrl || o.url },
+  ]
+  for (const k of kinds) {
+    const o = k.obj
+    if (o && typeof o === 'object') {
+      const mediaUrl = k.url(o)
+      if (!mediaUrl) continue
+      // Legenda: a própria caption; no documento, cai para o nome do arquivo.
+      const caption = o.caption || (k.type === 'document' ? (o.fileName || o.title || '') : '')
+      return { msgType: k.type, mediaUrl: String(mediaUrl), mediaMime: o.mimeType || o.mime || null, caption: String(caption || '') }
+    }
+  }
+  return null
+}
+
 // Normaliza o payload de uma mensagem RECEBIDA do provider (cobre Z-API).
-// Retorna { phone, text, providerMessageId } ou null quando deve ser ignorada
-// (mensagem nossa de saída ecoada, evento de status, ou sem conteúdo).
+// Retorna { phone, text, msgType, mediaUrl, mediaMime, providerMessageId, senderName }
+// ou null quando deve ser ignorada (saída ecoada, status, ou sem texto E sem mídia).
 export function parseIncomingMessage(body) {
   if (!body || typeof body !== 'object') return null
   // Z-API ecoa as mensagens que NÓS enviamos com fromMe=true — não gravar como recebida.
   if (body.fromMe === true) return null
 
   const phoneRaw = body.phone || body.from || body?.sender?.phone || ''
-  const text = body?.text?.message || body?.message?.conversation || body?.body || ''
-  const providerMessageId = body?.messageId || body?.id || null
-  // Nome do contato no WhatsApp (para nomear o lead criado automaticamente).
-  const senderName = body?.senderName || body?.chatName || body?.pushname || body?.pushName || ''
-
   const phone = normalizePhone(phoneRaw)
-  if (!phone || !text) return null
+  if (!phone) return null
+
+  const textRaw = body?.text?.message || body?.message?.conversation || body?.body || ''
+  const media = parseMedia(body)
+  // Sem texto E sem mídia = nada a gravar (evento de status etc.).
+  if (!textRaw && !media) return null
+
+  const providerMessageId = body?.messageId || body?.id || null
+  const senderName = body?.senderName || body?.chatName || body?.pushname || body?.pushName || ''
+  // body (coluna NOT NULL) guarda o texto; para mídia, a legenda (ou nome do arquivo).
+  const text = media ? media.caption : String(textRaw)
 
   return {
     phone,
-    text: String(text),
+    text,
+    msgType: media ? media.msgType : 'text',
+    mediaUrl: media ? media.mediaUrl : null,
+    mediaMime: media ? media.mediaMime : null,
     providerMessageId: providerMessageId ? String(providerMessageId) : null,
     senderName: senderName ? String(senderName) : '',
   }
