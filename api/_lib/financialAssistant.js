@@ -177,7 +177,7 @@ export async function fetchFinancialData(supabase, userId) {
     ['goals', 'id,name,metric,target,period,due_date'],
   ]
 
-  const [results, recurrencesResult] = await Promise.all([
+  const [results, recurrencesResult, chartAccountsResult, procedureLinksResult, revenueLinksResult, expenseLinksResult, recurrenceLinksResult] = await Promise.all([
     Promise.all(queries.map(([tableName, columns]) => (
       supabase.from(tableName).select(columns).eq('user_id', userId)
     ))),
@@ -185,6 +185,11 @@ export async function fetchFinancialData(supabase, userId) {
       .from('recorrencias')
       .select('id,tipo,valor,categoria,frequencia,dia_execucao,data_inicio,data_fim,auto_mark_as_paid,ativo')
       .eq('user_id', userId),
+    supabase.from('chart_accounts').select('*').eq('user_id', userId),
+    supabase.from('procedures').select('id,chart_account_id').eq('user_id', userId),
+    supabase.from('extra_revenues').select('id,chart_account_id').eq('user_id', userId),
+    supabase.from('expenses').select('id,chart_account_id').eq('user_id', userId),
+    supabase.from('recorrencias').select('id,chart_account_id').eq('user_id', userId),
   ])
   const failedIndex = results.findIndex(result => result.error)
   if (failedIndex >= 0) {
@@ -195,7 +200,15 @@ export async function fetchFinancialData(supabase, userId) {
   }
 
   const rows = Object.fromEntries(queries.map(([tableName], index) => [tableName, results[index].data || []]))
-  rows.recorrencias = recurrencesResult.error ? [] : (recurrencesResult.data || [])
+  const procedureLinks = new Map((procedureLinksResult.data || []).map(item => [item.id, item.chart_account_id]))
+  rows.procedures = rows.procedures.map(item => ({ ...item, chart_account_id:procedureLinks.get(item.id) || null }))
+  const recurrenceLinks = new Map((recurrenceLinksResult.data || []).map(item => [item.id, item.chart_account_id]))
+  rows.recorrencias = recurrencesResult.error ? [] : (recurrencesResult.data || []).map(item => ({ ...item, chart_account_id:recurrenceLinks.get(item.id) || null }))
+  rows.chart_accounts = chartAccountsResult.error ? [] : (chartAccountsResult.data || [])
+  const revenueLinks = new Map((revenueLinksResult.data || []).map(item => [item.id, item.chart_account_id]))
+  const expenseLinks = new Map((expenseLinksResult.data || []).map(item => [item.id, item.chart_account_id]))
+  rows.extra_revenues = rows.extra_revenues.map(item => ({ ...item, chart_account_id:revenueLinks.get(item.id) || null }))
+  rows.expenses = rows.expenses.map(item => ({ ...item, chart_account_id:expenseLinks.get(item.id) || null }))
   return mapFinancialRows(rows)
 }
 
@@ -221,6 +234,7 @@ export function mapFinancialRows(rows = {}) {
       name:item.name || 'Sem procedimento',
       price:number(item.price),
       durationHours:number(item.duration_hours),
+      chartAccountId:item.chart_account_id || null,
     })),
     products:(rows.products || []).map(item => ({
       id:item.id,
@@ -290,6 +304,7 @@ export function mapFinancialRows(rows = {}) {
       id:item.id,
       description:'',
       category:item.category || 'outras_receitas',
+      chartAccountId:item.chart_account_id || null,
       value:number(item.value),
       date:item.date || '',
     })),
@@ -297,6 +312,7 @@ export function mapFinancialRows(rows = {}) {
       id:item.id,
       description:'',
       category:item.category || 'outros',
+      chartAccountId:item.chart_account_id || null,
       value:number(item.value),
       dueDate:item.due_date || '',
       paymentDate:item.payment_date || '',
@@ -328,12 +344,25 @@ export function mapFinancialRows(rows = {}) {
       descricao:'',
       valor:number(item.valor),
       categoria:item.categoria || 'outros',
+      chartAccountId:item.chart_account_id || null,
       frequencia:item.frequencia || 'mensal',
       diaExecucao:number(item.dia_execucao),
       dataInicio:item.data_inicio || '',
       dataFim:item.data_fim || '',
       autoMarkAsPaid:Boolean(item.auto_mark_as_paid),
       ativo:item.ativo !== false,
+    })),
+    chartAccounts:(rows.chart_accounts || []).map(item => ({
+      id:item.id,
+      parentId:item.parent_id || null,
+      code:item.code || '',
+      name:item.name || '',
+      nodeType:item.node_type || 'account',
+      nature:item.nature || 'unclassified',
+      dreSection:item.dre_section || 'unclassified',
+      systemKey:item.system_key || '',
+      isActive:item.is_active !== false,
+      sortOrder:number(item.sort_order),
     })),
   }
 }
@@ -573,7 +602,7 @@ function getForecast(data) {
 }
 
 function metricsSummary(metrics) {
-  const totalExpenses = metrics.surgeryCostTotal + metrics.consultationCostTotal + metrics.productPurchaseTotal + metrics.operationalExpenses + metrics.taxExpenses
+  const totalExpenses = metrics.totalExpenses ?? (metrics.surgeryCostTotal + metrics.consultationCostTotal + metrics.productPurchaseTotal + metrics.operationalExpenses + metrics.taxExpenses)
   return {
     revenue:money(metrics.grossRevenue),
     surgeryRevenue:money(metrics.surgeryRevenue),

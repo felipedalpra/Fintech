@@ -74,27 +74,27 @@ function ledgerPresentation(entry, source, data) {
   const product = mapProduct(products, source?.productId)
 
   if (cost && type === 'surgery') return {
-    origin:'custo_cirurgico', source:'custo_cirurgico', category:LEDGER_COMPONENT_CATEGORY[entry.source_component] || 'outros',
+    origin:'custo_cirurgico', source:'custo_cirurgico', category:entry.category || LEDGER_COMPONENT_CATEGORY[entry.source_component] || 'outros',
     description:`Custo cirúrgico - ${patient}`, accountDescription:`Custo cirúrgico - ${patient}`,
   }
   if (cost && type === 'consultation') return {
-    origin:'custo_consulta', source:'custo_consulta', category:'nota_fiscal_consulta',
+    origin:'custo_consulta', source:'custo_consulta', category:entry.category || 'nota_fiscal_consulta',
     description:`Custo NF consulta - ${patient}`, accountDescription:`Custo NF consulta - ${patient}`,
   }
   if (type === 'surgery') return {
-    origin:'cirurgia', source:'cirurgia', category:'cirurgia', description:`Cirurgia - ${patient}`,
+    origin:'cirurgia', source:'cirurgia', category:entry.category || 'cirurgia', description:`Cirurgia - ${patient}`,
     accountDescription:mapProcedureName(procedures, source?.procedureId),
   }
   if (type === 'consultation') return {
-    origin:'consulta', source:'consulta', category:source?.paymentType || 'consulta', description:`Consulta - ${patient}`,
+    origin:'consulta', source:'consulta', category:entry.category || source?.paymentType || 'consulta', description:`Consulta - ${patient}`,
     accountDescription:source?.consultationType || 'Consulta',
   }
   if (type === 'product_sale') return {
-    origin:'venda_produto', source:'venda_produto', category:'venda_produto',
+    origin:'venda_produto', source:'venda_produto', category:entry.category || 'venda_produto',
     description:`Venda de produto - ${product?.name || 'Produto'}`, accountDescription:product?.name || 'Produto',
   }
   if (type === 'product_purchase') return {
-    origin:'compra_produto', source:'compra_produto', category:'compra_produto',
+    origin:'compra_produto', source:'compra_produto', category:entry.category || 'compra_produto',
     description:`Compra de produto - ${product?.name || 'Produto'}`, accountDescription:product?.name || 'Produto',
   }
   if (type === 'extra_revenue') return {
@@ -147,6 +147,9 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           originLabel:source?.originLabel || '',
           referenceId:entry.source_id,
           sourceComponent:entry.source_component,
+          chartAccountId:entry.chart_account_id || null,
+          accountNature:entry.account_nature || null,
+          dreSection:entry.dre_section || null,
         }
         cumulativeEntries.push({ ...cashRow, type:entry.direction === 'receivable' ? 'entrada' : 'saida' })
         if (inRange(row.settlement_date, startDate, endDate)) {
@@ -172,6 +175,9 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       sourceId:entry.source_id,
       category:presentation.category,
       costCenter:entry.cost_center || '',
+      chartAccountId:entry.chart_account_id || null,
+      accountNature:entry.account_nature || null,
+      dreSection:entry.dre_section || null,
       value:openValue,
       competenceDate:entry.competence_date,
       dueDate:dueDates[0] || entry.issue_date,
@@ -206,6 +212,9 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       sourceType:entry.source_type,
       sourceId:entry.source_id,
       sourceComponent:entry.source_component,
+      chartAccountId:entry.chart_account_id || null,
+      accountNature:entry.account_nature || null,
+      dreSection:entry.dre_section || null,
     }
   })
 
@@ -231,6 +240,7 @@ export function buildMetrics(rawData, options = {}) {
   const recurringRangeStart = startDate || endDate || today()
   const recurringRangeEnd = endDate || startDate || today()
   const recurringBalanceStart = startDate || `${new Date().getFullYear()}-01-01`
+  const usesChartOfAccounts = (data.chartAccounts || []).length > 0
 
   // Regime de COMPETÊNCIA: a DRE/resultado reconhece o fato no mês de competência,
   // independente de quando o dinheiro entra (caixa) ou de quando vence (vencimento).
@@ -247,10 +257,10 @@ export function buildMetrics(rawData, options = {}) {
     .filter(predicate)
     .reduce((acc, entry) => acc + Number(entry.total_amount || 0), 0)
   const surgeryRevenue = sumLedger(entry => entry.source_type === 'surgery' && entry.source_component === 'revenue')
-  const surgeryCostTotal = sumLedger(entry => entry.source_type === 'surgery' && entry.direction === 'payable')
+  const surgeryCostTotal = sumLedger(entry => entry.source_type === 'surgery' && entry.direction === 'payable' && (!usesChartOfAccounts || entry.dre_section === 'direct_costs'))
   const surgeryNetRevenue = surgeryRevenue - surgeryCostTotal
   const consultationRevenue = sumLedger(entry => entry.source_type === 'consultation' && entry.source_component === 'revenue')
-  const consultationCostTotal = sumLedger(entry => entry.source_type === 'consultation' && entry.direction === 'payable')
+  const consultationCostTotal = sumLedger(entry => entry.source_type === 'consultation' && entry.direction === 'payable' && (!usesChartOfAccounts || entry.dre_section === 'direct_costs'))
   const productSalesRevenue = sumLedger(entry => entry.source_type === 'product_sale' && entry.direction === 'receivable')
   const productPurchasesTotal = sumLedger(entry => entry.source_type === 'product_purchase' && entry.direction === 'payable')
   const productCosting = buildProductCosting(data)
@@ -279,14 +289,25 @@ export function buildMetrics(rawData, options = {}) {
   // Compatibilidade: consumidores antigos usam productPurchaseTotal como a linha de custo da DRE.
   // A partir da Fase 10, o campo representa CMV histórico; compras ficam em productPurchasesTotal.
   const productPurchaseTotal = productCostOfSales
-  const recurringRevenueTotal = sumLedger(entry => entry.source_type === 'recurrence' && entry.direction === 'receivable')
-  const extraRevenueTotal = sumLedger(entry => entry.source_type === 'extra_revenue' && entry.direction === 'receivable') + recurringRevenueTotal
+  const isOperatingRevenue = entry => !usesChartOfAccounts || entry.account_nature !== 'financial_revenue'
+  const recurringRevenueTotal = sumLedger(entry => entry.source_type === 'recurrence' && entry.direction === 'receivable' && isOperatingRevenue(entry))
+  const extraRevenueTotal = sumLedger(entry => entry.source_type === 'extra_revenue' && entry.direction === 'receivable' && isOperatingRevenue(entry)) + recurringRevenueTotal
   const grossRevenue = surgeryRevenue + consultationRevenue + productSalesRevenue + extraRevenueTotal
 
-  const taxExpenses = sumLedger(entry => ['expense', 'recurrence'].includes(entry.source_type) && entry.direction === 'payable' && entry.category === 'impostos')
-  const operationalExpenses = sumLedger(entry => ['expense', 'recurrence'].includes(entry.source_type) && entry.direction === 'payable' && entry.category !== 'impostos')
-  const operatingProfit = grossRevenue - surgeryCostTotal - consultationCostTotal - productPurchaseTotal - operationalExpenses
-  const netProfit = operatingProfit - taxExpenses
+  const manualPayable = entry => ['expense', 'recurrence'].includes(entry.source_type) && entry.direction === 'payable'
+  const revenueDeductions = usesChartOfAccounts ? sumLedger(entry => entry.direction === 'payable' && entry.account_nature === 'revenue_deduction') : 0
+  const netRevenue = grossRevenue - revenueDeductions
+  const additionalDirectCosts = usesChartOfAccounts ? sumLedger(entry => manualPayable(entry) && entry.account_nature === 'direct_cost') : 0
+  const financialRevenue = usesChartOfAccounts ? sumLedger(entry => entry.direction === 'receivable' && entry.account_nature === 'financial_revenue') : 0
+  const financialExpenses = usesChartOfAccounts ? sumLedger(entry => manualPayable(entry) && entry.account_nature === 'financial_expense') : 0
+  const taxExpenses = sumLedger(entry => manualPayable(entry) && (usesChartOfAccounts ? entry.account_nature === 'income_tax' : entry.category === 'impostos'))
+  const operationalExpenses = sumLedger(entry => manualPayable(entry) && (usesChartOfAccounts
+    ? ['operating_expense', 'depreciation', 'unclassified'].includes(entry.account_nature)
+    : entry.category !== 'impostos'))
+  const operatingProfit = netRevenue - surgeryCostTotal - consultationCostTotal - productPurchaseTotal - additionalDirectCosts - operationalExpenses
+  const profitBeforeTax = operatingProfit + financialRevenue - financialExpenses
+  const netProfit = profitBeforeTax - taxExpenses
+  const totalExpenses = revenueDeductions + surgeryCostTotal + consultationCostTotal + productPurchaseTotal + additionalDirectCosts + operationalExpenses + financialExpenses + taxExpenses
 
   const surgeriesCompleted = surgeriesInRange.filter(item => item.paymentStatus !== 'cancelado').length
   const consultationsCompleted = consultationsInRange.filter(item => item.paymentStatus !== 'cancelado').length
@@ -375,25 +396,31 @@ export function buildMetrics(rawData, options = {}) {
   const detailRows = ledger.competenceDetails || []
   const pick = predicate => detailRows.filter(predicate)
   const signed = (rows, sign = 1) => rows.map(item => ({ ...item, value:Number(item.value || 0) * sign }))
-  const revenueDetails = pick(entry => entry.direction === 'receivable')
+  const revenueDetails = pick(entry => entry.direction === 'receivable' && (!usesChartOfAccounts || entry.accountNature !== 'financial_revenue'))
   const surgeryRevenueDetails = pick(entry => entry.sourceType === 'surgery' && entry.sourceComponent === 'revenue')
-  const surgeryCostDetails = pick(entry => entry.sourceType === 'surgery' && entry.direction === 'payable')
+  const surgeryCostDetails = pick(entry => entry.sourceType === 'surgery' && entry.direction === 'payable' && (!usesChartOfAccounts || entry.dreSection === 'direct_costs'))
   const consultationRevenueDetails = pick(entry => entry.sourceType === 'consultation' && entry.sourceComponent === 'revenue')
-  const consultationCostDetails = pick(entry => entry.sourceType === 'consultation' && entry.direction === 'payable')
+  const consultationCostDetails = pick(entry => entry.sourceType === 'consultation' && entry.direction === 'payable' && (!usesChartOfAccounts || entry.dreSection === 'direct_costs'))
   const productRevenueDetails = pick(entry => entry.sourceType === 'product_sale' && entry.direction === 'receivable')
   const productPurchaseDetails = pick(entry => entry.sourceType === 'product_purchase' && entry.direction === 'payable')
-  const extraRevenueDetails = pick(entry => ['extra_revenue', 'recurrence'].includes(entry.sourceType) && entry.direction === 'receivable')
-  const operationalExpenseDetails = pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.category !== 'impostos')
-  const taxExpenseDetails = pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.category === 'impostos')
-  const totalExpenseDetails = [...surgeryCostDetails, ...consultationCostDetails, ...productCostOfSalesDetails, ...operationalExpenseDetails, ...taxExpenseDetails]
+  const extraRevenueDetails = pick(entry => ['extra_revenue', 'recurrence'].includes(entry.sourceType) && entry.direction === 'receivable' && (!usesChartOfAccounts || entry.accountNature !== 'financial_revenue'))
+  const revenueDeductionDetails = usesChartOfAccounts ? pick(entry => entry.direction === 'payable' && entry.accountNature === 'revenue_deduction') : []
+  const additionalDirectCostDetails = usesChartOfAccounts ? pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.accountNature === 'direct_cost') : []
+  const financialRevenueDetails = usesChartOfAccounts ? pick(entry => entry.direction === 'receivable' && entry.accountNature === 'financial_revenue') : []
+  const financialExpenseDetails = usesChartOfAccounts ? pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.accountNature === 'financial_expense') : []
+  const operationalExpenseDetails = pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && (usesChartOfAccounts ? ['operating_expense', 'depreciation', 'unclassified'].includes(entry.accountNature) : entry.category !== 'impostos'))
+  const taxExpenseDetails = pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && (usesChartOfAccounts ? entry.accountNature === 'income_tax' : entry.category === 'impostos'))
+  const totalExpenseDetails = [...revenueDeductionDetails, ...surgeryCostDetails, ...consultationCostDetails, ...productCostOfSalesDetails, ...additionalDirectCostDetails, ...operationalExpenseDetails, ...financialExpenseDetails, ...taxExpenseDetails]
   const operatingProfitDetails = [
     ...signed(revenueDetails),
+    ...signed(revenueDeductionDetails, -1),
     ...signed(surgeryCostDetails, -1),
     ...signed(consultationCostDetails, -1),
     ...signed(productCostOfSalesDetails, -1),
+    ...signed(additionalDirectCostDetails, -1),
     ...signed(operationalExpenseDetails, -1),
   ]
-  const netProfitDetails = [...operatingProfitDetails, ...signed(taxExpenseDetails, -1)]
+  const netProfitDetails = [...operatingProfitDetails, ...signed(financialRevenueDetails), ...signed(financialExpenseDetails, -1), ...signed(taxExpenseDetails, -1)]
   const cashInDetails = entriesFinancial.map(item => ({ ...item, party:'', status:'liquidado', direction:'receivable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || 'revenue' }))
   const cashOutDetails = exitsFinancial.map(item => ({ ...item, party:'', status:'liquidado', direction:'payable', sourceType:item.origin, sourceId:item.referenceId, sourceComponent:item.sourceComponent || 'expense' }))
   const cashBalanceDetails = [...signed(cashInDetails), ...signed(cashOutDetails, -1)]
@@ -422,7 +449,13 @@ export function buildMetrics(rawData, options = {}) {
     productPurchasesTotal:productPurchaseDetails,
     productCostOfSales:productCostOfSalesDetails,
     extraRevenueTotal:extraRevenueDetails,
+    revenueDeductions:revenueDeductionDetails,
+    netRevenue:[...signed(revenueDetails), ...signed(revenueDeductionDetails, -1)],
+    additionalDirectCosts:additionalDirectCostDetails,
     operationalExpenses:operationalExpenseDetails,
+    financialRevenue:financialRevenueDetails,
+    financialExpenses:financialExpenseDetails,
+    profitBeforeTax:[...operatingProfitDetails, ...signed(financialRevenueDetails), ...signed(financialExpenseDetails, -1)],
     taxExpenses:taxExpenseDetails,
     totalExpenses:totalExpenseDetails,
     operatingProfit:operatingProfitDetails,
@@ -458,10 +491,17 @@ export function buildMetrics(rawData, options = {}) {
     productPurchasesTotal,
     productCostOfSales,
     extraRevenueTotal,
+    revenueDeductions,
+    netRevenue,
+    additionalDirectCosts,
     operationalExpenses,
+    financialRevenue,
+    financialExpenses,
+    profitBeforeTax,
     taxExpenses,
     operatingProfit,
     netProfit,
+    totalExpenses,
     cashIn,
     cashOut,
     cashBalance,

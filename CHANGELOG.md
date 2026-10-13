@@ -5,6 +5,23 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (81)
+### Added
+- **Plano de contas editável por clínica**: nova tela **Financeiro → Plano de contas** com árvore pesquisável, grupos e categorias lançáveis, inclusão, edição, reordenação, movimentação por arrastar, ativação/desativação e remoção segura. Cada clínica recebe no primeiro acesso uma cópia independente do plano padrão para cirurgiões, abrangendo ativo, passivo, patrimônio líquido, receitas, deduções, custos diretos, despesas, resultado financeiro, tributos e classificação pendente (`src/components/ChartOfAccounts.jsx`, `src/lib/chartOfAccounts.js`, `src/lib/chartOfAccountsStore.js`).
+- **Persistência do vínculo contábil**: migração aditiva `supabase/chart_of_accounts_schema.sql` cria `chart_accounts` com hierarquia protegida, RLS por clínica e vínculos opcionais em receitas extras, despesas, recorrências e razão. Categorias em uso são desativadas em vez de apagadas; contas automáticas essenciais são protegidas.
+- **Cobertura de regressão do plano**: testes validam unicidade do modelo padrão, hierarquia sem ciclos, filtros de contas lançáveis, vínculo estável no razão e classificação da DRE (`tests/unit/chartOfAccounts.spec.js`).
+- **Cenário E2E com banco real local**: configuração Playwright isolada valida pelo navegador a criação do plano padrão, inclusão de grupo e categoria, edição, vínculo em procedimento e receita, reflexo na DRE/razão e persistência direta no PostgreSQL/PostgREST local (`playwright.real.config.js`, `tests/e2e-real/chart-of-accounts.real.spec.js`).
+
+### Changed
+- Lançamentos manuais e recorrentes passam a selecionar categorias ativas do plano de contas, mantendo o nome da categoria como fotografia histórica e o ID como vínculo estável. Cada procedimento pode escolher sua categoria de receita (por exemplo, mama, facial ou corporal); consultas, produtos e custos recebem automaticamente suas contas de sistema no razão.
+- A DRE, seus drill-downs, Dashboard, metas, comparativos, assistente financeiro e exportações CSV/XLSX passam a respeitar natureza e seção contábil: deduções da receita, custos diretos, despesas operacionais, resultado financeiro e tributos sobre o lucro são apresentados separadamente. Sem a nova migração, o comportamento legado permanece compatível.
+
+### Fixed
+- Centro de custo e origem deixam de compartilhar o mesmo campo técnico: a migração aditiva `supabase/cost_center_migration.sql` persiste `cost_center` em receitas/despesas manuais, enquanto `origin_label` guarda separadamente a origem livre do lançamento e ambos seguem distintos no razão.
+- A inicialização do plano padrão agora compartilha a mesma operação por clínica, evitando conflito de unicidade quando o React monta a tela duas vezes em desenvolvimento ou dois consumidores pedem os dados simultaneamente.
+- O botão global “Novo grupo” passa a criar um grupo na raiz; para criar dentro do grupo selecionado permanece a ação explícita “Adicionar abaixo”.
+- O detalhamento financeiro traduz os estados canônicos do razão (`paid`, `pending`, `canceled`) para português na interface.
+
 ## [Unreleased] - 2026-10-12 (80)
 ### Added
 - **Meta Ads — alcance e frequência por período**: a tela de Anúncios passa a mostrar **alcance** (pessoas únicas) e **frequência** por campanha/conjunto/anúncio, além de um KPI de alcance da conta. Como alcance é **deduplicado por período** (não pode ser a soma dos dias), vem de uma consulta por intervalo ao Meta, cacheada em nova tabela `meta_reach` (`supabase/meta_reach_schema.sql`, RLS por `data_owner_id()`, escrita só pelo service_role). O sync (`syncMetaInsights`) busca alcance para mês/30d/trimestre e para o nível conta; função pura `parseReachResponse`. Colunas Alcance/Freq. e KPI adicionados a `MetaAdsDashboard.jsx`.

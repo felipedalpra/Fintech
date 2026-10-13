@@ -15,6 +15,7 @@ import { Consultations } from '../components/Consultations.jsx'
 import { Reports } from '../components/Reports.jsx'
 import { LedgerCheck } from '../components/LedgerCheck.jsx'
 import { Recurrences } from '../components/Recurrences.jsx'
+import { ChartOfAccounts } from '../components/ChartOfAccounts.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { FAB } from '../components/FAB.jsx'
@@ -82,6 +83,7 @@ const AREAS = [
         { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
         { id:'plans',         label:'Procedimentos', icon:'procedures',    hint:'Catálogo cirúrgico' },
         { id:'recurrences',   label:'Recorrências',  icon:'recurrences',   hint:'Despesas e receitas fixas' },
+        { id:'chart-of-accounts', label:'Plano de contas', icon:'reports', hint:'Estrutura de grupos e categorias financeiras' },
       ] },
       { title:'Análise', items:[
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
@@ -136,6 +138,7 @@ const TITLES = {
   recurrences:'Recorrências',
   reports:'Central de Relatórios',
   'ledger-check':'Conferência do Razão',
+  'chart-of-accounts':'Plano de Contas',
   ai:'Central de IA',
   billing:'Assinatura',
   settings:'Configurações',
@@ -162,6 +165,7 @@ const SUBTITLES = {
   recurrences:'Cadastre receitas e despesas fixas com geração automática.',
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
   'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
+  'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
@@ -187,6 +191,7 @@ const PAGES = {
   recurrences:Recurrences,
   reports:Reports,
   'ledger-check':LedgerCheck,
+  'chart-of-accounts':ChartOfAccounts,
   ai:AIAssistant,
   billing:BillingPage,
   settings:Settings,

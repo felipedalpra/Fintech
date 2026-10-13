@@ -5,15 +5,17 @@ import { useAuth } from './AuthContext.jsx'
 const UserRoleContext = createContext(null)
 
 const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
+const E2E_USER_ID = import.meta.env.VITE_E2E_USER_ID || 'e2e-user-id'
+const E2E_CLINIC_ID = import.meta.env.VITE_E2E_CLINIC_ID || 'e2e-clinic-id'
 
 const ROLE_ACCESS = {
   admin: [
     'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'ads', 'tarefas',
-    'finance', 'goals', 'recurrences', 'reports', 'ledger-check', 'ai', 'billing', 'settings',
+    'finance', 'goals', 'recurrences', 'reports', 'ledger-check', 'chart-of-accounts', 'ai', 'billing', 'settings',
   ],
   gestao: [
     'dashboard', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'ads', 'tarefas',
-    'finance', 'goals', 'recurrences', 'reports', 'ledger-check', 'ai',
+    'finance', 'goals', 'recurrences', 'reports', 'ledger-check', 'chart-of-accounts', 'ai',
   ],
   // Jonas (concierge): pode cadastrar cirurgias, consultas e orçamentos — sem acesso financeiro
   concierge: [
@@ -49,8 +51,8 @@ export function UserRoleProvider({ children }) {
     // E2E: concede admin sem bater no Supabase (espelha o bypass do AuthContext).
     if (E2E_BYPASS_AUTH) {
       setRole('admin')
-      setOwnerId('e2e-user-id')
-      setClinicId('e2e-clinic-id')
+      setOwnerId(E2E_USER_ID)
+      setClinicId(E2E_CLINIC_ID)
       setClinicName('Clínica E2E')
       setIsOwner(true)
       setLoading(false)

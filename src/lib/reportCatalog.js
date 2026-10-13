@@ -259,10 +259,14 @@ function buildDre(ctx) {
   const rows = [
     ['Receita de cirurgias', m.surgeryRevenue, 'Receita'], ['Receita de consultas', m.consultationRevenue, 'Receita'],
     ['Receita de produtos', m.productSalesRevenue, 'Receita'], ['Outras receitas', m.extraRevenueTotal, 'Receita'],
-    ['Receita bruta', m.grossRevenue, 'Subtotal'], ['Custos de cirurgias', -m.surgeryCostTotal, 'Custo'],
+    ['Receita bruta', m.grossRevenue, 'Subtotal'], ['Deduções da receita', -(m.revenueDeductions || 0), 'Dedução'],
+    ['Receita líquida', m.netRevenue ?? m.grossRevenue, 'Subtotal'], ['Custos de cirurgias', -m.surgeryCostTotal, 'Custo'],
     ['Custos de consultas', -m.consultationCostTotal, 'Custo'], ['CMV — produtos vendidos', m.productCostOfSales ? -m.productCostOfSales : 0, 'Custo'],
+    ['Outros custos diretos', -(m.additionalDirectCosts || 0), 'Custo'],
     ['Despesas operacionais', -m.operationalExpenses, 'Despesa'], ['Resultado operacional', m.operatingProfit, 'Subtotal'],
-    ['Impostos', -m.taxExpenses, 'Despesa'], ['Resultado líquido', m.netProfit, 'Total'],
+    ['Receitas financeiras', m.financialRevenue || 0, 'Resultado financeiro'], ['Despesas financeiras', -(m.financialExpenses || 0), 'Resultado financeiro'],
+    ['Resultado antes dos tributos', m.profitBeforeTax ?? m.operatingProfit, 'Subtotal'],
+    ['Tributos sobre o lucro', -m.taxExpenses, 'Despesa'], ['Resultado líquido', m.netProfit, 'Total'],
   ].map(([description, value, group]) => ({ group, description, value }))
   return result(
     [col('group','Grupo'), col('description','Descrição','text',38), col('value','Valor','currency',18)],

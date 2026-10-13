@@ -6,12 +6,15 @@ import { Badge, Btn, Card, ConfirmModal, FInput, Modal } from './UI.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
+import { findChartAccount, postingAccountOptions } from '../lib/chartOfAccounts.js'
+import { ensureDefaultChartAccounts, isChartSchemaMissing } from '../lib/chartOfAccountsStore.js'
 
 const EMPTY_FORM = {
   tipo:'despesa',
   descricao:'',
   valor:0,
   categoria:'outros',
+  chart_account_id:'',
   frequencia:'mensal',
   dia_execucao:5,
   data_inicio:today(),
@@ -23,7 +26,7 @@ const EMPTY_FORM = {
 const CATEGORIAS_DESPESA = ['aluguel', 'energia', 'internet', 'salarios', 'marketing', 'softwares', 'impostos', 'despesas_variaveis', 'outros']
 const CATEGORIAS_RECEITA = ['consulta', 'cirurgia', 'contrato', 'aluguel_equipamento', 'outras_receitas']
 
-export function Recurrences() {
+export function Recurrences({ data:financeData, setData }) {
   const { toast } = useToast()
   const { ownerId } = useUserRole()
   const [loading, setLoading] = useState(true)
@@ -36,9 +39,26 @@ export function Recurrences() {
   const [confirmState, setConfirmState] = useState(null)
 
   const categoryOptions = useMemo(() => {
+    const chartOptions = postingAccountOptions(financeData?.chartAccounts || [], form.tipo === 'receita' ? 'receivable' : 'payable')
+    if (chartOptions.length > 0) return chartOptions.map(item => ({ v:item.value, l:item.label }))
     const source = form.tipo === 'receita' ? CATEGORIAS_RECEITA : CATEGORIAS_DESPESA
     return source.map(item => ({ v:item, l:labelize(item) }))
-  }, [form.tipo])
+  }, [form.tipo, financeData?.chartAccounts])
+
+  const usingChartAccounts = (financeData?.chartAccounts || []).length > 0
+
+  useEffect(() => {
+    if (!ownerId || usingChartAccounts) return
+    let active = true
+    ensureDefaultChartAccounts(ownerId)
+      .then(accounts => {
+        if (active) setData?.(current => ({ ...current, chartAccounts:accounts }))
+      })
+      .catch(error => {
+        if (!isChartSchemaMissing(error)) toast(error.message || 'Não foi possível preparar o plano de contas.', 'warning')
+      })
+    return () => { active = false }
+  }, [ownerId, usingChartAccounts, setData])
 
   useEffect(() => {
     loadRecurrences()
@@ -72,8 +92,9 @@ export function Recurrences() {
   }
 
   function openCreate() {
+    const account = findChartAccount(financeData?.chartAccounts || [], { systemKey:'expense_other', direction:'payable' })
     setEditingId('')
-    setForm({ ...EMPTY_FORM, data_inicio:today() })
+    setForm({ ...EMPTY_FORM, data_inicio:today(), chart_account_id:account?.id || '', categoria:account?.name || EMPTY_FORM.categoria })
     setOpenModal(true)
   }
 
@@ -84,6 +105,7 @@ export function Recurrences() {
       descricao:item.descricao || '',
       valor:Number(item.valor || 0),
       categoria:item.categoria || 'outros',
+      chart_account_id:item.chart_account_id || '',
       frequencia:item.frequencia || 'mensal',
       dia_execucao:Number(item.dia_execucao || 1),
       data_inicio:item.data_inicio || today(),
@@ -116,6 +138,7 @@ export function Recurrences() {
       descricao:form.descricao.trim(),
       valor:Number(form.valor || 0),
       categoria:form.categoria,
+      ...(form.chart_account_id ? { chart_account_id:form.chart_account_id } : {}),
       frequencia:form.frequencia,
       dia_execucao:clampExecutionDay(form.dia_execucao, form.frequencia),
       data_inicio:form.data_inicio,
@@ -246,7 +269,7 @@ export function Recurrences() {
                     <tr key={item.id} style={{ borderTop:`1px solid ${C.border}55` }}>
                       <td style={getTdStyle()}>
                         <div style={{ color:C.text, fontWeight:600 }}>{item.descricao}</div>
-                        <div style={{ color:C.textDim, fontSize:12 }}>{labelize(item.categoria || 'outros')}</div>
+                        <div style={{ color:C.textDim, fontSize:12 }}>{accountLabel(financeData?.chartAccounts, item.chart_account_id) || labelize(item.categoria || 'outros')}</div>
                       </td>
                       <td style={getTdStyle()}><Badge color={item.tipo === 'receita' ? C.green : C.red}>{item.tipo}</Badge></td>
                       <td style={getTdStyle()}>{fmt(item.valor || 0)}</td>
@@ -284,9 +307,18 @@ export function Recurrences() {
       <Modal open={openModal} onClose={() => setOpenModal(false)} title={editingId ? 'Editar recorrencia' : 'Nova recorrencia'} width={620}>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:12 }}>
           <FInput label="Descricao" value={form.descricao} onChange={value => setForm(current => ({ ...current, descricao:value }))} />
-          <FInput label="Tipo" value={form.tipo} onChange={value => setForm(current => ({ ...current, tipo:value, categoria:(value === 'receita' ? CATEGORIAS_RECEITA[0] : CATEGORIAS_DESPESA[0]) }))} options={[{ v:'despesa', l:'Despesa' }, { v:'receita', l:'Receita' }]} />
+          <FInput label="Tipo" value={form.tipo} onChange={value => {
+            const fallback = value === 'receita' ? CATEGORIAS_RECEITA[0] : CATEGORIAS_DESPESA[0]
+            const account = findChartAccount(financeData?.chartAccounts || [], { systemKey:value === 'receita' ? 'revenue_other' : 'expense_other', direction:value === 'receita' ? 'receivable' : 'payable' })
+            setForm(current => ({ ...current, tipo:value, categoria:account?.name || fallback, chart_account_id:account?.id || '' }))
+          }} options={[{ v:'despesa', l:'Despesa' }, { v:'receita', l:'Receita' }]} />
           <FInput label="Valor" type="number" value={form.valor} onChange={value => setForm(current => ({ ...current, valor:value }))} />
-          <FInput label="Categoria" value={form.categoria} onChange={value => setForm(current => ({ ...current, categoria:value }))} options={categoryOptions} />
+          <FInput label={usingChartAccounts ? 'Categoria do plano de contas' : 'Categoria'} value={usingChartAccounts ? form.chart_account_id : form.categoria} onChange={value => {
+            const account = (financeData?.chartAccounts || []).find(item => item.id === value)
+            setForm(current => usingChartAccounts
+              ? ({ ...current, chart_account_id:value, categoria:account?.name || current.categoria })
+              : ({ ...current, categoria:value }))
+          }} options={usingChartAccounts ? [{ v:'', l:'Selecione uma categoria' }, ...categoryOptions] : categoryOptions} />
           <FInput label="Frequencia" value={form.frequencia} onChange={value => setForm(current => ({ ...current, frequencia:value }))} options={[{ v:'mensal', l:'Mensal' }, { v:'semanal', l:'Semanal' }, { v:'anual', l:'Anual' }]} />
           <FInput label={form.frequencia === 'semanal' ? 'Dia da semana (1-7)' : 'Dia de execucao'} type="number" value={form.dia_execucao} onChange={value => setForm(current => ({ ...current, dia_execucao:value }))} />
           <FInput label="Data inicio" type="date" value={form.data_inicio} onChange={value => setForm(current => ({ ...current, data_inicio:value }))} />
@@ -408,6 +440,11 @@ function labelize(value) {
   const text = String(value || '').replaceAll('_', ' ').trim()
   if (!text) return '-'
   return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function accountLabel(accounts = [], id) {
+  const account = (accounts || []).find(item => item.id === id)
+  return account ? `${account.code} · ${account.name}` : ''
 }
 
 function getTitleStyle() { return { margin:'0', fontSize:15, color:C.text } }

@@ -4,11 +4,13 @@ import { fmt, uid } from '../utils.js'
 import { useMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal } from './UI.jsx'
 import { FilterBar } from './FilterBar.jsx'
+import { findChartAccount, postingAccountOptions } from '../lib/chartOfAccounts.js'
 
 const COLORS = ['#0EA5E9', '#10B981', '#F97316', '#EC4899', '#8B5CF6', '#F59E0B', '#22C55E', '#EF4444']
 
 export function Plans({ data, setData }) {
-  const empty = { name:'', price:0, durationHours:3, color:C.accent, desc:'', checklist:'' }
+  const defaultRevenueAccount = findChartAccount(data?.chartAccounts || [], { systemKey:'revenue_surgery_default', direction:'receivable' })
+  const empty = { name:'', price:0, durationHours:3, color:C.accent, desc:'', checklist:'', chartAccountId:defaultRevenueAccount?.id || '' }
   const [form, setForm] = useState(empty)
   const [editing, setEditing] = useState(null)
   const [showModal, setShowModal] = useState(false)
@@ -17,6 +19,7 @@ export function Plans({ data, setData }) {
   const [sortBy, setSortBy] = useState('nome') // 'nome' | 'preco_maior' | 'preco_menor'
   const m = useMetrics(data)
   const procedureMap = new Map(m.byProcedure.map(item => [item.id, item]))
+  const revenueAccounts = postingAccountOptions(data?.chartAccounts || [], 'receivable').filter(option => option.account.nature === 'revenue')
 
   const filtered = data.procedures
     .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
@@ -89,6 +92,7 @@ export function Plans({ data, setData }) {
           const procedureStats = procedureMap.get(procedure.id)
           const count = procedureStats?.count || 0
           const revenue = procedureStats?.revenue || 0
+          const revenueAccount = (data.chartAccounts || []).find(account => account.id === procedure.chartAccountId)
 
           return (
             <div key={procedure.id} style={{ borderRadius:16, border:`1px solid ${C.border}`, borderTop:`3px solid ${procedure.color}`, background:C.surface, padding:'14px 16px', display:'flex', flexDirection:'column', gap:8 }}>
@@ -99,6 +103,7 @@ export function Plans({ data, setData }) {
               </div>
               <div style={{ fontSize:22, fontWeight:800, color:C.text }}>{fmt(procedure.price)}</div>
               <div style={{ fontSize:11, color:C.textDim }}>{procedure.durationHours || 0}h estimadas de sala / equipe</div>
+              {revenueAccount && <div style={{ fontSize:11, color:C.textSub }}>{revenueAccount.code} · {revenueAccount.name}</div>}
               <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:10, display:'flex', gap:20, marginTop:2 }}>
                 <div>
                   <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:2 }}>Cirurgias</div>
@@ -120,6 +125,7 @@ export function Plans({ data, setData }) {
           <FInput label="Preço base (R$)" value={form.price} onChange={value => setForm(current => ({ ...current, price:value }))} type="number" placeholder="0" />
           <FInput label="Duração estimada (horas)" value={form.durationHours} onChange={value => setForm(current => ({ ...current, durationHours:value }))} type="number" placeholder="3" />
           <FInput label="Descrição" value={form.desc} onChange={value => setForm(current => ({ ...current, desc:value }))} placeholder="Indicação, pacote ou observações" />
+          {revenueAccounts.length > 0 && <FInput label="Categoria de receita" value={form.chartAccountId || ''} onChange={value => setForm(current => ({ ...current, chartAccountId:value }))} options={[{ v:'', l:'Outras cirurgias (padrão)' }, ...revenueAccounts.map(option => ({ v:option.value, l:option.label }))]} />}
           <div>
             <label style={base.label}>Checklist / Itens inclusos</label>
             <textarea

@@ -18,6 +18,7 @@ function asEntryRow(userId, entry) {
     category:entry.category || null,
     cost_center:entry.cost_center || null,
     origin_label:entry.origin_label || null,
+    ...(entry.chart_account_id ? { chart_account_id:entry.chart_account_id } : {}),
     competence_date:entry.competence_date || null,
     issue_date:entry.issue_date || null,
     total_amount:Number(entry.total_amount || 0),
@@ -137,21 +138,25 @@ function normalizeRecurrence(row) {
     dataFim:row.data_fim || row.dataFim || '',
     autoMarkAsPaid:Boolean(row.auto_mark_as_paid ?? row.autoMarkAsPaid),
     ativo:row.ativo !== false,
+    chartAccountId:row.chart_account_id || row.chartAccountId || null,
   }
 }
 
 export async function syncRecurringLedger(client, userId, recurrenceRows, fromDate, toDate) {
-  const [{ data:revenueRows, error:revenueError }, { data:expenseRows, error:expenseError }] = await Promise.all([
-    client.from('extra_revenues').select('id,description,category,value,date,received_date,due_date,competence_date,status').eq('user_id', userId),
-    client.from('expenses').select('id,description,category,value,due_date,payment_date,competence_date,status').eq('user_id', userId),
+  const [{ data:revenueRows, error:revenueError }, { data:expenseRows, error:expenseError }, { data:chartAccounts, error:chartError }] = await Promise.all([
+    client.from('extra_revenues').select('id,description,category,chart_account_id,value,date,received_date,due_date,competence_date,status').eq('user_id', userId),
+    client.from('expenses').select('id,description,category,chart_account_id,value,due_date,payment_date,competence_date,status').eq('user_id', userId),
+    client.from('chart_accounts').select('*').eq('user_id', userId),
   ])
   if (revenueError) throw revenueError
   if (expenseError) throw expenseError
+  if (chartError) throw chartError
 
   const data = {
     recurrences:(recurrenceRows || []).map(normalizeRecurrence),
-    extraRevenues:(revenueRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, value:Number(row.value || 0), date:row.date || '', receivedDate:row.received_date || '', dueDate:row.due_date || row.date || '', competenceDate:row.competence_date || row.date || '', status:row.status || 'recebido' })),
-    expenses:(expenseRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, value:Number(row.value || 0), dueDate:row.due_date || '', paymentDate:row.payment_date || '', competenceDate:row.competence_date || row.due_date || '', status:row.status || 'aberto' })),
+    extraRevenues:(revenueRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, chartAccountId:row.chart_account_id || null, value:Number(row.value || 0), date:row.date || '', receivedDate:row.received_date || '', dueDate:row.due_date || row.date || '', competenceDate:row.competence_date || row.date || '', status:row.status || 'recebido' })),
+    expenses:(expenseRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, chartAccountId:row.chart_account_id || null, value:Number(row.value || 0), dueDate:row.due_date || '', paymentDate:row.payment_date || '', competenceDate:row.competence_date || row.due_date || '', status:row.status || 'aberto' })),
+    chartAccounts:chartAccounts || [],
   }
   const ledger = buildLedger(data, { recurrenceFrom:fromDate, recurrenceTo:toDate })
   // Esta rotina persiste somente as ocorrências; os lançamentos operacionais são sincronizados pelo autosave.
