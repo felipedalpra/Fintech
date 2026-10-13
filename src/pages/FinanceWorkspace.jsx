@@ -27,6 +27,7 @@ import { Calendar } from '../components/Calendar.jsx'
 import { Patients } from '../components/Patients.jsx'
 import { OpportunityPipeline } from '../components/OpportunityPipeline.jsx'
 import { WhatsAppInbox } from '../components/WhatsAppInbox.jsx'
+import { MetaAdsDashboard } from '../components/MetaAdsDashboard.jsx'
 import { TasksPanel } from '../components/TasksPanel.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
@@ -59,6 +60,7 @@ const AREAS = [
         { id:'patients', label:'Pacientes', icon:'patients', hint:'Cadastro clínico e prontuários' },
         { id:'calendar', label:'Agenda',    icon:'calendar', hint:'Calendário de cirurgias e consultas' },
         { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
+        { id:'ads',      label:'Anúncios',  icon:'reports',  hint:'Desempenho dos anúncios do Meta' },
         { id:'tarefas',  label:'Tarefas',   icon:'tasks',    hint:'Tarefas e follow-ups da equipe' },
       ] },
       { title:'Atendimentos', items:[
@@ -143,6 +145,7 @@ const TITLES = {
   patients:'Pacientes',
   funnel:'Pipeline de Oportunidades',
   inbox:'WhatsApp',
+  ads:'Anúncios — Meta Ads',
   tarefas:'Tarefas',
   'Agenda':'Agenda da Clínica',
 }
@@ -169,6 +172,7 @@ const SUBTITLES = {
   patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
   funnel:'Oportunidades (negócios) por estágio: consulta agendada → consultado → orçamento → reserva paga → follow-up.',
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
+  ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
   tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, agrupadas por vencimento.',
 }
 
@@ -194,6 +198,7 @@ const PAGES = {
   patients:Patients,
   funnel:OpportunityPipeline,
   inbox:WhatsAppInbox,
+  ads:MetaAdsDashboard,
   tarefas:TasksPanel,
 }
 
