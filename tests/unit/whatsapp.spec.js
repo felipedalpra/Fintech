@@ -14,6 +14,31 @@ test('phoneCore usa os últimos 8 dígitos (ignora DDI/DDD/9º dígito)', () => 
   expect(phoneCore('(11) 98888-7777')).toBe('88887777')
 })
 
+test('parseIncomingMessage: imagem recebida vira msgType image com url, mime e legenda', () => {
+  const r = parseIncomingMessage({ phone: '5511988887777', image: { imageUrl: 'https://z/i.jpg', caption: 'minha foto', mimeType: 'image/jpeg' } })
+  expect(r).toMatchObject({ phone: '5511988887777', msgType: 'image', mediaUrl: 'https://z/i.jpg', mediaMime: 'image/jpeg', text: 'minha foto' })
+})
+
+test('parseIncomingMessage: áudio recebido vira msgType audio (sem texto)', () => {
+  const r = parseIncomingMessage({ phone: '5511988887777', audio: { audioUrl: 'https://z/a.ogg', mimeType: 'audio/ogg' } })
+  expect(r).toMatchObject({ msgType: 'audio', mediaUrl: 'https://z/a.ogg', mediaMime: 'audio/ogg', text: '' })
+})
+
+test('parseIncomingMessage: documento usa o nome do arquivo quando não há legenda', () => {
+  const r = parseIncomingMessage({ phone: '5511988887777', document: { documentUrl: 'https://z/d.pdf', fileName: 'exames.pdf', mimeType: 'application/pdf' } })
+  expect(r).toMatchObject({ msgType: 'document', mediaUrl: 'https://z/d.pdf', text: 'exames.pdf' })
+})
+
+test('parseIncomingMessage: texto continua msgType text sem mídia', () => {
+  const r = parseIncomingMessage({ phone: '5511988887777', text: { message: 'oi' } })
+  expect(r).toMatchObject({ msgType: 'text', text: 'oi', mediaUrl: null, mediaMime: null })
+})
+
+test('parseIncomingMessage: sem texto e sem mídia retorna null; fromMe ignora', () => {
+  expect(parseIncomingMessage({ phone: '5511988887777' })).toBe(null)
+  expect(parseIncomingMessage({ phone: '5511988887777', fromMe: true, image: { imageUrl: 'x' } })).toBe(null)
+})
+
 test('parseIncomingMessage: mensagem recebida do Z-API', () => {
   const r = parseIncomingMessage({ phone: '5511988887777', text: { message: 'Olá, doutora' }, messageId: 'ABC123' })
   expect(r).toMatchObject({ phone: '5511988887777', text: 'Olá, doutora', providerMessageId: 'ABC123' })
