@@ -5,7 +5,9 @@ import {
   canMoveAccount,
   findChartAccount,
   flattenDefaultChart,
+  nextChildAccountCode,
   postingAccountOptions,
+  postingGroupOptions,
 } from '../../src/lib/chartOfAccounts.js'
 import { buildLedger } from '../../src/lib/financialLedger.js'
 import { buildMetrics } from '../../src/financialMetrics.js'
@@ -50,6 +52,23 @@ test('seletores aceitam só contas lançáveis compatíveis com a direção', ()
 
   expect(postingAccountOptions(accounts, 'receivable').map(item => item.value)).toEqual(['revenue'])
   expect(postingAccountOptions(accounts, 'payable').map(item => item.value)).toEqual(['expense'])
+})
+
+test('criação rápida oferece grupos compatíveis e gera o próximo código livre', () => {
+  const accounts = [
+    { id:'revenue-root', code:'4', name:'Receitas', nodeType:'group', nature:'revenue', isActive:true },
+    { id:'revenue-group', parentId:'revenue-root', code:'4.01', name:'Cirurgias', nodeType:'group', nature:'revenue', isActive:true },
+    { id:'revenue-1', parentId:'revenue-group', code:'4.01.01', name:'Corporal', nodeType:'account', nature:'revenue', isActive:true },
+    { id:'revenue-3', parentId:'revenue-group', code:'4.01.03', name:'Facial', nodeType:'account', nature:'revenue', isActive:true },
+    { id:'expense-group', code:'7.01', name:'Pessoal', nodeType:'group', nature:'operating_expense', isActive:true },
+    { id:'inactive-group', code:'7.02', name:'Inativo', nodeType:'group', nature:'operating_expense', isActive:false },
+    { id:'unclassified-group', code:'11.01', name:'Receitas a classificar', nodeType:'group', nature:'unclassified', isActive:true },
+  ]
+
+  expect(postingGroupOptions(accounts, 'receivable').map(item => item.value)).toEqual(['revenue-root', 'revenue-group'])
+  expect(postingGroupOptions(accounts, 'payable').map(item => item.value)).toEqual(['expense-group'])
+  expect(nextChildAccountCode(accounts, 'revenue-group')).toBe('4.01.02')
+  expect(nextChildAccountCode(accounts, 'missing')).toBe('')
 })
 
 test('razão usa ID e classificação do plano sem perder o nome da categoria', () => {

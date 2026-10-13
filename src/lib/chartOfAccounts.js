@@ -373,17 +373,42 @@ export function accountPath(accounts = [], accountId) {
   return path
 }
 
+function postingNatures(direction, includeUnclassified = true) {
+  const fallback = includeUnclassified ? ['unclassified'] : []
+  if (direction === 'receivable') return new Set(['revenue', 'financial_revenue', ...fallback])
+  if (direction === 'payable') return new Set(['revenue_deduction', 'direct_cost', 'operating_expense', 'depreciation', 'financial_expense', 'income_tax', ...fallback])
+  return null
+}
+
 export function postingAccountOptions(accounts = [], direction) {
-  const allowed = direction === 'receivable'
-    ? new Set(['revenue', 'financial_revenue', 'unclassified'])
-    : direction === 'payable'
-      ? new Set(['revenue_deduction', 'direct_cost', 'operating_expense', 'depreciation', 'financial_expense', 'income_tax', 'unclassified'])
-      : null
+  const allowed = postingNatures(direction)
   return accounts
     .map(normalizeChartAccount)
     .filter(item => item.nodeType === 'account' && item.isActive && (!allowed || allowed.has(item.nature)))
     .sort((a, b) => a.code.localeCompare(b.code, 'pt-BR', { numeric:true }))
     .map(item => ({ value:item.id, label:`${item.code} · ${accountPath(accounts, item.id).map(node => node.name).join(' › ')}`, account:item }))
+}
+
+export function postingGroupOptions(accounts = [], direction) {
+  const allowed = postingNatures(direction, false)
+  return accounts
+    .map(normalizeChartAccount)
+    .filter(item => item.nodeType === 'group' && item.isActive && (!allowed || allowed.has(item.nature)))
+    .sort((a, b) => a.code.localeCompare(b.code, 'pt-BR', { numeric:true }))
+    .map(item => ({ value:item.id, label:`${item.code} · ${accountPath(accounts, item.id).map(node => node.name).join(' › ')}`, account:item }))
+}
+
+export function nextChildAccountCode(accounts = [], parentId) {
+  const normalized = accounts.map(normalizeChartAccount)
+  const parent = normalized.find(item => item.id === parentId)
+  if (!parent?.code) return ''
+
+  const used = new Set(normalized.map(item => item.code.toLowerCase()))
+  for (let suffix = 1; suffix <= 9999; suffix += 1) {
+    const candidate = `${parent.code}.${String(suffix).padStart(2, '0')}`
+    if (!used.has(candidate.toLowerCase())) return candidate
+  }
+  return ''
 }
 
 export function findChartAccount(accounts = [], { id, systemKey, legacyCategory, direction } = {}) {
