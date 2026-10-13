@@ -5,6 +5,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (84)
+### Added
+- **WhatsApp — inbox rico: envia mídia e áudio (B2)**: o composer do inbox passa a **anexar imagem/documento** (📎) e **gravar nota de voz** no navegador (🎤, MediaRecorder). O navegador sobe o arquivo direto para o Supabase Storage (bucket `wa-media`, SQL `supabase/whatsapp_media_storage.sql`) — evita o limite de 1MB do endpoint — e manda a URL ao backend, que repassa à Z-API (`send-image`/`send-document/<ext>`/`send-ptt`). A mensagem enviada é gravada com tipo/URL e aparece no thread. Cliente de envio puro `buildMediaSendRequest` + `sendWhatsAppMedia` em `api/_lib/whatsappClient.js`; upload em `src/lib/whatsappUpload.js`. Testes: `tests/unit/whatsappMedia.spec.js` + e2e (anexo/gravação no composer). Envio de mídia real valida em preview Vercel com a Z-API.
+### Fixed
+- **WhatsApp — envio quebrado por `isAdmin` indefinido**: `handleSend` (`api/whatsapp.js`) referenciava `isAdmin` sem defini-lo (regressão da escopagem multi-tenant), o que lançaria erro em todo envio. A verificação de admin escopada à clínica foi restaurada. (Ainda não impactava produção porque o número Z-API não está ativo.)
+
 ## [Unreleased] - 2026-10-13 (83)
 ### Added
 - **WhatsApp — inbox rico: recebe mídia + emoji (B1)**: o parser do webhook (`api/_lib/whatsapp.js`) deixa de **descartar** mensagens sem texto e passa a reconhecer **imagem, áudio, vídeo e documento** da Z-API (`msgType`/`mediaUrl`/`mediaMime`/legenda; no documento, cai para o nome do arquivo). Migração aditiva `supabase/whatsapp_media_schema.sql` adiciona `msg_type`/`media_url`/`media_mime` em `whatsapp_messages` (mensagens antigas = `text`). O inbox (`WhatsAppInbox.jsx`) e a aba WhatsApp do paciente (`WhatsAppChat.jsx`) renderizam **miniatura de imagem, player de áudio/vídeo e card de documento**, com o preview da lista mostrando rótulo de mídia. Composer ganha **seletor de emoji** (enviado como texto). Testes: casos de mídia em `tests/unit/whatsapp.spec.js` e e2e `tests/e2e/whatsapp-media.spec.js`. Envio de mídia (áudio/imagem/documento) vem no B2. Spec `docs/superpowers/plans/2026-10-13-whatsapp-inbox-rico.md`.

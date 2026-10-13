@@ -3,7 +3,7 @@
 // Roteado por ?action=message (enviar, autenticado) | ?action=webhook (receber do provider).
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
-import { sendWhatsAppText } from './_lib/whatsappClient.js'
+import { sendWhatsAppText, sendWhatsAppMedia } from './_lib/whatsappClient.js'
 import { parseIncomingMessage, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
@@ -214,10 +214,16 @@ async function handleSend(req, res) {
   const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { patientId, phone: rawPhone, text, whatsappNumberId } = req.body || {}
+  const { patientId, phone: rawPhone, text, whatsappNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
   const phone = normalizePhone(rawPhone)
-  if (!phone || !text) return res.status(400).json({ error: 'phone e text são obrigatórios' })
+  const isMedia = ['image', 'audio', 'document'].includes(type)
+  if (!phone) return res.status(400).json({ error: 'phone é obrigatório' })
   if (!whatsappNumberId) return res.status(400).json({ error: 'whatsappNumberId é obrigatório' })
+  if (isMedia) {
+    if (!mediaUrl) return res.status(400).json({ error: 'mediaUrl é obrigatório para mídia' })
+  } else if (!text) {
+    return res.status(400).json({ error: 'text é obrigatório' })
+  }
 
   const ownerId = await resolveOwnerId(supabase, user.id)
 
@@ -229,28 +235,42 @@ async function handleSend(req, res) {
     .maybeSingle()
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
 
-
+  // Admin escopado À CLÍNICA (owner ou role='admin' nela). Não admin só envia pelos números dele.
+  let isAdmin = user.id === ownerId
+  if (!isAdmin) {
+    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
+    if (clinic) {
+      const { data: adminMem } = await supabase.from('clinic_members')
+        .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).eq('role', 'admin').maybeSingle()
+      isAdmin = !!adminMem
+    }
+  }
   if (!isAdmin && num.assigned_user_id !== user.id) {
     return res.status(403).json({ error: 'Este número não está atribuído a você.' })
   }
 
   if (!num.instance_url || !num.api_token) return res.status(502).json({ error: 'Número sem credenciais Z-API configuradas' })
 
+  const bodyText = isMedia ? (caption || '') : text
+  const msgType = isMedia ? type : 'text'
+  const insertBase = {
+    user_id: ownerId, patient_id: patientId ?? null, phone, direction: 'outbound', body: bodyText,
+    whatsapp_number_id: num.id, msg_type: msgType, media_url: mediaUrl ?? null, media_mime: mediaMime ?? null,
+  }
+
   let providerId = null
   try {
-    providerId = await sendWhatsAppText(num.instance_url, num.api_token, phone, text)
+    providerId = isMedia
+      ? await sendWhatsAppMedia(num.instance_url, num.api_token, type, { to: phone, mediaUrl, caption: caption || '', fileName: fileName || '' })
+      : await sendWhatsAppText(num.instance_url, num.api_token, phone, text)
   } catch (err) {
-    await supabase.from('whatsapp_messages').insert({
-      user_id: ownerId, patient_id: patientId ?? null, phone, direction: 'outbound', body: text,
-      status: 'failed', whatsapp_number_id: num.id,
-    })
+    await supabase.from('whatsapp_messages').insert({ ...insertBase, status: 'failed' })
     return res.status(502).json({ error: err.message })
   }
 
-  const { data: msg } = await supabase.from('whatsapp_messages').insert({
-    user_id: ownerId, patient_id: patientId ?? null, phone, direction: 'outbound', body: text,
-    status: 'sent', provider_message_id: providerId, whatsapp_number_id: num.id,
-  }).select('id').single()
+  const { data: msg } = await supabase.from('whatsapp_messages')
+    .insert({ ...insertBase, status: 'sent', provider_message_id: providerId })
+    .select('id').single()
 
   return res.status(200).json({ ok: true, messageId: msg?.id })
 }
