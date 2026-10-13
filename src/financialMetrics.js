@@ -2,6 +2,7 @@ import { inRange, monthKey, onOrBefore, today } from './utils.js'
 import { buildLedger } from './lib/financialLedger.js'
 import { buildProductCosting } from './lib/inventoryCosting.js'
 import { buildInventoryMovements, stockByProduct } from './lib/inventoryLedger.js'
+import { findChartAccount } from './lib/chartOfAccounts.js'
 
 export { paymentScheduleFlow } from './lib/paymentScheduleFlow.js'
 export { generateRecurringOccurrences } from './lib/recurrenceSchedule.js'
@@ -265,6 +266,7 @@ export function buildMetrics(rawData, options = {}) {
   const productPurchasesTotal = sumLedger(entry => entry.source_type === 'product_purchase' && entry.direction === 'payable')
   const productCosting = buildProductCosting(data)
   const productCostOfSales = productSalesInRange.reduce((acc, sale) => acc + Number(productCosting.salesCost[sale.id]?.totalCost || 0), 0)
+  const productCmvAccount = findChartAccount(data.chartAccounts || [], { systemKey:'cost_product_cmv', direction:'payable' })
   const productCostOfSalesDetails = productSalesInRange
     .map(sale => {
       const product = mapProduct(products, sale.productId)
@@ -283,6 +285,9 @@ export function buildMetrics(rawData, options = {}) {
         sourceId:sale.id,
         sourceComponent:'cost_of_sales',
         productId:sale.productId,
+        chartAccountId:productCmvAccount?.id || null,
+        accountNature:productCmvAccount?.nature || null,
+        dreSection:productCmvAccount?.dreSection || null,
       }
     })
     .filter(item => item.value > 0)
