@@ -4,3 +4,6 @@ node_modules
 dist
 .vercel
 test-results/
+
+# Supabase CLI temp artifacts
+supabase/.temp/

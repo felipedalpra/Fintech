@@ -11,6 +11,7 @@ const WEBHOOK_BASE = 'https://surgimetrics.com.br/api/whatsapp?action=webhook'
 export function WhatsAppNumbers() {
   const { ownerId } = useUserRole()
   const [numbers, setNumbers] = useState([])
+  const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [label, setLabel] = useState('')
   const [phone, setPhone] = useState('')
@@ -21,14 +22,23 @@ export function WhatsAppNumbers() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('whatsapp_numbers')
-      .select('id, label, phone, active, webhook_secret')
-      .order('created_at', { ascending: true })
-    setNumbers(data ?? [])
+    const [numRes, memRes] = await Promise.all([
+      supabase.from('whatsapp_numbers')
+        .select('id, label, phone, active, webhook_secret, assigned_user_id')
+        .order('created_at', { ascending: true }),
+      supabase.rpc('clinic_team'), // roster via RPC: admin-membro (não-owner) também enxerga o time
+    ])
+    setNumbers(numRes.data ?? [])
+    setMembers((memRes.data ?? []).filter(m => m.user_id))
     setLoading(false)
   }
   useEffect(() => { load() }, [])
+
+  // Define o responsável (dono) do número: equipe/gestão só veem as conversas dos números delas.
+  async function assign(id, assigned_user_id) {
+    await supabase.from('whatsapp_numbers').update({ assigned_user_id: assigned_user_id || null }).eq('id', id)
+    setNumbers(prev => prev.map(x => x.id === id ? { ...x, assigned_user_id: assigned_user_id || null } : x))
+  }
 
   async function add(e) {
     e.preventDefault()
@@ -81,6 +91,8 @@ export function WhatsAppNumbers() {
     tagOn: { fontSize: 10, fontWeight: 700, color: '#10b981', border: '1px solid #10b98155', borderRadius: 6, padding: '1px 6px' },
     tagOff: { fontSize: 10, fontWeight: 700, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 6px' },
     linkBtn: { background: 'none', border: 'none', color: C.accent, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 0 },
+    assign: { fontSize: 12, padding: '5px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit' },
+    unassignedTag: { fontSize: 10, fontWeight: 700, color: C.yellow || '#f59e0b', border: `1px solid ${(C.yellow || '#f59e0b')}55`, borderRadius: 6, padding: '1px 6px' },
   }
 
   return (
@@ -106,6 +118,14 @@ export function WhatsAppNumbers() {
               <div style={s.row}>
                 <code style={s.hook}>{webhookUrl(n)}</code>
                 <button style={s.linkBtn} onClick={() => copy(webhookUrl(n))}>Copiar URL de webhook</button>
+              </div>
+              <div style={s.row}>
+                <span style={{ fontSize: 12, color: C.textSub }}>Responsável:</span>
+                <select style={s.assign} value={n.assigned_user_id || ''} onChange={e => assign(n.id, e.target.value)}>
+                  <option value="">— sem responsável (só admin vê)</option>
+                  {members.map(m => <option key={m.user_id} value={m.user_id}>{m.member_email} · {m.role}</option>)}
+                </select>
+                {!n.assigned_user_id && <span style={s.unassignedTag}>só admin</span>}
               </div>
             </div>
           ))}
