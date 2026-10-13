@@ -26,7 +26,7 @@ export function WhatsAppNumbers() {
       supabase.from('whatsapp_numbers')
         .select('id, label, phone, active, webhook_secret, assigned_user_id')
         .order('created_at', { ascending: true }),
-      supabase.from('clinic_members').select('user_id, member_email, role'),
+      supabase.rpc('clinic_team'), // roster via RPC: admin-membro (não-owner) também enxerga o time
     ])
     setNumbers(numRes.data ?? [])
     setMembers((memRes.data ?? []).filter(m => m.user_id))

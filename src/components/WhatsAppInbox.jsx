@@ -45,7 +45,7 @@ export function WhatsAppInbox() {
         .order('created_at', { ascending: false })
         .limit(500),
       supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id').eq('active', true).order('created_at', { ascending: true }),
-      supabase.from('clinic_members').select('user_id, member_email'),
+      supabase.rpc('clinic_team'), // roster via RPC: admin-membro (não-owner) também enxerga o time
     ])
     if (msgRes.error) { setError(msgRes.error.message); setLoading(false); return }
     setMessages(msgRes.data ?? [])

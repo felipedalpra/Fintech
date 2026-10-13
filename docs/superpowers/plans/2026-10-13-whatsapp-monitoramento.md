@@ -98,6 +98,17 @@ user_id = public.data_owner_id() AND (
   equipe vê inbox reduzido. Teste de RLS por perfil.
 - `CHANGELOG.md` no mesmo commit.
 
+## Endurecimento pós code-review (13/10/2026)
+- **Escrita de `whatsapp_numbers` só admin** (`is_clinic_admin()` na policy de escrita) — senão equipe
+  se auto-atribuía um número via supabase-js e lia tudo (brecha crítica). SELECT escopado também:
+  equipe/gestão só enxergam os números delas (não vazam os dos outros nem dão 403 ao responder).
+- **Roster via RPC `clinic_team()`** (security definer) — um admin que não é owner (Augusto) e o uso
+  do time no inbox/config dependem de enxergar todos os membros; o SELECT normal de `clinic_members`
+  só devolve a própria linha para não-owner.
+- **Mensagens sem número** (legadas / número removido) continuam **visíveis à clínica** (como antes) —
+  o escopo por número vale para conversas com número; assim não some histórico silenciosamente.
+- **`whatsapp_messages` vira SELECT-only para o front**; escrita só pelo service_role (endpoint/automação).
+
 ## Decisões (fechadas com Felipe, 13/10/2026)
 - **D1 · Dono por NÚMERO.** ✅ Confirmado.
 - **D2 · Só ADMIN monitora** (Augusto + Dra. Vitória). ✅ Gestão NÃO monitora — vê só as conversas
