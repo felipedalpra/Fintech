@@ -78,6 +78,7 @@ export function generateRecurringOccurrences(recurrences = [], fromDate, toDate)
 
 export function matchesRecurringExpense(record, recurring) {
   return (record.description || '') === (recurring.descricao || '')
+    && sameChartAccount(record, recurring)
     && (record.category || 'outros') === (recurring.categoria || 'outros')
     && Number(record.value || 0) === Number(recurring.valor || 0)
     && (record.dueDate || '') === (recurring.dueDate || '')
@@ -85,7 +86,14 @@ export function matchesRecurringExpense(record, recurring) {
 
 export function matchesRecurringRevenue(record, recurring) {
   return (record.description || '') === (recurring.descricao || '')
+    && sameChartAccount(record, recurring)
     && (record.category || 'outras_receitas') === (recurring.categoria || 'outras_receitas')
     && Number(record.value || 0) === Number(recurring.valor || 0)
     && (record.date || '') === (recurring.dueDate || '')
+}
+
+function sameChartAccount(record, recurring) {
+  const recordId = record.chartAccountId || record.chart_account_id || null
+  const recurringId = recurring.chartAccountId || recurring.chart_account_id || null
+  return !recordId && !recurringId ? true : recordId === recurringId
 }

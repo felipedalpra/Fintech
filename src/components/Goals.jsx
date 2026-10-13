@@ -74,8 +74,8 @@ export function Goals({ data, setData }) {
       const currentMetrics = buildMetrics(data, { startDate:currentRange.start, endDate:currentRange.end, balanceDate:currentRange.end })
       const prevMetrics = buildMetrics(data, { startDate:prevStart, endDate:prevEnd, balanceDate:prevEnd })
 
-      const currentTotalExpenses = currentMetrics.operationalExpenses + currentMetrics.taxExpenses + currentMetrics.surgeryCostTotal + currentMetrics.productPurchaseTotal
-      const prevTotalExpenses = prevMetrics.operationalExpenses + prevMetrics.taxExpenses + prevMetrics.surgeryCostTotal + prevMetrics.productPurchaseTotal
+      const currentTotalExpenses = currentMetrics.totalExpenses ?? (currentMetrics.operationalExpenses + currentMetrics.taxExpenses + currentMetrics.surgeryCostTotal + currentMetrics.productPurchaseTotal)
+      const prevTotalExpenses = prevMetrics.totalExpenses ?? (prevMetrics.operationalExpenses + prevMetrics.taxExpenses + prevMetrics.surgeryCostTotal + prevMetrics.productPurchaseTotal)
       const reduction = prevTotalExpenses - currentTotalExpenses
 
       return {

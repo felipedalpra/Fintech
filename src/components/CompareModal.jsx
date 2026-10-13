@@ -209,8 +209,8 @@ function TableHeader({ labelA, labelB }) {
 }
 
 function DreView({ mA, mB, formatMoney }) {
-  const totExpA = mA.surgeryCostTotal + mA.consultationCostTotal + mA.productPurchaseTotal + mA.operationalExpenses + mA.taxExpenses
-  const totExpB = mB.surgeryCostTotal + mB.consultationCostTotal + mB.productPurchaseTotal + mB.operationalExpenses + mB.taxExpenses
+  const totExpA = mA.totalExpenses ?? (mA.surgeryCostTotal + mA.consultationCostTotal + mA.productPurchaseTotal + mA.operationalExpenses + mA.taxExpenses)
+  const totExpB = mB.totalExpenses ?? (mB.surgeryCostTotal + mB.consultationCostTotal + mB.productPurchaseTotal + mB.operationalExpenses + mB.taxExpenses)
   return (
     <>
       <Row label="Receita de Cirurgias"     a={mA.surgeryRevenue}        b={mB.surgeryRevenue}        formatMoney={formatMoney} indent />
@@ -256,8 +256,8 @@ function RevenueView({ mA, mB, formatMoney }) {
 }
 
 function ExpensesView({ mA, mB, formatMoney }) {
-  const totA = mA.surgeryCostTotal + mA.consultationCostTotal + mA.productPurchaseTotal + mA.operationalExpenses + mA.taxExpenses
-  const totB = mB.surgeryCostTotal + mB.consultationCostTotal + mB.productPurchaseTotal + mB.operationalExpenses + mB.taxExpenses
+  const totA = mA.totalExpenses ?? (mA.surgeryCostTotal + mA.consultationCostTotal + mA.productPurchaseTotal + mA.operationalExpenses + mA.taxExpenses)
+  const totB = mB.totalExpenses ?? (mB.surgeryCostTotal + mB.consultationCostTotal + mB.productPurchaseTotal + mB.operationalExpenses + mB.taxExpenses)
   return (
     <>
       <Row label="Custos de Cirurgias"   a={mA.surgeryCostTotal}      b={mB.surgeryCostTotal}      formatMoney={formatMoney} isPositiveGood={false} isExpense indent />

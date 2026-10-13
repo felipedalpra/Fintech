@@ -190,8 +190,8 @@ export function Dashboard({ data, saveError }) {
   const revenueSparkValues = monthKeys.map(k => m.revenueByMonth[k] || 0)
   const cashSparkValues = monthKeys.map(k => (m.revenueByMonth[k] || 0) - (m.expenseByMonth[k] || 0))
 
-  const totalExpenses = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal + m.operationalExpenses + m.taxExpenses
-  const prevTotalExpenses = pm.surgeryCostTotal + pm.consultationCostTotal + pm.productPurchaseTotal + pm.operationalExpenses + pm.taxExpenses
+  const totalExpenses = m.totalExpenses ?? (m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal + m.operationalExpenses + m.taxExpenses)
+  const prevTotalExpenses = pm.totalExpenses ?? (pm.surgeryCostTotal + pm.consultationCostTotal + pm.productPurchaseTotal + pm.operationalExpenses + pm.taxExpenses)
   const netMargin = m.grossRevenue > 0 ? ((m.netProfit / m.grossRevenue) * 100).toFixed(1) + '%' : '—'
   const netProfitColor = m.netProfit >= 0 ? C.green : C.red
   const cashColor = allTimeM.cashBalance >= 0 ? C.green : C.red
@@ -272,7 +272,7 @@ export function Dashboard({ data, saveError }) {
       const prevEnd = `${prevYear}-${prevMonth}-${String(lastDay).padStart(2, '0')}`
       const curM = buildMetrics(data, { startDate:currentRange.start, endDate:currentRange.end, balanceDate:currentRange.end })
       const preM = buildMetrics(data, { startDate:prevStart, endDate:prevEnd, balanceDate:prevEnd })
-      const reduction = (preM.operationalExpenses + preM.taxExpenses + preM.surgeryCostTotal + preM.productPurchaseTotal) - (curM.operationalExpenses + curM.taxExpenses + curM.surgeryCostTotal + curM.productPurchaseTotal)
+      const reduction = (preM.totalExpenses ?? (preM.operationalExpenses + preM.taxExpenses + preM.surgeryCostTotal + preM.productPurchaseTotal)) - (curM.totalExpenses ?? (curM.operationalExpenses + curM.taxExpenses + curM.surgeryCostTotal + curM.productPurchaseTotal))
       return {
         ...goal,
         current:reduction,

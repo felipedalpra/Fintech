@@ -3,6 +3,7 @@ import { computeIdsToDelete } from './financeSync.js'
 import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
+import { isChartSchemaMissing } from './chartOfAccountsStore.js'
 
 const LEGACY_APP_KEY = 'startupfinance_v1'
 const LOCAL_USERS_KEY = 'startupfinance_users_v1'
@@ -70,6 +71,7 @@ async function fetchLegacyPayload(userId) {
 }
 
 async function fetchRelationalData(userId) {
+  const chartAccountsPromise = supabase.from('chart_accounts').select('*').eq('user_id', userId)
   const [
     proceduresResult,
     productsResult,
@@ -82,6 +84,7 @@ async function fetchRelationalData(userId) {
     assetsResult,
     liabilitiesResult,
     goalsResult,
+    chartAccountsResult,
   ] = await Promise.all([
     supabase.from('procedures').select('*').eq('user_id', userId),
     supabase.from('products').select('*').eq('user_id', userId),
@@ -94,6 +97,7 @@ async function fetchRelationalData(userId) {
     supabase.from('assets').select('*').eq('user_id', userId),
     supabase.from('liabilities').select('*').eq('user_id', userId),
     supabase.from('goals').select('*').eq('user_id', userId),
+    chartAccountsPromise,
   ])
 
   const results = [
@@ -112,6 +116,7 @@ async function fetchRelationalData(userId) {
 
   const failed = results.find(result => result.error)
   if (failed?.error) throw failed.error
+  if (chartAccountsResult.error && !isChartSchemaMissing(chartAccountsResult.error)) throw chartAccountsResult.error
 
   // SOFT-DELETE: oculta registros arquivados (archived_at preenchido). Filtro em JS (tolerante:
   // se a coluna ainda não existe no banco, archived_at vem undefined e nada é ocultado).
@@ -128,6 +133,7 @@ async function fetchRelationalData(userId) {
       color:item.color || '',
       desc:item.description || '',
       checklist:Array.isArray(item.checklist) ? item.checklist : [],
+      chartAccountId:item.chart_account_id || null,
     })),
     products:(productsResult.data || []).map(item => ({
       id:item.id,
@@ -224,6 +230,7 @@ async function fetchRelationalData(userId) {
       dueDate:item.due_date || item.date || '',
       originLabel:item.origin_label || '',
       status:item.status || 'recebido',
+      chartAccountId:item.chart_account_id || null,
     })),
     expenses:(expensesResult.data || []).map(item => ({
       id:item.id,
@@ -237,6 +244,7 @@ async function fetchRelationalData(userId) {
       costCenter:item.cost_center || '',
       competenceDate:item.competence_date || item.due_date || '',
       originLabel:item.origin_label || '',
+      chartAccountId:item.chart_account_id || null,
     })),
     assets:(assetsResult.data || []).map(item => ({
       id:item.id,
@@ -260,6 +268,7 @@ async function fetchRelationalData(userId) {
       period:item.period || 'mensal',
       dueDate:item.due_date || '',
     })),
+    chartAccounts:chartAccountsResult.error ? [] : (chartAccountsResult.data || []),
   })
 }
 
@@ -273,6 +282,7 @@ function mapProceduresRows(userId, data) {
     color:item.color || null,
     description:item.desc || null,
     checklist:item.checklist || [],
+    ...(data.chartAccounts?.length ? { chart_account_id:item.chartAccountId || null } : {}),
   }))
 }
 
@@ -392,6 +402,7 @@ function mapExpensesRows(userId, data) {
     supplier_id:item.supplierId || null,
     cost_center:item.costCenter || null,
     origin_label:item.originLabel || null,
+    ...(item.chartAccountId ? { chart_account_id:item.chartAccountId } : {}),
   }))
 }
 

@@ -15,5 +15,6 @@ export function mapExtraRevenuesRows(userId, data) {
     cost_center:item.costCenter || null,
     origin_label:item.originLabel || null,
     status:item.status || 'recebido',
+    ...(item.chartAccountId ? { chart_account_id:item.chartAccountId } : {}),
   }))
 }

@@ -5,6 +5,19 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (76)
+### Added
+- **Plano de contas editável por clínica**: nova tela **Financeiro → Plano de contas** com árvore pesquisável, grupos e categorias lançáveis, inclusão, edição, reordenação, movimentação por arrastar, ativação/desativação e remoção segura. Cada clínica recebe no primeiro acesso uma cópia independente do plano padrão para cirurgiões, abrangendo ativo, passivo, patrimônio líquido, receitas, deduções, custos diretos, despesas, resultado financeiro, tributos e classificação pendente (`src/components/ChartOfAccounts.jsx`, `src/lib/chartOfAccounts.js`, `src/lib/chartOfAccountsStore.js`).
+- **Persistência do vínculo contábil**: migração aditiva `supabase/chart_of_accounts_schema.sql` cria `chart_accounts` com hierarquia protegida, RLS por clínica e vínculos opcionais em receitas extras, despesas, recorrências e razão. Categorias em uso são desativadas em vez de apagadas; contas automáticas essenciais são protegidas.
+- **Cobertura de regressão do plano**: testes validam unicidade do modelo padrão, hierarquia sem ciclos, filtros de contas lançáveis, vínculo estável no razão e classificação da DRE (`tests/unit/chartOfAccounts.spec.js`).
+
+### Changed
+- Lançamentos manuais e recorrentes passam a selecionar categorias ativas do plano de contas, mantendo o nome da categoria como fotografia histórica e o ID como vínculo estável. Cada procedimento pode escolher sua categoria de receita (por exemplo, mama, facial ou corporal); consultas, produtos e custos recebem automaticamente suas contas de sistema no razão.
+- A DRE, seus drill-downs, Dashboard, metas, comparativos, assistente financeiro e exportações CSV/XLSX passam a respeitar natureza e seção contábil: deduções da receita, custos diretos, despesas operacionais, resultado financeiro e tributos sobre o lucro são apresentados separadamente. Sem a nova migração, o comportamento legado permanece compatível.
+
+### Fixed
+- Centro de custo e origem deixam de compartilhar o mesmo campo técnico no razão: `cost_center` preserva o centro de custo informado e `origin_label` guarda separadamente a origem livre do lançamento.
+
 ## [Unreleased] - 2026-10-12 (75)
 ### Changed
 - **Meta Ads preparado para credenciais futuras sem expor segredos globais**: a tela da clínica passa a salvar somente Ad Account ID, Page ID e o token write-only da Página; `META_VERIFY_TOKEN`, `META_APP_SECRET` e `META_GRAPH_VERSION` ficam exclusivamente no servidor e estão documentados sem valores reais em `.env.example`/`README.md`. O estado intermediário “Configuração salva” não é mais apresentado como conexão validada, e a callback usa o domínio TLS correto com `www`.

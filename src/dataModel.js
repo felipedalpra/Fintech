@@ -1,3 +1,5 @@
+import { normalizeChartAccount } from './lib/chartOfAccounts.js'
+
 export function createEmptyData() {
   return {
     procedures: [],
@@ -11,6 +13,7 @@ export function createEmptyData() {
     assets: [],
     liabilities: [],
     goals: [],
+    chartAccounts: [],
     indicatorInputs: {},
     indicatorInputsByPeriod: {},
   }
@@ -107,6 +110,7 @@ export function normalizeData(data) {
       dueDate:item.dueDate || item.date || '',
       originLabel:item.originLabel || '',
       status:item.status || 'recebido',
+      chartAccountId:item.chartAccountId || null,
     })) : [],
     expenses: Array.isArray(data?.expenses)
       ? data.expenses.map(expense => ({
@@ -120,6 +124,8 @@ export function normalizeData(data) {
           costCenter:expense.costCenter || '',
           competenceDate:expense.competenceDate || expense.dueDate || expense.date || '',
           originLabel:expense.originLabel || '',
+          supplierId:expense.supplierId || null,
+          chartAccountId:expense.chartAccountId || null,
         }))
       : [],
     assets: Array.isArray(data?.assets) ? data.assets.map(item => ({
@@ -134,6 +140,7 @@ export function normalizeData(data) {
       ...item,
       id:normalizeUuid(item.id, 'goal'),
     })) : [],
+    chartAccounts:Array.isArray(data?.chartAccounts) ? data.chartAccounts.map(normalizeChartAccount) : [],
     indicatorInputs: data?.indicatorInputs && typeof data.indicatorInputs === 'object'
       ? { ...data.indicatorInputs }
       : {},

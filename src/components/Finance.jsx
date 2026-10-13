@@ -15,6 +15,8 @@ import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
+import { findChartAccount, postingAccountOptions } from '../lib/chartOfAccounts.js'
+import { ensureDefaultChartAccounts, isChartSchemaMissing } from '../lib/chartOfAccountsStore.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -38,8 +40,8 @@ const DEFAULT_COST_CENTERS = [
   'Recursos Humanos',
   'Outros',
 ]
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', value:0, patientId:'', patient:'', date:today(), competenceDate:today(), dueDate:today(), status:'recebido', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
-const EXPENSE_EMPTY = { description:'', category:'outros', value:0, supplierId:'', supplier:'', dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', chartAccountId:'', value:0, patientId:'', patient:'', date:today(), competenceDate:today(), dueDate:today(), status:'recebido', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXPENSE_EMPTY = { description:'', category:'outros', chartAccountId:'', value:0, supplierId:'', supplier:'', dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 
 // Origem exibida: rótulo livre preenchido pelo usuário (ex: "Indicação") ou,
 // na falta dele, a origem automática do sistema (ex: "cirurgia", "despesa").
@@ -195,6 +197,21 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     [mergedData, range.start, range.end],
   )
   const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
+  const revenueAccountOptions = useMemo(() => postingAccountOptions(data?.chartAccounts || [], 'receivable'), [data?.chartAccounts])
+  const expenseAccountOptions = useMemo(() => postingAccountOptions(data?.chartAccounts || [], 'payable'), [data?.chartAccounts])
+
+  useEffect(() => {
+    if (!ownerId || (data?.chartAccounts || []).length > 0) return
+    let active = true
+    ensureDefaultChartAccounts(ownerId)
+      .then(accounts => {
+        if (active) setData(current => ({ ...current, chartAccounts:accounts }))
+      })
+      .catch(error => {
+        if (!isChartSchemaMissing(error)) toast(error.message || 'Não foi possível preparar o plano de contas.', 'warning')
+      })
+    return () => { active = false }
+  }, [ownerId, data?.chartAccounts?.length, setData])
 
   const prevRange = useMemo(() => {
     if (!range.start) return { start:'', end:'' }
@@ -267,6 +284,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         dataFim:item.data_fim || '',
         autoMarkAsPaid:Boolean(item.auto_mark_as_paid),
         ativo:item.ativo !== false,
+        chartAccountId:item.chart_account_id || null,
       }))
       setRecurrences(normalizedRows)
       if (ownerId) {
@@ -326,8 +344,13 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       asset:BALANCE_EMPTY,
       liability:BALANCE_EMPTY,
     }[type]
+    const defaultAccount = type === 'extra'
+      ? findChartAccount(data?.chartAccounts || [], { systemKey:'revenue_other', direction:'receivable' })
+      : type === 'expense'
+        ? findChartAccount(data?.chartAccounts || [], { systemKey:'expense_other', direction:'payable' })
+        : null
     setModalType(type)
-    setForm(defaults)
+    setForm(defaultAccount ? { ...defaults, chartAccountId:defaultAccount.id, category:defaultAccount.name } : defaults)
     setEditing(null)
     setFormError('')
     setShowModal(true)
@@ -360,6 +383,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       data_fim:form.recurrenceEndDate || null,
       auto_mark_as_paid:Boolean(form.recurrenceAutoMarkAsPaid),
       ativo:Boolean(form.recurrenceActive),
+      ...(form.chartAccountId ? { chart_account_id:form.chartAccountId } : {}),
     }
 
     const { data:created, error } = await supabase.from('recorrencias').insert(payload).select('*').single()
@@ -379,6 +403,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
         dataFim:created.data_fim || form.recurrenceEndDate || '',
         autoMarkAsPaid:Boolean(created.auto_mark_as_paid),
         ativo:created.ativo !== false,
+        chartAccountId:created.chart_account_id || form.chartAccountId || null,
       }])
     }
   }
@@ -519,7 +544,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       if (!exists) {
         setData(current => ({
           ...current,
-          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', value:item.value || 0, date:item.dueDate, receivedDate:item.dueDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido' }],
+          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', chartAccountId:item.chartAccountId || null, value:item.value || 0, date:item.dueDate, receivedDate:item.dueDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido' }],
         }))
       }
       toast('Recorrência marcada como recebida.')
@@ -626,7 +651,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       if (!exists) {
         setData(current => ({
           ...current,
-          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', value:item.value || 0, dueDate:item.dueDate, paymentDate:paidDate, status:'pago' }],
+          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', chartAccountId:item.chartAccountId || null, value:item.value || 0, dueDate:item.dueDate, paymentDate:paidDate, status:'pago' }],
         }))
       }
       toast('Recorrência marcada como paga.')
@@ -739,7 +764,9 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
 
   // DRE rows definition
   const dreRows = [
-    { label: 'Receita bruta total', getValue: mx => mx.surgeryRevenue + mx.consultationRevenue + mx.productSalesRevenue + mx.extraRevenueTotal, detailsKey:'grossRevenue', color: C.green, bold: false },
+    { label: 'Receita bruta total', getValue: mx => mx.grossRevenue, detailsKey:'grossRevenue', color: C.green, bold: false },
+    { label: '(-) Deduções da receita', getValue: mx => mx.revenueDeductions || 0, detailsKey:'revenueDeductions', color: C.red, bold: false },
+    { label: '= Receita líquida', getValue: mx => mx.netRevenue ?? mx.grossRevenue, detailsKey:'netRevenue', color: C.accent, bold: true },
     { label: '(-) Custos de cirurgias', getValue: mx => mx.surgeryCostTotal, detailsKey:'surgeryCostTotal', color: C.red, bold: false },
     { label: 'Receita líquida de cirurgias', getValue: mx => mx.surgeryRevenue - mx.surgeryCostTotal, detailsKey:'surgeryNetRevenue', color: null, bold: false },
     { label: 'Receita de consultas', getValue: mx => mx.consultationRevenue, detailsKey:'consultationRevenue', color: C.green, bold: false },
@@ -747,10 +774,16 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     { label: 'Receita líquida de consultas', getValue: mx => mx.consultationRevenue - mx.consultationCostTotal, detailsKey:'consultationNetRevenue', color: null, bold: false },
     { label: 'Receita de produtos', getValue: mx => mx.productSalesRevenue, detailsKey:'productSalesRevenue', color: C.green, bold: false },
     { label: '(-) CMV de produtos', getValue: mx => mx.productCostOfSales, detailsKey:'productCostOfSales', color: C.red, bold: false },
+    { label: '(-) Outros custos diretos', getValue: mx => mx.additionalDirectCosts || 0, detailsKey:'additionalDirectCosts', color: C.red, bold: false },
     { label: 'Outras receitas', getValue: mx => mx.extraRevenueTotal, detailsKey:'extraRevenueTotal', color: C.green, bold: false },
     { label: '= Receita operacional total', getValue: mx => mx.grossRevenue, detailsKey:'grossRevenue', color: C.accent, bold: true },
     { label: '(-) Despesas operacionais', getValue: mx => mx.operationalExpenses, detailsKey:'operationalExpenses', color: C.red, bold: false },
     { label: '= Lucro operacional', getValue: mx => mx.operatingProfit, detailsKey:'operatingProfit', color: mx => mx.operatingProfit >= 0 ? C.accent : C.red, bold: true },
+    { label: '(+) Receitas financeiras', getValue: mx => mx.financialRevenue || 0, detailsKey:'financialRevenue', color: C.green, bold: false },
+    { label: '(-) Despesas financeiras', getValue: mx => mx.financialExpenses || 0, detailsKey:'financialExpenses', color: C.red, bold: false },
+    { label: '= Lucro antes dos tributos', getValue: mx => mx.profitBeforeTax ?? mx.operatingProfit, detailsKey:'profitBeforeTax', color: C.accent, bold: true },
+    { label: '(-) Tributos sobre o lucro', getValue: mx => mx.taxExpenses, detailsKey:'taxExpenses', color: C.red, bold: false },
+    { label: '= Lucro líquido', getValue: mx => mx.netProfit, detailsKey:'netProfit', color: mx => mx.netProfit >= 0 ? C.green : C.red, bold: true },
     { label: 'Margem operacional %', getValue: mx => mx.grossRevenue > 0 ? (mx.operatingProfit / mx.grossRevenue * 100) : 0, isPercent: true, color: mx => mx.operatingProfit >= 0 ? C.green : C.red, bold: false },
   ]
 
@@ -894,7 +927,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
       const mx = buildMetrics(mergedData, { startDate:start, endDate:end, balanceDate:end })
       const label = d.toLocaleDateString('pt-BR', { month:'long', year:'numeric' })
       const expectedRevenue = mx.grossRevenue
-      const expectedExpenses = mx.operationalExpenses + mx.taxExpenses + mx.surgeryCostTotal + mx.productPurchaseTotal
+      const expectedExpenses = mx.totalExpenses ?? (mx.operationalExpenses + mx.taxExpenses + mx.surgeryCostTotal + mx.productPurchaseTotal)
       return { label, expectedRevenue, expectedExpenses, net:expectedRevenue - expectedExpenses }
     })
   }, [mergedData])
@@ -1418,7 +1451,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               <FInput label="Descrição" required value={form.description} onChange={value => { setFormError(''); setForm(current => ({ ...current, description:value })) }} placeholder="Ex: contrato mensal de consultoria" />
               {formError && modalType === 'extra' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
             </div>
-            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />
+            {revenueAccountOptions.length > 0
+              ? <FInput label="Categoria do plano de contas" required value={form.chartAccountId || ''} onChange={value => {
+                  const selectedAccount = revenueAccountOptions.find(option => option.value === value)?.account
+                  setForm(current => ({ ...current, chartAccountId:value, category:selectedAccount?.name || current.category }))
+                }} options={[{ v:'', l:'Selecione uma categoria' }, ...revenueAccountOptions.map(option => ({ v:option.value, l:option.label }))]} />
+              : <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />}
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
             <PatientSelector label="Cliente (opcional)" value={form.patientId} onChange={(id, name) => setForm(current => ({ ...current, patientId:id, patient:name }))} />
@@ -1473,7 +1511,12 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
               <FInput label="Descrição" required value={form.description} onChange={value => { setFormError(''); setForm(current => ({ ...current, description:value })) }} placeholder="Ex: aluguel do consultório" />
               {formError && modalType === 'expense' && <div style={{ color:C.red, fontSize:12, marginTop:4 }}>{formError}</div>}
             </div>
-            <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />
+            {expenseAccountOptions.length > 0
+              ? <FInput label="Categoria do plano de contas" required value={form.chartAccountId || ''} onChange={value => {
+                  const selectedAccount = expenseAccountOptions.find(option => option.value === value)?.account
+                  setForm(current => ({ ...current, chartAccountId:value, category:selectedAccount?.name || current.category }))
+                }} options={[{ v:'', l:'Selecione uma categoria' }, ...expenseAccountOptions.map(option => ({ v:option.value, l:option.label }))]} />
+              : <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />}
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
             <SupplierSelector value={form.supplierId} onChange={(id, name) => setForm(current => ({ ...current, supplierId:id, supplier:name }))} />
@@ -1648,7 +1691,7 @@ function IndicadoresTab({ m, data, money, setData, indicatorPeriodKey }) {
 
   const assetsExtra = (data.assets || []).reduce((acc, x) => acc + (x.value || 0), 0)
   const liabExtra = (data.liabilities || []).reduce((acc, x) => acc + (x.value || 0), 0)
-  const directCosts = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal
+  const directCosts = m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal + (m.additionalDirectCosts || 0)
   const grossProfit = m.grossRevenue - directCosts
   const depreciation = inputNumber('depreciation')
   const amortization = inputNumber('amortization')
@@ -1663,7 +1706,7 @@ function IndicadoresTab({ m, data, money, setData, indicatorPeriodKey }) {
   const availableFunds = inputNumber('availableFunds') || (m.cashBalance + assetsExtra)
   const currentCash = inputNumber('currentCash') || availableFunds
   const burnRateManual = inputNumber('burnRateManual')
-  const totalCosts = directCosts + m.operationalExpenses + m.taxExpenses
+  const totalCosts = m.totalExpenses ?? (directCosts + m.operationalExpenses + m.taxExpenses)
   const totalAtivo = m.assetsTotal
   const ativoCirculante = m.assetsTotal - assetsExtra
   const passivoCirculante = m.payablesOpenTotal

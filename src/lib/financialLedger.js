@@ -10,6 +10,7 @@
 import { paymentScheduleFlow } from './paymentScheduleFlow.js'
 import { clinicalCostRows } from './clinicalCosts.js'
 import { generateRecurringOccurrences, matchesRecurringExpense, matchesRecurringRevenue } from './recurrenceSchedule.js'
+import { chartAccountFields, findChartAccount } from './chartOfAccounts.js'
 
 function num(v) { return Number(v) || 0 }
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100 }
@@ -35,7 +36,7 @@ function installmentsFromFlow(flow, canceled) {
 }
 
 // Título com cronograma (cirurgia/consulta) — direção 'receivable'.
-function scheduledEntry({ sourceType, item, total, competenceDate, issueDate, partyName }) {
+function scheduledEntry({ sourceType, item, total, competenceDate, issueDate, partyName, account }) {
   const canceled = item.paymentStatus === 'cancelado'
   const flow = paymentScheduleFlow(total, item)
   const installments = installmentsFromFlow(flow, canceled)
@@ -45,6 +46,7 @@ function scheduledEntry({ sourceType, item, total, competenceDate, issueDate, pa
     entry: {
       source_type: sourceType, source_id: item.id, source_component: 'revenue', direction: 'receivable',
       party_type: 'patient', party_id: item.patientId || null, party_name_snapshot: partyName || '',
+      ...chartAccountFields(account, sourceType === 'consultation' ? 'Consulta' : sourceType === 'product_sale' ? 'Venda de produto' : 'Cirurgia'),
       competence_date: competenceDate || null, issue_date: issueDate || null,
       total_amount: round2(total), status: statusFromAmounts(paid, open, canceled),
     },
@@ -66,7 +68,7 @@ function frozenOrDerivedTax(item, base) {
 }
 
 function singleEntry({ sourceType, sourceComponent, direction, item, total, competenceDate, issueDate, dueDate,
-  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter, paymentMethod }) {
+  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter, originLabel, paymentMethod, account }) {
   const paid = canceled ? 0 : (isPaid ? round2(total) : 0)
   const open = canceled ? 0 : (isPaid ? 0 : round2(total))
   const installment = {
@@ -81,7 +83,7 @@ function singleEntry({ sourceType, sourceComponent, direction, item, total, comp
     entry: {
       source_type: sourceType, source_id: item.id, source_component: sourceComponent || 'revenue', direction,
       party_type: partyType || 'other', party_id: partyId || item.patientId || null, party_name_snapshot: partyName || '',
-      category: category || null, cost_center: costCenter || null,
+      ...chartAccountFields(account, category), cost_center: costCenter || null, origin_label:originLabel || null,
       competence_date: competenceDate || null, issue_date: issueDate || null,
       total_amount: round2(total), status: statusFromAmounts(paid, open, canceled),
     },
@@ -92,13 +94,19 @@ function singleEntry({ sourceType, sourceComponent, direction, item, total, comp
 // Custos de cirurgia/consulta como títulos A PAGAR independentes. Dados novos usam metadados reais
 // por componente; custos legados sem metadados preservam temporariamente o comportamento histórico
 // (pagamento na data clínica) e permanecem bloqueados pela auditoria até confirmação.
-function pushCostEntries(parts, item, sourceType) {
+function pushCostEntries(parts, item, sourceType, accounts) {
   if (item.paymentStatus === 'cancelado') return
   const date = item.date
   for (const component of clinicalCostRows(item, sourceType)) {
     const settlement = component.settlement || {}
     const legacy = !settlement.status
     const status = legacy ? 'pago' : settlement.status
+    const systemKey = component.key === 'invoice_tax'
+      ? 'deduction_invoice_tax'
+      : sourceType === 'consultation'
+        ? 'cost_consultation'
+        : ({ hospital_cost:'cost_surgery_hospital', anesthesia_cost:'cost_surgery_anesthesia', material_cost:'cost_surgery_material', other_cost:'cost_surgery_other' }[component.key] || 'cost_surgery_other')
+    const account = findChartAccount(accounts, { systemKey, direction:'payable' })
     parts.push(singleEntry({
       sourceType, sourceComponent: component.key, direction: 'payable', item, total: component.amount,
       competenceDate:settlement.competenceDate || item.competenceDate || date,
@@ -110,6 +118,7 @@ function pushCostEntries(parts, item, sourceType) {
       partyId:settlement.supplierId || null,
       partyName:settlement.supplier || `${component.label} - ${item.patient || ''}`,
       category: sourceType === 'surgery' ? 'custo_cirurgico' : 'custo_consulta',
+      account,
       paymentMethod:settlement.paymentMethod || null,
     }))
   }
@@ -124,6 +133,8 @@ export function buildLedger(data = {}, options = {}) {
   const extraRevenues = data.extraRevenues || []
   const expenses = data.expenses || []
   const recurrences = data.recurrences || []
+  const accounts = data.chartAccounts || []
+  const proceduresById = new Map((data.procedures || []).map(item => [item.id, item]))
 
   const parts = []
 
@@ -131,16 +142,18 @@ export function buildLedger(data = {}, options = {}) {
     parts.push(scheduledEntry({
       sourceType: 'surgery', item, total: item.totalValue || 0,
       competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
+      account:findChartAccount(accounts, { id:proceduresById.get(item.procedureId)?.chartAccountId, systemKey:'revenue_surgery_default', direction:'receivable' }),
     }))
-    pushCostEntries(parts, item, 'surgery')
+    pushCostEntries(parts, item, 'surgery', accounts)
   })
 
   consultations.forEach(item => {
     parts.push(scheduledEntry({
       sourceType: 'consultation', item, total: item.value || 0,
       competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,
+      account:findChartAccount(accounts, { systemKey:'revenue_consultation', direction:'receivable' }),
     }))
-    pushCostEntries(parts, item, 'consultation')
+    pushCostEntries(parts, item, 'consultation', accounts)
   })
 
   // Venda de produto: usa o mesmo cronograma canônico das demais receitas. "Recebido" quita as
@@ -158,6 +171,7 @@ export function buildLedger(data = {}, options = {}) {
     parts.push(scheduledEntry({
       sourceType:'product_sale', item:normalized, total:item.totalValue || 0,
       competenceDate:item.competenceDate || item.saleDate, issueDate:item.saleDate, partyName:item.patientName,
+      account:findChartAccount(accounts, { systemKey:'revenue_product', direction:'receivable' }),
     }))
   })
 
@@ -169,6 +183,7 @@ export function buildLedger(data = {}, options = {}) {
     dueDate: item.dueDate || item.purchaseDate, paidDate: item.paymentDate || item.purchaseDate,
     isPaid: item.status === 'pago', canceled: item.status === 'cancelado',
     partyType: 'supplier', partyId: item.supplierId || null, partyName: item.supplier || '', category: 'compra_produto',
+    account:findChartAccount(accounts, { systemKey:'asset_inventory_products', direction:'payable' }),
     paymentMethod:item.paymentMethod || null,
   })))
 
@@ -182,7 +197,8 @@ export function buildLedger(data = {}, options = {}) {
       isPaid: received, canceled: item.status === 'cancelado',
       partyType: item.patientId ? 'patient' : 'other', partyId: item.patientId || null,
       partyName: item.patient || item.description || '', category: item.category || 'outras_receitas',
-      costCenter: item.originLabel || null,
+      costCenter:item.costCenter || null, originLabel:item.originLabel || null,
+      account:findChartAccount(accounts, { id:item.chartAccountId, legacyCategory:item.category, direction:'receivable' }),
       paymentMethod:item.paymentMethod || null,
     }))
   })
@@ -195,7 +211,8 @@ export function buildLedger(data = {}, options = {}) {
     isPaid: item.status === 'pago', canceled: item.status === 'cancelado',
     partyType: 'supplier', partyId: item.supplierId || null,
     partyName: item.supplier || item.description || '', category: item.category || null,
-    costCenter: item.originLabel || null,
+    costCenter:item.costCenter || null, originLabel:item.originLabel || null,
+    account:findChartAccount(accounts, { id:item.chartAccountId, legacyCategory:item.category, direction:'payable' }),
     paymentMethod:item.paymentMethod || null,
   })))
 
@@ -216,6 +233,7 @@ export function buildLedger(data = {}, options = {}) {
         isPaid:Boolean(item.autoMarkAsPaid), canceled:false,
         partyType:'other', partyName:item.descricao || (isRevenue ? 'Receita recorrente' : 'Despesa recorrente'),
         category:item.categoria || (isRevenue ? 'outras_receitas' : 'outros'),
+        account:findChartAccount(accounts, { id:item.chartAccountId || item.chart_account_id, legacyCategory:item.categoria, direction:isRevenue ? 'receivable' : 'payable' }),
       }))
     })
   }
