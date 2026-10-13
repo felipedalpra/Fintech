@@ -96,8 +96,10 @@ export function ChartOfAccounts({ data, setData }) {
     return next
   }
 
-  function openCreate(nodeType, parent = null) {
-    const inherited = parent || (selected?.nodeType === 'group' ? selected : null)
+  function openCreate(nodeType, parent) {
+    const inherited = parent === undefined
+      ? (selected?.nodeType === 'group' ? selected : null)
+      : parent
     setForm({
       ...EMPTY_FORM,
       nodeType,
@@ -290,7 +292,7 @@ export function ChartOfAccounts({ data, setData }) {
             <FInput value={query} onChange={setQuery} placeholder="Buscar código, grupo ou categoria…" />
           </div>
           {canEdit && <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            <Btn variant="ghost" onClick={() => openCreate('group')}>+ Novo grupo</Btn>
+            <Btn variant="ghost" onClick={() => openCreate('group', null)}>+ Novo grupo</Btn>
             <Btn onClick={() => openCreate('account')}>+ Nova categoria</Btn>
           </div>}
         </div>

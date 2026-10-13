@@ -8,6 +8,14 @@ const labelize = value => String(value || 'Não informado')
   .replace(/_/g, ' ')
   .replace(/\b\w/g, char => char.toUpperCase())
 
+const STATUS_LABELS = {
+  paid:'Pago',
+  pending:'Pendente',
+  canceled:'Cancelado',
+}
+
+const statusLabel = value => STATUS_LABELS[value] || labelize(value)
+
 export function useFinancialDrilldown() {
   const [detail, setDetail] = useState(null)
   const openDrilldown = (title, rows, total, subtitle = '') => setDetail({ title, rows:rows || [], total:Number(total || 0), subtitle })
@@ -76,7 +84,7 @@ export function FinancialDrilldownModal({ detail, onClose }) {
                 <td style={{ padding:'11px 12px', color:C.text, fontSize:12, fontWeight:600 }}>{item.description || 'Lançamento financeiro'}</td>
                 <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12 }}>{item.party || '—'}</td>
                 <td style={{ padding:'11px 12px', color:C.textSub, fontSize:12 }}>{labelize(item.category)}</td>
-                <td style={{ padding:'11px 12px' }}><Badge color={['paid', 'pago', 'recebido', 'liquidado'].includes(item.status) ? C.green : ['canceled', 'cancelado'].includes(item.status) ? C.red : C.yellow} small>{labelize(item.status)}</Badge></td>
+                <td style={{ padding:'11px 12px' }}><Badge color={['paid', 'pago', 'recebido', 'liquidado'].includes(item.status) ? C.green : ['canceled', 'cancelado'].includes(item.status) ? C.red : C.yellow} small>{statusLabel(item.status)}</Badge></td>
                 <td style={{ padding:'11px 12px', textAlign:'right', color:Number(item.value || 0) >= 0 ? C.green : C.red, fontSize:12, fontWeight:800, whiteSpace:'nowrap' }}>{money(item.value || 0)}</td>
               </tr>
             ))}

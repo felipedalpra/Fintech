@@ -2,6 +2,8 @@ import { supabase } from './supabase.js'
 import { flattenDefaultChart, normalizeChartAccount } from './chartOfAccounts.js'
 import { uid } from '../utils.js'
 
+const initializationByOwner = new Map()
+
 export function isChartSchemaMissing(error) {
   const code = String(error?.code || '')
   const message = String(error?.message || '').toLowerCase()
@@ -20,18 +22,27 @@ export async function fetchChartAccounts(ownerId) {
   return (data || []).map(normalizeChartAccount)
 }
 
-export async function ensureDefaultChartAccounts(ownerId) {
-  const current = await fetchChartAccounts(ownerId)
-  if (current.length) return current
-  const rows = flattenDefaultChart(ownerId, uid)
-  const { error } = await supabase.from('chart_accounts').insert(rows)
-  if (error) {
-    // Duas sessões podem inicializar simultaneamente. Se outra ganhou a corrida, usa o resultado dela.
-    const reloaded = await fetchChartAccounts(ownerId).catch(() => [])
-    if (reloaded.length) return reloaded
-    throw error
-  }
-  return fetchChartAccounts(ownerId)
+export function ensureDefaultChartAccounts(ownerId) {
+  if (initializationByOwner.has(ownerId)) return initializationByOwner.get(ownerId)
+
+  const initialization = (async () => {
+    const current = await fetchChartAccounts(ownerId)
+    if (current.length) return current
+    const rows = flattenDefaultChart(ownerId, uid)
+    const { error } = await supabase.from('chart_accounts').insert(rows)
+    if (error) {
+      // Outra aba ainda pode inicializar ao mesmo tempo. Se ela ganhou a corrida, usa o resultado dela.
+      const reloaded = await fetchChartAccounts(ownerId).catch(() => [])
+      if (reloaded.length) return reloaded
+      throw error
+    }
+    return fetchChartAccounts(ownerId)
+  })()
+
+  initializationByOwner.set(ownerId, initialization)
+  return initialization.finally(() => {
+    if (initializationByOwner.get(ownerId) === initialization) initializationByOwner.delete(ownerId)
+  })
 }
 
 function toRow(ownerId, item) {
