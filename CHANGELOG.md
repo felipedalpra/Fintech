@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (82)
+### Added
+- **WhatsApp — monitoramento + escopo por usuário**: cada número de WhatsApp agora tem um **responsável** (`whatsapp_numbers.assigned_user_id`), definido pelo admin em Configurações → WhatsApp. Equipe e gestão passam a ver **apenas as conversas dos números que são delas**; **admin (owner ou role='admin') monitora todas**, com um filtro **"Resp."** no inbox (por pessoa ou "sem responsável") e um **chip de dono** em cada conversa. Enforcement no dado: migração `supabase/whatsapp_ownership_schema.sql` cria `is_clinic_admin()` (security definer) e troca a RLS de `whatsapp_messages` por uma escopada (admin vê tudo; demais só os números atribuídos) — primeira regra por perfil no dado do app, justificada por ser conversa de paciente. O envio (`api/whatsapp.js?action=message`) valida o mesmo (equipe só envia pelos números dela). Automações seguem no service_role (inalteradas). Spec `docs/superpowers/plans/2026-10-13-whatsapp-monitoramento.md`; e2e `tests/e2e/whatsapp-monitoring.spec.js`.
+
 ## [Unreleased] - 2026-10-13 (81)
 ### Added
 - **Plano de contas editável por clínica**: nova tela **Financeiro → Plano de contas** com árvore pesquisável, grupos e categorias lançáveis, inclusão, edição, reordenação, movimentação por arrastar, ativação/desativação e remoção segura. Cada clínica recebe no primeiro acesso uma cópia independente do plano padrão para cirurgiões, abrangendo ativo, passivo, patrimônio líquido, receitas, deduções, custos diretos, despesas, resultado financeiro, tributos e classificação pendente (`src/components/ChartOfAccounts.jsx`, `src/lib/chartOfAccounts.js`, `src/lib/chartOfAccountsStore.js`).

@@ -19,13 +19,16 @@ function fmtTime(ts) {
 }
 
 export function WhatsAppInbox() {
-  const { ownerId } = useUserRole()
+  const { ownerId, role, isOwner } = useUserRole()
+  const isAdmin = isOwner || role === 'admin' // só admin monitora (vê o filtro por responsável)
   const [messages, setMessages] = useState([])
   const [numbers, setNumbers] = useState([])
+  const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedPhone, setSelectedPhone] = useState(null)
   const [filterNumber, setFilterNumber] = useState('all')
+  const [filterResponsible, setFilterResponsible] = useState('all')
   const [replyText, setReplyText] = useState('')
   const [replyNumberId, setReplyNumberId] = useState('')
   const [sending, setSending] = useState(false)
@@ -36,16 +39,18 @@ export function WhatsAppInbox() {
   async function load() {
     setLoading(true)
     setError(null)
-    const [msgRes, numRes] = await Promise.all([
+    const [msgRes, numRes, memRes] = await Promise.all([
       supabase.from('whatsapp_messages')
         .select('id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, patients(full_name)')
         .order('created_at', { ascending: false })
         .limit(500),
-      supabase.from('whatsapp_numbers').select('id, label, phone').eq('active', true).order('created_at', { ascending: true }),
+      supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id').eq('active', true).order('created_at', { ascending: true }),
+      supabase.from('clinic_members').select('user_id, member_email'),
     ])
     if (msgRes.error) { setError(msgRes.error.message); setLoading(false); return }
     setMessages(msgRes.data ?? [])
     setNumbers(numRes.data ?? [])
+    setMembers((memRes.data ?? []).filter(m => m.user_id))
     setLoading(false)
   }
   useEffect(() => { if (ownerId) load() }, [ownerId])
@@ -55,6 +60,22 @@ export function WhatsAppInbox() {
     for (const n of numbers) m[n.id] = n.label
     return m
   }, [numbers])
+  // número → responsável (user_id) e user_id → nome curto (prefixo do e-mail), para o chip de dono.
+  const numberOwner = useMemo(() => {
+    const m = {}
+    for (const n of numbers) m[n.id] = n.assigned_user_id || null
+    return m
+  }, [numbers])
+  const memberLabel = useMemo(() => {
+    const m = {}
+    for (const mem of members) m[mem.user_id] = (mem.member_email || '').split('@')[0] || mem.member_email
+    return m
+  }, [members])
+  // Nome do responsável de uma conversa (pelo número); null = não atribuída.
+  const ownerName = (numberId) => {
+    const uid = numberId ? numberOwner[numberId] : null
+    return uid ? (memberLabel[uid] || 'Responsável') : null
+  }
 
   // Agrupa mensagens (desc) em conversas por telefone; a 1ª de cada é a mais recente.
   const conversations = useMemo(() => {
@@ -67,8 +88,15 @@ export function WhatsAppInbox() {
     }
     let list = Array.from(byPhone.values())
     if (filterNumber !== 'all') list = list.filter(c => c.items.some(m => m.whatsapp_number_id === filterNumber))
+    // Filtro por responsável (só admin): 'unassigned' = número sem dono.
+    if (filterResponsible !== 'all') {
+      list = list.filter(c => {
+        const uid = c.numberId ? numberOwner[c.numberId] : null
+        return filterResponsible === 'unassigned' ? !uid : uid === filterResponsible
+      })
+    }
     return list
-  }, [messages, filterNumber])
+  }, [messages, filterNumber, filterResponsible, numberOwner])
 
   const current = conversations.find(c => c.phone === selectedPhone) || null
   const thread = useMemo(() => (current ? [...current.items].reverse() : []), [current])
@@ -143,7 +171,7 @@ export function WhatsAppInbox() {
   const s = {
     wrap: { display: 'flex', gap: 0, height: 560, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden', background: C.bg },
     listCol: { width: 300, flexShrink: 0, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column' },
-    listHead: { padding: 10, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 },
+    listHead: { padding: 10, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
     filter: { fontSize: 12, padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, fontFamily: 'inherit' },
     list: { flex: 1, overflowY: 'auto' },
     conv: active => ({ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: active ? C.accent + '14' : 'transparent' }),
@@ -153,6 +181,7 @@ export function WhatsAppInbox() {
     convPrev: { fontSize: 12, color: C.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 },
     convMeta: { display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' },
     numTag: { fontSize: 9, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: '0 5px' },
+    ownerTag: { fontSize: 9, fontWeight: 700, color: C.accentLight || '#60a5fa', background: (C.accent || '#3b82f6') + '1f', border: `1px solid ${(C.accent || '#3b82f6')}44`, borderRadius: 5, padding: '0 5px' },
     unassigned: { fontSize: 9, color: '#f59e0b', border: '1px solid #f59e0b55', borderRadius: 5, padding: '0 5px' },
     threadCol: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
     threadHead: { padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700, color: C.text },
@@ -175,6 +204,16 @@ export function WhatsAppInbox() {
             <option value="all">Todos</option>
             {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
           </select>
+          {isAdmin && (
+            <>
+              <span style={{ fontSize: 12, color: C.textSub }}>Resp.:</span>
+              <select style={s.filter} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)} title="Monitorar por responsável">
+                <option value="all">Todos</option>
+                {members.map(m => <option key={m.user_id} value={m.user_id}>{memberLabel[m.user_id]}</option>)}
+                <option value="unassigned">Sem responsável</option>
+              </select>
+            </>
+          )}
         </div>
         <div style={s.list}>
           {conversations.length === 0
@@ -188,6 +227,8 @@ export function WhatsAppInbox() {
                   <div style={s.convPrev}>{c.last.direction === 'outbound' ? '→ ' : ''}{c.last.body}</div>
                   <div style={s.convMeta}>
                     {c.numberId && numberLabel[c.numberId] && <span style={s.numTag}>{numberLabel[c.numberId]}</span>}
+                    {ownerName(c.numberId) && <span style={s.ownerTag}>{ownerName(c.numberId)}</span>}
+                    {isAdmin && c.numberId && !numberOwner[c.numberId] && <span style={s.unassigned}>sem responsável</span>}
                     {!c.patientId && <span style={s.unassigned}>⚠ não atribuída</span>}
                   </div>
                 </div>
@@ -201,6 +242,7 @@ export function WhatsAppInbox() {
           : <>
               <div style={s.threadHead}>
                 {current.name || current.phone}
+                {ownerName(current.numberId) && <span style={{ ...s.ownerTag, marginLeft: 8 }}>{ownerName(current.numberId)}</span>}
                 {!current.patientId && <span style={{ ...s.unassigned, marginLeft: 8 }}>não atribuída</span>}
               </div>
               {suggestOpp && (

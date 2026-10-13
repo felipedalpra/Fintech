@@ -224,10 +224,19 @@ async function handleSend(req, res) {
   // Credenciais do número escolhido (deve pertencer à clínica).
   const { data: num } = await supabase
     .from('whatsapp_numbers')
-    .select('id, user_id, instance_url, api_token')
+    .select('id, user_id, assigned_user_id, instance_url, api_token')
     .eq('id', whatsappNumberId)
     .maybeSingle()
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
+
+  // Escopo por usuário: só o admin (owner ou role='admin') envia por qualquer número; os demais
+  // só pelos números atribuídos a eles. Espelha a RLS de whatsapp_messages.
+  const { data: mem } = await supabase.from('clinic_members').select('role').eq('user_id', user.id).maybeSingle()
+  const isAdmin = user.id === ownerId || mem?.role === 'admin'
+  if (!isAdmin && num.assigned_user_id !== user.id) {
+    return res.status(403).json({ error: 'Este número não está atribuído a você.' })
+  }
+
   if (!num.instance_url || !num.api_token) return res.status(502).json({ error: 'Número sem credenciais Z-API configuradas' })
 
   let providerId = null
