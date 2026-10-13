@@ -44,7 +44,9 @@ function computeDaysRemaining(dueDate) {
   return Math.floor((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-export function Goals({ data, setData }) {
+export function Goals({ data, setData, saveDataNow }) {
+  // Blindagem (Fase 3): grava imediato e confirmado; erro vai pro banner; fallback setData.
+  const persist = updater => { const r = (saveDataNow || setData)(updater); if (r && r.catch) r.catch(() => {}) }
   injectGoalStyle()
   const { financialPrivacyMode } = useFinancialPrivacy()
   const empty = { name:'', metric:'faturamento', target:0, period:'mensal', dueDate:today(), isLower:false }
@@ -105,7 +107,7 @@ export function Goals({ data, setData }) {
   const openEdit = goal => { setForm({ ...goal }); setEditing(goal.id); setShowModal(true) }
   const save = () => {
     if (!form.name) return
-    setData(current => ({
+    persist(current => ({
       ...current,
       goals: editing ? current.goals.map(goal => goal.id === editing ? { ...form, id:editing } : goal) : [...current.goals, { ...form, id:uid() }],
     }))
@@ -207,7 +209,7 @@ export function Goals({ data, setData }) {
         </div>
       </Modal>
 
-      <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => setData(current => ({ ...current, goals:current.goals.filter(goal => goal.id !== confirmId) }))} />
+      <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => persist(current => ({ ...current, goals:current.goals.filter(goal => goal.id !== confirmId) }))} />
     </div>
   )
 }

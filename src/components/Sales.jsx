@@ -90,7 +90,10 @@ function readDraft() {
   } catch { return null }
 }
 
-export function Sales({ data, setData }) {
+export function Sales({ data, setData, saveDataNow }) {
+  // Blindagem (Fase 3): grava IMEDIATO e confirmado no servidor (não depende do autosave).
+  // Erro aparece no banner global; cai para setData se saveDataNow não vier.
+  const persist = updater => { const r = (saveDataNow || setData)(updater); if (r && r.catch) r.catch(() => {}) }
   const { user } = useAuth()
   const { ownerId } = useUserRole()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
@@ -269,7 +272,7 @@ export function Sales({ data, setData }) {
       installmentValue,
     }, 'surgery')
 
-    setData(current => ({
+    persist(current => ({
       ...current,
       surgeries: editing
         ? current.surgeries.map(item => item.id === editing ? { ...nextRecord, id:editing } : item)
@@ -612,7 +615,7 @@ export function Sales({ data, setData }) {
         })()}
       </Modal>
 
-      <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => setData(current => ({ ...current, surgeries:current.surgeries.filter(item => item.id !== confirmId) }))} />
+      <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => persist(current => ({ ...current, surgeries:current.surgeries.filter(item => item.id !== confirmId) }))} />
     </div>
   )
 }

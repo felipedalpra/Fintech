@@ -673,7 +673,7 @@ export function FinanceWorkspace() {
   // Persistência central: NUNCA salva sob escopo indefinido (sem ownerId). Atualiza o status
   // de salvamento para a UI dar feedback real (Salvando/Sincronizado/Erro).
   function flushSave(owner, snapshot, revision = revisionRef.current) {
-    if (!owner) return Promise.reject(new Error('Clinica nao identificada para salvar os dados.'))
+    if (!owner) { setSaveStatus('blocked'); return Promise.reject(new Error('Clinica nao identificada para salvar os dados.')) }
     pendingRef.current = true
     setSaveStatus('saving')
     return enqueueSaveRef.current(async () => {
@@ -924,6 +924,10 @@ export function FinanceWorkspace() {
   const setData = updater => { applyDataUpdate(updater) }
   const saveDataNow = (updater, pendingOperation = null) => {
     const update = applyDataUpdate(updater)
+    // BLINDAGEM: sem escopo resolvido, NÃO grava agora (grava rejeitaria em silêncio). Marca
+    // "não salvo" e deixa o autosave assumir — ele grava assim que o ownerId resolver. Não marca
+    // immediateSnapshotRef (senão o autosave pularia este data e nunca gravaria).
+    if (!ownerId) { setSaveStatus('blocked'); return Promise.resolve(update.data) }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     immediateSnapshotRef.current = update.data
     if (pendingOperation?.collection && pendingOperation?.record?.id && user?.id) {

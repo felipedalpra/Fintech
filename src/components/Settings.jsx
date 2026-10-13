@@ -4,6 +4,8 @@ import { Btn, Card, FInput } from './UI.jsx'
 import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClient.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
+import { forceImportBrowserData } from '../lib/financeStore.js'
 import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
 import { WhatsAppAutomations } from './WhatsAppAutomations.jsx'
 import { MetaConnection } from './MetaConnection.jsx'
@@ -270,7 +272,54 @@ export function Settings() {
           </a>
         </div>
       </Card>
+
+      <BrowserDataRecovery />
     </div>
+  )
+}
+
+// Recuperação de dados presos no localStorage DESTE navegador (blindagem Fase 2).
+// Importa para a nuvem por merge (só adiciona o que falta; nunca apaga).
+function BrowserDataRecovery() {
+  const { user } = useAuth()
+  const { ownerId } = useUserRole()
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState(null)
+  const [err, setErr] = useState('')
+
+  const run = async () => {
+    if (running) return
+    setRunning(true); setErr(''); setResult(null)
+    try {
+      const res = await forceImportBrowserData(user, ownerId || user?.id)
+      if (res.error) { setErr(res.error) }
+      else {
+        setResult(res.message)
+        // Importou algo: recarrega para a tela refletir os dados trazidos (e o baseline resync).
+        if (res.imported > 0) setTimeout(() => { try { window.location.reload() } catch { /* ignore */ } }, 1500)
+      }
+    } catch (e) {
+      setErr(e?.message || 'Falha ao importar os dados deste navegador.')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <Card style={{ maxWidth:920 }}>
+      <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Recuperação</div>
+      <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Importar dados deste navegador</h3>
+      <p style={{ margin:'0 0 14px', color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:680 }}>
+        Se você cadastrou lançamentos antigos neste computador/navegador e eles não aparecem, clique abaixo para
+        enviá-los à nuvem. É seguro: apenas <strong>adiciona</strong> o que estiver faltando — nunca apaga nem
+        sobrescreve o que já está salvo. Rode no mesmo navegador onde cadastrou.
+      </p>
+      <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <Btn onClick={run} disabled={running}>{running ? 'Importando…' : 'Importar deste navegador'}</Btn>
+        {result && <span style={{ color:C.green, fontSize:13, fontWeight:600 }}>{result}</span>}
+        {err && <span style={{ color:C.red, fontSize:13, fontWeight:600 }}>{err}</span>}
+      </div>
+    </Card>
   )
 }
 

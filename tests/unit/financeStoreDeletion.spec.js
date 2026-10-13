@@ -1,5 +1,31 @@
 import { expect, test } from '@playwright/test'
-import { computeIdsToDelete } from '../../src/lib/financeSync.js'
+import { computeIdsToDelete, missingRowIds, mergeById } from '../../src/lib/financeSync.js'
+
+// MERGE por id (importar do navegador): nunca remove/sobrescreve o do servidor.
+test('mergeById: adiciona só o que o servidor não tem', () => {
+  const { merged, added } = mergeById([{ id: 'a', v: 1 }], [{ id: 'a', v: 9 }, { id: 'b', v: 2 }])
+  expect(added).toBe(1)
+  expect(merged.map(r => r.id)).toEqual(['a', 'b'])
+  expect(merged.find(r => r.id === 'a').v).toBe(1) // servidor preservado (não sobrescreve)
+})
+test('mergeById: nada novo → added 0', () => {
+  expect(mergeById([{ id: 'a' }], [{ id: 'a' }]).added).toBe(0)
+})
+
+// READ-BACK (Fase 2): confirma que cada linha enviada voltou do servidor.
+test('missingRowIds: tudo confirmado → nada faltando', () => {
+  expect(missingRowIds([{ id: 'a' }, { id: 'b' }], [{ id: 'a' }, { id: 'b' }])).toEqual([])
+})
+test('missingRowIds: linha enviada que não voltou = perda a sinalizar', () => {
+  expect(missingRowIds([{ id: 'a' }, { id: 'b' }], [{ id: 'a' }])).toEqual(['b'])
+})
+test('missingRowIds: entradas vazias/sem id são toleradas', () => {
+  expect(missingRowIds([], [])).toEqual([])
+  expect(missingRowIds([{ id: null }], [])).toEqual([])
+})
+test('missingRowIds: UUID em caixa diferente NÃO conta como faltando', () => {
+  expect(missingRowIds([{ id: 'ABC-123' }], [{ id: 'abc-123' }])).toEqual([])
+})
 
 // A deleção é calculada contra o BASELINE do cliente (o que ele carregou), nunca contra o banco.
 // Isso impede a perda de dados por concorrência e por estado defasado.
