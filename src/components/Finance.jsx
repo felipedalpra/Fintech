@@ -17,6 +17,7 @@ import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 import { findChartAccount, postingAccountOptions } from '../lib/chartOfAccounts.js'
 import { ensureDefaultChartAccounts, isChartSchemaMissing } from '../lib/chartOfAccountsStore.js'
+import { buildDrePresentation, flattenVisibleDreRows } from '../lib/drePresentation.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -185,6 +186,14 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
   })
   const [recurrences, setRecurrences] = useState([])
   const [showComparative, setShowComparative] = useState(false)
+  const [expandedDreKeys, setExpandedDreKeys] = useState(() => new Set([
+    'section:gross_revenue',
+    'section:revenue_deductions',
+    'section:direct_costs',
+    'section:operating_expenses',
+    'section:financial_result',
+    'section:income_taxes',
+  ]))
   const [showExport, setShowExport] = useState(false)
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
   const [formError, setFormError] = useState('')
@@ -762,8 +771,8 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     ['indicadores', 'Indicadores'],
   ]
 
-  // DRE rows definition
-  const dreRows = [
+  // Compatibilidade visual quando o schema/plano de contas ainda não estiver disponível.
+  const legacyDreRows = [
     { label: 'Receita bruta total', getValue: mx => mx.grossRevenue, detailsKey:'grossRevenue', color: C.green, bold: false },
     { label: '(-) Deduções da receita', getValue: mx => mx.revenueDeductions || 0, detailsKey:'revenueDeductions', color: C.red, bold: false },
     { label: '= Receita líquida', getValue: mx => mx.netRevenue ?? mx.grossRevenue, detailsKey:'netRevenue', color: C.accent, bold: true },
@@ -786,6 +795,32 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
     { label: '= Lucro líquido', getValue: mx => mx.netProfit, detailsKey:'netProfit', color: mx => mx.netProfit >= 0 ? C.green : C.red, bold: true },
     { label: 'Margem operacional %', getValue: mx => mx.grossRevenue > 0 ? (mx.operatingProfit / mx.grossRevenue * 100) : 0, isPercent: true, color: mx => mx.operatingProfit >= 0 ? C.green : C.red, bold: false },
   ]
+
+  const dynamicDreTree = useMemo(
+    () => buildDrePresentation(data?.chartAccounts || [], m),
+    [data?.chartAccounts, m],
+  )
+  const dynamicPreviousDreTree = useMemo(
+    () => mPrev ? buildDrePresentation(data?.chartAccounts || [], mPrev) : [],
+    [data?.chartAccounts, mPrev],
+  )
+  const visibleDynamicDreRows = useMemo(
+    () => flattenVisibleDreRows(dynamicDreTree, expandedDreKeys),
+    [dynamicDreTree, expandedDreKeys],
+  )
+  const previousDynamicDreByKey = useMemo(() => new Map(
+    flattenVisibleDreRows(dynamicPreviousDreTree, expandedDreKeys).map(row => [row.key, row]),
+  ), [dynamicPreviousDreTree, expandedDreKeys])
+  const usingDynamicDre = dynamicDreTree.length > 0
+
+  const toggleDreRow = key => {
+    setExpandedDreKeys(current => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   // Expense categories for top-5 chart in saidas tab
   const topExpenseCategories = useMemo(() => {
@@ -1251,10 +1286,25 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                 </thead>
               )}
               <tbody>
-                {dreRows.map(row => {
-                  const currentVal = row.getValue(m)
-                  const prevVal = mPrev ? row.getValue(mPrev) : null
+                {(usingDynamicDre ? visibleDynamicDreRows : legacyDreRows).map(row => {
+                  const currentVal = usingDynamicDre ? Number(row.value || 0) : row.getValue(m)
+                  const prevVal = mPrev
+                    ? (usingDynamicDre ? Number(previousDynamicDreByKey.get(row.key)?.value || 0) : row.getValue(mPrev))
+                    : null
+                  const details = usingDynamicDre ? (row.details || []) : (m.drilldowns?.[row.detailsKey] || [])
+                  const canDrillDown = usingDynamicDre ? details.length > 0 : Boolean(row.detailsKey)
+                  const canExpand = usingDynamicDre && row.children?.length > 0
+                  const isExpanded = canExpand && expandedDreKeys.has(row.key)
+                  const isEmphasized = usingDynamicDre
+                    ? ['section', 'subtotal'].includes(row.type) || row.type === 'group'
+                    : row.bold
                   const resolveColor = (val, colorProp) => {
+                    if (usingDynamicDre) {
+                      if (row.tone === 'expense') return C.red
+                      if (row.tone === 'revenue') return C.green
+                      if (row.tone === 'net') return val >= 0 ? C.green : C.red
+                      return val >= 0 ? C.accent : C.red
+                    }
                     if (typeof colorProp === 'function') return colorProp({ operatingProfit: val })
                     if (colorProp) return colorProp
                     return val >= 0 ? C.green : C.red
@@ -1277,15 +1327,48 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                     return money(val)
                   }
 
+                  const rowLabel = usingDynamicDre && row.type === 'section' && row.tone === 'expense'
+                    ? `(-) ${row.label}`
+                    : row.label
+                  const openRowDetails = canDrillDown
+                    ? () => openDrilldown(rowLabel.replace(/^\W+/, ''), details, currentVal, 'Composição por competência do período selecionado.')
+                    : undefined
+                  const deltaColor = row.tone === 'expense'
+                    ? (delta > 0 ? C.red : delta < 0 ? C.green : C.textDim)
+                    : (delta > 0 ? C.green : delta < 0 ? C.red : C.textDim)
+
                   return (
                     <tr
-                      key={row.label}
-                      onClick={row.detailsKey ? () => openDrilldown(row.label.replace(/^\W+/, ''), m.drilldowns?.[row.detailsKey] || [], currentVal, 'Composição por competência do período selecionado.') : undefined}
-                      title={row.detailsKey ? 'Clique para ver os lançamentos' : undefined}
-                      style={{ borderTop:`1px solid ${C.border}22`, cursor:row.detailsKey ? 'pointer' : undefined }}
+                      key={row.key || row.label}
+                      onClick={openRowDetails}
+                      onKeyDown={event => { if (openRowDetails && (event.key === 'Enter' || event.key === ' ')) openRowDetails() }}
+                      tabIndex={canDrillDown ? 0 : undefined}
+                      title={canDrillDown ? 'Clique para ver os lançamentos' : undefined}
+                      style={{
+                        borderTop:`1px solid ${C.border}${row.type === 'subtotal' ? '55' : '22'}`,
+                        background:row.type === 'subtotal' ? `${C.accent}08` : 'transparent',
+                        cursor:canDrillDown ? 'pointer' : undefined,
+                      }}
                     >
-                      <td style={{ padding:'12px 0', color:C.textSub, fontSize:13, fontWeight: row.bold ? 700 : 400 }}>{row.label}</td>
-                      <td style={{ padding:'12px 12px', textAlign:'right', color:currentColor, fontWeight: row.bold ? 800 : 700, fontSize:13 }}>
+                      <td style={{ padding:'12px 0', color:row.type === 'subtotal' ? C.text : C.textSub, fontSize:13, fontWeight:isEmphasized ? 700 : 400 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:7, paddingLeft:usingDynamicDre ? Math.min(Number(row.depth || 0), 4) * 20 : 0 }}>
+                          {canExpand ? (
+                            <button
+                              type="button"
+                              aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${row.label}`}
+                              aria-expanded={isExpanded}
+                              onClick={event => { event.stopPropagation(); toggleDreRow(row.key) }}
+                              style={{ width:20, height:20, border:0, background:'transparent', color:C.textDim, cursor:'pointer', padding:0, fontSize:12 }}
+                            >
+                              {isExpanded ? '▾' : '▸'}
+                            </button>
+                          ) : usingDynamicDre && row.depth > 0 ? <span style={{ width:20 }} /> : null}
+                          {usingDynamicDre && row.code && <span style={{ color:C.textDim, fontSize:11, fontVariantNumeric:'tabular-nums', minWidth:48 }}>{row.code}</span>}
+                          <span>{rowLabel}</span>
+                          {usingDynamicDre && row.isActive === false && <Badge color={C.textDim} small>inativa</Badge>}
+                        </div>
+                      </td>
+                      <td style={{ padding:'12px 12px', textAlign:'right', color:currentColor, fontWeight:isEmphasized ? 800 : 700, fontSize:13 }}>
                         {formatVal(currentVal)}
                       </td>
                       {showComparative && mPrev && (
@@ -1295,7 +1378,7 @@ export function Finance({ data, setData, defaultTab = 'entradas' }) {
                           </td>
                           <td style={{ padding:'12px 12px', textAlign:'right', fontSize:12, fontWeight:700, whiteSpace:'nowrap' }}>
                             {delta !== null && (
-                              <span style={{ color: delta > 0 ? C.green : delta < 0 ? C.red : C.textDim }}>
+                              <span style={{ color:deltaColor }}>
                                 {delta > 0 ? '▲' : delta < 0 ? '▼' : '—'} {Math.abs(delta).toFixed(1)}%
                               </span>
                             )}
