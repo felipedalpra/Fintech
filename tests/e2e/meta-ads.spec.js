@@ -17,6 +17,13 @@ const CAMPAIGNS = [
   { campaign_id: 'C2', name: 'Mamoplastia — Lookalike', status: 'PAUSED' },
 ]
 const ADSETS = [{ adset_id: 'AS1', name: 'Conjunto Reels 25-44', status: 'ACTIVE' }]
+// Alcance/frequência (deduplicados por período) — conta + campanhas + conjunto.
+const REACH = [
+  { level: 'account', ref_id: 'account', reach: 101200, frequency: 3.18 },
+  { level: 'campaign', ref_id: 'C1', reach: 42300, frequency: 3.05 },
+  { level: 'campaign', ref_id: 'C2', reach: 31800, frequency: 3.03 },
+  { level: 'adset', ref_id: 'AS1', reach: 9400, frequency: 4.70 },
+]
 
 function json(body) {
   return { status: 200, contentType: 'application/json', body: JSON.stringify(body) }
@@ -42,6 +49,8 @@ test.beforeEach(async ({ page }) => {
     route.request().method() === 'GET' ? route.fulfill(json([])) : route.continue())
   await page.route('**/rest/v1/meta_analyses*', route =>
     route.request().method() === 'GET' ? route.fulfill(json([])) : route.continue())
+  await page.route('**/rest/v1/meta_reach*', route =>
+    route.request().method() === 'GET' ? route.fulfill(json(REACH)) : route.continue())
 })
 
 test('Anúncios está na sub-nav da área Pacientes', async ({ page }) => {
@@ -70,6 +79,11 @@ test('Desempenho agrega por campanha e calcula KPIs e métricas derivadas', asyn
   await expect(page.getByText('R$ 230,00').first()).toBeVisible()
   await expect(page.getByText('R$ 76,67')).toBeVisible()
   await expect(page.getByText('R$ 150,00').first()).toBeVisible()
+
+  // Alcance/frequência (deduplicados por período): KPI da conta e por campanha.
+  await expect(page.getByText('101.200').first()).toBeVisible() // KPI alcance da conta
+  await expect(page.getByText('42.300')).toBeVisible()          // alcance da C1
+  await expect(page.getByText('3,05')).toBeVisible()            // frequência da C1
 })
 
 test('trocar o nível para Conjuntos recarrega os dados do nível', async ({ page }) => {

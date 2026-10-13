@@ -56,6 +56,20 @@ export function parseInsightsResponse(body, level) {
   return rows
 }
 
+// Normaliza GET insights por INTERVALO (sem time_increment) em linhas de alcance/frequência.
+// Alcance é deduplicado por período, por isso vem de uma consulta separada (não dos diários).
+// level='account' não tem id próprio → ref_id 'account'.
+export function parseReachResponse(body, level) {
+  const refField = REF_FIELD[level]
+  const rows = []
+  for (const r of body?.data || []) {
+    const ref_id = level === 'account' ? 'account' : r?.[refField]
+    if (!ref_id) continue
+    rows.push({ level, ref_id, reach: num(r.reach), frequency: num(r.frequency) })
+  }
+  return rows
+}
+
 // Divisão segura: denominador 0/ausente → 0 (nunca NaN/Infinity).
 function div(a, b) {
   const d = Number(b)
@@ -106,12 +120,20 @@ const INSIGHT_FIELDS = {
   ad: 'ad_id,adset_id,campaign_id,spend,impressions,reach,clicks,actions',
 }
 
-// Sincroniza estrutura + insights de UMA clínica para o cache. Retorna contagem por tabela.
-async function syncOwner(supabase, conn, { version, since, until }) {
+// Campos de alcance/frequência por nível (consulta por intervalo, sem time_increment).
+const REACH_FIELDS = {
+  account: 'reach,frequency',
+  campaign: 'campaign_id,reach,frequency',
+  adset: 'adset_id,reach,frequency',
+  ad: 'ad_id,reach,frequency',
+}
+
+// Sincroniza estrutura + insights + alcance de UMA clínica para o cache. Retorna contagem por tabela.
+async function syncOwner(supabase, conn, { version, since, until, reachPeriods }) {
   const { user_id, ad_account_id, access_token } = conn
   const acct = String(ad_account_id).startsWith('act_') ? ad_account_id : `act_${ad_account_id}`
   const now = new Date().toISOString()
-  const counts = { campaigns: 0, adsets: 0, ads: 0, insights: 0 }
+  const counts = { campaigns: 0, adsets: 0, ads: 0, insights: 0, reach: 0 }
 
   // 1) Estrutura (nome/status pra exibir junto dos números).
   const campaigns = await graphGetAll(version, access_token, `${acct}/campaigns`, { fields: 'id,name,status,objective' })
@@ -149,6 +171,23 @@ async function syncOwner(supabase, conn, { version, since, until }) {
       counts.insights += rows.length
     }
   }
+
+  // 3) Alcance/frequência por período (deduplicado — consulta por intervalo, sem time_increment).
+  //    'account' = alcance da conta inteira (para o KPI, que não pode ser a soma das campanhas).
+  for (const p of reachPeriods || []) {
+    const tr = JSON.stringify({ since: p.since, until })
+    for (const level of ['account', 'campaign', 'adset', 'ad']) {
+      const params = { time_range: tr, fields: REACH_FIELDS[level] }
+      if (level !== 'account') params.level = level
+      const data = await graphGetAll(version, access_token, `${acct}/insights`, params)
+      const rows = parseReachResponse({ data }, level).map(r => ({ ...r, user_id, period: p.key, updated_at: now }))
+      if (rows.length) {
+        const { error } = await supabase.from('meta_reach').upsert(rows, { onConflict: 'user_id,level,ref_id,period' })
+        if (error) throw error
+        counts.reach += rows.length
+      }
+    }
+  }
   return counts
 }
 
@@ -165,6 +204,14 @@ export async function syncMetaInsights(supabase, opts = {}) {
   const until = ISO.test(opts.until || '') ? opts.until : isoDate(new Date())
   const since = ISO.test(opts.since || '') ? opts.since : isoDate(new Date(Date.now() - days * 86400000))
 
+  // Janelas de alcance que a tela oferece (cada uma termina em `until`).
+  const u = new Date(until + 'T00:00:00Z')
+  const reachPeriods = [
+    { key: 'month', since: isoDate(new Date(Date.UTC(u.getUTCFullYear(), u.getUTCMonth(), 1))) },
+    { key: '30d', since: isoDate(new Date(u.getTime() - 29 * 86400000)) },
+    { key: 'quarter', since: isoDate(new Date(u.getTime() - 89 * 86400000)) },
+  ]
+
   let query = supabase
     .from('meta_connections')
     .select('user_id, ad_account_id, access_token')
@@ -180,13 +227,22 @@ export async function syncMetaInsights(supabase, opts = {}) {
   for (const conn of conns || []) {
     summary.owners += 1
     try {
-      const counts = await syncOwner(supabase, conn, { version, since, until })
+      const counts = await syncOwner(supabase, conn, { version, since, until, reachPeriods })
       summary.synced += 1
       summary.details.push({ owner: conn.user_id, ...counts })
+      // Sync real bem-sucedido valida a conexão (torna "conectado" visível na tela de config).
+      await supabase.from('meta_connections')
+        .update({ status: 'conectado', updated_at: new Date().toISOString() })
+        .eq('user_id', conn.user_id)
     } catch (e) {
       summary.failures += 1
       summary.details.push({ owner: conn.user_id, error: e?.message || 'erro no sync Meta' })
       console.error('meta insights sync error:', conn.user_id, e?.message)
+      // Marca erro para o usuário ver (ex.: token expirado) em vez de falhar em silêncio.
+      await supabase.from('meta_connections')
+        .update({ status: 'erro', updated_at: new Date().toISOString() })
+        .eq('user_id', conn.user_id)
+        .catch(() => {})
     }
   }
   return summary

@@ -5,7 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
-## [Unreleased] - 2026-10-12 (79)
+## [Unreleased] - 2026-10-12 (80)
+### Added
+- **Meta Ads — alcance e frequência por período**: a tela de Anúncios passa a mostrar **alcance** (pessoas únicas) e **frequência** por campanha/conjunto/anúncio, além de um KPI de alcance da conta. Como alcance é **deduplicado por período** (não pode ser a soma dos dias), vem de uma consulta por intervalo ao Meta, cacheada em nova tabela `meta_reach` (`supabase/meta_reach_schema.sql`, RLS por `data_owner_id()`, escrita só pelo service_role). O sync (`syncMetaInsights`) busca alcance para mês/30d/trimestre e para o nível conta; função pura `parseReachResponse`. Colunas Alcance/Freq. e KPI adicionados a `MetaAdsDashboard.jsx`.
+### Changed
+- **Meta Ads — robustez do sync**: ao sincronizar com sucesso, a conexão da clínica vira `conectado`; em falha (ex.: token expirado), vira `erro` — visível em Configurações → Meta Ads em vez de falhar em silêncio. `vercel.json` define `maxDuration: 60s` para o cron `api/alerts/process.js` (margem para o sync do Meta).
 ### Fixed
 - **Meta Ads — ajustes de fidedignidade pós-revisão**: (1) **Leads deixam de ser contados em dobro** — `parseInsightsResponse` agora escolhe UM tipo de ação de lead por prioridade (`lead` → `onsite_conversion.lead_grouped` → `leadgen_grouped`) em vez de somar tipos que descrevem o mesmo evento. (2) **Período "Trimestre" não subestima mais** — o sync passa a cobrir 90 dias por padrão (cobre mês/30d/trimestre; upsert idempotente). (3) **CPL de campanha com gasto e zero leads** vira "—" (indefinido) na tela e `null` no payload enviado à IA, com instrução explícita para não tratar como "melhor CPL" nem recomendar escalar — evita a IA sugerir a pior campanha. (4) `?action=meta-sync` valida `days` (1–90) e `since` (YYYY-MM-DD), retornando 400 em vez de estourar; `syncMetaInsights` nunca gera data inválida. (5) A análise por IA só consome cota quando há dados, e o cache usa o mesmo fallback de URL (`SUPABASE_URL || VITE_SUPABASE_URL`). (6) Ordenação por Campanha/Status na tabela usa comparação de texto; valores nulos vão para o fim. Testes: `metaInsights.spec.js` cobre a não-dupla-contagem e o fallback de tipo.
 

@@ -34,9 +34,15 @@ function freshness(iso) {
   return `há ${Math.floor(h / 24)}d`
 }
 
+// Alcance/frequência vêm do cache meta_reach (deduplicados por período); ausentes → "—".
+const fmtReach = v => (v == null ? '—' : fmtInt(v))
+const fmtFreq = v => (v == null ? '—' : Number(v).toFixed(2).replace('.', ','))
+
 const COLS = [
   { key: 'spend',       label: 'Gasto',      fmt: fmtBRL },
+  { key: 'reach',       label: 'Alcance',    fmt: fmtReach },
   { key: 'impressions', label: 'Impressões', fmt: fmtInt },
+  { key: 'frequency',   label: 'Freq.',      fmt: fmtFreq },
   { key: 'clicks',      label: 'Cliques',    fmt: fmtInt },
   { key: 'ctr',         label: 'CTR',        fmt: fmtPct },
   { key: 'cpc',         label: 'CPC',        fmt: fmtBRL },
@@ -55,6 +61,7 @@ export function MetaAdsDashboard() {
   const [period, setPeriod] = useState('month')
   const [insights, setInsights] = useState([])
   const [names, setNames] = useState({})
+  const [reachRows, setReachRows] = useState([])
   const [syncedAt, setSyncedAt] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -67,15 +74,18 @@ export function MetaAdsDashboard() {
       setLoading(true); setError(null)
       const { since } = rangeFor(period)
       const lvl = LEVELS.find(l => l.key === level)
-      const [insRes, strRes] = await Promise.all([
+      const [insRes, strRes, reachRes] = await Promise.all([
         supabase.from('meta_insights')
           .select('level, ref_id, campaign_id, date, spend, impressions, clicks, leads, updated_at')
           .eq('user_id', uid).eq('level', level).gte('date', since),
         supabase.from(lvl.table).select(`${lvl.idCol}, name, status`).eq('user_id', uid),
+        supabase.from('meta_reach').select('level, ref_id, reach, frequency')
+          .eq('user_id', uid).eq('period', period),
       ])
       if (!mounted) return
       if (insRes.error) { setError(insRes.error.message); setLoading(false); return }
       setInsights(insRes.data ?? [])
+      setReachRows(reachRes.data ?? [])
       const map = {}
       for (const r of strRes.data ?? []) map[r[lvl.idCol]] = { name: r.name, status: r.status }
       setNames(map)
@@ -87,12 +97,25 @@ export function MetaAdsDashboard() {
     return () => { mounted = false }
   }, [uid, level, period])
 
+  // Alcance/frequência do período para o nível atual (keyed por ref_id) e da conta (KPI total).
+  const reachMap = useMemo(() => {
+    const m = {}
+    for (const r of reachRows) if (r.level === level) m[r.ref_id] = { reach: r.reach, frequency: r.frequency }
+    return m
+  }, [reachRows, level])
+  const accountReach = useMemo(() => reachRows.find(r => r.level === 'account') || null, [reachRows])
+
   const rows = useMemo(() => {
     const agg = aggregateInsights(insights).map(a => {
       const meta = names[a.ref_id] || {}
       const d = deriveMetrics(a)
+      const rm = reachMap[a.ref_id]
       // CPL só com leads > 0; com gasto e 0 leads fica indefinido (—), não "melhor".
-      return { ...a, ...d, cpl: a.leads > 0 ? d.cpl : null, name: meta.name || a.ref_id, status: meta.status }
+      return {
+        ...a, ...d, cpl: a.leads > 0 ? d.cpl : null,
+        reach: rm?.reach ?? null, frequency: rm?.frequency ?? null,
+        name: meta.name || a.ref_id, status: meta.status,
+      }
     })
     const dir = sort.dir === 'asc' ? 1 : -1
     const isText = sort.key === 'name' || sort.key === 'status'
@@ -102,7 +125,7 @@ export function MetaAdsDashboard() {
       ? String(x[sort.key] ?? '').localeCompare(String(y[sort.key] ?? ''), 'pt-BR') * dir
       : (nval(x[sort.key]) - nval(y[sort.key])) * dir)
     return agg
-  }, [insights, names, sort])
+  }, [insights, names, reachMap, sort])
 
   const totals = useMemo(() => {
     const t = rows.reduce((a, r) => ({
@@ -192,6 +215,7 @@ export function MetaAdsDashboard() {
 
           <div style={s.kpis}>
             <div style={s.kpi(false)}><div style={s.kLabel}>Gasto</div><div style={s.kVal(false)}>{fmtBRL(totals.spend)}</div></div>
+            <div style={s.kpi(false)}><div style={s.kLabel}>Alcance</div><div style={s.kVal(false)}>{fmtReach(accountReach?.reach)}</div><div style={{ fontSize: 11, color: C.textSub, marginTop: 3 }}>{accountReach ? `freq. ${fmtFreq(accountReach.frequency)}` : 'pessoas únicas'}</div></div>
             <div style={s.kpi(false)}><div style={s.kLabel}>Impressões</div><div style={s.kVal(false)}>{fmtInt(totals.impressions)}</div></div>
             <div style={s.kpi(false)}><div style={s.kLabel}>Cliques</div><div style={s.kVal(false)}>{fmtInt(totals.clicks)}</div></div>
             <div style={s.kpi(false)}><div style={s.kLabel}>CTR</div><div style={s.kVal(false)}>{fmtPct(totals.ctr)}</div></div>
@@ -236,8 +260,8 @@ export function MetaAdsDashboard() {
           <div style={s.note}>
             <span>ℹ️</span>
             <span>Tudo aqui vem direto do Meta Ads — nada é somado ao financeiro. CTR/CPC/CPM/CPL são
-            calculados a partir dos totais do período. <b>Alcance e frequência</b> entram num próximo
-            incremento (precisam de consulta por período no Meta).</span>
+            calculados a partir dos totais do período. <b>Alcance e frequência</b> vêm deduplicados por
+            período do Meta (não são a soma dos dias).</span>
           </div>
         </>
       )}

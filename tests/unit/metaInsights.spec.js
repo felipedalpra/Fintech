@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { parseInsightsResponse, deriveMetrics } from '../../api/_lib/metaInsights.js'
+import { parseInsightsResponse, deriveMetrics, parseReachResponse } from '../../api/_lib/metaInsights.js'
 
 test('parseInsightsResponse: nível campaign normaliza strings e extrai leads das actions', () => {
   const body = {
@@ -66,6 +66,23 @@ test('parseInsightsResponse: usa o tipo agrupado quando "lead" não existe', () 
     actions: [{ action_type: 'onsite_conversion.lead_grouped', value: '4' }],
   }] }, 'campaign')
   expect(rows[0].leads).toBe(4)
+})
+
+test('parseReachResponse: nível campaign normaliza reach/frequency por entidade', () => {
+  const rows = parseReachResponse({ data: [
+    { campaign_id: 'C1', reach: '42300', frequency: '3.05' },
+    { campaign_id: 'C2', reach: '31800', frequency: '3.03' },
+  ] }, 'campaign')
+  expect(rows).toEqual([
+    { level: 'campaign', ref_id: 'C1', reach: 42300, frequency: 3.05 },
+    { level: 'campaign', ref_id: 'C2', reach: 31800, frequency: 3.03 },
+  ])
+})
+
+test('parseReachResponse: nível account (sem id) usa ref_id "account"', () => {
+  const rows = parseReachResponse({ data: [{ reach: '101200', frequency: '3.18' }] }, 'account')
+  expect(rows).toEqual([{ level: 'account', ref_id: 'account', reach: 101200, frequency: 3.18 }])
+  expect(parseReachResponse({}, 'account')).toEqual([])
 })
 
 test('deriveMetrics: calcula ctr, cpc, cpm, frequência e cpl', () => {
