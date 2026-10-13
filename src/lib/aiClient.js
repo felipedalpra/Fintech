@@ -65,6 +65,32 @@ export async function queryFinancialAssistant({ question, brain, history = [] })
   }
 }
 
+// Meta Ads: gera a análise por IA das campanhas do período. Reusa /api/financial-assistant
+// (mode=meta-analysis). Retorna { items, generatedAt, model } | { empty:true } | { error }.
+export async function requestMetaAnalysis({ period = 'month' } = {}) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 25_000)
+  try {
+    if (!supabase) return { error: 'Supabase não configurado.' }
+    const { data, error } = await supabase.auth.getSession()
+    if (error || !data?.session?.access_token) return { error: 'Sua sessão expirou. Entre novamente.' }
+
+    const response = await fetch('/api/financial-assistant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+      body: JSON.stringify({ mode: 'meta-analysis', period }),
+      signal: controller.signal,
+    })
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) return { error: explainHttpError(response.status, payload?.code) }
+    return payload
+  } catch (err) {
+    return { error: err?.name === 'AbortError' ? 'A análise demorou demais. Tente novamente.' : 'Falha ao gerar a análise.' }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 function explainHttpError(status, code = '') {
   if (status === 401) return 'Sua sessão expirou. Entre novamente para consultar os dados.'
   if (status === 429 || code === 'RATE_LIMITED') return 'O limite diário do assistente foi atingido.'

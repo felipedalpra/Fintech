@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { aggregateInsights, deriveMetrics, fmtBRL, fmtInt, fmtPct } from '../lib/metaMetrics.js'
+import { requestMetaAnalysis } from '../lib/aiClient.js'
 
 // Tela CRM → Anúncios (Meta Ads). Espelho fiel do Meta: só exibe o que vem de lá, não cruza
 // com o financeiro. Drill por nível (Campanhas / Conjuntos / Anúncios), métricas nativas.
@@ -153,12 +154,7 @@ export function MetaAdsDashboard() {
       </div>
 
       {subtab === 'analises' ? (
-        <div style={s.panel}>
-          <div style={s.empty}>
-            A leitura por IA das campanhas chega no próximo passo. Vai interpretar estes mesmos números
-            do Meta e apontar o que escalar, pausar ou trocar.
-          </div>
-        </div>
+        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} />
       ) : (
         <>
           <div style={s.bar}>
@@ -237,6 +233,115 @@ export function MetaAdsDashboard() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// Aba Análises: leitura por IA das campanhas. Lê o cache (meta_analyses) ao abrir e regenera sob demanda.
+function AnalysisView({ uid, period, setPeriod }) {
+  // Dentro do componente (lê C no render) — nunca no nível de módulo, senão não acompanha o tema.
+  const TIPO = {
+    escalar:  { icon: '↑', color: C.green,       bg: 'rgba(16,185,129,.14)' },
+    destaque: { icon: '★', color: C.accentLight, bg: 'rgba(59,130,246,.14)' },
+    ajustar:  { icon: '⚠', color: C.yellow,      bg: 'rgba(245,158,11,.14)' },
+    pausar:   { icon: '⏸', color: C.red,         bg: 'rgba(239,68,68,.14)' },
+  }
+  const [items, setItems] = useState([])
+  const [generatedAt, setGeneratedAt] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState(null)
+  const [empty, setEmpty] = useState(false)
+
+  useEffect(() => {
+    if (!uid) return
+    let mounted = true
+    async function loadCache() {
+      setLoading(true); setError(null); setEmpty(false)
+      const { data, error: err } = await supabase.from('meta_analyses')
+        .select('generated_at, payload').eq('user_id', uid).eq('period', period).maybeSingle()
+      if (!mounted) return
+      if (err) { setError(err.message); setLoading(false); return }
+      setItems(data?.payload?.items ?? [])
+      setGeneratedAt(data?.generated_at ?? null)
+      setLoading(false)
+    }
+    loadCache()
+    return () => { mounted = false }
+  }, [uid, period])
+
+  async function reanalyze() {
+    if (running) return
+    setRunning(true); setError(null); setEmpty(false)
+    const r = await requestMetaAnalysis({ period })
+    setRunning(false)
+    if (r?.error) { setError(r.error); return }
+    if (r?.empty) { setItems([]); setGeneratedAt(null); setEmpty(true); return }
+    setItems(r?.items ?? [])
+    setGeneratedAt(r?.generatedAt ?? new Date().toISOString())
+  }
+
+  const fresh = generatedAt ? freshness(generatedAt) : null
+  const st = {
+    bar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 },
+    pills: { display: 'flex', gap: 6, flexWrap: 'wrap' },
+    pill: on => ({ padding: '6px 12px', fontSize: 12.5, borderRadius: 999, cursor: 'pointer',
+      border: `1px solid ${on ? C.accent : C.border}`, background: on ? C.accent : C.surface, color: on ? '#fff' : C.textSub, fontWeight: on ? 700 : 500 }),
+    btn: { border: 0, borderRadius: 10, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: running ? 'default' : 'pointer',
+      background: C.accent, color: '#fff', opacity: running ? 0.6 : 1 },
+    meta: { fontSize: 12, color: C.textSub, display: 'flex', alignItems: 'center', gap: 8 },
+    list: { display: 'flex', flexDirection: 'column', gap: 10 },
+    card: t => ({ display: 'flex', gap: 12, alignItems: 'flex-start', background: C.card, border: `1px solid ${C.border}`,
+      borderLeft: `3px solid ${(TIPO[t] || TIPO.destaque).color}`, borderRadius: 12, padding: '13px 15px' }),
+    badge: t => ({ flexShrink: 0, width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center',
+      background: (TIPO[t] || TIPO.destaque).bg, color: (TIPO[t] || TIPO.destaque).color, fontWeight: 700, fontSize: 14 }),
+    title: { color: C.text, fontWeight: 700, fontSize: 13.5 },
+    detail: { color: C.textSub, fontSize: 12.5, marginTop: 2, lineHeight: 1.5 },
+    empty: { textAlign: 'center', padding: '44px 20px', color: C.textSub, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, lineHeight: 1.5 },
+    disclaimer: { fontSize: 11.5, color: C.textDim, marginTop: 14, display: 'flex', gap: 8, alignItems: 'flex-start' },
+  }
+
+  return (
+    <div>
+      <div style={st.bar}>
+        <div style={st.pills}>
+          {PERIODS.map(p => (
+            <span key={p.key} style={st.pill(period === p.key)} onClick={() => setPeriod(p.key)}>{p.label}</span>
+          ))}
+        </div>
+        <div style={st.meta}>
+          {fresh && <span>Gerado por IA · {fresh}</span>}
+          <button style={st.btn} onClick={reanalyze} disabled={running}>{running ? 'Analisando…' : 'Reanalisar'}</button>
+        </div>
+      </div>
+
+      {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+      {loading ? (
+        <div style={st.empty}>Carregando…</div>
+      ) : empty ? (
+        <div style={st.empty}>Sem dados do Meta no período para analisar. Conecte a conta e rode o sync primeiro.</div>
+      ) : items.length === 0 ? (
+        <div style={st.empty}>Nenhuma análise ainda. Clique em <b>Reanalisar</b> para a IA ler as campanhas do período.</div>
+      ) : (
+        <div style={st.list}>
+          {items.map((it, i) => (
+            <div key={i} style={st.card(it.tipo)}>
+              <div style={st.badge(it.tipo)}>{(TIPO[it.tipo] || TIPO.destaque).icon}</div>
+              <div>
+                {it.titulo && <div style={st.title}>{it.titulo}</div>}
+                {it.detalhe && <div style={st.detail}>{it.detalhe}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={st.disclaimer}>
+        <span>💡</span>
+        <span>Leitura automática por IA a partir dos números do Meta do período — é uma sugestão de
+        gestão de tráfego, não um dado oficial. Clique em <b>Reanalisar</b> para atualizar.</span>
+      </div>
     </div>
   )
 }

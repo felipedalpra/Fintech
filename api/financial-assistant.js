@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { createClient } from '@supabase/supabase-js'
 import {
   AssistantError,
   FINANCIAL_ASSISTANT_TOOLS,
@@ -13,6 +14,7 @@ import {
   saoPauloDate,
   validateAssistantPayload,
 } from './_lib/financialAssistant.js'
+import { deriveMetrics } from './_lib/metaInsights.js'
 
 const OPENAI_URL = 'https://api.openai.com/v1/responses'
 const MAX_TOOL_ROUNDS = 3
@@ -23,6 +25,9 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST')
     return res.status(405).json({ error:'Method not allowed', code:'METHOD_NOT_ALLOWED' })
   }
+
+  // Meta Ads: leitura por IA das campanhas (aba Análises). Fluxo isolado do CFO conversacional.
+  if (req.body?.mode === 'meta-analysis') return handleMetaAnalysis(req, res)
 
   const startedAt = Date.now()
   const requestId = crypto.randomUUID()
@@ -138,6 +143,120 @@ export default async function handler(req, res) {
       requestId,
     })
   }
+}
+
+// ---- Meta Ads: análise por IA das campanhas (aba Análises) ----
+const META_PERIOD_LABEL = { month:'Este mês', '30d':'Últimos 30 dias', quarter:'Trimestre' }
+
+function metaRangeSince(period) {
+  const now = new Date()
+  if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+  const days = period === 'quarter' ? 89 : 29
+  return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+}
+
+function round2(n) { return Math.round(Number(n || 0) * 100) / 100 }
+
+async function handleMetaAnalysis(req, res) {
+  const startedAt = Date.now()
+  const requestId = crypto.randomUUID()
+  try {
+    const auth = await authenticateFinancialRequest(req)
+    const supabase = auth.supabase
+    const period = ['month', '30d', 'quarter'].includes(req.body?.period) ? req.body.period : 'month'
+
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) throw new AssistantError(503, 'AI_NOT_CONFIGURED', 'Assistente não configurado.')
+    await consumeAssistantQuota(supabase, parseDailyLimit(process.env.AI_ASSISTANT_DAILY_LIMIT))
+    const model = (process.env.OPENAI_MODEL || 'gpt-5.2').trim()
+
+    const since = metaRangeSince(period)
+    // RLS garante que só vêm os insights da clínica do usuário.
+    const [insRes, campRes] = await Promise.all([
+      supabase.from('meta_insights').select('user_id, ref_id, spend, impressions, clicks, leads').eq('level', 'campaign').gte('date', since),
+      supabase.from('meta_campaigns').select('campaign_id, name, status'),
+    ])
+    if (insRes.error) throw new AssistantError(500, 'META_READ_ERROR', insRes.error.message)
+    const rows = insRes.data || []
+    if (!rows.length) return res.status(200).json({ empty: true, period, requestId })
+
+    const ownerId = rows[0].user_id
+    const nameMap = {}
+    for (const c of campRes.data || []) nameMap[c.campaign_id] = { name: c.name, status: c.status }
+
+    // Agrega por campanha (métricas aditivas) + derivadas.
+    const byId = new Map()
+    for (const r of rows) {
+      const cur = byId.get(r.ref_id) || { ref_id: r.ref_id, spend: 0, impressions: 0, clicks: 0, leads: 0 }
+      cur.spend += Number(r.spend || 0); cur.impressions += Number(r.impressions || 0)
+      cur.clicks += Number(r.clicks || 0); cur.leads += Number(r.leads || 0)
+      byId.set(r.ref_id, cur)
+    }
+    const campaigns = [...byId.values()].map(c => {
+      const d = deriveMetrics(c)
+      const meta = nameMap[c.ref_id] || {}
+      return {
+        nome: meta.name || c.ref_id, status: meta.status || '—',
+        gasto: round2(c.spend), impressoes: c.impressions, cliques: c.clicks,
+        ctr_pct: round2(d.ctr), cpc: round2(d.cpc), leads: c.leads, cpl: round2(d.cpl),
+      }
+    })
+
+    const input = [
+      { role: 'system', content: buildMetaAnalysisPrompt(META_PERIOD_LABEL[period]) },
+      { role: 'user', content: JSON.stringify({ periodo: META_PERIOD_LABEL[period], campanhas: campaigns }) },
+    ]
+    const response = await callOpenAI(apiKey, { model, input, max_output_tokens: 700 }, startedAt + REQUEST_TIMEOUT_MS)
+    const text = extractResponseText(response)
+    if (!text) throw new AssistantError(502, 'EMPTY_AI_RESPONSE', 'A IA não gerou análise.')
+    const payload = { items: parseAnalysisItems(text), campaignsCount: campaigns.length }
+
+    // Cacheia via service role (meta_analyses é somente-escrita-no-servidor).
+    try {
+      const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+      await admin.from('meta_analyses').upsert(
+        { user_id: ownerId, period, generated_at: new Date().toISOString(), model, payload },
+        { onConflict: 'user_id,period' },
+      )
+    } catch (cacheErr) {
+      console.error('meta analysis cache error:', cacheErr?.message)
+    }
+
+    return res.status(200).json({ period, model, generatedAt: new Date().toISOString(), ...payload, requestId })
+  } catch (error) {
+    const n = error instanceof AssistantError ? error : new AssistantError(500, 'META_ANALYSIS_ERROR', 'Não foi possível gerar a análise agora.')
+    return res.status(n.status).json({ error: n.message, code: n.code, requestId })
+  }
+}
+
+function buildMetaAnalysisPrompt(periodLabel) {
+  return [
+    'Você é um gestor de tráfego sênior analisando os anúncios do Meta (Facebook/Instagram) de uma clínica de cirurgia plástica.',
+    `Receberá, em JSON, as métricas das campanhas do período "${periodLabel}" (gasto, impressões, cliques, CTR, CPC, leads, CPL).`,
+    'Analise SOMENTE esses números — não invente dados, não cite valores fora do JSON, não fale de receita ou financeiro.',
+    'Responda em português do Brasil com 3 a 5 recomendações curtas e acionáveis.',
+    'Retorne APENAS um array JSON, sem texto fora dele. Cada item: {"tipo":"escalar|pausar|ajustar|destaque","titulo":"...","detalhe":"..."}.',
+    'titulo = a campanha e a ação em poucas palavras; detalhe = 1 frase com o porquê, citando a métrica que justifica.',
+    'Priorize: melhor CPL (escalar), CPL muito acima da média ou campanha pausada sem retorno (pausar/ajustar), melhor CTR (destaque).',
+  ].join(' ')
+}
+
+// Extrai o array de recomendações do texto do modelo; fallback = item único com o texto cru.
+function parseAnalysisItems(text) {
+  try {
+    const start = text.indexOf('[')
+    const end = text.lastIndexOf(']')
+    if (start >= 0 && end > start) {
+      const arr = JSON.parse(text.slice(start, end + 1))
+      if (Array.isArray(arr)) {
+        const clean = arr
+          .filter(i => i && (i.titulo || i.detalhe))
+          .map(i => ({ tipo: String(i.tipo || 'destaque'), titulo: String(i.titulo || ''), detalhe: String(i.detalhe || '') }))
+        if (clean.length) return clean
+      }
+    }
+  } catch { /* cai no fallback */ }
+  return [{ tipo: 'destaque', titulo: 'Análise', detalhe: String(text).trim() }]
 }
 
 async function callOpenAI(apiKey, body, deadline) {

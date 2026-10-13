@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (78)
+### Added
+- **Meta Ads — aba "Análises" (leitura por IA)**: a sub-aba Análises interpreta as campanhas do período e devolve 3–5 recomendações acionáveis (escalar / pausar / ajustar / destaque), cada uma com o porquê citando a métrica. Gerada sob demanda pelo botão **Reanalisar** e cacheada em `meta_analyses` (lida ao abrir, sem recomputar). Reusa `api/financial-assistant.js` via `mode:'meta-analysis'` (sem função serverless nova): autentica, lê os insights do nível campanha (RLS), monta prompt focado, chama a OpenAI e grava o cache via service role. A IA analisa **somente os números do Meta** — não acessa financeiro nem inventa dados; a saída é rotulada como sugestão por IA. Cliente `requestMetaAnalysis` em `src/lib/aiClient.js`; UI `AnalysisView` em `MetaAdsDashboard.jsx` (constantes de cor por tipo dentro do componente, respeitando o dark mode).
+
 ## [Unreleased] - 2026-10-12 (77)
 ### Added
 - **Meta Ads — tela "Anúncios" (Desempenho)**: nova página em **CRM → Anúncios** (Admin/Gestão) que espelha o Meta sem tocar no financeiro. Seletor de nível **Campanhas / Conjuntos / Anúncios**, períodos (Este mês / 30d / Trimestre), faixa de KPIs (gasto, impressões, cliques, CTR, leads, CPL médio) e tabela ordenável por qualquer coluna com selo "★ melhor CPL". Só agrega métricas **aditivas** (gasto/impressões/cliques/leads) e deriva CTR/CPC/CPM/CPL das somas — correto por construção; alcance/frequência ficam para um próximo incremento (exigem consulta por período no Meta). Sub-aba **Análises** (leitura por IA) com placeholder até o próximo passo. Lógica pura `src/lib/metaMetrics.js` (`aggregateInsights`, `deriveMetrics`, formatadores pt-BR); componente `src/components/MetaAdsDashboard.jsx`; navegação/permissão em `FinanceWorkspace.jsx` e `UserRoleContext.jsx` (`ads` → admin/gestao). Testes: `tests/unit/metaMetrics.spec.js` (3).
