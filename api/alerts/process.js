@@ -12,6 +12,7 @@ import {
   sendGmailHtml,
 } from '../_lib/alerts.js'
 import { runWhatsAppAutomations } from '../_lib/whatsappAutomations.js'
+import { syncMetaInsights } from '../_lib/metaInsights.js'
 
 function extractBearer(headers = {}) {
   const authHeader = headers.authorization || headers.Authorization || ''
@@ -162,7 +163,17 @@ export default async function handler(req, res) {
       funnel = { error: fErr?.message || 'erro na automação do funil' }
     }
 
-    return res.status(200).json({ ok:true, referenceDate:today, ...summary, whatsapp, funnel })
+    // Sync de insights do Meta Ads (cache para a tela de Anúncios).
+    // Fail-safe e idempotente (upsert por chave natural). Sem função serverless nova: roda aqui.
+    let metaAds = null
+    try {
+      metaAds = await syncMetaInsights(admin)
+    } catch (mErr) {
+      console.error('meta insights sync error:', mErr?.message)
+      metaAds = { error: mErr?.message || 'erro no sync do Meta Ads' }
+    }
+
+    return res.status(200).json({ ok:true, referenceDate:today, ...summary, whatsapp, funnel, metaAds })
   } catch (error) {
     return res.status(500).json({ error:error?.message || 'Erro interno ao processar alertas' })
   }

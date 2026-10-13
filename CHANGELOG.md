@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-12 (76)
+### Added
+- **Meta Ads — fundação do dashboard de anúncios (sync de insights)**: cache fiel do Meta para a futura tela "Anúncios", **sem cruzar com o financeiro** (gasto de anúncio **não** entra no razão/caixa/DRE). (1) Schema `supabase/meta_insights_schema.sql`: tabelas de cache `meta_campaigns`/`meta_adsets`/`meta_ads` (estrutura), `meta_insights` (snapshot diário por nível campaign/adset/ad com spend/impressions/reach/clicks/leads, único por `(user_id, level, ref_id, date)`) e `meta_analyses` (cache da leitura por IA); RLS por `data_owner_id()`; escrita exclusiva do `service_role`, frontend só lê. (2) Motor `api/_lib/metaInsights.js`: funções puras `parseInsightsResponse` (normaliza o retorno da Insights API, soma leads das `actions`) e `deriveMetrics` (CTR/CPC/CPM/frequência/CPL calculados na leitura, nunca armazenados); orquestração `syncMetaInsights` (varre as clínicas conectadas, busca estrutura + insights diários da Graph API e faz upsert idempotente). (3) Sync roda no cron de alertas existente (`api/alerts/process.js`) e por gatilho manual `api/whatsapp.js?action=meta-sync` (autorizado por `CRON_SECRET`) — **sem função serverless nova** (Vercel Hobby 12/12). Spec `docs/superpowers/plans/2026-10-12-meta-ads-dashboard-atribuicao.md`. Testes: `tests/unit/metaInsights.spec.js` (6). Próximo: tela de Desempenho (drill campanha/conjunto/anúncio) e aba Análises por IA.
+
 ## [Unreleased] - 2026-10-12 (75)
 ### Changed
 - **Meta Ads preparado para credenciais futuras sem expor segredos globais**: a tela da clínica passa a salvar somente Ad Account ID, Page ID e o token write-only da Página; `META_VERIFY_TOKEN`, `META_APP_SECRET` e `META_GRAPH_VERSION` ficam exclusivamente no servidor e estão documentados sem valores reais em `.env.example`/`README.md`. O estado intermediário “Configuração salva” não é mais apresentado como conexão validada, e a callback usa o domínio TLS correto com `www`.
