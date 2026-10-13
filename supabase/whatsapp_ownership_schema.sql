@@ -11,12 +11,20 @@ alter table public.whatsapp_numbers
 create index if not exists idx_whatsapp_numbers_assigned
   on public.whatsapp_numbers(assigned_user_id) where assigned_user_id is not null;
 
--- 2. É admin da clínica? (owner da conta OU membro com role='admin'). Security definer: lê
---    clinics/clinic_members ignorando a RLS delas. Primeira regra por PERFIL no dado (conversa de paciente).
+-- 2. É admin da clínica ATUAL? (owner da conta OU membro com role='admin' NA clínica do usuário).
+--    Escopado por data_owner_id() para não contar admin de OUTRA clínica (multi-tenant).
+--    Security definer: lê clinics/clinic_members ignorando a RLS delas (sem recursão).
 create or replace function public.is_clinic_admin()
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.clinics where owner_id = auth.uid())
-      or exists (select 1 from public.clinic_members where user_id = auth.uid() and role = 'admin')
+      or exists (
+        select 1
+        from public.clinic_members cm
+        join public.clinics c on c.id = cm.clinic_id
+        where cm.user_id = auth.uid()
+          and cm.role = 'admin'
+          and c.owner_id = public.data_owner_id()
+      )
 $$;
 revoke all on function public.is_clinic_admin() from public, anon;
 grant execute on function public.is_clinic_admin() to authenticated;

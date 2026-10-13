@@ -231,9 +231,16 @@ async function handleSend(req, res) {
 
   // Escopo por usuário: só o admin (owner ou role='admin') envia por qualquer número; os demais
   // só pelos números atribuídos a eles. Espelha a RLS de whatsapp_messages.
-  // Lista (não maybeSingle) para não quebrar com membro em mais de uma clínica.
-  const { data: mems } = await supabase.from('clinic_members').select('role').eq('user_id', user.id)
-  const isAdmin = user.id === ownerId || (mems || []).some(m => m.role === 'admin')
+  // Admin escopado À CLÍNICA (owned por ownerId) — não conta admin de outra clínica.
+  let isAdmin = user.id === ownerId
+  if (!isAdmin) {
+    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
+    if (clinic) {
+      const { data: adminMem } = await supabase.from('clinic_members')
+        .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).eq('role', 'admin').maybeSingle()
+      isAdmin = !!adminMem
+    }
+  }
   if (!isAdmin && num.assigned_user_id !== user.id) {
     return res.status(403).json({ error: 'Este número não está atribuído a você.' })
   }
