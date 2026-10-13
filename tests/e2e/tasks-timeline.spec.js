@@ -22,8 +22,9 @@ test.beforeEach(async ({ page }) => {
 test('aba Tarefas aparece ao editar e mostra o formulário de nova tarefa', async ({ page }) => {
   await page.goto('/app/funnel')
   await page.getByText('Ana Silva').click()
-  await expect(page.getByRole('button', { name: 'Tarefas' })).toBeVisible()
-  await page.getByRole('button', { name: 'Tarefas' }).click()
+  // "Tarefas" existe na sub-nav lateral e como aba do editor; a aba é a última no DOM.
+  await expect(page.getByRole('button', { name: 'Tarefas' }).last()).toBeVisible()
+  await page.getByRole('button', { name: 'Tarefas' }).last().click()
   await expect(page.getByPlaceholder('Nova tarefa…')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Adicionar' })).toBeVisible()
 })

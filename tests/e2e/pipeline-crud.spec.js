@@ -22,7 +22,7 @@ test('barra de filtros e botão criar aparecem; busca filtra por paciente', asyn
   await expect(page.getByRole('heading', { name: 'Pipeline de Oportunidades' })).toBeVisible()
 
   await expect(page.getByPlaceholder('🔍 Buscar paciente…')).toBeVisible()
-  await expect(page.getByRole('button', { name: '+ Nova oportunidade' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Nova oportunidade', exact: true })).toBeVisible()
 
   await expect(page.getByText('Ana Silva')).toBeVisible()
   await expect(page.getByText('Bia Souza')).toBeVisible()
@@ -35,7 +35,7 @@ test('barra de filtros e botão criar aparecem; busca filtra por paciente', asyn
 
 test('botão abre o editor de nova oportunidade', async ({ page }) => {
   await page.goto('/app/funnel')
-  await page.getByRole('button', { name: '+ Nova oportunidade' }).click()
+  await page.getByRole('button', { name: 'Nova oportunidade', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Nova oportunidade' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Salvar' })).toBeVisible()
 })
