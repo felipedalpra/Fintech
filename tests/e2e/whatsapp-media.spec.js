@@ -40,3 +40,10 @@ test('composer tem seletor de emoji que insere no texto', async ({ page }) => {
   await page.getByRole('button', { name: '🎉' }).click()
   await expect(page.locator('input[placeholder="Responder..."]')).toHaveValue(/🎉/)
 })
+
+test('composer oferece anexo e gravação de áudio', async ({ page }) => {
+  await page.goto('/app/inbox')
+  await page.getByText('Ana Paula').first().click()
+  await expect(page.getByRole('button', { name: 'Anexar arquivo' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Gravar áudio' })).toBeVisible()
+})

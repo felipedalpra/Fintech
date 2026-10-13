@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { SuggestionBox } from './OpportunityPipeline.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
+import { uploadWhatsAppMedia, mediaTypeFromMime } from '../lib/whatsappUpload.js'
 
 // Inbox central de WhatsApp (todas as conversas da clínica, estilo Chatwoot/Kommo).
 // Mostra conversas atribuídas e NÃO atribuídas (lead novo que chamou no zap), filtra por
@@ -44,9 +45,14 @@ export function WhatsAppInbox() {
   const [showEmoji, setShowEmoji] = useState(false)
   const [replyNumberId, setReplyNumberId] = useState('')
   const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [recording, setRecording] = useState(false)
   const [suggestOpp, setSuggestOpp] = useState(null)
   const [suggestBusy, setSuggestBusy] = useState(false)
   const endRef = useRef(null)
+  const fileRef = useRef(null)
+  const recRef = useRef(null)
+  const chunksRef = useRef([])
 
   async function load() {
     setLoading(true)
@@ -152,6 +158,22 @@ export function WhatsAppInbox() {
     setSuggestBusy(false)
   }
 
+  // POST comum para /api/whatsapp?action=message (texto ou mídia). `target` fixa a conversa
+  // destino (importante para áudio: a gravação pode terminar depois de trocar de conversa).
+  async function postPayload(extra, target = current) {
+    const { data: sess } = await supabase.auth.getSession()
+    const token = sess.session?.access_token
+    if (!token) throw new Error('Sessão inválida. Entre novamente.')
+    const res = await fetch('/api/whatsapp?action=message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ patientId: target.patientId, phone: target.phone, whatsappNumberId: replyNumberId, ...extra }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+    await load()
+  }
+
   async function send(e) {
     e.preventDefault()
     const body = replyText.trim()
@@ -159,22 +181,62 @@ export function WhatsAppInbox() {
     if (!replyNumberId) { setError('Nenhum número de WhatsApp configurado (Configurações → WhatsApp).'); return }
     setSending(true)
     try {
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess.session?.access_token
-      if (!token) throw new Error('Sessão inválida. Entre novamente.')
-      const res = await fetch('/api/whatsapp?action=message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ patientId: current.patientId, phone: current.phone, text: body, whatsappNumberId: replyNumberId }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+      await postPayload({ text: body })
       setReplyText('')
-      await load()
-    } catch (err) {
-      setError(err.message)
-    }
+    } catch (err) { setError(err.message) }
     setSending(false)
+  }
+
+  // Sobe o arquivo direto ao Storage e envia a mídia (imagem/documento/áudio) para `target`.
+  async function sendMediaFile(file, type, target = current) {
+    if (!target || uploading || sending) return
+    if (!replyNumberId) { setError('Nenhum número de WhatsApp configurado (Configurações → WhatsApp).'); return }
+    setUploading(true); setError(null)
+    try {
+      const up = await uploadWhatsAppMedia(file, ownerId, { type })
+      await postPayload({ type: up.type, mediaUrl: up.url, mediaMime: up.mime, fileName: up.fileName, caption: '' }, target)
+    } catch (err) { setError(err.message) }
+    setUploading(false)
+  }
+
+  function onPickFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permite reenviar o mesmo arquivo
+    if (file) sendMediaFile(file, mediaTypeFromMime(file.type))
+  }
+
+  // Gravação de nota de voz no navegador (MediaRecorder) → envia como áudio (PTT).
+  async function toggleRecord() {
+    if (recording) { recRef.current?.stop(); return }
+    if (!current || !replyNumberId) { setError('Selecione uma conversa e um número para gravar.'); return }
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setError('Gravação de áudio não é suportada neste navegador.'); return
+    }
+    const target = current // fixa a conversa destino: a gravação pode terminar após trocar de conversa
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Prefere ogg/opus (toca melhor no WhatsApp do destinatário); cai para o que o browser suportar.
+      const mt = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
+        .find(t => { try { return MediaRecorder.isTypeSupported(t) } catch { return false } })
+      const rec = new MediaRecorder(stream, mt ? { mimeType: mt } : undefined)
+      chunksRef.current = []
+      rec.ondataavailable = ev => { if (ev.data.size) chunksRef.current.push(ev.data) }
+      rec.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        setRecording(false)
+        const mime = rec.mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: mime })
+        if (blob.size) {
+          const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm'
+          await sendMediaFile(new File([blob], `voz-${Date.now()}.${ext}`, { type: mime }), 'audio', target)
+        }
+      }
+      recRef.current = rec
+      rec.start()
+      setRecording(true)
+    } catch {
+      setError('Não foi possível acessar o microfone.')
+    }
   }
 
   if (loading) return <div style={{ color: C.textSub, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>Carregando conversas...</div>
@@ -210,6 +272,7 @@ export function WhatsAppInbox() {
     mediaDoc: { display: 'flex', alignItems: 'center', gap: 8, color: C.accentLight || '#60a5fa', textDecoration: 'none', fontSize: 13, fontWeight: 600 },
     cap: { fontSize: 12.5, marginTop: 5, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
     emojiBtn: { width: 34, height: 34, flexShrink: 0, borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, fontSize: 16, cursor: 'pointer', lineHeight: 1 },
+    recOn: { background: (C.red || '#ef4444') + '22', borderColor: C.red || '#ef4444' },
     emojiPop: { position: 'absolute', bottom: 46, left: 0, background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 10, padding: 8, display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 2, boxShadow: '0 8px 24px rgba(0,0,0,.4)', zIndex: 5, width: 260 },
     emojiItem: { border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', padding: 3, borderRadius: 6, lineHeight: 1 },
   }
@@ -309,6 +372,8 @@ export function WhatsAppInbox() {
                     {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
                   </select>
                 )}
+                <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={onPickFile} />
+                <button type="button" style={s.emojiBtn} onClick={() => fileRef.current?.click()} disabled={uploading || recording} title="Anexar imagem ou documento" aria-label="Anexar arquivo">📎</button>
                 <div style={{ position: 'relative' }}>
                   <button type="button" style={s.emojiBtn} onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Inserir emoji">😊</button>
                   {showEmoji && (
@@ -319,8 +384,9 @@ export function WhatsAppInbox() {
                     </div>
                   )}
                 </div>
-                <input style={s.input} value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Responder..." disabled={sending} />
-                <button type="submit" style={s.btn} disabled={sending || !replyText.trim()}>{sending ? '...' : 'Enviar'}</button>
+                <button type="button" style={{ ...s.emojiBtn, ...(recording ? s.recOn : {}) }} onClick={toggleRecord} disabled={uploading} title={recording ? 'Parar e enviar' : 'Gravar áudio'} aria-label="Gravar áudio">{recording ? '⏹' : '🎤'}</button>
+                <input style={s.input} value={replyText} onChange={e => setReplyText(e.target.value)} placeholder={uploading ? 'Enviando mídia…' : recording ? 'Gravando áudio…' : 'Responder...'} disabled={sending || uploading || recording} />
+                <button type="submit" style={s.btn} disabled={sending || uploading || recording || !replyText.trim()}>{sending ? '...' : 'Enviar'}</button>
               </form>
             </>}
       </div>
