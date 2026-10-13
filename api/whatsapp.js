@@ -9,6 +9,7 @@ import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
 import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
+import { syncMetaInsights } from './_lib/metaInsights.js'
 
 export const config = {
   api: {
@@ -80,7 +81,8 @@ export default async function handler(req, res) {
   if (action === 'message') return handleSend(req, res)
   if (action === 'dispatch') return handleDispatch(req, res)
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
-  return res.status(400).json({ error: 'Ação inválida. Use ?action=message, ?action=webhook, ?action=dispatch ou ?action=meta-webhook.' })
+  if (action === 'meta-sync') return handleMetaSync(req, res)
+  return res.status(400).json({ error: 'Ação inválida. Use ?action=message, ?action=webhook, ?action=dispatch, ?action=meta-webhook ou ?action=meta-sync.' })
 }
 
 // ---- Meta Ads: webhook de Lead Ads (leadgen) → cria oportunidade no pipeline ----
@@ -171,6 +173,34 @@ async function handleDispatch(req, res) {
   const ownerId = typeof req.query.owner === 'string' && req.query.owner ? req.query.owner : null
   const summary = await runWhatsAppAutomations(supabase, { todayISO, ownerId })
   return res.status(200).json({ ok: true, ...summary })
+}
+
+// ---- Meta Ads: sync manual de insights (gatilho QA; o cron diário roda o mesmo motor) ----
+// Autorizado por CRON_SECRET. O cron de alertas (api/alerts/process.js) chama syncMetaInsights às 08:00 BRT.
+// ?owner=<id> limita a uma clínica; ?since=YYYY-MM-DD / ?days=N ajustam a janela.
+async function handleMetaSync(req, res) {
+  const secret = process.env.CRON_SECRET
+  const headerSecret = req.headers['x-cron-secret'] || ''
+  const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7) : ''
+  if (!secret || (headerSecret !== secret && bearer !== secret)) {
+    return res.status(401).json({ error: 'Invalid cron secret' })
+  }
+
+  const supabase = adminSupabase()
+  const owner = typeof req.query.owner === 'string' && req.query.owner ? req.query.owner : null
+  let since
+  if (typeof req.query.since === 'string' && req.query.since) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.since)) return res.status(400).json({ error: 'since inválido (use YYYY-MM-DD)' })
+    since = req.query.since
+  }
+  let days
+  if (typeof req.query.days === 'string' && req.query.days) {
+    const n = Number(req.query.days)
+    if (!Number.isInteger(n) || n < 1 || n > 90) return res.status(400).json({ error: 'days inválido (1 a 90)' })
+    days = n
+  }
+  const summary = await syncMetaInsights(supabase, { owner, since, days })
+  return res.status(200).json(summary)
 }
 
 // ---- Enviar (autenticado pelo app, por número escolhido) ----
