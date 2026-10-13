@@ -34,6 +34,7 @@ export function deriveMetrics({ spend = 0, impressions = 0, clicks = 0, leads = 
 
 // ---- Formatação pt-BR (determinística) ----
 export function fmtBRL(v) {
+  if (v == null) return '—' // null = métrica indefinida (ex.: CPL sem leads). 0 continua "R$ 0,00".
   const n = Number(v || 0)
   const [int, dec] = Math.abs(n).toFixed(2).split('.')
   return `${n < 0 ? '-' : ''}R$ ${int.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${dec}`

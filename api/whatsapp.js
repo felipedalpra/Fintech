@@ -188,8 +188,17 @@ async function handleMetaSync(req, res) {
 
   const supabase = adminSupabase()
   const owner = typeof req.query.owner === 'string' && req.query.owner ? req.query.owner : null
-  const since = typeof req.query.since === 'string' && req.query.since ? req.query.since : undefined
-  const days = typeof req.query.days === 'string' && req.query.days ? Number(req.query.days) : undefined
+  let since
+  if (typeof req.query.since === 'string' && req.query.since) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.since)) return res.status(400).json({ error: 'since inválido (use YYYY-MM-DD)' })
+    since = req.query.since
+  }
+  let days
+  if (typeof req.query.days === 'string' && req.query.days) {
+    const n = Number(req.query.days)
+    if (!Number.isInteger(n) || n < 1 || n > 90) return res.status(400).json({ error: 'days inválido (1 a 90)' })
+    days = n
+  }
   const summary = await syncMetaInsights(supabase, { owner, since, days })
   return res.status(200).json(summary)
 }

@@ -5,8 +5,10 @@
 //
 // O sync é chamado pelo cron de alertas (api/alerts/process.js) e por api/whatsapp.js?action=meta-sync.
 
-// Tipos de ação que contam como "lead" nos insights do Meta.
-const LEAD_ACTION_TYPES = new Set(['lead', 'onsite_conversion.lead_grouped', 'leadgen_grouped'])
+// Tipos de ação que representam leads, em ordem de PREFERÊNCIA. Nas Insights API esses tipos
+// costumam descrever o MESMO evento por recortes diferentes de atribuição — somá-los conta em
+// dobro. Então pegamos UM, pelo primeiro que existir (nunca a soma).
+const LEAD_ACTION_PRIORITY = ['lead', 'onsite_conversion.lead_grouped', 'leadgen_grouped']
 
 // ---------- Puro ----------
 
@@ -16,13 +18,16 @@ function num(v) {
   return Number.isFinite(n) ? n : 0
 }
 
-// Soma os valores das actions cujo tipo representa um lead.
-function sumLeads(actions) {
-  let total = 0
+// Escolhe a contagem de leads pelo tipo de maior prioridade presente (sem somar tipos).
+function pickLeads(actions) {
+  const byType = {}
   for (const a of actions || []) {
-    if (LEAD_ACTION_TYPES.has(a?.action_type)) total += num(a.value)
+    if (a?.action_type != null) byType[a.action_type] = num(a.value)
   }
-  return total
+  for (const type of LEAD_ACTION_PRIORITY) {
+    if (byType[type] != null) return byType[type]
+  }
+  return 0
 }
 
 // O id de referência de cada nível tem um nome de campo próprio no retorno do Meta.
@@ -45,7 +50,7 @@ export function parseInsightsResponse(body, level) {
       impressions: num(r.impressions),
       reach: num(r.reach),
       clicks: num(r.clicks),
-      leads: sumLeads(r.actions),
+      leads: pickLeads(r.actions),
     })
   }
   return rows
@@ -153,8 +158,12 @@ export async function syncMetaInsights(supabase, opts = {}) {
   const version = process.env.META_GRAPH_VERSION
   if (!version) return { ok: false, reason: 'META_GRAPH_VERSION ausente', owners: 0 }
 
-  const until = opts.until || isoDate(new Date())
-  const since = opts.since || isoDate(new Date(Date.now() - (Number(opts.days || 30)) * 86400000))
+  // Janela padrão de 90 dias: cobre todos os períodos da tela (mês/30d/trimestre) sem
+  // subestimar silenciosamente. days inválido cai no padrão (nunca gera data NaN).
+  const ISO = /^\d{4}-\d{2}-\d{2}$/
+  const days = Number.isInteger(opts.days) && opts.days > 0 && opts.days <= 90 ? opts.days : 90
+  const until = ISO.test(opts.until || '') ? opts.until : isoDate(new Date())
+  const since = ISO.test(opts.since || '') ? opts.since : isoDate(new Date(Date.now() - days * 86400000))
 
   let query = supabase
     .from('meta_connections')

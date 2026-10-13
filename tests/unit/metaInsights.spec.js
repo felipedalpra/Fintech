@@ -47,16 +47,25 @@ test('parseInsightsResponse: corpo vazio ou sem data retorna []', () => {
   expect(parseInsightsResponse(null, 'campaign')).toEqual([])
 })
 
-test('parseInsightsResponse: soma múltiplos tipos de lead (lead + onsite_conversion.lead_grouped)', () => {
+test('parseInsightsResponse: NÃO soma tipos de lead — prefere "lead" (evita dupla contagem)', () => {
   const rows = parseInsightsResponse({ data: [{
     campaign_id: 'C1', date_start: '2026-10-01', date_stop: '2026-10-01',
     spend: '10', impressions: '100', reach: '90', clicks: '5',
     actions: [
       { action_type: 'lead', value: '3' },
-      { action_type: 'onsite_conversion.lead_grouped', value: '2' },
+      { action_type: 'onsite_conversion.lead_grouped', value: '3' }, // mesmo evento, outro recorte
     ],
   }] }, 'campaign')
-  expect(rows[0].leads).toBe(5)
+  expect(rows[0].leads).toBe(3) // pega 'lead', não 3+3=6
+})
+
+test('parseInsightsResponse: usa o tipo agrupado quando "lead" não existe', () => {
+  const rows = parseInsightsResponse({ data: [{
+    campaign_id: 'C1', date_start: '2026-10-01', date_stop: '2026-10-01',
+    spend: '10', impressions: '100', reach: '90', clicks: '5',
+    actions: [{ action_type: 'onsite_conversion.lead_grouped', value: '4' }],
+  }] }, 'campaign')
+  expect(rows[0].leads).toBe(4)
 })
 
 test('deriveMetrics: calcula ctr, cpc, cpm, frequência e cpl', () => {

@@ -90,10 +90,17 @@ export function MetaAdsDashboard() {
   const rows = useMemo(() => {
     const agg = aggregateInsights(insights).map(a => {
       const meta = names[a.ref_id] || {}
-      return { ...a, ...deriveMetrics(a), name: meta.name || a.ref_id, status: meta.status }
+      const d = deriveMetrics(a)
+      // CPL só com leads > 0; com gasto e 0 leads fica indefinido (—), não "melhor".
+      return { ...a, ...d, cpl: a.leads > 0 ? d.cpl : null, name: meta.name || a.ref_id, status: meta.status }
     })
     const dir = sort.dir === 'asc' ? 1 : -1
-    agg.sort((x, y) => (Number(x[sort.key]) - Number(y[sort.key])) * dir)
+    const isText = sort.key === 'name' || sort.key === 'status'
+    // null (ex.: CPL sem leads) vai pro fim, nunca é tratado como "melhor".
+    const nval = v => (v == null ? Infinity : Number(v) || 0)
+    agg.sort((x, y) => isText
+      ? String(x[sort.key] ?? '').localeCompare(String(y[sort.key] ?? ''), 'pt-BR') * dir
+      : (nval(x[sort.key]) - nval(y[sort.key])) * dir)
     return agg
   }, [insights, names, sort])
 
@@ -102,7 +109,8 @@ export function MetaAdsDashboard() {
       spend: a.spend + r.spend, impressions: a.impressions + r.impressions,
       clicks: a.clicks + r.clicks, leads: a.leads + r.leads,
     }), { spend: 0, impressions: 0, clicks: 0, leads: 0 })
-    return { ...t, ...deriveMetrics(t) }
+    const d = deriveMetrics(t)
+    return { ...t, ...d, cpl: t.leads > 0 ? d.cpl : null }
   }, [rows])
 
   const bestCplId = useMemo(() => {

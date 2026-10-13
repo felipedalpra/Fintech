@@ -167,8 +167,6 @@ async function handleMetaAnalysis(req, res) {
 
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) throw new AssistantError(503, 'AI_NOT_CONFIGURED', 'Assistente não configurado.')
-    await consumeAssistantQuota(supabase, parseDailyLimit(process.env.AI_ASSISTANT_DAILY_LIMIT))
-    const model = (process.env.OPENAI_MODEL || 'gpt-5.2').trim()
 
     const since = metaRangeSince(period)
     // RLS garante que só vêm os insights da clínica do usuário.
@@ -178,8 +176,11 @@ async function handleMetaAnalysis(req, res) {
     ])
     if (insRes.error) throw new AssistantError(500, 'META_READ_ERROR', insRes.error.message)
     const rows = insRes.data || []
+    // Sem dados → não consome cota de IA nem chama a OpenAI.
     if (!rows.length) return res.status(200).json({ empty: true, period, requestId })
 
+    await consumeAssistantQuota(supabase, parseDailyLimit(process.env.AI_ASSISTANT_DAILY_LIMIT))
+    const model = (process.env.OPENAI_MODEL || 'gpt-5.2').trim()
     const ownerId = rows[0].user_id
     const nameMap = {}
     for (const c of campRes.data || []) nameMap[c.campaign_id] = { name: c.name, status: c.status }
@@ -198,7 +199,8 @@ async function handleMetaAnalysis(req, res) {
       return {
         nome: meta.name || c.ref_id, status: meta.status || '—',
         gasto: round2(c.spend), impressoes: c.impressions, cliques: c.clicks,
-        ctr_pct: round2(d.ctr), cpc: round2(d.cpc), leads: c.leads, cpl: round2(d.cpl),
+        // CPL só faz sentido com leads > 0; com gasto e 0 leads é "sem retorno" (cpl null).
+        ctr_pct: round2(d.ctr), cpc: round2(d.cpc), leads: c.leads, cpl: c.leads > 0 ? round2(d.cpl) : null,
       }
     })
 
@@ -213,7 +215,7 @@ async function handleMetaAnalysis(req, res) {
 
     // Cacheia via service role (meta_analyses é somente-escrita-no-servidor).
     try {
-      const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+      const admin = createClient(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
       await admin.from('meta_analyses').upsert(
         { user_id: ownerId, period, generated_at: new Date().toISOString(), model, payload },
         { onConflict: 'user_id,period' },
@@ -237,7 +239,8 @@ function buildMetaAnalysisPrompt(periodLabel) {
     'Responda em português do Brasil com 3 a 5 recomendações curtas e acionáveis.',
     'Retorne APENAS um array JSON, sem texto fora dele. Cada item: {"tipo":"escalar|pausar|ajustar|destaque","titulo":"...","detalhe":"..."}.',
     'titulo = a campanha e a ação em poucas palavras; detalhe = 1 frase com o porquê, citando a métrica que justifica.',
-    'Priorize: melhor CPL (escalar), CPL muito acima da média ou campanha pausada sem retorno (pausar/ajustar), melhor CTR (destaque).',
+    'cpl=null significa que a campanha gastou e NÃO gerou leads (sem retorno) — nunca trate isso como "melhor CPL"; é candidata a pausar/ajustar.',
+    'Priorize: melhor CPL entre as com leads (escalar), CPL muito acima da média ou campanha sem retorno (pausar/ajustar), melhor CTR (destaque).',
   ].join(' ')
 }
 
