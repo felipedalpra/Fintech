@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 import { OpportunityEditor } from './OpportunityEditor.jsx'
+import { NewLeadModal } from './NewLeadModal.jsx'
+import { createManualLead } from '../lib/opportunityActions.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 
 // Ícones SVG (leitura melhor que emoji). `d` é o miolo do path.
@@ -69,6 +71,7 @@ export function OpportunityPipeline() {
   const [dragStage, setDragStage] = useState(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorOpp, setEditorOpp] = useState(null)
+  const [leadStage, setLeadStage] = useState(null) // estágio para o modal de Novo lead (null = fechado)
   const [filters, setFilters] = useState({ q: '', responsible: 'all', source: 'all', tag: 'all' })
 
   useEffect(() => {
@@ -114,6 +117,7 @@ export function OpportunityPipeline() {
 
   function openCreate() { setEditorOpp(null); setEditorOpen(true) }
   function openEdit(opp) { setEditorOpp(opp); setEditorOpen(true) }
+  function addLead(opp) { setOpps(prev => [opp, ...prev]) }
 
   function onSaved(result) {
     if (result.created) setOpps(prev => [result.created, ...prev])
@@ -155,7 +159,8 @@ export function OpportunityPipeline() {
   if (error) return <ErrorState message={error} />
 
   const fsel = { fontSize: 12, padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit' }
-  const createBtn = { padding: '9px 15px', borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight || C.accent})`, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7, boxShadow: `0 6px 18px -6px ${C.accent}88` }
+  const leadBtn = { padding: '9px 15px', borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight || C.accent})`, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7, boxShadow: `0 6px 18px -6px ${C.accent}88` }
+  const oppBtn = { padding: '9px 14px', borderRadius: 10, background: C.surface, color: C.textSub, border: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7 }
 
   return (
     <div>
@@ -176,7 +181,8 @@ export function OpportunityPipeline() {
           {tagOpts.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <div style={{ flex: 1 }} />
-        <button type="button" style={createBtn} onClick={openCreate}><Ico d={ICON.plus} size={16} sw={2.4} />Nova oportunidade</button>
+        <button type="button" style={oppBtn} onClick={openCreate} title="Para paciente já cadastrado">Nova oportunidade</button>
+        <button type="button" style={leadBtn} onClick={() => setLeadStage('primeiro_contato')}><Ico d={ICON.plus} size={16} sw={2.4} />Novo lead</button>
       </div>
 
       {opps.length === 0
@@ -191,6 +197,8 @@ export function OpportunityPipeline() {
                 opps={visible.filter(o => o.stage === stage.key)}
                 allStages={STAGES}
                 memberLabel={memberLabel}
+                ownerId={effectiveUserId}
+                onLeadCreated={addLead}
                 moveOpp={moveOpp}
                 onAccept={acceptSuggestion}
                 onReject={rejectSuggestion}
@@ -213,11 +221,20 @@ export function OpportunityPipeline() {
         userId={user?.id}
         onSaved={onSaved}
       />
+
+      <NewLeadModal
+        open={!!leadStage}
+        onClose={() => setLeadStage(null)}
+        ownerId={effectiveUserId}
+        members={members}
+        stage={leadStage || 'primeiro_contato'}
+        onCreated={opp => { addLead(opp); setLeadStage(null) }}
+      />
     </div>
   )
 }
 
-function PipelineColumn({ stage, opps, allStages, memberLabel, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
+function PipelineColumn({ stage, opps, allStages, memberLabel, ownerId, onLeadCreated, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
   const totalValue = opps.reduce((s, o) => s + (Number(o.value) || 0), 0)
   const s = {
     column: { minWidth: 278, flex: '0 0 278px', background: dragActive ? stage.color + '14' : C.surface, border: `1px solid ${dragActive ? stage.color : C.border}`, borderRadius: 15, paddingBottom: 12, overflow: 'hidden', transition: 'background 0.12s, border-color 0.12s' },
@@ -244,11 +261,55 @@ function PipelineColumn({ stage, opps, allStages, memberLabel, moveOpp, onAccept
         </div>
         <div style={s.sum}>{totalValue > 0 ? fmtBRL(totalValue) : '—'}</div>
       </div>
-      {opps.length === 0
-        ? <div style={{ ...s.empty, marginTop: 12 }}>{dragActive ? 'Soltar aqui' : 'Arraste um card aqui'}</div>
-        : <div style={s.body}>{opps.map(o => (
-            <OpportunityCard key={o.id} opp={o} currentStage={stage} allStages={allStages} memberLabel={memberLabel} moveOpp={moveOpp} onAccept={onAccept} onReject={onReject} onEdit={onEdit} isMoving={movingId === o.id} />
-          ))}</div>}
+      <div style={{ ...s.body, paddingTop: 10 }}>
+        <QuickAddLead ownerId={ownerId} stage={stage.key} onCreated={onLeadCreated} />
+        {opps.length === 0
+          ? <div style={{ ...s.empty, margin: 0 }}>{dragActive ? 'Soltar aqui' : 'Vazio'}</div>
+          : opps.map(o => (
+              <OpportunityCard key={o.id} opp={o} currentStage={stage} allStages={allStages} memberLabel={memberLabel} moveOpp={moveOpp} onAccept={onAccept} onReject={onReject} onEdit={onEdit} isMoving={movingId === o.id} />
+            ))}
+      </div>
+    </div>
+  )
+}
+
+// Quick-add inline: botão "+ lead" que vira um campo de 1 linha (nome) e cria o lead
+// já nesta etapa. Para mais campos (telefone, valor…), usar o botão "Novo lead" da barra.
+function QuickAddLead({ ownerId, stage, onCreated }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function submit() {
+    const n = name.trim()
+    if (!n || saving) return
+    setSaving(true); setError(null)
+    const res = await createManualLead(ownerId, { name: n, stage })
+    setSaving(false)
+    if (res.error) { setError(res.error); return }
+    onCreated?.(res.opp)
+    setName(''); setOpen(false)
+  }
+
+  const trigger = { width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', border: `1.5px dashed ${C.borderBright || C.border}`, borderRadius: 10, background: C.accent + '0d', color: C.accent, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }
+  const input = { width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 9, border: `1px solid ${C.accent}`, background: C.card, color: C.text, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
+
+  if (!open) return <button type="button" style={trigger} onClick={() => setOpen(true)}><Ico d={ICON.plus} size={14} sw={2.4} />Adicionar lead rápido</button>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Nome do lead…"
+        style={input}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setOpen(false); setName('') } }} />
+      {error && <div style={{ fontSize: 11, color: C.red || '#ef4444' }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button type="button" onClick={submit} disabled={saving || !name.trim()}
+          style={{ flex: 1, fontSize: 12, fontWeight: 700, padding: '6px 8px', borderRadius: 8, border: 'none', background: C.accent, color: '#fff', cursor: saving || !name.trim() ? 'not-allowed' : 'pointer', opacity: saving || !name.trim() ? 0.6 : 1, fontFamily: 'inherit' }}>
+          {saving ? 'Criando…' : 'Adicionar'}
+        </button>
+        <button type="button" onClick={() => { setOpen(false); setName(''); setError(null) }}
+          style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+      </div>
     </div>
   )
 }

@@ -35,6 +35,37 @@ export async function createOpportunity(ownerId, f) {
   return { opp: data }
 }
 
+// Cria um LEAD manual (contato mínimo + oportunidade) via RPC atômica/idempotente.
+// Não exige paciente pré-cadastrado: informa nome e/ou telefone e o resto do essencial.
+// A RPC retorna a oportunidade completa — o nome/telefone do card vêm do próprio formulário
+// (sem um segundo SELECT, que poderia falhar e levar o usuário a recriar o lead).
+export async function createManualLead(ownerId, { name, phone, title, source, value, responsibleUserId, stage } = {}) {
+  if (!ownerId) return { error: 'Sessão inválida' }
+  const trimmedName = String(name || '').trim()
+  const trimmedPhone = String(phone || '').trim()
+  if (!trimmedName && !trimmedPhone) return { error: 'Informe ao menos nome ou telefone' }
+  const v = value === '' || value == null ? null : Number(value)
+  const { data: row, error } = await supabase.rpc('create_manual_lead', {
+    p_owner: ownerId,
+    p_name: name || null,
+    p_phone: phone || null,
+    p_title: title || null,
+    p_source: source || null,
+    p_value: Number.isFinite(v) ? v : null,
+    p_responsible: responsibleUserId || null,
+    p_stage: stage || 'primeiro_contato',
+  })
+  if (error) return { error: error.message }
+  // Monta o objeto do card a partir da linha retornada + os dados do formulário.
+  const opp = {
+    ...row,
+    tags: Array.isArray(row?.tags) ? row.tags : [],
+    suggestion_status: row?.suggestion_status || 'none',
+    patients: { full_name: trimmedName || trimmedPhone || 'Paciente', phone: trimmedPhone || null },
+  }
+  return { opp }
+}
+
 // Atualiza campos editáveis (não mexe em estágio nem status).
 export async function updateOpportunity(oppId, f) {
   if (!oppId) return { error: 'Oportunidade inválida' }
