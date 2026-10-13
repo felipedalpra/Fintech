@@ -251,6 +251,11 @@ async function handleSend(req, res) {
 
   if (!num.instance_url || !num.api_token) return res.status(502).json({ error: 'Número sem credenciais Z-API configuradas' })
 
+  // Mídia só pode apontar para o Storage da PRÓPRIA clínica (fecha URL externa/javascript: e cross-clínica).
+  if (isMedia && !String(mediaUrl).includes(`/storage/v1/object/public/wa-media/${ownerId}/`)) {
+    return res.status(400).json({ error: 'mediaUrl inválida (fora do storage da clínica).' })
+  }
+
   const bodyText = isMedia ? (caption || '') : text
   const msgType = isMedia ? type : 'text'
   const insertBase = {

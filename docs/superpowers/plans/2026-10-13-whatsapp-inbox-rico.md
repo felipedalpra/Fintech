@@ -92,6 +92,19 @@ de mídia) dentro de `WhatsAppInbox.jsx`/`WhatsAppChat.jsx`.
   texto+emoji funciona (mídia real só valida em preview Vercel com Z-API).
 - `CHANGELOG.md` no mesmo commit.
 
+## Endurecimento pós code-review (B2, 13/10/2026)
+- **Storage isolado por clínica:** upload só na pasta `data_owner_id()/…` (policy com `storage.foldername`),
+  e **sem policy de SELECT** no bucket → ninguém lista/enumera a mídia de outra clínica (leitura é
+  pela URL pública). Bucket com `file_size_limit=16MB` e `allowed_mime_types`.
+- **Validação da `mediaUrl` no servidor:** o `handleSend` exige que a URL contenha
+  `/storage/v1/object/public/wa-media/<ownerId>/` — fecha URL externa/`javascript:` (XSS) e cross-clínica.
+- **Extensão sanitizada** (`^[a-z0-9]{1,8}$`) no path e no `send-document/<ext>`.
+- **Gravação:** conversa-destino fixada no início (não vai pra conversa errada se trocar), mimeType
+  preferindo ogg/opus, e guarda de navegador sem `MediaRecorder`.
+- **Aceito/documentar (LGPD):** a mídia fica em **URL pública permanente** (padrão da Z-API), em pasta
+  por clínica com UUID. Futuro: bucket privado com signed URL de TTL curto + rotina de expurgo ao
+  arquivar/apagar o paciente.
+
 ## Decisões / ordem
 - **Sequência recomendada:** (A) monitoramento/escopo → (B1) receber mídia + emoji → (B2) enviar
   mídia/áudio. Cada um em branch/PR próprio. A é a menor e já aprovada; estabelece o modelo por

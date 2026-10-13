@@ -158,15 +158,16 @@ export function WhatsAppInbox() {
     setSuggestBusy(false)
   }
 
-  // POST comum para /api/whatsapp?action=message (texto ou mídia).
-  async function postPayload(extra) {
+  // POST comum para /api/whatsapp?action=message (texto ou mídia). `target` fixa a conversa
+  // destino (importante para áudio: a gravação pode terminar depois de trocar de conversa).
+  async function postPayload(extra, target = current) {
     const { data: sess } = await supabase.auth.getSession()
     const token = sess.session?.access_token
     if (!token) throw new Error('Sessão inválida. Entre novamente.')
     const res = await fetch('/api/whatsapp?action=message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ patientId: current.patientId, phone: current.phone, whatsappNumberId: replyNumberId, ...extra }),
+      body: JSON.stringify({ patientId: target.patientId, phone: target.phone, whatsappNumberId: replyNumberId, ...extra }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
@@ -186,14 +187,14 @@ export function WhatsAppInbox() {
     setSending(false)
   }
 
-  // Sobe o arquivo direto ao Storage e envia a mídia (imagem/documento/áudio).
-  async function sendMediaFile(file, type) {
-    if (!current || uploading || sending) return
+  // Sobe o arquivo direto ao Storage e envia a mídia (imagem/documento/áudio) para `target`.
+  async function sendMediaFile(file, type, target = current) {
+    if (!target || uploading || sending) return
     if (!replyNumberId) { setError('Nenhum número de WhatsApp configurado (Configurações → WhatsApp).'); return }
     setUploading(true); setError(null)
     try {
       const up = await uploadWhatsAppMedia(file, ownerId, { type })
-      await postPayload({ type: up.type, mediaUrl: up.url, mediaMime: up.mime, fileName: up.fileName, caption: '' })
+      await postPayload({ type: up.type, mediaUrl: up.url, mediaMime: up.mime, fileName: up.fileName, caption: '' }, target)
     } catch (err) { setError(err.message) }
     setUploading(false)
   }
@@ -208,18 +209,26 @@ export function WhatsAppInbox() {
   async function toggleRecord() {
     if (recording) { recRef.current?.stop(); return }
     if (!current || !replyNumberId) { setError('Selecione uma conversa e um número para gravar.'); return }
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setError('Gravação de áudio não é suportada neste navegador.'); return
+    }
+    const target = current // fixa a conversa destino: a gravação pode terminar após trocar de conversa
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
+      // Prefere ogg/opus (toca melhor no WhatsApp do destinatário); cai para o que o browser suportar.
+      const mt = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
+        .find(t => { try { return MediaRecorder.isTypeSupported(t) } catch { return false } })
+      const rec = new MediaRecorder(stream, mt ? { mimeType: mt } : undefined)
       chunksRef.current = []
       rec.ondataavailable = ev => { if (ev.data.size) chunksRef.current.push(ev.data) }
       rec.onstop = async () => {
         stream.getTracks().forEach(t => t.stop())
         setRecording(false)
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' })
+        const mime = rec.mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type: mime })
         if (blob.size) {
-          const ext = (rec.mimeType || 'audio/webm').includes('ogg') ? 'ogg' : 'webm'
-          await sendMediaFile(new File([blob], `voz-${Date.now()}.${ext}`, { type: blob.type }), 'audio')
+          const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm'
+          await sendMediaFile(new File([blob], `voz-${Date.now()}.${ext}`, { type: mime }), 'audio', target)
         }
       }
       recRef.current = rec

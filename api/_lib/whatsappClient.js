@@ -14,8 +14,10 @@ export function buildMediaSendRequest(type, { to, mediaUrl, caption = '', fileNa
     return { path: 'send-image', body: { phone: to, image: mediaUrl, caption } }
   }
   if (type === 'document') {
-    const ext = (fileName.split('.').pop() || '').toLowerCase()
-    return { path: `send-document/${ext && ext !== fileName.toLowerCase() ? ext : 'bin'}`, body: { phone: to, document: mediaUrl, fileName } }
+    // Extensão sanitizada (a..z/0..9, 1-8 chars) e só se houver mesmo um ponto no nome.
+    const raw = (fileName.split('.').pop() || '').toLowerCase()
+    const ext = (raw !== fileName.toLowerCase() && /^[a-z0-9]{1,8}$/.test(raw)) ? raw : 'bin'
+    return { path: `send-document/${ext}`, body: { phone: to, document: mediaUrl, fileName } }
   }
   if (type === 'audio') {
     return { path: 'send-ptt', body: { phone: to, audio: mediaUrl } }
