@@ -124,7 +124,8 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
         </div>
 
         {losing && (
-          <FInput label="Motivo da perda" value={lostReason} onChange={setLostReason} placeholder="Ex.: achou caro, foi em outra clínica" />
+          <FInput label="Motivo da perda" value={lostReason} onChange={setLostReason}
+            options={LOSS_REASONS.map(r => ({ v: r, l: r }))} placeholder="Selecione o motivo" />
         )}
         {error && <div style={{ color: C.red || '#ef4444', fontSize: 12 }}>{error}</div>}
 
@@ -147,6 +148,8 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
 }
 
 const SOURCE_SUGGESTIONS = ['Instagram', 'Indicação', 'WhatsApp', 'Google', 'Facebook', 'Site', 'Outro']
+// Motivos de perda padronizados (alimentam o relatório de motivos no Painel de CRM).
+const LOSS_REASONS = ['Achou caro', 'Adiou a decisão', 'Foi em outra clínica', 'Sumiu / sem resposta', 'Fechou com concorrente', 'Outro']
 
 function stageLabel(stages, key) {
   return (stages || []).find(s => s.key === key)?.label || key || '—'
