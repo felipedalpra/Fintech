@@ -5,6 +5,29 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 import { OpportunityEditor } from './OpportunityEditor.jsx'
+import { initials, avatarColor } from '../lib/avatar.js'
+
+// Ícones SVG (leitura melhor que emoji). `d` é o miolo do path.
+function Ico({ d, size = 14, sw = 2, fill = 'none' }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+}
+const ICON = {
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  tag: <><path d="M20.6 13.4 12 22l-9-9V3h10z" /><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
+  ai: <><path d="M12 3v2m0 14v2M5 12H3m18 0h-2M6 6 4.5 4.5M18 18l1.5 1.5" /><circle cx="12" cy="12" r="4" /></>,
+  wa: <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z" />,
+}
+function Avatar({ label, size = 32 }) {
+  return (
+    <span title={label} style={{
+      width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center',
+      fontSize: size <= 22 ? 9 : 12, fontWeight: 800, color: '#fff', flexShrink: 0,
+      background: avatarColor(label), border: `2px solid ${C.card}`, boxShadow: '0 2px 6px -2px rgba(0,0,0,.4)',
+    }}>{initials(label)}</span>
+  )
+}
 
 // Pipeline de oportunidades (CRM estilo Kommo). Cada card é uma oportunidade (negócio)
 // ligada a um paciente. Movimentação atômica/auditável via RPC move_opportunity.
@@ -131,8 +154,8 @@ export function OpportunityPipeline() {
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
 
-  const fsel = { fontSize: 12, padding: '6px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, fontFamily: 'inherit' }
-  const createBtn = { padding: '7px 14px', borderRadius: 8, background: C.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }
+  const fsel = { fontSize: 12, padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit' }
+  const createBtn = { padding: '9px 15px', borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight || C.accent})`, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7, boxShadow: `0 6px 18px -6px ${C.accent}88` }
 
   return (
     <div>
@@ -153,7 +176,7 @@ export function OpportunityPipeline() {
           {tagOpts.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <div style={{ flex: 1 }} />
-        <button type="button" style={createBtn} onClick={openCreate}>+ Nova oportunidade</button>
+        <button type="button" style={createBtn} onClick={openCreate}><Ico d={ICON.plus} size={16} sw={2.4} />Nova oportunidade</button>
       </div>
 
       {opps.length === 0
@@ -167,6 +190,7 @@ export function OpportunityPipeline() {
                 stage={stage}
                 opps={visible.filter(o => o.stage === stage.key)}
                 allStages={STAGES}
+                memberLabel={memberLabel}
                 moveOpp={moveOpp}
                 onAccept={acceptSuggestion}
                 onReject={rejectSuggestion}
@@ -193,73 +217,84 @@ export function OpportunityPipeline() {
   )
 }
 
-function PipelineColumn({ stage, opps, allStages, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
+function PipelineColumn({ stage, opps, allStages, memberLabel, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
   const totalValue = opps.reduce((s, o) => s + (Number(o.value) || 0), 0)
   const s = {
-    column: { minWidth: 260, flex: '0 0 260px', background: dragActive ? C.accent + '10' : C.surface, border: `1px solid ${dragActive ? C.accent : C.border}`, borderRadius: 12, padding: 12, transition: 'background 0.1s, border-color 0.1s' },
-    header: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 },
-    dot: { width: 10, height: 10, borderRadius: '50%', background: stage.color, flexShrink: 0 },
-    title: { fontSize: 13, fontWeight: 600, color: C.text, flex: 1 },
-    count: { fontSize: 12, color: C.textSub, background: C.border, borderRadius: 10, padding: '1px 8px' },
-    sum: { fontSize: 11, color: C.textSub, marginBottom: 12, paddingLeft: 18 },
-    empty: { fontSize: 12, color: C.textSub, textAlign: 'center', padding: '20px 0' },
+    column: { minWidth: 278, flex: '0 0 278px', background: dragActive ? stage.color + '14' : C.surface, border: `1px solid ${dragActive ? stage.color : C.border}`, borderRadius: 15, paddingBottom: 12, overflow: 'hidden', transition: 'background 0.12s, border-color 0.12s' },
+    head: { position: 'relative', padding: '13px 14px 11px', borderBottom: `1px solid ${C.border}` },
+    topbar: { position: 'absolute', left: 0, right: 0, top: 0, height: 3, background: stage.color },
+    tl: { display: 'flex', alignItems: 'center', gap: 8 },
+    dot: { width: 9, height: 9, borderRadius: '50%', background: stage.color, flexShrink: 0 },
+    title: { fontSize: 13, fontWeight: 700, color: C.text, flex: 1 },
+    count: { fontSize: 11.5, fontWeight: 700, color: C.textSub, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: '1px 9px', fontVariantNumeric: 'tabular-nums' },
+    sum: { fontSize: 12, fontWeight: 700, color: C.textSub, marginTop: 6, fontVariantNumeric: 'tabular-nums' },
+    body: { padding: '12px 11px 0', display: 'flex', flexDirection: 'column', gap: 10 },
+    empty: { fontSize: 12, color: C.textDim, textAlign: 'center', padding: '24px 0', border: `1.5px dashed ${C.border}`, borderRadius: 11, margin: '0 11px' },
   }
   return (
     <div style={s.column}
       onDragOver={e => { e.preventDefault(); onDragEnterStage?.() }}
       onDrop={e => { e.preventDefault(); onDropStage?.(e.dataTransfer.getData('text/plain')) }}>
-      <div style={s.header}>
-        <div style={s.dot} />
-        <span style={s.title}>{stage.label}</span>
-        <span style={s.count}>{opps.length}</span>
+      <div style={s.head}>
+        <span style={s.topbar} />
+        <div style={s.tl}>
+          <span style={s.dot} />
+          <span style={s.title}>{stage.label}</span>
+          <span style={s.count}>{opps.length}</span>
+        </div>
+        <div style={s.sum}>{totalValue > 0 ? fmtBRL(totalValue) : '—'}</div>
       </div>
-      <div style={s.sum}>{totalValue > 0 ? fmtBRL(totalValue) : '—'}</div>
       {opps.length === 0
-        ? <div style={s.empty}>{dragActive ? 'Soltar aqui' : 'Vazio'}</div>
-        : opps.map(o => (
-            <OpportunityCard key={o.id} opp={o} currentStage={stage} allStages={allStages} moveOpp={moveOpp} onAccept={onAccept} onReject={onReject} onEdit={onEdit} isMoving={movingId === o.id} />
-          ))}
+        ? <div style={{ ...s.empty, marginTop: 12 }}>{dragActive ? 'Soltar aqui' : 'Arraste um card aqui'}</div>
+        : <div style={s.body}>{opps.map(o => (
+            <OpportunityCard key={o.id} opp={o} currentStage={stage} allStages={allStages} memberLabel={memberLabel} moveOpp={moveOpp} onAccept={onAccept} onReject={onReject} onEdit={onEdit} isMoving={movingId === o.id} />
+          ))}</div>}
     </div>
   )
 }
 
-function OpportunityCard({ opp, currentStage, allStages, moveOpp, onAccept, onReject, onEdit, isMoving }) {
+function OpportunityCard({ opp, currentStage, allStages, memberLabel, moveOpp, onAccept, onReject, onEdit, isMoving }) {
   const patientName = opp.patients?.full_name || 'Paciente'
   const hasPhone = !!opp.patients?.phone
   const value = fmtBRL(opp.value)
   const days = daysInStage(opp.stage_entered_at)
   const tags = Array.isArray(opp.tags) ? opp.tags : []
+  const oppTitle = opp.title && opp.title !== 'Oportunidade' ? opp.title : null
+  const respLabel = opp.responsible_user_id ? (memberLabel?.[opp.responsible_user_id] || null) : null
+  const staleDays = days != null && days >= 7
   const hasSuggestion = opp.suggestion_status === 'pending'
     && opp.suggested_stage && opp.suggested_stage !== currentStage.key
 
+  const [hover, setHover] = useState(false)
   const s = {
-    card: { background: C.card, border: `1px solid ${hasSuggestion ? C.accent + '66' : C.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8, opacity: isMoving ? 0.5 : 1, transition: 'opacity 0.15s', cursor: 'grab' },
-    name: { fontSize: 13, fontWeight: 700, color: C.text },
-    title: { fontSize: 12, color: C.textSub, marginBottom: 6 },
-    value: { fontSize: 13, fontWeight: 700, color: C.accent, marginBottom: 6 },
-    metaRow: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 },
-    tag: { fontSize: 10, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 6px' },
-    foot: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 },
-    days: { fontSize: 11, color: days != null && days >= 7 ? (C.yellow || '#f59e0b') : C.textDim },
-    wa: { fontSize: 13, opacity: hasPhone ? 1 : 0.3 },
-    select: { width: '100%', fontSize: 11, padding: '3px 6px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.card, color: C.text, cursor: isMoving ? 'not-allowed' : 'pointer' },
-  }
-
-  function onChange(e) {
-    const ns = e.target.value
-    if (ns !== currentStage.key) moveOpp(opp.id, ns)
+    card: { background: C.card, border: `1px solid ${hover ? (C.borderBright || C.border) : (hasSuggestion ? C.accent + '66' : C.border)}`, borderRadius: 12, padding: 12, opacity: isMoving ? 0.5 : 1, cursor: 'grab', transform: hover && !isMoving ? 'translateY(-3px)' : 'none', boxShadow: hover && !isMoving ? '0 16px 40px -16px rgba(0,0,0,.6)' : 'none', transition: 'transform .16s, box-shadow .16s, border-color .16s, opacity .15s' },
+    dhead: { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 },
+    nm: { fontSize: 13.5, fontWeight: 700, color: C.text, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+    sub: { fontSize: 11.5, color: C.textSub, fontWeight: 500, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+    value: { fontSize: 16, fontWeight: 800, color: C.accent, marginBottom: 9, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' },
+    tags: { display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 },
+    tag: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, padding: '2px 7px' },
+    foot: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 10, borderTop: `1px solid ${C.border}` },
+    days: { display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: staleDays ? (C.yellow || '#f59e0b') : C.textSub },
+    wa: { width: 30, height: 30, borderRadius: 9, border: 'none', display: 'grid', placeItems: 'center', color: '#fff', background: hasPhone ? '#25D366' : C.surface, boxShadow: hasPhone ? '0 3px 9px -3px #25D36688' : 'none', cursor: hasPhone ? 'pointer' : 'not-allowed', flexShrink: 0 },
   }
 
   return (
     <div style={s.card} draggable={!isMoving}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       onDragStart={e => e.dataTransfer.setData('text/plain', opp.id)}
       onClick={() => onEdit?.(opp)} title="Clique para editar · arraste para mover">
-      <div style={s.name}>{patientName}</div>
-      {opp.title && opp.title !== 'Oportunidade' && <div style={s.title}>{opp.title}</div>}
+      <div style={s.dhead}>
+        <Avatar label={patientName} size={32} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={s.nm}>{patientName}</div>
+          {oppTitle && <div style={s.sub}>{oppTitle}</div>}
+        </div>
+      </div>
       {value && <div style={s.value}>{value}</div>}
       {(opp.source || tags.length > 0) && (
-        <div style={s.metaRow}>
-          {opp.source && <span style={s.tag}>🏷 {opp.source}</span>}
+        <div style={s.tags}>
+          {opp.source && <span style={s.tag}><span style={{ color: C.textDim, display: 'inline-flex' }}><Ico d={ICON.tag} size={11} /></span>{opp.source}</span>}
           {tags.map((t, i) => <span key={i} style={s.tag}>{t}</span>)}
         </div>
       )}
@@ -270,11 +305,19 @@ function OpportunityCard({ opp, currentStage, allStages, moveOpp, onAccept, onRe
         </div>
       )}
       <div style={s.foot}>
-        <span style={s.days}>{days != null ? `⏱ ${days}d no estágio` : ''}</span>
-        <span style={s.wa} title={hasPhone ? 'Tem WhatsApp' : 'Sem telefone'}>💬</span>
+        <span style={s.days}>{days != null && <><Ico d={ICON.clock} size={12} />{days}d no estágio</>}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {respLabel && <Avatar label={respLabel} size={24} />}
+          <button type="button" style={s.wa} disabled={!hasPhone}
+            onClick={e => { e.stopPropagation(); if (!hasPhone) return; const digits = String(opp.patients.phone).replace(/\D/g, ''); if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener') }}
+            title={hasPhone ? 'Abrir conversa no WhatsApp' : 'Sem telefone'}>
+            <Ico d={ICON.wa} size={15} fill="currentColor" sw={0} />
+          </button>
+        </div>
       </div>
-      <select style={s.select} value={currentStage.key} onChange={onChange} onClick={e => e.stopPropagation()}
-        disabled={isMoving} aria-label="Mover para estágio">
+      <select style={{ width: '100%', marginTop: 10, fontSize: 11.5, padding: '6px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, cursor: isMoving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+        value={currentStage.key} onChange={e => { if (e.target.value !== currentStage.key) moveOpp(opp.id, e.target.value) }}
+        onClick={e => e.stopPropagation()} disabled={isMoving} aria-label="Mover para estágio">
         {allStages.map(st => <option key={st.key} value={st.key}>{st.label}</option>)}
       </select>
     </div>
@@ -286,20 +329,20 @@ export function SuggestionBox({ opp, disabled, onAccept, onReject }) {
   const pct = opp.suggested_confidence != null ? Math.round(Number(opp.suggested_confidence) * 100) : null
   const label = STAGE_LABEL[opp.suggested_stage] || opp.suggested_stage
   const s = {
-    box: { background: C.accent + '12', border: `1px solid ${C.accent}44`, borderRadius: 8, padding: '8px 10px', marginBottom: 8 },
-    head: { fontSize: 11, fontWeight: 700, color: C.accent, marginBottom: 2 },
-    reason: { fontSize: 11, color: C.textSub, marginBottom: 6, lineHeight: 1.35 },
-    row: { display: 'flex', gap: 6 },
-    accept: { flex: 1, fontSize: 11, fontWeight: 700, padding: '5px 8px', borderRadius: 6, border: 'none', background: C.accent, color: '#fff', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, fontFamily: 'inherit' },
-    reject: { fontSize: 11, padding: '5px 10px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.card, color: C.textSub, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit' },
+    box: { background: `linear-gradient(135deg, ${C.accent}1f, ${(C.purple || '#8B5CF6')}18)`, border: `1px solid ${C.accent}55`, borderRadius: 11, padding: '9px 10px', marginBottom: 10 },
+    head: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800, color: C.accent, marginBottom: 3 },
+    reason: { fontSize: 11.5, color: C.textSub, marginBottom: 9, lineHeight: 1.4, fontStyle: 'italic' },
+    row: { display: 'flex', gap: 7 },
+    accept: { flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 8px', borderRadius: 8, border: 'none', background: C.accent, color: '#fff', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1, fontFamily: 'inherit' },
+    reject: { fontSize: 11.5, fontWeight: 700, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, color: C.textSub, cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit' },
   }
   return (
     <div style={s.box}>
-      <div style={s.head}>🤖 IA sugere: → {label}{pct != null ? ` · ${pct}%` : ''}</div>
+      <div style={s.head}><Ico d={ICON.ai} size={13} /> IA sugere → {label}{pct != null ? ` · ${pct}%` : ''}</div>
       {opp.suggested_reason && <div style={s.reason}>"{opp.suggested_reason}"</div>}
       <div style={s.row}>
         <button type="button" style={s.accept} onClick={onAccept} disabled={disabled}>✓ Mover</button>
-        <button type="button" style={s.reject} onClick={onReject} disabled={disabled}>✗ Ignorar</button>
+        <button type="button" style={s.reject} onClick={onReject} disabled={disabled}>Ignorar</button>
       </div>
     </div>
   )

@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { C, base } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { createTask, toggleTask, deleteTask } from '../lib/taskActions.js'
+import { initials, avatarColor } from '../lib/avatar.js'
+
+function MiniAvatar({ label }) {
+  return <span title={label} style={{ width: 24, height: 24, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800, color: '#fff', background: avatarColor(label), flexShrink: 0 }}>{initials(label)}</span>
+}
 
 // Aba Tarefas da oportunidade: lista + criar + concluir. Tarefas ligadas a esta oportunidade.
 function overdue(due, status) {
@@ -66,11 +71,11 @@ export function OpportunityTasks({ ownerId, opportunityId, patientId, members, u
   }
 
   const s = {
-    row: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.border}` },
-    title: done => ({ flex: 1, fontSize: 13, color: done ? C.textDim : C.text, textDecoration: done ? 'line-through' : 'none' }),
-    due: late => ({ fontSize: 11, color: late ? (C.red || '#ef4444') : C.textSub, whiteSpace: 'nowrap' }),
-    who: { fontSize: 10, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' },
-    del: { background: 'none', border: 'none', color: C.textDim, cursor: 'pointer', fontSize: 14, padding: 0 },
+    row: done => ({ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 12px', borderRadius: 11, border: `1px solid ${C.border}`, background: C.surface, marginBottom: 8, opacity: done ? 0.6 : 1 }),
+    title: done => ({ flex: 1, fontSize: 13.5, fontWeight: 500, color: done ? C.textSub : C.text, textDecoration: done ? 'line-through' : 'none', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
+    due: late => ({ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 7, whiteSpace: 'nowrap', color: late ? (C.red || '#ef4444') : C.textSub, background: late ? (C.red || '#ef4444') + '22' : C.card }),
+    check: done => ({ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${done ? (C.green || '#10B981') : (C.borderBright || C.border)}`, background: done ? (C.green || '#10B981') : 'transparent', color: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0, padding: 0 }),
+    del: { background: 'none', border: 'none', color: C.textDim, cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px', flexShrink: 0 },
     form: { display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8, alignItems: 'center', marginTop: 12 },
     input: { ...base.input, fontSize: 13 },
     btn: { padding: '8px 14px', borderRadius: 8, background: C.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, fontFamily: 'inherit' },
@@ -87,11 +92,13 @@ export function OpportunityTasks({ ownerId, opportunityId, patientId, members, u
             const done = t.status === 'feita'
             const late = overdue(t.due_date, t.status)
             return (
-              <div key={t.id} style={s.row}>
-                <input type="checkbox" checked={done} onChange={() => toggle(t)} style={{ cursor: 'pointer', accentColor: C.accent }} />
+              <div key={t.id} style={s.row(done)}>
+                <button type="button" style={s.check(done)} onClick={() => toggle(t)} aria-label={done ? 'Reabrir' : 'Concluir'}>
+                  {done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
+                </button>
                 <span style={s.title(done)}>{t.title}</span>
-                {t.due_date && <span style={s.due(late)}>{late ? '⚠ ' : '📅 '}{fmtDue(t.due_date)}</span>}
-                {t.assigned_user_id && <span style={s.who}>{memberLabel[t.assigned_user_id] || '—'}</span>}
+                {t.due_date && <span style={s.due(late)}>{late ? '⚠ ' : ''}{fmtDue(t.due_date)}</span>}
+                {t.assigned_user_id && <MiniAvatar label={memberLabel[t.assigned_user_id] || '—'} />}
                 <button type="button" style={s.del} onClick={() => remove(t)} title="Excluir">×</button>
               </div>
             )

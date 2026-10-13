@@ -19,7 +19,7 @@ test('painel de tarefas lista agrupado e tem filtro + nova avulsa', async ({ pag
 
   await expect(page.getByRole('button', { name: 'Minhas' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Todas' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '+ Nova tarefa avulsa' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Nova tarefa', exact: true })).toBeVisible()
 
   // Tarefa atrasada e a avulsa (sem data → futura) aparecem; vínculo "avulsa" visível.
   await expect(page.getByText('Ligar pra Ana')).toBeVisible()
@@ -29,7 +29,7 @@ test('painel de tarefas lista agrupado e tem filtro + nova avulsa', async ({ pag
 
 test('botão abre o modal de nova tarefa avulsa', async ({ page }) => {
   await page.goto('/app/tarefas')
-  await page.getByRole('button', { name: '+ Nova tarefa avulsa' }).click()
+  await page.getByRole('button', { name: 'Nova tarefa', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Nova tarefa avulsa' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Criar tarefa' })).toBeVisible()
 })
