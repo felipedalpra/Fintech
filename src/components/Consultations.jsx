@@ -65,7 +65,9 @@ function readDraft() {
   } catch { return null }
 }
 
-export function Consultations({ data, setData }) {
+export function Consultations({ data, setData, saveDataNow }) {
+  // Blindagem (Fase 3): grava imediato e confirmado; erro vai pro banner; fallback setData.
+  const persist = updater => { const r = (saveDataNow || setData)(updater); if (r && r.catch) r.catch(() => {}) }
   const { user } = useAuth()
   const { ownerId } = useUserRole()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
@@ -207,7 +209,7 @@ export function Consultations({ data, setData }) {
         ? (form.paymentDate || (form.paymentScheduleMode === 'duas_datas' ? [form.payment1Date, form.payment2Date].filter(Boolean).sort().slice(-1)[0] : form.date))
         : '',
     }, 'consultation')
-    setData(current => ({
+    persist(current => ({
       ...current,
       consultations: editing
         ? current.consultations.map(item => item.id === editing ? { ...nextRecord, id:editing } : item)
@@ -368,7 +370,7 @@ export function Consultations({ data, setData }) {
         </div>
       </Modal>
 
-      <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => setData(current => ({ ...current, consultations:current.consultations.filter(item => item.id !== confirmId) }))} />
+      <ConfirmModal open={!!confirmId} onClose={() => setConfirmId(null)} onConfirm={() => persist(current => ({ ...current, consultations:current.consultations.filter(item => item.id !== confirmId) }))} />
     </div>
   )
 }

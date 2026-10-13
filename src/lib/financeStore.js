@@ -1,5 +1,5 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
-import { computeIdsToDelete } from './financeSync.js'
+import { computeIdsToDelete, missingRowIds, mergeById } from './financeSync.js'
 import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
@@ -446,8 +446,21 @@ async function syncTable(table, userId, rows, baselineIds) {
   }
 
   if (rows.length > 0) {
-    const { error } = await supabase.from(table).upsert(rows)
-    if (error) throw error
+    // READ-BACK (blindagem Fase 2): o upsert devolve os ids gravados; confirmamos que CADA linha
+    // enviada voltou. Se alguma não voltar (ex.: rejeitada por RLS/escopo), erramos ALTO em vez de
+    // dar a gravação como sucesso — o banner de erro aparece e o dado fica pendente para retry.
+    // EM LOTES de 500: o PostgREST corta o retorno em ~1000 linhas; sem lotes, uma tabela grande
+    // (>1000) devolveria ids truncados e o read-back acusaria perda FALSA, travando todo save.
+    const CHUNK = 500
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const batch = rows.slice(i, i + CHUNK)
+      const { data: saved, error } = await supabase.from(table).upsert(batch).select('id')
+      if (error) throw error
+      const missing = missingRowIds(batch, saved)
+      if (missing.length > 0) {
+        throw new Error(`Gravação não confirmada em ${table}: ${missing.length} registro(s) não persistiram.`)
+      }
+    }
   }
 }
 
@@ -562,6 +575,34 @@ export async function importLegacyDataIfNeeded(user, ownerId = user.id) {
   await saveFinanceData(ownerId, normalized)
   localStorage.setItem(migratedKey(user.id), '1')
   return normalized
+}
+
+const IMPORTABLE_COLLECTIONS = ['procedures', 'products', 'surgeries', 'consultations', 'productSales', 'productPurchases', 'extraRevenues', 'expenses', 'assets', 'liabilities', 'goals']
+
+// BLINDAGEM (Fase 2): importa, SOB DEMANDA, os dados que ficaram presos no localStorage DESTE
+// navegador para a nuvem — MERGE por id (só adiciona o que falta; nunca apaga nem sobrescreve o
+// que já está no servidor). Serve para recuperar lançamentos antigos que nunca subiram. Diferente
+// do importLegacyDataIfNeeded, roda mesmo com a nuvem já tendo dados (não depende de estar vazia).
+export async function forceImportBrowserData(user, ownerId = user?.id) {
+  if (!user?.id || !ownerId) return { error: 'Clínica não identificada para importar.' }
+  // SÓ o dado DESTE usuário (por e-mail). Não usa a chave legada global (LEGACY_APP_KEY) para não
+  // importar lançamentos de OUTRA conta num navegador compartilhado.
+  const localUserData = getLocalUserDataByEmail(user.email)
+  const candidate = !isDataEmpty(normalizeData(localUserData)) ? localUserData : null
+  if (!candidate) return { imported: 0, message: 'Nenhum dado antigo deste usuário encontrado neste navegador.' }
+
+  const incoming = normalizeData(candidate)
+  const current = normalizeData(await fetchFinanceData(ownerId))
+  const merged = { ...current }
+  let added = 0
+  for (const key of IMPORTABLE_COLLECTIONS) {
+    const res = mergeById(current[key], incoming[key])
+    merged[key] = res.merged
+    added += res.added
+  }
+  if (added === 0) return { imported: 0, message: 'Nada novo para importar — este navegador não tem lançamentos fora da nuvem.' }
+  await saveFinanceData(ownerId, merged, current) // baseline = current → só upsert, nunca apaga
+  return { imported: added, message: `${added} lançamento(s) importado(s) deste navegador para a nuvem.` }
 }
 
 function isIgnorableAuditLogError(error) {

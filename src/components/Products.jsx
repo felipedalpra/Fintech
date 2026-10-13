@@ -93,7 +93,9 @@ const PAYMENT_METHOD_LABEL = {
   transferencia:'Transferência',
 }
 
-export function Products({ data, setData }) {
+export function Products({ data, setData, saveDataNow }) {
+  // Blindagem (Fase 3): grava imediato e confirmado; erro vai pro banner; fallback setData.
+  const persist = updater => { const r = (saveDataNow || setData)(updater); if (r && r.catch) r.catch(() => {}) }
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const m = buildMetrics(data)
@@ -142,7 +144,7 @@ export function Products({ data, setData }) {
         active:form.active !== false,
         createdAt:form.createdAt || today(),
       }
-      setData(current => ({
+      persist(current => ({
         ...current,
         products: editingId
           ? current.products.map(item => item.id === editingId ? { ...nextRecord, id:editingId } : item)
@@ -197,7 +199,7 @@ export function Products({ data, setData }) {
         mixAmountB,
         ...baseForm
       } = form
-      setData(current => ({
+      persist(current => ({
         ...current,
         productSales: [...current.productSales, {
           ...baseForm,
@@ -213,7 +215,7 @@ export function Products({ data, setData }) {
       if (!form.productId || !form.quantity) return
       const product = productsById.get(form.productId)
       const totalValue = form.totalValue || ((product?.purchasePrice || 0) * (form.quantity || 0))
-      setData(current => ({
+      persist(current => ({
         ...current,
         productPurchases: [...current.productPurchases, {
           ...form,
@@ -228,13 +230,13 @@ export function Products({ data, setData }) {
 
   const removeRecord = record => {
     if (record.type === 'product') {
-      setData(current => ({ ...current, products:current.products.filter(item => item.id !== record.id) }))
+      persist(current => ({ ...current, products:current.products.filter(item => item.id !== record.id) }))
     }
     if (record.type === 'sale') {
-      setData(current => ({ ...current, productSales:current.productSales.filter(item => item.id !== record.id) }))
+      persist(current => ({ ...current, productSales:current.productSales.filter(item => item.id !== record.id) }))
     }
     if (record.type === 'purchase') {
-      setData(current => ({ ...current, productPurchases:current.productPurchases.filter(item => item.id !== record.id) }))
+      persist(current => ({ ...current, productPurchases:current.productPurchases.filter(item => item.id !== record.id) }))
     }
   }
 
