@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (97)
+### Changed
+- **Acesso sem trial**: autenticação passa a ser a única condição para abrir o ERP; cobrança continua disponível em Assinatura, mas não bloqueia, expira nem redireciona a navegação. Novas contas de billing são registradas como ativas sem datas de trial, enquanto registros existentes são preservados sem migração destrutiva. Landing page, checkout, cadastro, assinatura e resumo lateral deixam de prometer ou exibir período de teste. (`src/router/ProtectedRoute.jsx`, `src/context/BillingContext.jsx`, `src/lib/billingStore.js`, `src/billing/plans.js`, `src/pages/BillingPage.jsx`, `src/pages/LoginPage.jsx`, `src/pages/CheckoutPage.jsx`, `src/pages/FinanceWorkspace.jsx`, `src/landing/Hero.jsx`, `src/landing/Pricing.jsx`, `src/landing/FAQ.jsx`.)
+
+### Fixed
+- **Refresh e deep-link preservam a tela aberta**: a rota protegida deixa de depender da hidratação assíncrona do billing, eliminando o redirecionamento transitório para Assinatura ao recarregar Conciliação bancária ou qualquer outra rota interna. A mudança não lê, regrava ou remove lançamentos financeiros. Cobertura adicionada para reload da conciliação e URLs de cadastro sem parâmetros de trial. (`src/router/ProtectedRoute.jsx`, `tests/e2e/session-restore.spec.js`, `tests/unit/billingPlans.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (96)
 ### Added
 - **Conciliação bancária assistida** em Financeiro → Cobrança: importa OFX 1.x/2.x e CSV no navegador, exige prévia antes de persistir, cruza cada linha com parcelas do razão por direção + valor + janela de data + descrição e explica a sugestão. Confirmação e desconciliação são humanas, auditáveis e reversíveis; não alteram valor, baixa, competência, vencimento, DRE, caixa ou contas. Linhas sem par podem abrir o modal financeiro real pré-preenchido, mas competência/categoria continuam exigindo revisão. (`src/components/BankReconciliation.jsx`, `src/lib/statementParser.js`, `src/lib/bankReconciliationMatch.js`, `src/lib/bankReconciliationLedger.js`, `src/lib/bankReconciliationStore.js`.)

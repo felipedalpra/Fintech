@@ -104,11 +104,11 @@ export function Hero() {
             <TypewriterText />
           </p>
           <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:24 }}>
-            <a href="#planos" style={{ textDecoration:'none' }}><Btn style={{ padding:'14px 22px', boxShadow:'0 18px 42px rgba(20,184,166,0.32)' }}>Começar grátis</Btn></a>
+            <a href="#planos" style={{ textDecoration:'none' }}><Btn style={{ padding:'14px 22px', boxShadow:'0 18px 42px rgba(20,184,166,0.32)' }}>Começar agora</Btn></a>
             <Link to="/login" style={{ textDecoration:'none' }}><Btn variant="ghost" style={{ padding:'14px 22px', borderColor:'rgba(255,255,255,0.24)', color:'#ECF8FC' }}>Acessar plataforma</Btn></Link>
           </div>
           <div style={{ display:'flex', gap:18, flexWrap:'wrap', color:'#B4CBD5', fontSize:13 }}>
-            <span>✓ Sem cartão no trial</span>
+            <span>✓ Acesso sem expiração de teste</span>
             <span>✓ Rentabilidade por cirurgia</span>
             <span>✓ DRE e caixa automáticos</span>
           </div>

@@ -5,7 +5,7 @@ import { hasSupabaseEnv } from '../lib/supabase.js'
 import { Btn, Card, FInput } from '../components/UI.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { C, base } from '../theme.js'
-import { BILLING_LABELS, FREE_TRIAL_DAYS } from '../billing/plans.js'
+import { BILLING_LABELS } from '../billing/plans.js'
 
 const PASSWORD_POLICY = {
   minLength:8,
@@ -28,11 +28,9 @@ export function LoginPage({ initialMode = 'login' }) {
 
   const checkoutSummary = useMemo(() => {
     const cycle = searchParams.get('cycle')
-    const trial = searchParams.get('trial')
-    const onboarding = searchParams.get('onboarding')
-    if (!cycle && !trial && !onboarding) return ''
+    if (!cycle) return ''
     const cycleLabel = BILLING_LABELS[cycle] || 'Mensal'
-    return `Plano SurgiMetrics selecionado: ${cycleLabel}. Você começa com ${trial || FREE_TRIAL_DAYS} dias grátis e só precisa pagar depois do período de trial.`
+    return `Plano SurgiMetrics selecionado: ${cycleLabel}. Confirme seu e-mail para acessar a plataforma.`
   }, [searchParams])
 
   useEffect(() => {
@@ -147,7 +145,7 @@ export function LoginPage({ initialMode = 'login' }) {
           <p style={{ color:C.textSub, fontSize:14, lineHeight:1.6, marginBottom:22 }}>
             {isRegister
               ? 'Cadastre seu acesso e comece a centralizar o financeiro da clínica no SurgiMetrics.'
-              : 'Login com sessao persistida, trial automático de 30 dias e sincronizacao remota da operacao financeira.'}
+              : 'Login com sessão persistida e sincronização remota da operação financeira.'}
           </p>
 
           {checkoutSummary && (
