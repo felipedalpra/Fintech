@@ -655,7 +655,7 @@ export function FinanceWorkspace() {
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
   const { mode, toggleTheme } = useTheme()
-  const { canAccess, clinicName, ownerId, role, loading: roleLoading } = useUserRole()
+  const { canAccess, clinicName, ownerId, role, loading: roleLoading, scopeError } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -1006,6 +1006,27 @@ export function FinanceWorkspace() {
   const sidebarStats = isMobile
     ? sidebarQuickStats
     : sidebarQuickStats.slice(0, ultraCompactDesktop ? 0 : (compactForShortHeight ? 1 : 2))
+
+  // BLINDAGEM multi-usuário: membro confirmado cujo escopo da clínica não resolveu. NÃO renderiza o
+  // workspace (leria vazio pelo id errado e gravaria dado órfão) — bloqueia e avisa, com recarregar.
+  if (scopeError) {
+    return (
+      <div style={{ minHeight:'100vh', background:C.bg, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+        <div style={{ maxWidth:440, textAlign:'center', background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:'28px 24px' }}>
+          <div style={{ fontSize:30, marginBottom:10 }}>⚠️</div>
+          <h2 style={{ margin:'0 0 8px', fontSize:18, fontWeight:800, color:C.text }}>Não foi possível vincular sua clínica</h2>
+          <p style={{ margin:'0 0 18px', fontSize:14, color:C.textSub, lineHeight:1.6 }}>
+            Sua conta está nesta clínica, mas não conseguimos carregar o vínculo agora. Para não arriscar
+            salvar dados fora do lugar, o acesso está pausado. Recarregue a página; se persistir, fale com o suporte.
+          </p>
+          <button type="button" onClick={() => { try { window.location.reload() } catch { /* ignore */ } }}
+            style={{ background:C.accent, color:'#fff', border:'none', borderRadius:10, padding:'10px 18px', fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+            Recarregar
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (loading || roleLoading) {
     return (

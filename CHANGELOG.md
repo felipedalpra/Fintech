@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (98)
+### Fixed
+- **Blindagem multi-usuário (escopo da clínica):** um membro confirmado (ex.: gestão/equipe) cujo `data_owner_id()` não resolvesse caía **em silêncio** para o próprio `user.id` — o que faria a pessoa **ver um app vazio** (lendo pelo id errado) e **gravar dados órfãos**, invisíveis para o resto da clínica. Agora o `UserRoleContext` **tenta de novo** (1 retry) e, se ainda não resolver, expõe `scopeError` em vez de usar o `user.id`; o workspace **bloqueia com aviso** ("Não foi possível vincular sua clínica") + botão Recarregar, nunca renderizando/gravando com escopo errado. Fecha o modo de falha de "desconectado / não aparece / não persiste" entre perfis da mesma conta. `src/context/UserRoleContext.jsx`, `src/pages/FinanceWorkspace.jsx`.
+
 ## [Unreleased] - 2026-10-14 (97)
 ### Changed
 - **Acesso sem trial**: autenticação passa a ser a única condição para abrir o ERP; cobrança continua disponível em Assinatura, mas não bloqueia, expira nem redireciona a navegação. Novas contas de billing são registradas como ativas sem datas de trial, enquanto registros existentes são preservados sem migração destrutiva. Landing page, checkout, cadastro, assinatura e resumo lateral deixam de prometer ou exibir período de teste. (`src/router/ProtectedRoute.jsx`, `src/context/BillingContext.jsx`, `src/lib/billingStore.js`, `src/billing/plans.js`, `src/pages/BillingPage.jsx`, `src/pages/LoginPage.jsx`, `src/pages/CheckoutPage.jsx`, `src/pages/FinanceWorkspace.jsx`, `src/landing/Hero.jsx`, `src/landing/Pricing.jsx`, `src/landing/FAQ.jsx`.)
