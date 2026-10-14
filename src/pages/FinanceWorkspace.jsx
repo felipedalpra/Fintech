@@ -16,6 +16,7 @@ import { Reports } from '../components/Reports.jsx'
 import { LedgerCheck } from '../components/LedgerCheck.jsx'
 import { Recurrences } from '../components/Recurrences.jsx'
 import { ChartOfAccounts } from '../components/ChartOfAccounts.jsx'
+import { BankReconciliation } from '../components/BankReconciliation.jsx'
 import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { FAB } from '../components/FAB.jsx'
@@ -92,6 +93,9 @@ const AREAS = [
         { id:'recurrences',   label:'Recorrências',  icon:'recurrences',   hint:'Despesas e receitas fixas' },
         { id:'chart-of-accounts', label:'Plano de contas', icon:'reports', hint:'Estrutura de grupos e categorias financeiras' },
       ] },
+      { title:'Cobrança', items:[
+        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Cruze OFX/CSV com os lançamentos do razão' },
+      ] },
       { title:'Análise', items:[
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
         { id:'reports',  label:'Relatórios', icon:'reports', hint:'Central de exportações em Excel' },
@@ -147,6 +151,7 @@ const TITLES = {
   reports:'Central de Relatórios',
   'ledger-check':'Conferência do Razão',
   'chart-of-accounts':'Plano de Contas',
+  'bank-reconciliation':'Conciliação Bancária',
   ai:'Central de IA',
   billing:'Assinatura',
   settings:'Configurações',
@@ -176,6 +181,7 @@ const SUBTITLES = {
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
   'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
   'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
+  'bank-reconciliation':'Importe OFX ou CSV e confirme os vínculos com o razão sem alterar os lançamentos.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
@@ -204,6 +210,7 @@ const PAGES = {
   reports:Reports,
   'ledger-check':LedgerCheck,
   'chart-of-accounts':ChartOfAccounts,
+  'bank-reconciliation':BankReconciliation,
   ai:AIAssistant,
   billing:BillingPage,
   settings:Settings,

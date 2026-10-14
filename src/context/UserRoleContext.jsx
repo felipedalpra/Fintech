@@ -11,11 +11,11 @@ const E2E_CLINIC_ID = import.meta.env.VITE_E2E_CLINIC_ID || 'e2e-clinic-id'
 const ROLE_ACCESS = {
   admin: [
     'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas',
-    'finance', 'goals', 'recurrences', 'reports', 'ledger-check', 'chart-of-accounts', 'ai', 'billing', 'settings',
+    'finance', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'chart-of-accounts', 'ai', 'billing', 'settings',
   ],
   gestao: [
     'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas',
-    'finance', 'goals', 'recurrences', 'reports', 'ledger-check', 'chart-of-accounts', 'ai',
+    'finance', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'chart-of-accounts', 'ai',
   ],
   // Jonas (concierge): pode cadastrar cirurgias, consultas e orçamentos — sem acesso financeiro
   concierge: [
