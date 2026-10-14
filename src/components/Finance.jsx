@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { fmt, formatDateBR, getPeriodRange, inRange, isIsoDateString, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
@@ -49,6 +50,7 @@ const EXPENSE_EMPTY = { description:'', category:'outros', chartAccountId:'', va
 const resolveOrigin = item => (String(item.originLabel || '').trim() || String(item.origin || item.source || ''))
 const BALANCE_EMPTY = { name:'', category:'banco', value:0, notes:'' }
 export const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
+const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', saving:false, error:'' }
 
@@ -159,6 +161,7 @@ function buildIndicatorPeriodKey(range) {
 }
 
 export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' }) {
+  const navigate = useNavigate()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const SUMMARY_CARDS = [
     ['Resultado de caixa', 'cashBalance', C.cyan],
@@ -178,6 +181,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     const draft = readModalDraft()
     return Boolean(draft?.showModal && draft?.modalType && draft?.form)
   })
+  const [reconciliationReturn, setReconciliationReturn] = useState(() => readModalDraft()?.reconciliationReturn || null)
   const [confirmState, setConfirmState] = useState(null)
   const [paymentConfirmState, setPaymentConfirmState] = useState(null)
   const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all' })
@@ -288,10 +292,10 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       window.sessionStorage.removeItem(FINANCE_MODAL_DRAFT_KEY)
       return
     }
-    const payload = JSON.stringify({ showModal, modalType, editing, form })
+    const payload = JSON.stringify({ showModal, modalType, editing, form, reconciliationReturn })
     window.localStorage.setItem(FINANCE_MODAL_DRAFT_KEY, payload)
     window.sessionStorage.setItem(FINANCE_MODAL_DRAFT_KEY, payload)
-  }, [showModal, modalType, editing, form])
+  }, [showModal, modalType, editing, form, reconciliationReturn])
 
   useEffect(() => {
     let active = true
@@ -384,6 +388,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     setModalType(type)
     setForm(defaultAccount ? { ...defaults, chartAccountId:defaultAccount.id, category:defaultAccount.name } : defaults)
     setEditing(null)
+    setReconciliationReturn(null)
     setFormError('')
     setQuickCategory(QUICK_CATEGORY_EMPTY)
     setShowModal(true)
@@ -393,9 +398,21 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     setModalType(type)
     setForm({ ...item })
     setEditing(item.id)
+    setReconciliationReturn(null)
     setFormError('')
     setQuickCategory(QUICK_CATEGORY_EMPTY)
     setShowModal(true)
+  }
+
+  const returnToReconciliation = record => {
+    if (!reconciliationReturn || editing || !record?.id) return
+    window.localStorage.setItem(BANK_RECONCILIATION_RETURN_KEY, JSON.stringify({
+      ...reconciliationReturn,
+      sourceId:record.id,
+      savedAt:new Date().toISOString(),
+    }))
+    setReconciliationReturn(null)
+    navigate(`/app/bank-reconciliation?import=${encodeURIComponent(reconciliationReturn.importId)}`)
   }
 
   const openQuickCategory = direction => {
@@ -531,6 +548,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       if (!saved) return
       toast(editing ? 'Receita atualizada com sucesso.' : 'Receita salva com sucesso.')
       setShowModal(false)
+      returnToReconciliation(revenueRecord)
       return
     }
     if (modalType === 'expense') {
@@ -568,6 +586,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         if (!saved) return
         toast(editing ? 'Despesa atualizada.' : 'Despesa registrada como a pagar.')
         setShowModal(false)
+        returnToReconciliation(expenseRecord)
         return
       }
       setConfirmState({
@@ -827,6 +846,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       toast(editingId ? 'Saída atualizada com sucesso.' : 'Saída lançada com sucesso.')
       setShowModal(false)
       setConfirmState(null)
+      returnToReconciliation(payload)
       return
     }
     removeRecord(confirmState)

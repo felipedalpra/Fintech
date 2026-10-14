@@ -5,6 +5,15 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (96)
+### Added
+- **Conciliação bancária assistida** em Financeiro → Cobrança: importa OFX 1.x/2.x e CSV no navegador, exige prévia antes de persistir, cruza cada linha com parcelas do razão por direção + valor + janela de data + descrição e explica a sugestão. Confirmação e desconciliação são humanas, auditáveis e reversíveis; não alteram valor, baixa, competência, vencimento, DRE, caixa ou contas. Linhas sem par podem abrir o modal financeiro real pré-preenchido, mas competência/categoria continuam exigindo revisão. (`src/components/BankReconciliation.jsx`, `src/lib/statementParser.js`, `src/lib/bankReconciliationMatch.js`, `src/lib/bankReconciliationLedger.js`, `src/lib/bankReconciliationStore.js`.)
+- **Persistência financeira isolada por clínica**: migração aditiva cria importações, linhas e vínculos com RLS por `data_owner_id()`, unicidade contra arquivo/FITID e vínculo duplo, ciclo incompleto `importing → ready`, RPCs transacionais para iniciar/finalizar/arquivar/conciliar/reverter e nenhuma policy de exclusão física. Não adiciona função Vercel/serverless. O SQL deve ser executado manualmente antes do deploy. (`supabase/bank_reconciliation_schema.sql`.)
+- **Cobertura de regressão**: testes unitários do parser, casamento e gate de completude do razão; E2E de navegador; e E2E real com PostgreSQL/PostgREST validando importação, read-back, reload, vínculo, reversão, invariância da parcela e isolamento entre clínicas. (`tests/unit/statementParser.spec.js`, `tests/unit/bankReconciliationMatch.spec.js`, `tests/unit/bankReconciliationLedger.spec.js`, `tests/e2e/bank-reconciliation.spec.js`, `tests/e2e-real/bank-reconciliation.real.spec.js`.)
+
+### Changed
+- **Cadastro financeiro originado do extrato**: o rascunho do modal de receita/despesa preserva o contexto da linha bancária e retorna à conciliação somente depois de `saveDataNow` confirmar o lançamento e sincronizar o razão; o vínculo continua sendo uma segunda confirmação explícita. (`src/components/Finance.jsx`.)
+
 ## [Unreleased] - 2026-10-14 (95)
 ### Added
 - **Spec de conciliação bancária assistida (Fase 3 · item 1)**: define importação OFX/CSV integralmente no navegador, sugestões determinísticas sobre as parcelas do razão canônico e confirmação/reversão auditáveis sem alterar DRE, caixa, contas a receber/pagar ou lançamentos existentes. Inclui mapa de propagação, wireframe, modelo aditivo com RLS por clínica, RPCs Postgres transacionais (sem função Vercel), integração segura com o modal atual de receita/despesa, checklist de fidedignidade, testes unitários/E2E real e riscos de regressão. O plano antigo com IA/serverless foi explicitamente descontinuado. (`docs/superpowers/specs/2026-10-14-bank-reconciliation-design.md`, `docs/superpowers/plans/2026-10-08-conciliacao-bancaria.md`.)
