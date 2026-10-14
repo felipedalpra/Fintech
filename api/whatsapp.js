@@ -4,7 +4,7 @@
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
 import { sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
-import { parseIncomingMessage, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
+import { parseIncomingMessage, parseMessageStatus, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
@@ -349,6 +349,29 @@ async function handleWebhook(req, res) {
   const token = req.headers['x-webhook-token'] || req.query.token
   if (num.webhook_secret && token !== num.webhook_secret) {
     return res.status(401).json({ error: 'Invalid webhook token' })
+  }
+
+  // Atualiza o ciclo real da mensagem enviada (enviada → entregue → lida).
+  // Nunca regride um status mais avançado se callbacks chegarem fora de ordem.
+  const statusEvent = parseMessageStatus(req.body)
+  if (statusEvent) {
+    const priorStatuses = {
+      sent: ['sent'],
+      delivered: ['sent'],
+      read: ['sent', 'delivered'],
+      failed: ['sent'],
+    }[statusEvent.status]
+    const { error } = await supabase.from('whatsapp_messages')
+      .update({ status: statusEvent.status })
+      .eq('user_id', num.user_id)
+      .eq('direction', 'outbound')
+      .in('provider_message_id', statusEvent.providerMessageIds)
+      .in('status', priorStatuses)
+    if (error) {
+      console.error('whatsapp status update error:', error.message)
+      return res.status(500).json({ error: 'Message status update failed' })
+    }
+    return res.status(200).json({ ok: true })
   }
 
   const parsed = parseIncomingMessage(req.body)

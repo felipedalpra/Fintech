@@ -30,7 +30,7 @@ test('inbox renderiza imagem, áudio e documento recebidos', async ({ page }) =>
 test('lista mostra rótulo de mídia no preview da conversa', async ({ page }) => {
   await page.goto('/app/inbox')
   // última mensagem é o documento → preview mostra o rótulo de mídia
-  await expect(page.getByText(/📄 Documento/)).toBeVisible()
+  await expect(page.getByText(/^Documento: exames\.pdf$/)).toBeVisible()
 })
 
 test('composer tem seletor de emoji que insere no texto', async ({ page }) => {
@@ -38,7 +38,7 @@ test('composer tem seletor de emoji que insere no texto', async ({ page }) => {
   await page.getByText('Ana Paula').first().click()
   await page.getByRole('button', { name: 'Inserir emoji' }).click()
   await page.getByRole('button', { name: '🎉' }).click()
-  await expect(page.locator('input[placeholder="Responder..."]')).toHaveValue(/🎉/)
+  await expect(page.locator('textarea[placeholder="Responder..."]')).toHaveValue(/🎉/)
 })
 
 test('composer oferece anexo e gravação de áudio', async ({ page }) => {

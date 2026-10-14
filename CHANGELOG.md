@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (91)
+### Added
+- **WhatsApp — experiência moderna de atendimento**: o inbox ganha busca por contato, telefone ou conteúdo, atualização automática em tempo real com fallback periódico, separadores por data, cabeçalho completo do contato, seleção automática da conversa recente e compositor fluido com `Enter` para enviar, `Shift+Enter` para quebrar linha e textarea expansível. O seletor agora oferece mais de 180 emojis organizados em cinco grupos; imagem, áudio, vídeo e documento continuam integrados. (`src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`.)
+- **Status real de entrega e leitura**: o webhook de status da Z-API passa a correlacionar `SENT`, `RECEIVED`, `READ`, `READ_BY_ME` e `PLAYED` ao identificador da mensagem enviada, sem regredir quando callbacks chegam fora de ordem. O chat exibe um check para enviada, dois para entregue, dois azuis para lida e alerta para falha. (`api/_lib/whatsapp.js`, `api/whatsapp.js`, `tests/unit/whatsapp.spec.js`.)
+
+### Changed
+- **Inbox redesenhado na identidade do WhatsApp**: layout, lista de conversas, avatares, filtros, balões, ícones SVG, mídia, estados vazios e composer foram refeitos com a paleta do WhatsApp, acabamento consistente em tema escuro/claro e adaptação para celular. Ações globais flutuantes deixam de cobrir o chat dentro do inbox. (`src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`, `src/pages/FinanceWorkspace.jsx`.)
+
+### Fixed
+- **Mensagens longas e com múltiplas linhas**: o balão preserva quebras intencionais e passa a quebrar palavras/links extensos sem transformar o texto em uma coluna estreita. Testes E2E cobrem quebra de linha, indicador de leitura, emojis, mídia, responsáveis e navegação entre conversas. (`src/components/WhatsAppInbox.css`, `tests/e2e/whatsapp-inbox.spec.js`, `tests/e2e/whatsapp-media.spec.js`, `tests/e2e/whatsapp-monitoring.spec.js`.)
+
 ## [Unreleased] - 2026-10-13 (90)
 ### Added
 - **Teste e edição da conexão Z-API**: cada número de WhatsApp ganha as ações **Testar conexão** e **Editar conexão**. As credenciais continuam write-only; ao editar, URL e Client-Token são informados novamente, validados no servidor contra a própria Z-API e só então salvos. Novos números também precisam passar no teste antes do cadastro. (`src/components/WhatsAppNumbers.jsx`, `api/whatsapp.js`.)
