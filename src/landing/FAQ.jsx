@@ -11,7 +11,7 @@ const ITEMS = [
   },
   {
     q:'Posso começar sem cartão?',
-    a:'Sim. Você entra em trial grátis e só decide sobre assinatura depois de validar o uso.',
+    a:'Sim. Você cria a conta, confirma o e-mail e acessa a plataforma sem período de teste ou expiração.',
   },
   {
     q:'Tem suporte para implantação?',

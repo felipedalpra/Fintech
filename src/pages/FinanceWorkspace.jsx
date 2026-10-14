@@ -34,7 +34,6 @@ import { WhatsAppInbox } from '../components/WhatsAppInbox.jsx'
 import { MetaAdsDashboard } from '../components/MetaAdsDashboard.jsx'
 import { TasksPanel } from '../components/TasksPanel.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { useBilling } from '../context/BillingContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
@@ -655,7 +654,6 @@ export function FinanceWorkspace() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
-  const { trialDaysLeft, billing } = useBilling()
   const { mode, toggleTheme } = useTheme()
   const { canAccess, clinicName, ownerId, role, loading: roleLoading } = useUserRole()
   const isLightMode = mode === 'light'
@@ -990,7 +988,7 @@ export function FinanceWorkspace() {
   const sidebarQuickStats = [
     `${summary.surgeriesCompleted} cirurgia(s)`,
     `${summary.consultationsCompleted} consulta(s)`,
-    billing?.status === 'trialing' ? `Trial: ${trialDaysLeft} dia(s)` : `Assinatura: ${billing?.status || 'pendente'}`,
+    'Acesso ao ERP: liberado',
   ]
   // Sub-navegação = seções da área ativa, filtradas por permissão.
   const visibleSections = (activeArea?.sections ?? [])

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Btn } from '../components/UI.jsx'
-import { BILLING_CYCLES, FREE_TRIAL_DAYS, buildCheckoutUrl } from '../billing/plans.js'
+import { BILLING_CYCLES, buildCheckoutUrl } from '../billing/plans.js'
 
 export function Pricing() {
   return (
@@ -11,7 +11,7 @@ export function Pricing() {
           Um produto, ciclos diferentes para encaixar no seu caixa
         </h2>
         <p style={{ margin:0, color:'#A8C1CC', fontSize:16, lineHeight:1.65, maxWidth:720 }}>
-          {FREE_TRIAL_DAYS} dias grátis, sem cartão. Depois, você mantém acesso no ciclo que preferir.
+          Escolha o ciclo que melhor se encaixa no caixa da clínica. O acesso ao ERP não expira por período de teste.
         </p>
       </div>
 
@@ -47,13 +47,11 @@ export function Pricing() {
             <p style={{ margin:'0 0 12px', color:'#A4BCC7', fontSize:14, lineHeight:1.5, minHeight:42 }}>
               {cycle.note}
             </p>
-            <p style={{ margin:'0 0 16px', color:'#86EFAC', fontSize:12, fontWeight:800 }}>
-              {FREE_TRIAL_DAYS} dias grátis. Cancele quando quiser.
-            </p>
+            <p style={{ margin:'0 0 16px', color:'#86EFAC', fontSize:12, fontWeight:800 }}>Acesso ao ERP liberado após confirmar o e-mail.</p>
 
             <Link to={buildCheckoutUrl(cycle.id)} style={{ textDecoration:'none', display:'block', marginTop:'auto' }}>
               <Btn variant={index === 2 ? 'primary' : 'ghost'} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'12px 16px' }}>
-                Iniciar trial
+                Escolher plano
               </Btn>
             </Link>
           </article>

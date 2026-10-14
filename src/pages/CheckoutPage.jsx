@@ -27,11 +27,9 @@ export function CheckoutPage() {
   }, [searchParams])
 
   const summary = useMemo(() => ({
-    trialDays:7,
     cycle,
     cycleLabel:selected.label,
     monthlyEquivalent:selected.price,
-    dueToday:'R$ 0,00',
     nextCharge:`R$ ${selected.price.toLocaleString('pt-BR')},00`,
   }), [cycle, selected])
 
@@ -43,7 +41,7 @@ export function CheckoutPage() {
     if (!form.fullName || !form.email) return
     setBusy(true)
     await new Promise(resolve => setTimeout(resolve, 1200))
-    navigate(`/signup?cycle=${summary.cycle}&trial=${summary.trialDays}&checkout=success&email=${encodeURIComponent(form.email)}`, { replace:true })
+    navigate(`/signup?cycle=${summary.cycle}&checkout=success&email=${encodeURIComponent(form.email)}`, { replace:true })
   }
 
   return (
@@ -59,8 +57,8 @@ export function CheckoutPage() {
         <div style={{ display:'grid', gridTemplateColumns:'minmax(320px, 0.95fr) minmax(320px, 1.05fr)', gap:22, alignItems:'start' }}>
           <Card style={{ padding:28, background:'linear-gradient(160deg, rgba(9,18,28,0.96), rgba(17,24,39,0.96))', border:'1px solid rgba(255,255,255,0.1)' }}>
             <div style={{ fontSize:12, color:'#7DD3FC', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Plano SurgiMetrics</div>
-            <h1 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 46px)', lineHeight:1.02, letterSpacing:'-0.04em' }}>Comece com 7 dias grátis</h1>
-            <p style={{ margin:'0 0 18px', color:'#A9BCC5', fontSize:16, lineHeight:1.8 }}>Escolha o ciclo de cobrança, teste sem custo e siga para criar sua conta. Após a ativação, você entra na plataforma com o plano já selecionado.</p>
+            <h1 style={{ margin:'0 0 12px', fontSize:'clamp(30px, 4vw, 46px)', lineHeight:1.02, letterSpacing:'-0.04em' }}>Escolha seu plano</h1>
+            <p style={{ margin:'0 0 18px', color:'#A9BCC5', fontSize:16, lineHeight:1.8 }}>Escolha o ciclo de cobrança e siga para criar sua conta. O acesso à plataforma é liberado após a confirmação do e-mail.</p>
 
             <div style={{ display:'grid', gap:12, marginBottom:22 }}>
               {Object.entries(OPTIONS).map(([key, option]) => {
@@ -84,9 +82,9 @@ export function CheckoutPage() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
               <div>
                 <div style={{ fontSize:12, color:'#FCD34D', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>Pagamento</div>
-                <h2 style={{ margin:0, fontSize:28, letterSpacing:'-0.04em' }}>Ative seu teste grátis</h2>
+                <h2 style={{ margin:0, fontSize:28, letterSpacing:'-0.04em' }}>Crie seu acesso</h2>
               </div>
-              <div style={{ padding:'7px 12px', borderRadius:999, background:'rgba(16,185,129,0.16)', color:'#6EE7B7', fontSize:12, fontWeight:700 }}>7 dias grátis</div>
+              <div style={{ padding:'7px 12px', borderRadius:999, background:'rgba(16,185,129,0.16)', color:'#6EE7B7', fontSize:12, fontWeight:700 }}>Acesso liberado</div>
             </div>
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:18 }}>
@@ -97,13 +95,13 @@ export function CheckoutPage() {
             <div style={{ padding:18, borderRadius:20, background:'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(255,111,60,0.08))', border:'1px solid rgba(255,255,255,0.08)', marginBottom:18 }}>
               <div style={{ display:'grid', gap:10, fontSize:14 }}>
                 <SummaryRow label="Plano" value={`SurgiMetrics · ${summary.cycleLabel}`} />
-                <SummaryRow label="Hoje" value={summary.dueToday} highlight />
-                <SummaryRow label="Após ${summary.trialDays} dias" value={`${summary.nextCharge} no ${summary.cycleLabel.toLowerCase()}`} />
+                <SummaryRow label="Acesso ao ERP" value="Liberado" highlight />
+                <SummaryRow label="Plano selecionado" value={`${summary.nextCharge} no ${summary.cycleLabel.toLowerCase()}`} />
               </div>
             </div>
 
             <Btn onClick={submit} disabled={busy || !form.fullName || !form.email} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'15px 20px' }}>
-              {busy ? 'Processando...' : 'Iniciar teste grátis de 7 dias'}
+              {busy ? 'Processando...' : 'Continuar para criar conta'}
             </Btn>
             <div style={{ marginTop:12, color:'#7F98A3', fontSize:12, lineHeight:1.7 }}>
               Checkout de pré-assinatura. Sem gateway integrado ainda. Ao continuar, o usuário segue para criar a conta e acessar a plataforma.

@@ -32,6 +32,16 @@ test('mantem a tela aberta depois do reload', async ({ page }) => {
   await expect(page.getByRole('heading', { name:'Relatórios Analíticos' })).toBeVisible()
 })
 
+test('nao redireciona rotas internas para assinatura durante o carregamento', async ({ page }) => {
+  await page.goto('/app/bank-reconciliation')
+  await expect(page).toHaveURL(/\/app\/bank-reconciliation$/)
+
+  await page.reload()
+
+  await expect(page).toHaveURL(/\/app\/bank-reconciliation$/)
+  await expect(page.getByTestId('bank-reconciliation-page')).toBeVisible()
+})
+
 test('mantem e restaura rascunho da sessao no workspace', async ({ page }) => {
   const draftPayload = {
     procedures:[],

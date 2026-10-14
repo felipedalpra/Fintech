@@ -1,22 +1,20 @@
 import { useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { C } from '../theme.js'
-import { BILLING_CYCLES, FREE_TRIAL_DAYS, getBillingCycle } from '../billing/plans.js'
+import { BILLING_CYCLES, getBillingCycle } from '../billing/plans.js'
 import { Btn, Card, Badge } from '../components/UI.jsx'
 import { useBilling } from '../context/BillingContext.jsx'
 import { createStripeCheckoutSession, createStripePortalSession } from '../lib/billingClient.js'
 
 export function BillingPage() {
   const location = useLocation()
-  const { billing, billingLoading, trialDaysLeft, refreshBilling, selectPlan, hasAppAccess } = useBilling()
+  const { billing, billingLoading, refreshBilling, selectPlan } = useBilling()
   const [busyPlan, setBusyPlan] = useState('')
   const [portalBusy, setPortalBusy] = useState(false)
   const [error, setError] = useState('')
 
   const selectedPlan = useMemo(() => getBillingCycle(billing?.selected_plan || 'mensal'), [billing])
-  const isTrialing = billing?.status === 'trialing'
   const isActive = billing?.status === 'active'
-  const isTrialEnded = isTrialing && trialDaysLeft === 0
   const params = new URLSearchParams(location.search)
   const checkoutState = params.get('checkout')
 
@@ -47,11 +45,7 @@ export function BillingPage() {
     }
   }
 
-  const statusText = isActive
-    ? 'Assinatura ativa'
-    : isTrialing
-      ? (isTrialEnded ? 'Trial encerrado (beta): acesso liberado' : `Trial ativo: ${trialDaysLeft} dia(s) restantes`)
-      : 'Acesso liberado'
+  const statusText = isActive ? 'Assinatura ativa' : 'Acesso ao ERP liberado'
 
   if (billingLoading) {
     return <Card><div style={{ color:C.textSub }}>Carregando billing...</div></Card>
@@ -65,16 +59,16 @@ export function BillingPage() {
             <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Billing</div>
             <h2 style={{ margin:'0 0 10px', color:C.text, fontSize:28 }}>Assinatura SurgiMetrics</h2>
             <p style={{ margin:0, color:C.textDim, lineHeight:1.7, maxWidth:720 }}>
-              Todo usuário entra com {FREE_TRIAL_DAYS} dias grátis sem cartão. Para beta testers, mesmo após o término do trial o acesso ao ERP continua liberado.
+              O acesso ao ERP é independente da cobrança. Aqui você escolhe o ciclo e gerencia uma assinatura quando ela estiver configurada.
             </p>
           </div>
-          <Badge color={hasAppAccess ? C.green : C.red}>{statusText}</Badge>
+          <Badge color={C.green}>{statusText}</Badge>
         </div>
 
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:14, marginTop:20 }}>
           <MiniStat label="Plano selecionado" value={selectedPlan.label} sub={selectedPlan.marketingLabel} />
-          <MiniStat label="Status" value={billing?.status || 'trialing'} sub={billing?.current_period_end ? `Período atual até ${new Date(billing.current_period_end).toLocaleDateString('pt-BR')}` : 'Sem ciclo pago ainda'} />
-          <MiniStat label="Trial" value={isTrialing ? `${trialDaysLeft} dia(s)` : 'Encerrado'} sub={billing?.trial_ends_at ? `Termina em ${new Date(billing.trial_ends_at).toLocaleDateString('pt-BR')}` : ''} />
+          <MiniStat label="Status" value={isActive ? 'Ativa' : 'Não configurada'} sub={billing?.current_period_end ? `Período atual até ${new Date(billing.current_period_end).toLocaleDateString('pt-BR')}` : 'O acesso ao ERP permanece liberado'} />
+          <MiniStat label="Acesso ao ERP" value="Liberado" sub="Sem expiração ou bloqueio por cobrança" />
         </div>
 
         <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginTop:18 }}>
@@ -83,7 +77,7 @@ export function BillingPage() {
         </div>
 
         {checkoutState === 'success' ? <div style={{ marginTop:16, padding:'12px 14px', borderRadius:12, border:`1px solid ${C.green}33`, background:C.green + '14', color:C.green, fontSize:13 }}>Checkout concluído. O status da assinatura é atualizado assim que o webhook do Stripe confirmar o evento.</div> : null}
-        {checkoutState === 'cancel' ? <div style={{ marginTop:16, padding:'12px 14px', borderRadius:12, border:`1px solid ${C.yellow}33`, background:C.yellow + '14', color:C.yellow, fontSize:13 }}>Checkout cancelado. O trial continua até o fim do período gratuito.</div> : null}
+        {checkoutState === 'cancel' ? <div style={{ marginTop:16, padding:'12px 14px', borderRadius:12, border:`1px solid ${C.yellow}33`, background:C.yellow + '14', color:C.yellow, fontSize:13 }}>Checkout cancelado. Seu acesso ao ERP continua liberado.</div> : null}
         {error ? <div style={{ marginTop:16, padding:'12px 14px', borderRadius:12, border:`1px solid ${C.red}33`, background:C.red + '14', color:C.red, fontSize:13 }}>{error}</div> : null}
       </Card>
 
