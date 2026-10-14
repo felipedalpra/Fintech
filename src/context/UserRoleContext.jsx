@@ -35,6 +35,9 @@ export function UserRoleProvider({ children }) {
   const [ownerId, setOwnerId] = useState(null)
   const [isOwner, setIsOwner] = useState(false)
   const [loading, setLoading] = useState(true)
+  // Membro confirmado cujo escopo da clínica (data_owner_id) não resolveu. NUNCA cair pro
+  // user.id nesse caso (gravaria dado órfão/veria vazio) — o app bloqueia e avisa.
+  const [scopeError, setScopeError] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -43,10 +46,14 @@ export function UserRoleProvider({ children }) {
       // entre o auth resolver e o role resolver. Logout real é tratado pelo ProtectedRoute.
       setRole(null)
       setClinicId(null)
+      setOwnerId(null)
       setIsOwner(false)
+      setScopeError(false)
       setLoading(true)
       return
     }
+    setScopeError(false)
+    setOwnerId(null) // limpa escopo do usuário anterior antes de reresolver (não vaza ownerId obsoleto)
 
     // E2E: concede admin sem bater no Supabase (espelha o bypass do AuthContext).
     if (E2E_BYPASS_AUTH) {
@@ -97,9 +104,21 @@ export function UserRoleProvider({ children }) {
         setRole(membership.role)
         setIsOwner(false)
         // data_owner_id() é SECURITY DEFINER — funciona mesmo sem leitura direta em clinics
-        const { data: ownerUuid } = await supabase.rpc('data_owner_id')
+        let res = await supabase.rpc('data_owner_id')
+        if (!res.data) {
+          await new Promise(r => setTimeout(r, 400)) // blip de rede: espera curta antes do retry
+          res = await supabase.rpc('data_owner_id')
+        }
         if (!mounted) return
-        setOwnerId(ownerUuid || user.id)
+        if (!res.data) {
+          // Membro confirmado mas o escopo não resolveu. NÃO usar user.id (gravaria órfão / veria
+          // vazio em silêncio — o bug que o Felipe teme). Bloqueia e avisa; recarregar tenta de novo.
+          console.error('[UserRoleContext] escopo da clínica não resolveu para membro:', res.error)
+          setScopeError(true)
+          setLoading(false)
+          return
+        }
+        setOwnerId(res.data)
         // nome da clínica: tenta buscar, mas não trava se RLS bloquear
         const { data: memberClinic } = await supabase
           .from('clinics')
@@ -143,11 +162,12 @@ export function UserRoleProvider({ children }) {
     ownerId,
     isOwner,
     loading,
+    scopeError,
     canAccess(sectionId) {
       if (!role) return false
       return (ROLE_ACCESS[role] ?? []).includes(sectionId)
     },
-  }), [role, clinicId, clinicName, ownerId, isOwner, loading])
+  }), [role, clinicId, clinicName, ownerId, isOwner, loading, scopeError])
 
   return (
     <UserRoleContext.Provider value={value}>
