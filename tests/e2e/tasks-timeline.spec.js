@@ -6,6 +6,7 @@ const OPPS = [
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { try { window.localStorage.setItem('surgimetrics_onboarded', 'true') } catch { /* ignore */ } })
+  await page.route('**/rest/v1/rpc/clinic_team', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
   await page.route('**/rest/v1/opportunities*', route =>
     route.request().method() === 'GET'
       ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(OPPS) })
@@ -26,7 +27,7 @@ test('aba Tarefas aparece ao editar e mostra o formulário de nova tarefa', asyn
   await expect(page.getByRole('button', { name: 'Tarefas' }).last()).toBeVisible()
   await page.getByRole('button', { name: 'Tarefas' }).last().click()
   await expect(page.getByPlaceholder('Nova tarefa…')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Adicionar' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Adicionar', exact: true })).toBeVisible()
 })
 
 test('aba Timeline monta a linha do tempo (evento de criação) e permite nota', async ({ page }) => {
