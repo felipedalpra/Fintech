@@ -22,11 +22,13 @@ import { FAB } from '../components/FAB.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { NavIcon } from '../components/NavIcon.jsx'
 import { AlertsBell } from '../components/AlertsBell.jsx'
+import { CrmBell } from '../components/CrmBell.jsx'
 import { BillingPage } from './BillingPage.jsx'
 import { Calendar } from '../components/Calendar.jsx'
 import { Patients } from '../components/Patients.jsx'
 import { OpportunityPipeline } from '../components/OpportunityPipeline.jsx'
 import { CrmDashboard } from '../components/CrmDashboard.jsx'
+import { MeuDia } from '../components/MeuDia.jsx'
 import { WhatsAppInbox } from '../components/WhatsAppInbox.jsx'
 import { MetaAdsDashboard } from '../components/MetaAdsDashboard.jsx'
 import { TasksPanel } from '../components/TasksPanel.jsx'
@@ -52,6 +54,7 @@ const AREAS = [
     sections:[
       { title:null, items:[
         { id:'dashboard', label:'Dashboard', icon:'dashboard', hint:'Visão geral da clínica' },
+        { id:'meu-dia', label:'Meu dia', icon:'tasks', hint:'Suas tarefas, leads e pendências de hoje' },
       ] },
     ],
   },
@@ -129,6 +132,7 @@ function areaIdForPage(pageId) {
 
 const TITLES = {
   dashboard:'Dashboard Executivo',
+  'meu-dia':'Meu dia',
   plans:'Procedimentos',
   sales:'Cirurgias',
   consultations:'Consultas',
@@ -157,6 +161,7 @@ const TITLES = {
 
 const SUBTITLES = {
   dashboard:'Indicadores-chave e leitura rápida da operação.',
+  'meu-dia':'O que você precisa resolver hoje: tarefas, leads novos atribuídos a você e oportunidades paradas.',
   plans:'Organize o portfólio de procedimentos da clínica.',
   sales:'Cadastre cirurgias e acompanhe margem por operação.',
   consultations:'Controle consultas, convênios e recebimentos.',
@@ -184,6 +189,7 @@ const SUBTITLES = {
 
 const PAGES = {
   dashboard:Dashboard,
+  'meu-dia':MeuDia,
   plans:Plans,
   sales:Sales,
   consultations:Consultations,
@@ -1208,6 +1214,7 @@ export function FinanceWorkspace() {
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
               <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
+              <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
               <button
                 onClick={toggleTheme}
                 title={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}

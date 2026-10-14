@@ -66,6 +66,35 @@ export async function createManualLead(ownerId, { name, phone, title, source, va
   return { opp }
 }
 
+// Update PARCIAL (edição inline no card): toca SOMENTE os campos informados — nunca reseta os
+// demais (diferente de updateOpportunity, que grava o form inteiro). Usado pelo valor/responsável
+// editáveis direto no card do funil.
+export async function patchOpportunity(oppId, patch = {}) {
+  if (!oppId) return { error: 'Oportunidade inválida' }
+  const allowed = {}
+  if ('value' in patch) {
+    if (patch.value === '' || patch.value == null) {
+      allowed.value = null
+    } else {
+      const v = Number(patch.value)
+      // NaN ou negativo NÃO viram null silencioso (apagaria o valor e distorceria o total da coluna).
+      if (!Number.isFinite(v) || v < 0) return { error: 'Valor inválido.' }
+      allowed.value = v
+    }
+  }
+  if ('responsible_user_id' in patch) allowed.responsible_user_id = patch.responsible_user_id || null
+  if ('title' in patch) allowed.title = String(patch.title || '').trim() || 'Oportunidade'
+  if ('source' in patch) allowed.source = String(patch.source || '').trim() || null
+  if (Object.keys(allowed).length === 0) return { ok: true }
+  allowed.updated_at = new Date().toISOString()
+  // READ-BACK: confirma que uma linha foi realmente atualizada (RLS permitiu) — senão seria um
+  // "salvo" falso (update de 0 linhas não dá erro).
+  const { data, error } = await supabase.from('opportunities').update(allowed).eq('id', oppId).select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'Não foi possível salvar a alteração (sem permissão ou registro não encontrado).' }
+  return { ok: true }
+}
+
 // Atualiza campos editáveis (não mexe em estágio nem status).
 export async function updateOpportunity(oppId, f) {
   if (!oppId) return { error: 'Oportunidade inválida' }

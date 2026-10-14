@@ -6,7 +6,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 import { OpportunityEditor } from './OpportunityEditor.jsx'
 import { NewLeadModal } from './NewLeadModal.jsx'
-import { createManualLead } from '../lib/opportunityActions.js'
+import { createManualLead, patchOpportunity } from '../lib/opportunityActions.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 
 // Ícones SVG (leitura melhor que emoji). `d` é o miolo do path.
@@ -20,6 +20,8 @@ const ICON = {
   search: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
   ai: <><path d="M12 3v2m0 14v2M5 12H3m18 0h-2M6 6 4.5 4.5M18 18l1.5 1.5" /><circle cx="12" cy="12" r="4" /></>,
   wa: <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z" />,
+  pencil: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
+  user: <><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></>,
 }
 function Avatar({ label, size = 32 }) {
   return (
@@ -118,6 +120,22 @@ export function OpportunityPipeline() {
   function openCreate() { setEditorOpp(null); setEditorOpen(true) }
   function openEdit(opp) { setEditorOpp(opp); setEditorOpen(true) }
   function addLead(opp) { setOpps(prev => [opp, ...prev]) }
+  // Edição inline no card (valor/responsável): update otimista + patch parcial no banco.
+  async function inlineUpdate(oppId, patch) {
+    const before = opps.find(o => o.id === oppId)
+    setOpps(p => p.map(o => (o.id === oppId ? { ...o, ...patch } : o)))
+    const res = await patchOpportunity(oppId, patch)
+    if (res.error) {
+      // Reverte SÓ os campos tocados deste card (preserva mudanças concorrentes de outros).
+      setOpps(p => p.map(o => {
+        if (o.id !== oppId) return o
+        const restored = { ...o }
+        for (const k of Object.keys(patch)) restored[k] = before ? before[k] : o[k]
+        return restored
+      }))
+      setError('Não foi possível salvar a alteração. Tente novamente.')
+    }
+  }
 
   function onSaved(result) {
     if (result.created) setOpps(prev => [result.created, ...prev])
@@ -197,8 +215,10 @@ export function OpportunityPipeline() {
                 opps={visible.filter(o => o.stage === stage.key)}
                 allStages={STAGES}
                 memberLabel={memberLabel}
+                members={members}
                 ownerId={effectiveUserId}
                 onLeadCreated={addLead}
+                onInlineUpdate={inlineUpdate}
                 moveOpp={moveOpp}
                 onAccept={acceptSuggestion}
                 onReject={rejectSuggestion}
@@ -234,7 +254,7 @@ export function OpportunityPipeline() {
   )
 }
 
-function PipelineColumn({ stage, opps, allStages, memberLabel, ownerId, onLeadCreated, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
+function PipelineColumn({ stage, opps, allStages, memberLabel, members, ownerId, onLeadCreated, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
   const totalValue = opps.reduce((s, o) => s + (Number(o.value) || 0), 0)
   const s = {
     column: { minWidth: 278, flex: '0 0 278px', background: dragActive ? stage.color + '14' : C.surface, border: `1px solid ${dragActive ? stage.color : C.border}`, borderRadius: 15, paddingBottom: 12, overflow: 'hidden', transition: 'background 0.12s, border-color 0.12s' },
@@ -266,7 +286,7 @@ function PipelineColumn({ stage, opps, allStages, memberLabel, ownerId, onLeadCr
         {opps.length === 0
           ? <div style={{ ...s.empty, margin: 0 }}>{dragActive ? 'Soltar aqui' : 'Vazio'}</div>
           : opps.map(o => (
-              <OpportunityCard key={o.id} opp={o} currentStage={stage} allStages={allStages} memberLabel={memberLabel} moveOpp={moveOpp} onAccept={onAccept} onReject={onReject} onEdit={onEdit} isMoving={movingId === o.id} />
+              <OpportunityCard key={o.id} opp={o} currentStage={stage} allStages={allStages} memberLabel={memberLabel} members={members} onInlineUpdate={onInlineUpdate} moveOpp={moveOpp} onAccept={onAccept} onReject={onReject} onEdit={onEdit} isMoving={movingId === o.id} />
             ))}
       </div>
     </div>
@@ -314,7 +334,7 @@ function QuickAddLead({ ownerId, stage, onCreated }) {
   )
 }
 
-function OpportunityCard({ opp, currentStage, allStages, memberLabel, moveOpp, onAccept, onReject, onEdit, isMoving }) {
+function OpportunityCard({ opp, currentStage, allStages, memberLabel, members, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, isMoving }) {
   const patientName = opp.patients?.full_name || 'Paciente'
   const hasPhone = !!opp.patients?.phone
   const value = fmtBRL(opp.value)
@@ -327,6 +347,17 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, moveOpp, o
     && opp.suggested_stage && opp.suggested_stage !== currentStage.key
 
   const [hover, setHover] = useState(false)
+  // Edição inline (valor e responsável) direto no card — salva na hora via patch parcial.
+  const [editVal, setEditVal] = useState(false)
+  const [valDraft, setValDraft] = useState('')
+  const [respOpen, setRespOpen] = useState(false)
+  const memberOptions = (members && members.length ? members.map(m => ({ id: m.user_id, label: m.member_email || m.user_id }))
+    : Object.entries(memberLabel || {}).map(([id, l]) => ({ id, label: l })))
+  const canInline = typeof onInlineUpdate === 'function'
+  function openVal(e) { e.stopPropagation(); setValDraft(opp.value == null ? '' : String(opp.value)); setEditVal(true) }
+  function saveVal(e) { e?.stopPropagation?.(); setEditVal(false); if (String(valDraft) !== String(opp.value ?? '')) onInlineUpdate(opp.id, { value: valDraft }) }
+  function pickResp(e, id) { e.stopPropagation(); setRespOpen(false); if ((id || null) !== (opp.responsible_user_id || null)) onInlineUpdate(opp.id, { responsible_user_id: id }) }
+
   const s = {
     card: { background: C.card, border: `1px solid ${hover ? (C.borderBright || C.border) : (hasSuggestion ? C.accent + '66' : C.border)}`, borderRadius: 12, padding: 12, opacity: isMoving ? 0.5 : 1, cursor: 'grab', transform: hover && !isMoving ? 'translateY(-3px)' : 'none', boxShadow: hover && !isMoving ? '0 16px 40px -16px rgba(0,0,0,.6)' : 'none', transition: 'transform .16s, box-shadow .16s, border-color .16s, opacity .15s' },
     dhead: { display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 },
@@ -352,7 +383,22 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, moveOpp, o
           {oppTitle && <div style={s.sub}>{oppTitle}</div>}
         </div>
       </div>
-      {value && <div style={s.value}>{value}</div>}
+      {canInline ? (
+        editVal ? (
+          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 9 }}>
+            <input autoFocus type="number" value={valDraft} onChange={e => setValDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') saveVal(e); if (e.key === 'Escape') { e.stopPropagation(); setEditVal(false) } }}
+              style={{ width: 120, fontSize: 14, fontWeight: 700, padding: '5px 8px', borderRadius: 8, border: `1px solid ${C.accent}`, background: C.card, color: C.text, outline: 'none', fontFamily: 'inherit' }} />
+            <button type="button" onClick={saveVal} style={{ border: 'none', borderRadius: 7, padding: '5px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', background: C.accent, color: '#fff' }}>✓</button>
+            <button type="button" onClick={e => { e.stopPropagation(); setEditVal(false) }} style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: '5px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', background: C.surface, color: C.textSub }}>✕</button>
+          </div>
+        ) : (
+          <div onClick={openVal} title="Clique para editar o valor" style={{ ...s.value, display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'text' }}>
+            {value || <span style={{ color: C.textDim, fontWeight: 600, fontSize: 13 }}>+ valor</span>}
+            <span style={{ color: C.textDim, display: 'inline-flex', opacity: hover ? 1 : 0.5 }}><Ico d={ICON.pencil} size={12} /></span>
+          </div>
+        )
+      ) : (value && <div style={s.value}>{value}</div>)}
       {(opp.source || tags.length > 0) && (
         <div style={s.tags}>
           {opp.source && <span style={s.tag}><span style={{ color: C.textDim, display: 'inline-flex' }}><Ico d={ICON.tag} size={11} /></span>{opp.source}</span>}
@@ -368,7 +414,27 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, moveOpp, o
       <div style={s.foot}>
         <span style={s.days}>{days != null && <><Ico d={ICON.clock} size={12} />{days}d no estágio</>}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {respLabel && <Avatar label={respLabel} size={24} />}
+          {canInline ? (
+            <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+              <button type="button" onClick={() => setRespOpen(o => !o)} title="Atribuir responsável"
+                style={{ display: 'inline-flex', alignItems: 'center', border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}>
+                {respLabel
+                  ? <Avatar label={respLabel} size={24} />
+                  : <span style={{ width: 24, height: 24, borderRadius: '50%', border: `1.5px dashed ${C.borderBright || C.border}`, display: 'grid', placeItems: 'center', color: C.textDim }}><Ico d={ICON.user} size={13} /></span>}
+              </button>
+              {respOpen && <>
+                <div onClick={e => { e.stopPropagation(); setRespOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
+                <div style={{ position: 'absolute', bottom: 32, right: 0, zIndex: 31, minWidth: 180, maxHeight: 240, overflowY: 'auto', background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 10, padding: 5, boxShadow: '0 16px 40px -14px rgba(0,0,0,.6)' }}>
+                  <div onClick={e => pickResp(e, null)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', color: C.textSub }}>Sem responsável</div>
+                  {memberOptions.map(m => (
+                    <div key={m.id} onClick={e => pickResp(e, m.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', background: m.id === opp.responsible_user_id ? C.accent + '18' : 'transparent', color: m.id === opp.responsible_user_id ? C.accent : C.text }}>
+                      <Avatar label={m.label} size={20} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </>}
+            </div>
+          ) : (respLabel && <Avatar label={respLabel} size={24} />)}
           <button type="button" style={s.wa} disabled={!hasPhone}
             onClick={e => { e.stopPropagation(); if (!hasPhone) return; const digits = String(opp.patients.phone).replace(/\D/g, ''); if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener') }}
             title={hasPhone ? 'Abrir conversa no WhatsApp' : 'Sem telefone'}>
