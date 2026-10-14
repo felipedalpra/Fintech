@@ -5,6 +5,49 @@
 //   apiToken    — Client-Token (token de segurança da conta Z-API)
 // A interface é a mesma para Evolution API; para Twilio/Meta, ajustar só este arquivo.
 
+// A tela aceita tanto a URL-base quanto uma URL copiada da documentação com
+// `/send-text` no fim. Internamente guardamos/usamos sempre a base canônica.
+// Restringir o host também impede que o teste autenticado de conexão vire SSRF.
+export function normalizeZApiInstanceUrl(raw) {
+  let url
+  try { url = new URL(String(raw || '').trim()) } catch { throw new Error('URL da instância Z-API inválida.') }
+  if (url.protocol !== 'https:' || url.hostname !== 'api.z-api.io') {
+    throw new Error('Use uma URL HTTPS oficial da Z-API (api.z-api.io).')
+  }
+  const parts = url.pathname.split('/').filter(Boolean)
+  if (parts[0] !== 'instances' || !parts[1] || parts[2] !== 'token' || !parts[3]) {
+    throw new Error('A URL deve seguir o formato /instances/ID/token/TOKEN.')
+  }
+  return `${url.origin}/instances/${parts[1]}/token/${parts[3]}`
+}
+
+async function readZApiResponse(res) {
+  const raw = await res.text().catch(() => '')
+  let data = {}
+  try { data = raw ? JSON.parse(raw) : {} } catch { data = {} }
+  const providerError = data?.error || data?.message
+  if (!res.ok || data?.error) {
+    const detail = typeof providerError === 'string' ? providerError : (raw || `HTTP ${res.status}`)
+    throw new Error(`Z-API: ${detail}`)
+  }
+  return data
+}
+
+function confirmedMessageId(data) {
+  const id = data?.messageId ?? data?.id ?? data?.zaapId
+  if (!id) throw new Error('A Z-API não confirmou o envio da mensagem. Verifique a URL e o Client-Token.')
+  return String(id)
+}
+
+export async function testWhatsAppConnection(instanceUrl, apiToken) {
+  if (!instanceUrl || !apiToken) throw new Error('Informe a URL da instância e o Client-Token.')
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const res = await fetch(`${baseUrl}/me`, { headers: { 'Client-Token': apiToken } })
+  const data = await readZApiResponse(res)
+  if (data.connected !== true) throw new Error('A instância Z-API está desconectada do WhatsApp.')
+  return { connected: true, instanceUrl: baseUrl }
+}
+
 // Monta (puro) o endpoint Z-API + corpo para enviar mídia por URL.
 //   image    → /send-image      { phone, image, caption }
 //   document → /send-document/<ext> { phone, document, fileName }
@@ -31,17 +74,14 @@ export async function sendWhatsAppMedia(instanceUrl, apiToken, type, args) {
     throw new Error('Número de WhatsApp sem credenciais configuradas.')
   }
   const { path, body } = buildMediaSendRequest(type, args)
-  const res = await fetch(`${instanceUrl}/${path}`, {
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const res = await fetch(`${baseUrl}/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Client-Token': apiToken },
     body: JSON.stringify(body),
   })
-  if (!res.ok) {
-    const errText = await res.text().catch(() => String(res.status))
-    throw new Error(`Z-API error: ${errText}`)
-  }
-  const data = await res.json().catch(() => ({}))
-  return data?.messageId ?? data?.id ?? data?.zaapId ?? null
+  const data = await readZApiResponse(res)
+  return confirmedMessageId(data)
 }
 
 export async function sendWhatsAppText(instanceUrl, apiToken, to, text) {
@@ -49,7 +89,8 @@ export async function sendWhatsAppText(instanceUrl, apiToken, to, text) {
     throw new Error('Número de WhatsApp sem credenciais configuradas.')
   }
 
-  const res = await fetch(`${instanceUrl}/send-text`, {
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const res = await fetch(`${baseUrl}/send-text`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,11 +99,6 @@ export async function sendWhatsAppText(instanceUrl, apiToken, to, text) {
     body: JSON.stringify({ phone: to, message: text }),
   })
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => String(res.status))
-    throw new Error(`Z-API error: ${errText}`)
-  }
-
-  const data = await res.json().catch(() => ({}))
-  return data?.messageId ?? data?.id ?? data?.zaapId ?? null
+  const data = await readZApiResponse(res)
+  return confirmedMessageId(data)
 }

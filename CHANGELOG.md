@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (90)
+### Added
+- **Teste e edição da conexão Z-API**: cada número de WhatsApp ganha as ações **Testar conexão** e **Editar conexão**. As credenciais continuam write-only; ao editar, URL e Client-Token são informados novamente, validados no servidor contra a própria Z-API e só então salvos. Novos números também precisam passar no teste antes do cadastro. (`src/components/WhatsAppNumbers.jsx`, `api/whatsapp.js`.)
+
+### Fixed
+- **Envio falso-positivo do WhatsApp**: URLs copiadas com `/send-text` no final passam a ser normalizadas para a base da instância, evitando chamadas em `/send-text/send-text`. Respostas 2xx da Z-API que contenham erro ou não tragam `messageId`/identificador deixam de ser gravadas como enviadas e aparecem como falha para o usuário. A normalização aceita somente HTTPS no host oficial `api.z-api.io`, inclusive no teste autenticado, fechando uso como proxy para hosts arbitrários. (`api/_lib/whatsappClient.js`, `tests/unit/whatsappMedia.spec.js`.)
+
 ## [Unreleased] - 2026-10-13 (89)
 ### Fixed
 - **Recebimento do WhatsApp em produção**: o endpoint do webhook passa a reutilizar `VITE_SUPABASE_URL` quando `SUPABASE_URL` não estiver definida, alinhado aos demais endpoints server-side e à configuração atual da Vercel. Isso evita a falha `supabaseUrl is required` que interrompia os POSTs da Z-API antes da gravação. A URL exibida para configurar novos webhooks também passa a usar `www.surgimetrics.com.br`, hostname coberto pelo certificado TLS. (`api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`.)
