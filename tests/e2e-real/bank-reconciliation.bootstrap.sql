@@ -154,5 +154,5 @@ insert into public.extra_revenues(id, user_id, description, category, value, dat
 values ('55555555-5555-4555-8555-555555555555', '11111111-1111-4111-8111-111111111111', 'Consulta Maria E2E', 'Consultas', 500, '2026-10-13', '2026-10-13', '2026-10-13', '2026-10-13', 'recebido');
 insert into public.financial_entries(id, user_id, direction, source_type, source_id, source_component, description, party_name_snapshot, category, competence_date, issue_date, total_amount, status)
 values ('66666666-6666-4666-8666-666666666666', '11111111-1111-4111-8111-111111111111', 'receivable', 'extra_revenue', '55555555-5555-4555-8555-555555555555', 'revenue', 'Consulta Maria E2E', 'Maria', 'Consultas', '2026-10-13', '2026-10-13', 500, 'paid');
-insert into public.financial_installments(id, user_id, financial_entry_id, installment_number, amount, paid_amount, due_date, settlement_date, payment_method, status)
-values ('77777777-7777-4777-8777-777777777777', '11111111-1111-4111-8111-111111111111', '66666666-6666-4666-8666-666666666666', 1, 500, 500, '2026-10-13', '2026-10-13', 'pix', 'paid');
+insert into public.financial_installments(id, user_id, financial_entry_id, installment_number, amount, paid_amount, due_date, settlement_date, payment_method, financial_account_id, status)
+values ('77777777-7777-4777-8777-777777777777', '11111111-1111-4111-8111-111111111111', '66666666-6666-4666-8666-666666666666', 1, 500, 500, '2026-10-13', '2026-10-13', 'pix', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'paid');

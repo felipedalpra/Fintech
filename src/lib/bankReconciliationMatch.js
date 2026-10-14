@@ -24,8 +24,7 @@ function entryOf(installment) {
 }
 
 export function installmentReferenceDate(installment) {
-  const entry = entryOf(installment)
-  return installment.settlement_date || installment.due_date || entry.issue_date || null
+  return installment.settlement_date || installment.due_date || null
 }
 
 function tokens(value) {
@@ -59,9 +58,15 @@ function activeCandidate(installment) {
   return !installment.archived_at && !entry.archived_at && !['canceled', 'refunded'].includes(installment.status) && !['canceled', 'refunded'].includes(entry.status)
 }
 
+function hasExplicitAccountConflict(line, installment) {
+  return Boolean(line.financial_account_id && installment.financial_account_id
+    && line.financial_account_id !== installment.financial_account_id)
+}
+
 function rankCandidate(line, installment, windowDays) {
   if (!activeCandidate(installment)) return null
   if (lineDirection(line) !== candidateDirection(installment)) return null
+  if (hasExplicitAccountConflict(line, installment)) return null
   const amountDifferenceCents = Math.abs(Math.abs(toCents(line.amount)) - Math.abs(toCents(installment.amount)))
   if (amountDifferenceCents > 1) return null
   const referenceDate = installmentReferenceDate(installment)
@@ -91,7 +96,7 @@ export function matchBankStatementLines(lines = [], installments = [], activeRec
   const minimumScore = Number(options.minimumScore ?? 70)
   const minimumMargin = Number(options.minimumMargin ?? 8)
   const reconciliationByLine = new Map()
-  const usedInstallments = new Set()
+  const usedInstallments = new Set(options.reservedInstallmentIds || [])
   activeReconciliations.filter(item => !item.reversed_at).forEach(item => {
     reconciliationByLine.set(item.statement_line_id, item)
     usedInstallments.add(item.financial_installment_id)
@@ -142,6 +147,8 @@ export function validateManualReconciliation(line, installment, options = {}) {
   const errors = []
   if (!activeCandidate(installment)) errors.push('A parcela está cancelada, estornada ou arquivada.')
   if (lineDirection(line) !== candidateDirection(installment)) errors.push('Créditos só podem ser vinculados a contas a receber e débitos a contas a pagar.')
+  if (hasExplicitAccountConflict(line, installment)) errors.push('A parcela está vinculada explicitamente a outra conta financeira.')
+  if (line.financial_account_id && !installment.financial_account_id) warnings.push('A parcela não possui conta financeira informada.')
   const differenceAmount = Math.abs(Math.abs(Number(line.amount) || 0) - Math.abs(Number(installment.amount) || 0))
   const differenceDays = daysBetween(line.postedDate, installmentReferenceDate(installment))
   if (differenceAmount > 0.01) warnings.push(`Valor divergente em R$ ${differenceAmount.toFixed(2).replace('.', ',')}.`)

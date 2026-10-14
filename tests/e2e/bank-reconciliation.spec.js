@@ -55,10 +55,14 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
       }
       return fulfill(lines)
     }
-    if (path.endsWith('/bank_reconciliations')) return fulfill(reconciliations)
+    if (path.endsWith('/bank_reconciliations')) {
+      return fulfill(url.searchParams.get('reversed_at') === 'is.null'
+        ? reconciliations.filter(item => !item.reversed_at)
+        : reconciliations)
+    }
     if (path.endsWith('/financial_installments')) return fulfill([{
       id:INSTALLMENT_ID, user_id:USER_ID, financial_entry_id:ENTRY_ID, installment_number:1,
-      amount:500, paid_amount:500, due_date:'2026-10-13', settlement_date:'2026-10-13', payment_method:'pix', status:'paid', archived_at:null,
+      amount:500, paid_amount:500, due_date:'2026-10-13', settlement_date:'2026-10-13', payment_method:'pix', financial_account_id:ACCOUNT_ID, status:'paid', archived_at:null,
       financial_entries:{ id:ENTRY_ID, user_id:USER_ID, direction:'receivable', source_type:'extra_revenue', source_id:SOURCE_ID, source_component:'revenue', description:'Consulta Maria', party_name_snapshot:'Maria', category:'Consultas', origin_label:null, issue_date:'2026-10-13', competence_date:'2026-10-13', status:'paid', archived_at:null },
     }])
     if (path.endsWith('/extra_revenues')) return fulfill([{

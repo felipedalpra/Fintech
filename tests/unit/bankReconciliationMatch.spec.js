@@ -9,13 +9,14 @@ function installment(id, overrides = {}) {
     settlement_date:'2026-10-13',
     status:'paid',
     archived_at:null,
+    financial_account_id:'account-a',
     financial_entry:{ direction:'receivable', description:'Consulta Maria', party_name_snapshot:'Maria', status:'paid', archived_at:null, issue_date:'2026-10-13' },
     ...overrides,
   }
 }
 
 function line(id, overrides = {}) {
-  return { id, postedDate:'2026-10-13', amount:500, description:'PIX MARIA', normalizedDescription:'maria', ...overrides }
+  return { id, postedDate:'2026-10-13', amount:500, description:'PIX MARIA', normalizedDescription:'maria', financial_account_id:'account-a', ...overrides }
 }
 
 test('recomenda por valor, direção, data e descrição com motivos explicáveis', () => {
@@ -54,6 +55,45 @@ test('ignora parcela conciliada, cancelada ou arquivada', () => {
   )
   expect(result[0].status).toBe('reconciled')
   expect(result[1].status).toBe('unmatched')
+})
+
+test('ignora parcelas reservadas por conciliações de outras importações', () => {
+  const result = matchBankStatementLines([line('new')], [installment('used')], [], { reservedInstallmentIds:['used'] })
+  expect(result[0]).toMatchObject({ status:'unmatched', candidates:[] })
+})
+
+test('não sugere nem permite vínculo manual com outra conta financeira', () => {
+  const otherAccount = installment('other', { financial_account_id:'account-b' })
+  const result = matchBankStatementLines([line('line')], [otherAccount])
+  expect(result[0]).toMatchObject({ status:'unmatched', candidates:[] })
+  expect(validateManualReconciliation(line('line'), otherAccount).valid).toBe(false)
+})
+
+test('parcela sem conta exige justificativa e ainda pode ser vinculada manualmente', () => {
+  const validation = validateManualReconciliation(line('line'), installment('no-account', { financial_account_id:null }))
+  expect(validation.valid).toBe(true)
+  expect(validation.requiresJustification).toBe(true)
+  expect(validation.warnings).toContain('A parcela não possui conta financeira informada.')
+})
+
+test('não usa data de emissão como referência financeira', () => {
+  const noFinancialDate = installment('no-date', { due_date:null, settlement_date:null })
+  const result = matchBankStatementLines([line('line')], [noFinancialDate])
+  expect(result[0]).toMatchObject({ status:'unmatched', candidates:[] })
+  const validation = validateManualReconciliation(line('line'), noFinancialDate)
+  expect(validation.requiresJustification).toBe(true)
+  expect(validation.warnings).toContain('A parcela não possui data de referência válida.')
+})
+
+test('respeita a janela selecionada de até sete dias', () => {
+  const result = matchBankStatementLines(
+    [line('line', { postedDate:'2026-10-17' })],
+    [installment('inst', { financial_entry:{ direction:'receivable', description:'PIX MARIA', status:'paid', archived_at:null, issue_date:'2026-10-13' } })],
+    [],
+    { windowDays:5 },
+  )
+  expect(result[0].recommendedCandidate).toMatchObject({ installmentId:'inst', differenceDays:4 })
+  expect(validateManualReconciliation(line('line', { postedDate:'2026-10-17' }), installment('inst'), { windowDays:5 }).requiresJustification).toBe(false)
 })
 
 test('normalização de acento e ruído bancário preserva o nome útil', () => {

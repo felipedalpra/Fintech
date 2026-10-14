@@ -74,9 +74,25 @@ export function parseStatementAmount(value) {
 
 function parseCsvRows(content, delimiter) {
   const rows = []
+  const rowLines = []
+  const errors = []
   let row = []
   let field = ''
   let quoted = false
+  let quoteClosed = false
+  let physicalLine = 1
+  let rowStartLine = 1
+
+  function finishRow() {
+    row.push(field.replace(/\r$/, ''))
+    rows.push(row)
+    rowLines.push(rowStartLine)
+    row = []
+    field = ''
+    quoteClosed = false
+    rowStartLine = physicalLine + 1
+  }
+
   for (let index = 0; index < content.length; index += 1) {
     const char = content[index]
     if (quoted) {
@@ -85,39 +101,65 @@ function parseCsvRows(content, delimiter) {
         index += 1
       } else if (char === '"') {
         quoted = false
+        quoteClosed = true
       } else {
         field += char
+        if (char === '\n') physicalLine += 1
       }
       continue
     }
-    if (char === '"') quoted = true
-    else if (char === delimiter) {
+    if (quoteClosed) {
+      if (char === delimiter) {
+        row.push(field)
+        field = ''
+        quoteClosed = false
+      } else if (char === '\n') {
+        finishRow()
+        physicalLine += 1
+      } else if (char !== '\r' && !/\s/.test(char)) {
+        errors.push({ line:physicalLine, reason:'Há conteúdo inesperado depois do fechamento de aspas.' })
+        field += char
+        quoteClosed = false
+      }
+    } else if (char === '"') {
+      if (field.length > 0) {
+        errors.push({ line:physicalLine, reason:'Há aspas em posição inválida no CSV.' })
+        field += char
+      } else {
+        quoted = true
+      }
+    } else if (char === delimiter) {
       row.push(field)
       field = ''
     } else if (char === '\n') {
-      row.push(field.replace(/\r$/, ''))
-      rows.push(row)
-      row = []
-      field = ''
+      finishRow()
+      physicalLine += 1
     } else {
       field += char
     }
   }
+  if (quoted) errors.push({ line:rowStartLine, reason:'Há aspas sem fechamento; o arquivo pode ter unido movimentações diferentes.' })
   row.push(field.replace(/\r$/, ''))
-  if (row.some(cell => cell.trim())) rows.push(row)
-  return rows
+  if (row.some(cell => cell.trim())) {
+    rows.push(row)
+    rowLines.push(rowStartLine)
+  }
+  return { rows, rowLines, errors }
 }
 
 function detectDelimiter(content) {
   const sample = content.slice(0, 20_000)
   const delimiters = [';', ',', '\t']
   const ranked = delimiters.map(delimiter => {
-    const rows = parseCsvRows(sample, delimiter).slice(0, 10)
+    const rows = parseCsvRows(sample, delimiter).rows.slice(0, 10)
     const widths = rows.filter(row => row.some(cell => cell.trim())).map(row => row.length)
     const commonWidth = widths.reduce((best, width) => widths.filter(item => item === width).length > widths.filter(item => item === best).length ? width : best, widths[0] || 0)
-    return { delimiter, commonWidth, consistent:widths.filter(width => width === commonWidth).length }
-  }).sort((a, b) => b.consistent - a.consistent || b.commonWidth - a.commonWidth)
-  return ranked[0]?.commonWidth > 1 ? ranked[0].delimiter : null
+    return { delimiter, headerWidth:widths[0] || 0, commonWidth, consistent:widths.filter(width => width === commonWidth).length }
+  }).sort((a, b) => Number(b.headerWidth > 1) - Number(a.headerWidth > 1)
+    || Number(b.commonWidth > 1) - Number(a.commonWidth > 1)
+    || b.consistent - a.consistent
+    || b.commonWidth - a.commonWidth)
+  return ranked[0]?.headerWidth > 1 ? ranked[0].delimiter : null
 }
 
 function autoMapping(headers) {
@@ -160,9 +202,22 @@ export function parseCsvStatement(content, options = {}) {
   const text = stripBom(content)
   const delimiter = options.delimiter || detectDelimiter(text)
   if (!delimiter) return { format:'csv', headers:[], lines:[], errors:[{ line:1, reason:'Não foi possível identificar o separador do CSV.' }], requiresMapping:true, mapping:null }
-  const rows = parseCsvRows(text, delimiter).filter(row => row.some(cell => cell.trim()))
+  const parsedRows = parseCsvRows(text, delimiter)
+  const nonEmptyRows = parsedRows.rows
+    .map((row, index) => ({ row, line:parsedRows.rowLines[index] }))
+    .filter(item => item.row.some(cell => cell.trim()))
+  const rows = nonEmptyRows.map(item => item.row)
   if (rows.length < 2) return { format:'csv', headers:rows[0] || [], lines:[], errors:[{ line:1, reason:'O CSV não possui linhas de movimentação.' }], requiresMapping:false, mapping:null, delimiter }
   const headers = rows[0].map(cell => stripBom(cell).trim())
+  const structuralErrors = [...parsedRows.errors]
+  nonEmptyRows.slice(1).forEach(item => {
+    if (item.row.length !== headers.length) {
+      structuralErrors.push({ line:item.line, reason:`Quantidade de colunas diferente do cabeçalho (${item.row.length} em vez de ${headers.length}).` })
+    }
+  })
+  if (structuralErrors.length) {
+    return { format:'csv', headers, lines:[], errors:structuralErrors, requiresMapping:false, mapping:null, delimiter }
+  }
   const detected = autoMapping(headers)
   const mapping = options.mapping ? normalizeMapping(options.mapping) : detected.mapping
   const hasAmount = mapping.amount >= 0 || (mapping.credit >= 0 && mapping.debit >= 0)
@@ -174,7 +229,7 @@ export function parseCsvStatement(content, options = {}) {
   const errors = []
   const seenIds = new Set()
   rows.slice(1).forEach((row, rowIndex) => {
-    const displayLine = rowIndex + 2
+    const displayLine = nonEmptyRows[rowIndex + 1].line
     const postedDate = parseIsoOrBrDate(row[mapping.date])
     const amount = csvLineAmount(row, mapping)
     const description = mapping.description >= 0 ? String(row[mapping.description] || '').trim() : ''

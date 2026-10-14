@@ -40,6 +40,19 @@ test('payload persistido preserva chave idempotente, liquidação e forma de pag
     status:'paid',
     archived_at:null,
   })
+  expect(installments[0]).not.toHaveProperty('financial_account_id')
+})
+
+test('projeção sem conta omite a coluna para não apagar a conta já conciliada', () => {
+  const ledger = buildLedger({
+    extraRevenues:[{
+      id:'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', description:'Consulta', value:500,
+      competenceDate:'2026-10-13', dueDate:'2026-10-13', receivedDate:'2026-10-13', status:'recebido',
+    }],
+  })
+  const entries = prepareFinancialEntryRows(OWNER, ledger).map(entry => ({ ...entry, id:'ffffffff-ffff-4fff-8fff-ffffffffffff' }))
+  const [row] = prepareFinancialInstallmentRows(OWNER, ledger, entries)
+  expect(row).not.toHaveProperty('financial_account_id')
 })
 
 test('payload exige id retornado pelo upsert antes de criar parcelas', () => {

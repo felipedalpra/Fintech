@@ -33,7 +33,7 @@ function entryOf(installment) {
 function installmentLabel(installment) {
   const entry = entryOf(installment)
   const party = entry.party_name_snapshot ? ` · ${entry.party_name_snapshot}` : ''
-  const date = installment.settlement_date || installment.due_date || entry.issue_date
+  const date = installment.settlement_date || installment.due_date
   return `${entry.description || entry.category || entry.source_type || 'Lançamento'}${party} · ${fmt(installment.amount)}${date ? ` · ${formatDateBR(date)}` : ''}`
 }
 
@@ -72,6 +72,7 @@ export function BankReconciliation({ data }) {
   const [schemaMissing, setSchemaMissing] = useState(false)
   const [lines, setLines] = useState([])
   const [reconciliations, setReconciliations] = useState([])
+  const [reservedInstallmentIds, setReservedInstallmentIds] = useState([])
   const [installments, setInstallments] = useState([])
   const [windowDays, setWindowDays] = useState(3)
   const [filter, setFilter] = useState('all')
@@ -122,13 +123,14 @@ export function BankReconciliation({ data }) {
     if (!ownerId || !importId) {
       setLines([])
       setReconciliations([])
+      setReservedInstallmentIds([])
       setInstallments([])
       return
     }
     setBusy(true)
     setError('')
     try {
-      const [{ lines:nextLines, reconciliations:nextReconciliations }, nextInstallments] = await Promise.all([
+      const [{ lines:nextLines, reconciliations:nextReconciliations, reservedInstallmentIds:nextReservedIds }, nextInstallments] = await Promise.all([
         fetchBankReconciliations(ownerId, importId),
         fetchReconciliationInstallments(ownerId),
       ])
@@ -138,6 +140,7 @@ export function BankReconciliation({ data }) {
         normalizedDescription:item.normalized_description,
       })))
       setReconciliations(nextReconciliations)
+      setReservedInstallmentIds(nextReservedIds)
       setInstallments(nextInstallments)
       const returned = readReturnContext()
       if (returned?.importId === importId) {
@@ -161,13 +164,20 @@ export function BankReconciliation({ data }) {
     setSearchParams({ import:selectedImportId }, { replace:true })
     refreshImport(selectedImportId)
   }, [selectedImportId, ownerId])
+  useEffect(() => {
+    if (!reservedInstallmentIds.length) return
+    const reserved = new Set(reservedInstallmentIds)
+    setSelections(current => Object.fromEntries(
+      Object.entries(current).filter(([, installmentId]) => !reserved.has(installmentId)),
+    ))
+  }, [reservedInstallmentIds])
 
   const activeReconciliations = useMemo(() => reconciliations.filter(item => !item.reversed_at), [reconciliations])
   const missingLedgerInstallments = useMemo(() => missingPersistedLedgerInstallments(data, installments), [data, installments])
   const ledgerReady = missingLedgerInstallments.length === 0
   const matches = useMemo(
-    () => matchBankStatementLines(lines, ledgerReady ? installments : [], activeReconciliations, { windowDays }),
-    [lines, installments, activeReconciliations, windowDays, ledgerReady],
+    () => matchBankStatementLines(lines, ledgerReady ? installments : [], activeReconciliations, { windowDays, reservedInstallmentIds }),
+    [lines, installments, activeReconciliations, windowDays, ledgerReady, reservedInstallmentIds],
   )
   const visibleMatches = useMemo(() => matches.filter(item => {
     if (filter !== 'all' && item.status !== filter) return false
@@ -256,6 +266,11 @@ export function BankReconciliation({ data }) {
   }
 
   function chooseForConfirmation(match, installmentId) {
+    if (reservedInstallmentIds.includes(installmentId)) {
+      setSelections(current => ({ ...current, [match.line.id]:'' }))
+      setError('Esta parcela acabou de ser conciliada em outra linha. Escolha outro lançamento.')
+      return
+    }
     const candidate = installments.find(item => item.id === installmentId)
     if (!candidate) return
     const validation = validateManualReconciliation(match.line, candidate, { windowDays })
@@ -284,6 +299,7 @@ export function BankReconciliation({ data }) {
         score:confirming.ranked?.score,
         reasons:confirming.ranked?.reasons || confirming.validation.warnings,
         justification:reason,
+        windowDays,
       })
       toast('Conciliação confirmada. Nenhum valor ou status financeiro foi alterado.')
       setConfirming(null)
@@ -481,7 +497,10 @@ export function BankReconciliation({ data }) {
         const linkedInstallment = reconciliation ? installments.find(item => item.id === reconciliation.financial_installment_id) : null
         const recommended = match.recommendedCandidate
         const selectedId = selections[match.line.id] || recommended?.installmentId || ''
-        const directionInstallments = installments.filter(item => entryOf(item).direction === (match.line.amount > 0 ? 'receivable' : 'payable') && !item.archived_at)
+        const directionInstallments = installments.filter(item => entryOf(item).direction === (match.line.amount > 0 ? 'receivable' : 'payable')
+          && !item.archived_at
+          && !reservedInstallmentIds.includes(item.id)
+          && (!match.line.financial_account_id || !item.financial_account_id || match.line.financial_account_id === item.financial_account_id))
         return (
           <div key={match.line.id} style={s.lineCard} data-testid={`statement-line-${match.status}`}>
             <div>

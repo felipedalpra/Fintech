@@ -127,7 +127,7 @@ export async function fetchStatementLines(ownerId, importId) {
 
 export async function fetchBankReconciliations(ownerId, importId) {
   const lines = await fetchStatementLines(ownerId, importId)
-  if (!lines.length) return { lines:[], reconciliations:[] }
+  if (!lines.length) return { lines:[], reconciliations:[], reservedInstallmentIds:[] }
   const lineIds = lines.map(line => line.id)
   const reconciliations = []
   for (let index = 0; index < lineIds.length; index += PAGE_SIZE) {
@@ -141,7 +141,16 @@ export async function fetchBankReconciliations(ownerId, importId) {
     if (error) throw error
     reconciliations.push(...(data || []))
   }
-  return { lines, reconciliations }
+  const activeReconciliations = await fetchAll(() => supabase
+    .from('bank_reconciliations')
+    .select('financial_installment_id')
+    .eq('user_id', ownerId)
+    .is('reversed_at', null))
+  return {
+    lines,
+    reconciliations,
+    reservedInstallmentIds:[...new Set(activeReconciliations.map(item => item.financial_installment_id).filter(Boolean))],
+  }
 }
 
 export async function fetchReconciliationInstallments(ownerId) {
@@ -158,7 +167,7 @@ export async function fetchReconciliationInstallments(ownerId) {
     .order('due_date', { ascending:false }))
 }
 
-export async function confirmBankReconciliation({ lineId, installmentId, method, score, reasons, justification }) {
+export async function confirmBankReconciliation({ lineId, installmentId, method, score, reasons, justification, windowDays }) {
   const { data, error } = await supabase.rpc('confirm_bank_reconciliation', {
     p_line_id:lineId,
     p_installment_id:installmentId,
@@ -166,6 +175,7 @@ export async function confirmBankReconciliation({ lineId, installmentId, method,
     p_score:score ?? null,
     p_reasons:reasons || [],
     p_justification:justification || null,
+    p_window_days:Number(windowDays ?? 3),
   })
   if (error) throw error
   if (!data?.id || data.statement_line_id !== lineId || data.financial_installment_id !== installmentId) {

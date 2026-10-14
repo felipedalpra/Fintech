@@ -38,6 +38,24 @@ test('pede mapeamento quando cabeçalho é ambíguo e não descarta linhas invá
   expect(mapped.errors).toHaveLength(2)
 })
 
+test('bloqueia CSV inteiro quando aspas abertas podem engolir outra movimentação', () => {
+  const csv = 'Data;Descrição;Valor\n13/10/2026;"PIX Maria;500,00\n14/10/2026;Tarifa;-18,90'
+  const result = parseCsvStatement(csv)
+  expect(result.lines).toEqual([])
+  expect(result.errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({ reason:expect.stringContaining('aspas sem fechamento') }),
+  ]))
+})
+
+test('bloqueia CSV inteiro quando uma linha tem largura diferente do cabeçalho', () => {
+  const csv = 'Data;Descrição;Valor\n13/10/2026;PIX Maria;500,00;coluna inesperada\n14/10/2026;Tarifa;-18,90'
+  const result = parseCsvStatement(csv)
+  expect(result.lines).toEqual([])
+  expect(result.errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({ line:2, reason:expect.stringContaining('Quantidade de colunas') }),
+  ]))
+})
+
 test('interpreta formatos monetários brasileiros e parênteses', () => {
   expect(parseStatementAmount('R$ 1.234,56')).toBe(1234.56)
   expect(parseStatementAmount('(89,10)')).toBe(-89.1)

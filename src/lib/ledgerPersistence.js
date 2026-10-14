@@ -39,7 +39,9 @@ function asInstallmentRow(userId, entryId, row) {
     due_date:row.due_date || null,
     settlement_date:row.settlement_date || null,
     payment_method:row.payment_method || null,
-    financial_account_id:row.financial_account_id || null,
+    // A projeção operacional nem sempre conhece a conta escolhida depois, na liquidação.
+    // Omitir a coluna preserva esse dado no ON CONFLICT; só uma conta explícita pode substituí-lo.
+    ...(row.financial_account_id ? { financial_account_id:row.financial_account_id } : {}),
     fees_amount:Number(row.fees_amount || 0),
     interest_amount:Number(row.interest_amount || 0),
     discount_amount:Number(row.discount_amount || 0),
@@ -107,9 +109,18 @@ export async function persistLedgerProjection(client, userId, ledger, { archive 
   const installmentRows = prepareFinancialInstallmentRows(userId, ledger, persistedEntries)
 
   if (installmentRows.length > 0) {
-    const { error } = await client.from('financial_installments')
-      .upsert(installmentRows, { onConflict:'financial_entry_id,installment_number' })
-    if (error) throw error
+    // PostgREST define as colunas do UPSERT por lote. Separar os payloads impede que
+    // uma linha sem conta seja convertida em NULL por causa de outra linha com conta.
+    const batches = [
+      installmentRows.filter(row => !Object.prototype.hasOwnProperty.call(row, 'financial_account_id')),
+      installmentRows.filter(row => Object.prototype.hasOwnProperty.call(row, 'financial_account_id')),
+    ]
+    for (const batch of batches) {
+      if (!batch.length) continue
+      const { error } = await client.from('financial_installments')
+        .upsert(batch, { onConflict:'financial_entry_id,installment_number' })
+      if (error) throw error
+    }
   }
 
   await archiveEntries(client, userId, archive)

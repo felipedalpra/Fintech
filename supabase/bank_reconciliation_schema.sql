@@ -275,13 +275,16 @@ begin
 end
 $$;
 
+drop function if exists public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text);
+
 create or replace function public.confirm_bank_reconciliation(
   p_line_id uuid,
   p_installment_id uuid,
   p_method text,
   p_score numeric default null,
   p_reasons jsonb default '[]'::jsonb,
-  p_justification text default null
+  p_justification text default null,
+  p_window_days integer default 3
 )
 returns public.bank_reconciliations
 language plpgsql
@@ -303,6 +306,9 @@ begin
   end if;
   if p_method not in ('suggested', 'manual', 'created_from_line') then
     raise exception 'Método de conciliação inválido.' using errcode = '22023';
+  end if;
+  if p_window_days is null or p_window_days < 0 or p_window_days > 7 then
+    raise exception 'Janela de datas inválida.' using errcode = '22023';
   end if;
 
   select l.* into bank_line
@@ -330,13 +336,18 @@ begin
      or (bank_line.amount < 0 and entry.direction <> 'payable') then
     raise exception 'Direção incompatível entre extrato e parcela.' using errcode = '23514';
   end if;
+  if installment.financial_account_id is not null
+     and installment.financial_account_id <> bank_line.financial_account_id then
+    raise exception 'A parcela pertence explicitamente a outra conta financeira.' using errcode = '23514';
+  end if;
 
   amount_difference := round(abs(abs(bank_line.amount) - abs(installment.amount)), 2);
   day_difference := case
-    when coalesce(installment.settlement_date, installment.due_date, entry.issue_date) is null then null
-    else abs(bank_line.posted_date - coalesce(installment.settlement_date, installment.due_date, entry.issue_date))
+    when coalesce(installment.settlement_date, installment.due_date) is null then null
+    else abs(bank_line.posted_date - coalesce(installment.settlement_date, installment.due_date))
   end;
-  if (amount_difference > 0.01 or day_difference is null or day_difference > 3)
+  if (amount_difference > 0.01 or day_difference is null or day_difference > p_window_days
+      or installment.financial_account_id is null)
      and length(trim(coalesce(p_justification, ''))) < 3 then
     raise exception 'Conciliação divergente exige justificativa.' using errcode = '23514';
   end if;
@@ -385,12 +396,12 @@ $$;
 revoke all on function public.start_bank_statement_import(uuid, text, text, text, integer) from public, anon;
 revoke all on function public.finalize_bank_statement_import(uuid) from public, anon;
 revoke all on function public.archive_bank_statement_import(uuid) from public, anon;
-revoke all on function public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text) from public, anon;
+revoke all on function public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text, integer) from public, anon;
 revoke all on function public.reverse_bank_reconciliation(uuid, text) from public, anon;
 grant execute on function public.start_bank_statement_import(uuid, text, text, text, integer) to authenticated;
 grant execute on function public.finalize_bank_statement_import(uuid) to authenticated;
 grant execute on function public.archive_bank_statement_import(uuid) to authenticated;
-grant execute on function public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text) to authenticated;
+grant execute on function public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text, integer) to authenticated;
 grant execute on function public.reverse_bank_reconciliation(uuid, text) to authenticated;
 
 -- Integra o histórico global quando a função de auditoria já tiver sido aplicada.
