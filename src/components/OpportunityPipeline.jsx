@@ -7,6 +7,7 @@ import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggesti
 import { OpportunityEditor } from './OpportunityEditor.jsx'
 import { NewLeadModal } from './NewLeadModal.jsx'
 import { createManualLead, patchOpportunity } from '../lib/opportunityActions.js'
+import { slaForLead } from '../lib/slaBusinessTime.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 
 // Ícones SVG (leitura melhor que emoji). `d` é o miolo do path.
@@ -22,6 +23,8 @@ const ICON = {
   wa: <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z" />,
   pencil: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></>,
+  check: <path d="M20 6 9 17l-5-5" />,
+  warn: <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />,
 }
 function Avatar({ label, size = 32 }) {
   return (
@@ -85,7 +88,7 @@ export function OpportunityPipeline() {
       const [oppRes, memRes] = await Promise.all([
         supabase
           .from('opportunities')
-          .select('id, title, stage, status, value, source, tags, stage_entered_at, patient_id, responsible_user_id, suggested_stage, suggested_reason, suggested_confidence, suggestion_status, patients(full_name, phone)')
+          .select('id, title, stage, status, value, source, tags, stage_entered_at, created_at, first_response_at, patient_id, responsible_user_id, suggested_stage, suggested_reason, suggested_confidence, suggestion_status, patients(full_name, phone)')
           .eq('user_id', effectiveUserId)
           .eq('status', 'aberto')
           .order('created_at', { ascending: false }),
@@ -343,6 +346,7 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, members, o
   const oppTitle = opp.title && opp.title !== 'Oportunidade' ? opp.title : null
   const respLabel = opp.responsible_user_id ? (memberLabel?.[opp.responsible_user_id] || null) : null
   const staleDays = days != null && days >= 7
+  const sla = slaForLead(opp) // SLA de 1ª resposta (só aparece em 'primeiro_contato')
   const hasSuggestion = opp.suggestion_status === 'pending'
     && opp.suggested_stage && opp.suggested_stage !== currentStage.key
 
@@ -399,6 +403,18 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, members, o
           </div>
         )
       ) : (value && <div style={s.value}>{value}</div>)}
+      {currentStage.key === 'primeiro_contato' && sla.state !== 'na' && (() => {
+        const cfg = {
+          ok: { bg: C.accent, label: `Responder em ${sla.minutes} min`, warn: false },
+          late: { bg: C.red || '#EF4444', label: `Sem resposta há ${sla.minutes} min`, warn: true },
+          respondido: { bg: C.green || '#10B981', label: `Respondido em ${sla.minutes} min`, warn: false },
+        }[sla.state]
+        return (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 9, padding: '5px 9px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, color: cfg.bg, background: cfg.bg + '22' }}>
+            <Ico d={cfg.warn ? ICON.warn : (sla.state === 'respondido' ? ICON.check : ICON.clock)} size={12} />{cfg.label}
+          </div>
+        )
+      })()}
       {(opp.source || tags.length > 0) && (
         <div style={s.tags}>
           {opp.source && <span style={s.tag}><span style={{ color: C.textDim, display: 'inline-flex' }}><Ico d={ICON.tag} size={11} /></span>{opp.source}</span>}

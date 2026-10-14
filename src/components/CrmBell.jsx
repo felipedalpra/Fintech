@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
+import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
 
 // Sininho de CRM: alertas derivados dos dados atuais (sem tabela nova) — tarefas atrasadas,
 // leads sem responsável e oportunidades paradas. Clicar leva pra tela do item.
@@ -40,7 +41,7 @@ export function CrmBell({ onNavigate }) {
       try {
         const [taskRes, oppRes] = await Promise.all([
           supabase.from('tasks').select('id, due_date, status').eq('user_id', effectiveUserId).eq('status', 'pendente'),
-          supabase.from('opportunities').select('id, responsible_user_id, stage_entered_at, status').eq('user_id', effectiveUserId).eq('status', 'aberto'),
+          supabase.from('opportunities').select('id, responsible_user_id, stage_entered_at, status, stage, created_at, first_response_at').eq('user_id', effectiveUserId).eq('status', 'aberto'),
         ])
         if (!mounted) return
         setTasks(taskRes.data ?? [])
@@ -65,11 +66,13 @@ export function CrmBell({ onNavigate }) {
     const atrasadas = g.atrasadas.length
     const semResp = opps.filter(o => !o.responsible_user_id).length
     const parados = opps.filter(o => (daysSince(o.stage_entered_at) || 0) >= STALE_DAYS).length
+    const slaLate = opps.filter(o => slaForLead(o).state === 'late').length
     const list = []
+    if (slaLate) list.push({ k: 'sla', color: C.red || '#EF4444', icon: I.warn, title: `${slaLate} lead${slaLate > 1 ? 's' : ''} sem 1ª resposta`, desc: `Passaram do alvo de ${SLA_CONFIG.targetMin} min`, go: 'funnel' })
     if (atrasadas) list.push({ k: 'atr', color: C.red || '#EF4444', icon: I.warn, title: `${atrasadas} tarefa${atrasadas > 1 ? 's' : ''} atrasada${atrasadas > 1 ? 's' : ''}`, desc: 'Resolva ou reagende', go: 'tarefas' })
     if (semResp) list.push({ k: 'sr', color: C.green || '#10B981', icon: I.user, title: `${semResp} lead${semResp > 1 ? 's' : ''} sem responsável`, desc: 'Distribua para a equipe', go: 'funnel' })
     if (parados) list.push({ k: 'pa', color: C.yellow || '#F59E0B', icon: I.clock, title: `${parados} oportunidade${parados > 1 ? 's' : ''} parada${parados > 1 ? 's' : ''}`, desc: `Há +${STALE_DAYS} dias no mesmo estágio`, go: 'funnel' })
-    return { alerts: list, total: atrasadas + semResp + parados } // badge = nº de itens, não de categorias
+    return { alerts: list, total: slaLate + atrasadas + semResp + parados } // badge = nº de itens, não de categorias
   }, [tasks, opps])
 
   const btn = { position: 'relative', width: 38, height: 38, borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center', cursor: 'pointer', color: total ? C.text : C.textSub }

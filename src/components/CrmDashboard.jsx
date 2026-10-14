@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { funnelCounts, weightedPipeline, leadsBySource, byResponsible, lossReasons, avgDaysPerStage, crmKpis } from '../lib/crmMetrics.js'
+import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
 
 // Painel de CRM: lê oportunidades + histórico de estágios e calcula tudo no cliente
 // (módulo puro crmMetrics.js). Não cruza com o financeiro — conversão ≠ faturamento.
@@ -66,7 +67,7 @@ export function CrmDashboard() {
       const cutoff = period ? new Date(Date.now() - period * DAY).toISOString() : '1970-01-01'
       const [oppRes, histRes, memRes] = await Promise.all([
         fetchAll(() => supabase.from('opportunities')
-          .select('id, stage, status, value, source, responsible_user_id, stage_entered_at, created_at, lost_reason')
+          .select('id, stage, status, value, source, responsible_user_id, stage_entered_at, created_at, first_response_at, lost_reason')
           .eq('user_id', effectiveUserId).gte('created_at', cutoff)
           .order('created_at', { ascending: true }).order('id', { ascending: true })),
         fetchAll(() => supabase.from('opportunity_stage_history')
@@ -93,6 +94,16 @@ export function CrmDashboard() {
     return map
   }, [members, effectiveUserId, user])
   const kpis = useMemo(() => crmKpis(opps), [opps])
+  const sla = useMemo(() => {
+    const now = new Date()
+    const states = opps.map(o => slaForLead(o, now))
+    const responded = states.filter(r => r.state === 'respondido' && r.minutes > 0)
+    const avg = responded.length ? Math.round(responded.reduce((s, r) => s + r.minutes, 0) / responded.length) : null
+    const within = responded.filter(r => r.minutes <= SLA_CONFIG.targetMin).length
+    const waiting = states.filter(r => r.state === 'ok' || r.state === 'late')
+    const late = waiting.filter(r => r.state === 'late').length
+    return { avg, withinPct: responded.length ? within / responded.length : null, waiting: waiting.length, late }
+  }, [opps])
   const pipeline = useMemo(() => weightedPipeline(opps), [opps])
   const funnel = useMemo(() => funnelCounts(opps, STAGE_ORDER), [opps])
   const sources = useMemo(() => leadsBySource(opps), [opps])
@@ -132,6 +143,9 @@ export function CrmDashboard() {
           <Kpi label="Pipeline ponderado" value={fmtBRL(pipeline.total)} color={C.accent} note={`${pipeline.count} oportunidades abertas`} />
           <Kpi label="Ticket médio (ganho)" value={fmtBRL(kpis.avgTicket)} />
           <Kpi label="Ganhos · Perdidos" value={<span>{kpis.won} · <span style={{ color: C.red || '#EF4444' }}>{kpis.lost}</span></span>} />
+          <Kpi label="1ª resposta média" value={sla.avg == null ? '—' : `${sla.avg} min`} color={C.green || '#10B981'} note="em horário comercial" />
+          <Kpi label={`Dentro do SLA (${SLA_CONFIG.targetMin} min)`} value={pct(sla.withinPct)} note="dos leads respondidos" />
+          <Kpi label="Aguardando 1ª resposta" value={<span>{sla.waiting}{sla.late > 0 && <span style={{ color: C.red || '#EF4444' }}> · {sla.late} atrasado{sla.late > 1 ? 's' : ''}</span>}</span>} color={sla.late > 0 ? (C.yellow || '#F59E0B') : undefined} />
         </div>
 
         {/* Funil + Origem */}
