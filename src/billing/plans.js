@@ -1,5 +1,3 @@
-export const FREE_TRIAL_DAYS = 30
-
 export const BILLING_CYCLES = [
   {
     id:'mensal',
@@ -47,18 +45,14 @@ export function getBillingCycle(cycleId = 'mensal') {
   return BILLING_CYCLES.find(item => item.id === cycleId) || BILLING_CYCLES[0]
 }
 
-export function buildTrialSignupUrl(cycleId, email = '') {
-  const params = new URLSearchParams({
-    cycle:cycleId,
-    trial:String(FREE_TRIAL_DAYS),
-    onboarding:'trial',
-  })
+export function buildSignupUrl(cycleId, email = '') {
+  const params = new URLSearchParams({ cycle:cycleId })
   if (email) params.set('email', email)
   return `/signup?${params.toString()}`
 }
 
 export function buildCheckoutUrl(cycleId) {
-  return buildTrialSignupUrl(cycleId)
+  return buildSignupUrl(cycleId)
 }
 
 export function buildStripePriceMap() {

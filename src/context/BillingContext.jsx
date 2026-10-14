@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { getTrialDaysLeft, hasActiveAccess, ensureBillingAccount, updateSelectedPlan } from '../lib/billingStore.js'
+import { ensureBillingAccount, updateSelectedPlan } from '../lib/billingStore.js'
 import { useAuth } from './AuthContext.jsx'
 
 const BillingContext = createContext(null)
@@ -17,7 +17,6 @@ export function BillingProvider({ children }) {
       setBilling({
         status:'active',
         selected_plan:'mensal',
-        trial_ends_at:null,
       })
       setLoading(false)
       setError('')
@@ -66,8 +65,6 @@ export function BillingProvider({ children }) {
     billing,
     billingLoading:loading,
     billingError:error,
-    hasAppAccess:hasActiveAccess(billing),
-    trialDaysLeft:getTrialDaysLeft(billing),
     async refreshBilling() {
       if (!user) return null
       const account = await ensureBillingAccount(user)

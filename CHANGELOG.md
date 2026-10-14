@@ -5,9 +5,32 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
-## [Unreleased] - 2026-10-14 (95)
+## [Unreleased] - 2026-10-14 (98)
 ### Fixed
 - **Blindagem multi-usuário (escopo da clínica):** um membro confirmado (ex.: gestão/equipe) cujo `data_owner_id()` não resolvesse caía **em silêncio** para o próprio `user.id` — o que faria a pessoa **ver um app vazio** (lendo pelo id errado) e **gravar dados órfãos**, invisíveis para o resto da clínica. Agora o `UserRoleContext` **tenta de novo** (1 retry) e, se ainda não resolver, expõe `scopeError` em vez de usar o `user.id`; o workspace **bloqueia com aviso** ("Não foi possível vincular sua clínica") + botão Recarregar, nunca renderizando/gravando com escopo errado. Fecha o modo de falha de "desconectado / não aparece / não persiste" entre perfis da mesma conta. `src/context/UserRoleContext.jsx`, `src/pages/FinanceWorkspace.jsx`.
+
+## [Unreleased] - 2026-10-14 (97)
+### Changed
+- **Acesso sem trial**: autenticação passa a ser a única condição para abrir o ERP; cobrança continua disponível em Assinatura, mas não bloqueia, expira nem redireciona a navegação. Novas contas de billing são registradas como ativas sem datas de trial, enquanto registros existentes são preservados sem migração destrutiva. Landing page, checkout, cadastro, assinatura e resumo lateral deixam de prometer ou exibir período de teste. (`src/router/ProtectedRoute.jsx`, `src/context/BillingContext.jsx`, `src/lib/billingStore.js`, `src/billing/plans.js`, `src/pages/BillingPage.jsx`, `src/pages/LoginPage.jsx`, `src/pages/CheckoutPage.jsx`, `src/pages/FinanceWorkspace.jsx`, `src/landing/Hero.jsx`, `src/landing/Pricing.jsx`, `src/landing/FAQ.jsx`.)
+
+### Fixed
+- **Refresh e deep-link preservam a tela aberta**: a rota protegida deixa de depender da hidratação assíncrona do billing, eliminando o redirecionamento transitório para Assinatura ao recarregar Conciliação bancária ou qualquer outra rota interna. A mudança não lê, regrava ou remove lançamentos financeiros. Cobertura adicionada para reload da conciliação e URLs de cadastro sem parâmetros de trial. (`src/router/ProtectedRoute.jsx`, `tests/e2e/session-restore.spec.js`, `tests/unit/billingPlans.spec.js`.)
+
+## [Unreleased] - 2026-10-14 (96)
+### Added
+- **Conciliação bancária assistida** em Financeiro → Cobrança: importa OFX 1.x/2.x e CSV no navegador, exige prévia antes de persistir, cruza cada linha com parcelas do razão por direção + valor + janela de data + descrição e explica a sugestão. Confirmação e desconciliação são humanas, auditáveis e reversíveis; não alteram valor, baixa, competência, vencimento, DRE, caixa ou contas. Linhas sem par podem abrir o modal financeiro real pré-preenchido, mas competência/categoria continuam exigindo revisão. (`src/components/BankReconciliation.jsx`, `src/lib/statementParser.js`, `src/lib/bankReconciliationMatch.js`, `src/lib/bankReconciliationLedger.js`, `src/lib/bankReconciliationStore.js`.)
+- **Persistência financeira isolada por clínica**: migração aditiva cria importações, linhas e vínculos com RLS por `data_owner_id()`, unicidade contra arquivo/FITID e vínculo duplo, ciclo incompleto `importing → ready`, RPCs transacionais para iniciar/finalizar/arquivar/conciliar/reverter e nenhuma policy de exclusão física. Não adiciona função Vercel/serverless. O SQL deve ser executado manualmente antes do deploy. (`supabase/bank_reconciliation_schema.sql`.)
+- **Cobertura de regressão**: testes unitários do parser, casamento e gate de completude do razão; E2E de navegador; e E2E real com PostgreSQL/PostgREST validando importação, read-back, reload, vínculo, reversão, invariância da parcela/conta financeira, janelas de data, rejeição de conta divergente, justificativa para legado sem conta e isolamento entre clínicas. (`tests/unit/statementParser.spec.js`, `tests/unit/bankReconciliationMatch.spec.js`, `tests/unit/bankReconciliationLedger.spec.js`, `tests/e2e/bank-reconciliation.spec.js`, `tests/e2e-real/bank-reconciliation.real.spec.js`.)
+
+### Fixed
+- **Guardrails pós code-review da conciliação**: CSV com aspas abertas, aspas inválidas ou largura inconsistente agora bloqueia a importação inteira, sem engolir movimentações silenciosamente; sugestões e confirmações respeitam a conta financeira explícita, nunca tratam emissão como data de caixa/vencimento, alinham no banco a janela escolhida de até sete dias e retiram das opções parcelas já conciliadas em qualquer outra importação da clínica. Parcela antiga sem conta ou sem data financeira continua vinculável somente de forma manual e justificada. O autosave do razão deixa de sobrescrever com `NULL` uma conta bancária já registrada quando a origem operacional não informa outra, eliminando divergência entre a tela e o banco. (`src/lib/statementParser.js`, `src/lib/bankReconciliationMatch.js`, `src/lib/bankReconciliationStore.js`, `src/lib/ledgerPersistence.js`, `src/components/BankReconciliation.jsx`, `supabase/bank_reconciliation_schema.sql`.)
+
+### Changed
+- **Cadastro financeiro originado do extrato**: o rascunho do modal de receita/despesa preserva o contexto da linha bancária e retorna à conciliação somente depois de `saveDataNow` confirmar o lançamento e sincronizar o razão; o vínculo continua sendo uma segunda confirmação explícita. (`src/components/Finance.jsx`.)
+
+## [Unreleased] - 2026-10-14 (95)
+### Added
+- **Spec de conciliação bancária assistida (Fase 3 · item 1)**: define importação OFX/CSV integralmente no navegador, sugestões determinísticas sobre as parcelas do razão canônico e confirmação/reversão auditáveis sem alterar DRE, caixa, contas a receber/pagar ou lançamentos existentes. Inclui mapa de propagação, wireframe, modelo aditivo com RLS por clínica, RPCs Postgres transacionais (sem função Vercel), integração segura com o modal atual de receita/despesa, checklist de fidedignidade, testes unitários/E2E real e riscos de regressão. O plano antigo com IA/serverless foi explicitamente descontinuado. (`docs/superpowers/specs/2026-10-14-bank-reconciliation-design.md`, `docs/superpowers/plans/2026-10-08-conciliacao-bancaria.md`.)
 
 ## [Unreleased] - 2026-10-14 (94)
 ### Added
