@@ -27,21 +27,23 @@ test.beforeEach(async ({ page }) => {
 
 test('inbox mostra chip de responsável por conversa', async ({ page }) => {
   await page.goto('/app/inbox')
-  await expect(page.getByText('Ana Silva')).toBeVisible()
-  await expect(page.getByText('Bruno Costa')).toBeVisible()
+  const sidebar = page.locator('.wa-sidebar')
+  await expect(sidebar.getByText('Ana Silva')).toBeVisible()
+  await expect(sidebar.getByText('Bruno Costa')).toBeVisible()
   // chip do dono (prefixo do e-mail) em cada conversa — span, não a opção do filtro
-  await expect(page.locator('span').filter({ hasText: /^sumary$/ })).toBeVisible()
-  await expect(page.locator('span').filter({ hasText: /^jonas$/ })).toBeVisible()
+  await expect(sidebar.locator('.wa-chip-owner').filter({ hasText: /^sumary$/ })).toBeVisible()
+  await expect(sidebar.locator('.wa-chip-owner').filter({ hasText: /^jonas$/ })).toBeVisible()
 })
 
 test('admin filtra o inbox por responsável (monitoramento)', async ({ page }) => {
   await page.goto('/app/inbox')
-  await expect(page.getByText('Bruno Costa')).toBeVisible()
+  const sidebar = page.locator('.wa-sidebar')
+  await expect(sidebar.getByText('Bruno Costa')).toBeVisible()
   // filtro "Resp." só aparece para admin (bypass e2e = admin)
   const respSelect = page.locator('select[title="Monitorar por responsável"]')
   await expect(respSelect).toBeVisible()
   await respSelect.selectOption({ label: 'sumary' })
   // fica só a conversa do número da Sumary
-  await expect(page.getByText('Ana Silva')).toBeVisible()
-  await expect(page.getByText('Bruno Costa')).toHaveCount(0)
+  await expect(sidebar.getByText('Ana Silva')).toBeVisible()
+  await expect(sidebar.getByText('Bruno Costa')).toHaveCount(0)
 })

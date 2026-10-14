@@ -1,395 +1,213 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { C } from '../theme.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { SuggestionBox } from './OpportunityPipeline.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 import { uploadWhatsAppMedia, mediaTypeFromMime } from '../lib/whatsappUpload.js'
+import './WhatsAppInbox.css'
 
-// Inbox central de WhatsApp (todas as conversas da clínica, estilo Chatwoot/Kommo).
-// Mostra conversas atribuídas e NÃO atribuídas (lead novo que chamou no zap), filtra por
-// número e permite responder escolhendo de qual dos números sair.
-// Emojis comuns para o seletor do composer (enviados como texto via send-text).
-const EMOJIS = ['😀','😁','😂','🤣','😊','😍','😘','👍','🙏','🙌','👏','💪','🎉','❤️','🔥','✅','⚠️','😉','😅','😢','😎','🤔','👌','💜','🌟','⏰','📅','💉','🩹','👋','🙂','🤗']
-function mediaLabel(type) {
-  return { image: '📷 Foto', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Documento' }[type] || ''
-}
-// Texto de preview da conversa na lista (mídia vira rótulo).
-function previewText(m) {
-  if (m.msg_type && m.msg_type !== 'text') return m.body ? `${mediaLabel(m.msg_type)}: ${m.body}` : mediaLabel(m.msg_type)
-  return m.body
+const EMOJI_GROUPS = [
+  { id:'recent', label:'Mais usados', icon:'🕘', items:['😊','😂','❤️','👍','🙏','🎉','😍','🥰','😉','😁','🤗','👏','💚','✅','👋','🙌','🌟','🔥','💪','💜'] },
+  { id:'faces', label:'Carinhas', icon:'😊', items:['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤔','🤐','🤨','😐','😑','😶','😏','😒','😴','🤒','🤕','🤢','🤧','🥵','🥶','🥴','😵','🤯','🤠','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😲','😳','🥺','😥','😢','😭','😱'] },
+  { id:'gestures', label:'Gestos', icon:'👍', items:['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','💪','👂','👃','🧠','🫀','🫁','🦷','👀'] },
+  { id:'hearts', label:'Afeto', icon:'❤️', items:['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💔','❤️‍🔥','❣️','💕','💞','💓','💗','💖','💘','💝','💟','💌','💋','🌹','🌻','🌷','🌺','🌸','🌼','💐','🌟','✨'] },
+  { id:'life', label:'Objetos e saúde', icon:'🩺', items:['📅','📆','⏰','⌚','📱','💻','⌨️','📞','📧','📌','📍','📊','📈','📉','💰','💳','🧾','💊','💉','🩸','🩹','🩺','🩻','🫁','🧪','🧬','🔬','🧴','🧼','🏥','🏠','🚗','🚕','✈️','✅','⚠️','❌','❓','❗','💡','🎯','🏆','🎁','🎉'] },
+]
+
+function Icon({ name, size=20, strokeWidth=1.8 }) {
+  const paths = {
+    search:<><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
+    attach:<path d="m20.5 11.5-8.9 8.9a6 6 0 0 1-8.5-8.5l9.6-9.6a4 4 0 0 1 5.7 5.7l-9.7 9.7a2 2 0 1 1-2.8-2.8l8.9-8.9"/>,
+    smile:<><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></>,
+    mic:<><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></>,
+    stop:<rect x="7" y="7" width="10" height="10" rx="2"/>,
+    send:<><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></>,
+    document:<><path d="M6 2h8l4 4v16H6Z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></>,
+    refresh:<><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 0-2 5"/></>,
+    back:<><path d="m15 18-6-6 6-6"/><path d="M9 12h11"/></>,
+    user:<><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
+    whatsapp:<><path d="M20.5 11.7a8.5 8.5 0 0 1-12.6 7.5L3 20.5l1.3-4.7A8.5 8.5 0 1 1 20.5 11.7Z"/><path d="M8.3 7.7c.2-.4.4-.4.7-.4h.4c.2 0 .4 0 .5.4l.8 2c.1.3 0 .5-.2.7l-.6.7c-.2.2-.3.4 0 .8.5.9 1.3 1.7 2.2 2.2.4.2.6.2.8 0l.8-1c.2-.3.5-.3.8-.2l1.9.9c.3.1.5.3.4.6-.1.6-.4 1.2-.9 1.6-.5.5-1.2.7-1.9.7-1.1 0-2.7-.6-4.4-2.1-1.4-1.2-2.4-2.8-2.7-3.7-.4-1-.1-2.2.4-3.2Z"/></>,
+  }
+  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
 
-function fmtTime(ts) {
+const mediaLabel = type => ({ image:'Foto', audio:'Áudio', video:'Vídeo', document:'Documento' }[type] || '')
+const previewText = message => message.msg_type && message.msg_type !== 'text' ? `${mediaLabel(message.msg_type)}${message.body ? `: ${message.body}` : ''}` : message.body
+const fmtTime = timestamp => { try { return new Date(timestamp).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) } catch { return '' } }
+function fmtConversationTime(timestamp) {
   try {
-    const d = new Date(ts)
-    const today = new Date()
-    const sameDay = d.toDateString() === today.toDateString()
-    return sameDay ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+    const date = new Date(timestamp); const today = new Date(); const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+    if (date.toDateString() === today.toDateString()) return fmtTime(timestamp)
+    if (date.toDateString() === yesterday.toDateString()) return 'Ontem'
+    return date.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' })
   } catch { return '' }
+}
+const dateKey = timestamp => { try { return new Date(timestamp).toDateString() } catch { return '' } }
+function dateLabel(timestamp) {
+  try {
+    const date = new Date(timestamp); const today = new Date(); const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
+    if (date.toDateString() === today.toDateString()) return 'Hoje'
+    if (date.toDateString() === yesterday.toDateString()) return 'Ontem'
+    return date.toLocaleDateString('pt-BR', { day:'2-digit', month:'long', year:'numeric' })
+  } catch { return '' }
+}
+function formatPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '')
+  if (digits.length === 13 && digits.startsWith('55')) return `+55 (${digits.slice(2,4)}) ${digits.slice(4,9)}-${digits.slice(9)}`
+  if (digits.length === 12 && digits.startsWith('55')) return `+55 (${digits.slice(2,4)}) ${digits.slice(4,8)}-${digits.slice(8)}`
+  return phone || ''
+}
+function initials(name, phone) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length) return `${parts[0][0]}${parts.length > 1 ? parts.at(-1)[0] : ''}`.toUpperCase()
+  return String(phone || '').slice(-2) || 'WA'
+}
+function MessageStatus({ status }) {
+  if (status === 'failed') return <span className="wa-status wa-status-failed" title="Falha no envio">!</span>
+  if (status === 'read') return <span className="wa-status wa-status-read" title="Lida">✓✓</span>
+  if (status === 'delivered') return <span className="wa-status" title="Entregue">✓✓</span>
+  return <span className="wa-status" title="Enviada">✓</span>
 }
 
 export function WhatsAppInbox() {
   const { ownerId, role, isOwner } = useUserRole()
-  const isAdmin = isOwner || role === 'admin' // só admin monitora (vê o filtro por responsável)
-  const [messages, setMessages] = useState([])
-  const [numbers, setNumbers] = useState([])
-  const [members, setMembers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [selectedPhone, setSelectedPhone] = useState(null)
-  const [filterNumber, setFilterNumber] = useState('all')
-  const [filterResponsible, setFilterResponsible] = useState('all')
-  const [replyText, setReplyText] = useState('')
-  const [showEmoji, setShowEmoji] = useState(false)
-  const [replyNumberId, setReplyNumberId] = useState('')
-  const [sending, setSending] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const [suggestOpp, setSuggestOpp] = useState(null)
-  const [suggestBusy, setSuggestBusy] = useState(false)
-  const endRef = useRef(null)
-  const fileRef = useRef(null)
-  const recRef = useRef(null)
-  const chunksRef = useRef([])
+  const isAdmin = isOwner || role === 'admin'
+  const [messages, setMessages] = useState([]), [numbers, setNumbers] = useState([]), [members, setMembers] = useState([])
+  const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState(null)
+  const [selectedPhone, setSelectedPhone] = useState(null), [search, setSearch] = useState('')
+  const [filterNumber, setFilterNumber] = useState('all'), [filterResponsible, setFilterResponsible] = useState('all')
+  const [replyText, setReplyText] = useState(''), [showEmoji, setShowEmoji] = useState(false), [emojiGroup, setEmojiGroup] = useState('recent')
+  const [replyNumberId, setReplyNumberId] = useState(''), [sending, setSending] = useState(false), [uploading, setUploading] = useState(false), [recording, setRecording] = useState(false)
+  const [suggestOpp, setSuggestOpp] = useState(null), [suggestBusy, setSuggestBusy] = useState(false)
+  const endRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
 
-  async function load() {
-    setLoading(true)
-    setError(null)
+  const load = useCallback(async ({ silent=false }={}) => {
+    silent ? setRefreshing(true) : setLoading(true)
     const [msgRes, numRes, memRes] = await Promise.all([
-      supabase.from('whatsapp_messages')
-        .select('id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)')
-        .order('created_at', { ascending: false })
-        .limit(500),
-      supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id').eq('active', true).order('created_at', { ascending: true }),
-      supabase.rpc('clinic_team'), // roster via RPC: admin-membro (não-owner) também enxerga o time
+      supabase.from('whatsapp_messages').select('id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)').order('created_at', { ascending:false }).limit(500),
+      supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id').eq('active', true).order('created_at', { ascending:true }),
+      supabase.rpc('clinic_team'),
     ])
-    if (msgRes.error) { setError(msgRes.error.message); setLoading(false); return }
-    setMessages(msgRes.data ?? [])
-    setNumbers(numRes.data ?? [])
-    setMembers((memRes.data ?? []).filter(m => m.user_id))
-    setLoading(false)
-  }
-  useEffect(() => { if (ownerId) load() }, [ownerId])
-
-  const numberLabel = useMemo(() => {
-    const m = {}
-    for (const n of numbers) m[n.id] = n.label
-    return m
-  }, [numbers])
-  // número → responsável (user_id) e user_id → nome curto (prefixo do e-mail), para o chip de dono.
-  const numberOwner = useMemo(() => {
-    const m = {}
-    for (const n of numbers) m[n.id] = n.assigned_user_id || null
-    return m
-  }, [numbers])
-  const memberLabel = useMemo(() => {
-    const m = {}
-    for (const mem of members) m[mem.user_id] = (mem.member_email || '').split('@')[0] || mem.member_email
-    return m
-  }, [members])
-  // Nome do responsável de uma conversa (pelo número); null = não atribuída.
-  const ownerName = (numberId) => {
-    const uid = numberId ? numberOwner[numberId] : null
-    return uid ? (memberLabel[uid] || 'Responsável') : null
-  }
-
-  // Agrupa mensagens (desc) em conversas por telefone; a 1ª de cada é a mais recente.
-  const conversations = useMemo(() => {
-    const byPhone = new Map()
-    for (const m of messages) {
-      if (!byPhone.has(m.phone)) {
-        byPhone.set(m.phone, { phone: m.phone, last: m, name: m.patients?.full_name || null, patientId: m.patient_id, numberId: m.whatsapp_number_id, items: [] })
-      }
-      byPhone.get(m.phone).items.push(m)
-    }
-    let list = Array.from(byPhone.values())
-    if (filterNumber !== 'all') list = list.filter(c => c.items.some(m => m.whatsapp_number_id === filterNumber))
-    // Filtro por responsável (só admin): 'unassigned' = número sem dono.
-    if (filterResponsible !== 'all') {
-      list = list.filter(c => {
-        const uid = c.numberId ? numberOwner[c.numberId] : null
-        return filterResponsible === 'unassigned' ? !uid : uid === filterResponsible
-      })
-    }
-    return list
-  }, [messages, filterNumber, filterResponsible, numberOwner])
-
-  const current = conversations.find(c => c.phone === selectedPhone) || null
-  const thread = useMemo(() => (current ? [...current.items].reverse() : []), [current])
-
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [thread])
-  useEffect(() => { if (current) setReplyNumberId(current.numberId || numbers[0]?.id || '') }, [current, numbers])
-
-  // Busca a sugestão pendente da IA para a oportunidade aberta do paciente desta conversa.
+    if (msgRes.error) setError(msgRes.error.message)
+    else { setMessages(msgRes.data ?? []); setNumbers(numRes.data ?? []); setMembers((memRes.data ?? []).filter(member => member.user_id)); setError(null) }
+    setLoading(false); setRefreshing(false)
+  }, [])
+  useEffect(() => { if (ownerId) load() }, [ownerId, load])
   useEffect(() => {
-    let active = true
-    setSuggestOpp(null)
-    if (!current?.patientId) return
-    ;(async () => {
-      const { data } = await supabase
-        .from('opportunities')
-        .select('id, stage, suggested_stage, suggested_reason, suggested_confidence, suggestion_status')
-        .eq('patient_id', current.patientId)
-        .eq('status', 'aberto')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (active && data?.suggestion_status === 'pending' && data.suggested_stage) setSuggestOpp(data)
-    })()
+    if (!ownerId) return undefined
+    const channel = supabase.channel(`whatsapp-inbox-${ownerId}`).on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_messages', filter:`user_id=eq.${ownerId}` }, () => load({ silent:true })).subscribe()
+    const poll = window.setInterval(() => { if (!document.hidden) load({ silent:true }) }, 12_000)
+    return () => { window.clearInterval(poll); supabase.removeChannel(channel) }
+  }, [ownerId, load])
+
+  const numberLabel = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.label])), [numbers])
+  const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
+  const memberLabel = useMemo(() => Object.fromEntries(members.map(member => [member.user_id, (member.member_email || '').split('@')[0] || member.member_email])), [members])
+  const ownerName = useCallback(numberId => { const id = numberId ? numberOwner[numberId] : null; return id ? (memberLabel[id] || 'Responsável') : null }, [numberOwner, memberLabel])
+  const allConversations = useMemo(() => {
+    const grouped = new Map()
+    for (const message of messages) {
+      if (!grouped.has(message.phone)) grouped.set(message.phone, { phone:message.phone, last:message, name:message.patients?.full_name || null, patientId:message.patient_id, numberId:message.whatsapp_number_id, items:[] })
+      grouped.get(message.phone).items.push(message)
+    }
+    return Array.from(grouped.values())
+  }, [messages])
+  const conversations = useMemo(() => {
+    let list = allConversations
+    if (filterNumber !== 'all') list = list.filter(conversation => conversation.items.some(message => message.whatsapp_number_id === filterNumber))
+    if (filterResponsible !== 'all') list = list.filter(conversation => { const id = conversation.numberId ? numberOwner[conversation.numberId] : null; return filterResponsible === 'unassigned' ? !id : id === filterResponsible })
+    const query = search.trim().toLocaleLowerCase('pt-BR')
+    if (query) list = list.filter(conversation => `${conversation.name || ''} ${conversation.phone} ${previewText(conversation.last) || ''}`.toLocaleLowerCase('pt-BR').includes(query))
+    return list
+  }, [allConversations, filterNumber, filterResponsible, numberOwner, search])
+  const current = allConversations.find(conversation => conversation.phone === selectedPhone) || null
+  const thread = useMemo(() => current ? [...current.items].reverse() : [], [current])
+  useEffect(() => { if (!selectedPhone && conversations[0]) setSelectedPhone(conversations[0].phone); else if (selectedPhone && !allConversations.some(c => c.phone === selectedPhone)) setSelectedPhone(conversations[0]?.phone || null) }, [allConversations, conversations, selectedPhone])
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth', block:'end' }) }, [thread.length, selectedPhone])
+  useEffect(() => { if (current) setReplyNumberId(current.numberId || numbers[0]?.id || '') }, [current, numbers])
+  useEffect(() => { setShowEmoji(false) }, [selectedPhone])
+  useEffect(() => {
+    let active = true; setSuggestOpp(null)
+    if (!current?.patientId) return undefined
+    ;(async () => { const { data } = await supabase.from('opportunities').select('id, stage, suggested_stage, suggested_reason, suggested_confidence, suggestion_status').eq('patient_id', current.patientId).eq('status', 'aberto').order('created_at', { ascending:false }).limit(1).maybeSingle(); if (active && data?.suggestion_status === 'pending' && data.suggested_stage) setSuggestOpp(data) })()
     return () => { active = false }
   }, [current])
 
-  async function acceptSuggestion() {
-    if (!suggestOpp || suggestBusy) return
-    setSuggestBusy(true)
-    const { error: err } = await confirmSuggestion(suggestOpp)
-    if (err) setError('Não foi possível aplicar a sugestão.')
-    else setSuggestOpp(null)
-    setSuggestBusy(false)
-  }
-  async function rejectSuggestion() {
-    if (!suggestOpp || suggestBusy) return
-    setSuggestBusy(true)
-    const { error: err } = await dismissSuggestion(suggestOpp)
-    if (err) setError('Não foi possível descartar a sugestão.')
-    else setSuggestOpp(null)
-    setSuggestBusy(false)
-  }
-
-  // POST comum para /api/whatsapp?action=message (texto ou mídia). `target` fixa a conversa
-  // destino (importante para áudio: a gravação pode terminar depois de trocar de conversa).
-  async function postPayload(extra, target = current) {
-    const { data: sess } = await supabase.auth.getSession()
-    const token = sess.session?.access_token
+  async function acceptSuggestion() { if (!suggestOpp || suggestBusy) return; setSuggestBusy(true); const { error:nextError } = await confirmSuggestion(suggestOpp); nextError ? setError('Não foi possível aplicar a sugestão.') : setSuggestOpp(null); setSuggestBusy(false) }
+  async function rejectSuggestion() { if (!suggestOpp || suggestBusy) return; setSuggestBusy(true); const { error:nextError } = await dismissSuggestion(suggestOpp); nextError ? setError('Não foi possível descartar a sugestão.') : setSuggestOpp(null); setSuggestBusy(false) }
+  async function postPayload(extra, target=current) {
+    const { data:sessionData } = await supabase.auth.getSession(); const token = sessionData.session?.access_token
     if (!token) throw new Error('Sessão inválida. Entre novamente.')
-    const res = await fetch('/api/whatsapp?action=message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ patientId: target.patientId, phone: target.phone, whatsappNumberId: replyNumberId, ...extra }),
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
-    await load()
+    const response = await fetch('/api/whatsapp?action=message', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body:JSON.stringify({ patientId:target.patientId, phone:target.phone, whatsappNumberId:replyNumberId, ...extra }) })
+    const json = await response.json().catch(() => ({})); if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`); await load({ silent:true })
   }
-
-  async function send(e) {
-    e.preventDefault()
-    const body = replyText.trim()
-    if (!body || !current || sending) return
-    if (!replyNumberId) { setError('Nenhum número de WhatsApp configurado (Configurações → WhatsApp).'); return }
-    setSending(true)
-    try {
-      await postPayload({ text: body })
-      setReplyText('')
-    } catch (err) { setError(err.message) }
+  async function send(event) {
+    event?.preventDefault?.(); const body = replyText.trim(); if (!body || !current || sending) return
+    if (!replyNumberId) { setError('Nenhum número configurado. Acesse Configurações → WhatsApp.'); return }
+    setSending(true); setError(null)
+    try { await postPayload({ text:body }); setReplyText(''); if (textRef.current) textRef.current.style.height = 'auto' } catch (nextError) { setError(nextError.message) }
     setSending(false)
   }
-
-  // Sobe o arquivo direto ao Storage e envia a mídia (imagem/documento/áudio) para `target`.
-  async function sendMediaFile(file, type, target = current) {
+  function resizeComposer(event) { setReplyText(event.target.value); event.target.style.height = 'auto'; event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px` }
+  function onComposerKeyDown(event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(event) } }
+  async function sendMediaFile(file, type, target=current) {
     if (!target || uploading || sending) return
-    if (!replyNumberId) { setError('Nenhum número de WhatsApp configurado (Configurações → WhatsApp).'); return }
+    if (!replyNumberId) { setError('Nenhum número configurado. Acesse Configurações → WhatsApp.'); return }
     setUploading(true); setError(null)
-    try {
-      const up = await uploadWhatsAppMedia(file, ownerId, { type })
-      await postPayload({ type: up.type, mediaUrl: up.url, mediaMime: up.mime, fileName: up.fileName, caption: '' }, target)
-    } catch (err) { setError(err.message) }
+    try { const uploaded = await uploadWhatsAppMedia(file, ownerId, { type }); await postPayload({ type:uploaded.type, mediaUrl:uploaded.url, mediaMime:uploaded.mime, fileName:uploaded.fileName, caption:'' }, target) } catch (nextError) { setError(nextError.message) }
     setUploading(false)
   }
-
-  function onPickFile(e) {
-    const file = e.target.files?.[0]
-    e.target.value = '' // permite reenviar o mesmo arquivo
-    if (file) sendMediaFile(file, mediaTypeFromMime(file.type))
-  }
-
-  // Gravação de nota de voz no navegador (MediaRecorder) → envia como áudio (PTT).
+  function onPickFile(event) { const file = event.target.files?.[0]; event.target.value = ''; if (file) sendMediaFile(file, mediaTypeFromMime(file.type)) }
   async function toggleRecord() {
     if (recording) { recRef.current?.stop(); return }
     if (!current || !replyNumberId) { setError('Selecione uma conversa e um número para gravar.'); return }
-    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setError('Gravação de áudio não é suportada neste navegador.'); return
-    }
-    const target = current // fixa a conversa destino: a gravação pode terminar após trocar de conversa
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) { setError('Gravação de áudio não é suportada neste navegador.'); return }
+    const target = current
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      // Prefere ogg/opus (toca melhor no WhatsApp do destinatário); cai para o que o browser suportar.
-      const mt = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm']
-        .find(t => { try { return MediaRecorder.isTypeSupported(t) } catch { return false } })
-      const rec = new MediaRecorder(stream, mt ? { mimeType: mt } : undefined)
-      chunksRef.current = []
-      rec.ondataavailable = ev => { if (ev.data.size) chunksRef.current.push(ev.data) }
-      rec.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        setRecording(false)
-        const mime = rec.mimeType || 'audio/webm'
-        const blob = new Blob(chunksRef.current, { type: mime })
-        if (blob.size) {
-          const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm'
-          await sendMediaFile(new File([blob], `voz-${Date.now()}.${ext}`, { type: mime }), 'audio', target)
-        }
-      }
-      recRef.current = rec
-      rec.start()
-      setRecording(true)
-    } catch {
-      setError('Não foi possível acessar o microfone.')
-    }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true }); const mimeType = ['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/mp4','audio/webm'].find(type => { try { return MediaRecorder.isTypeSupported(type) } catch { return false } }); const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      chunksRef.current = []; recorder.ondataavailable = event => { if (event.data.size) chunksRef.current.push(event.data) }
+      recorder.onstop = async () => { stream.getTracks().forEach(track => track.stop()); setRecording(false); const mime = recorder.mimeType || 'audio/webm'; const blob = new Blob(chunksRef.current, { type:mime }); if (blob.size) { const extension = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm'; await sendMediaFile(new File([blob], `voz-${Date.now()}.${extension}`, { type:mime }), 'audio', target) } }
+      recRef.current = recorder; recorder.start(); setRecording(true)
+    } catch { setError('Não foi possível acessar o microfone.') }
   }
-
-  if (loading) return <div style={{ color: C.textSub, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>Carregando conversas...</div>
-  if (error) return <div style={{ color: C.red || '#ef4444', fontSize: 14, padding: 24 }}>Erro: {error}</div>
-
-  const s = {
-    wrap: { display: 'flex', gap: 0, height: 560, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden', background: C.bg },
-    listCol: { width: 300, flexShrink: 0, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column' },
-    listHead: { padding: 10, borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-    filter: { fontSize: 12, padding: '4px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, color: C.text, fontFamily: 'inherit' },
-    list: { flex: 1, overflowY: 'auto' },
-    conv: active => ({ padding: '10px 12px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer', background: active ? C.accent + '14' : 'transparent' }),
-    convTop: { display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' },
-    convName: { fontSize: 13, fontWeight: 700, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-    convTime: { fontSize: 10, color: C.textDim, flexShrink: 0 },
-    convPrev: { fontSize: 12, color: C.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 },
-    convMeta: { display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' },
-    numTag: { fontSize: 9, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, padding: '0 5px' },
-    ownerTag: { fontSize: 9, fontWeight: 700, color: C.accentLight || '#60a5fa', background: (C.accent || '#3b82f6') + '1f', border: `1px solid ${(C.accent || '#3b82f6')}44`, borderRadius: 5, padding: '0 5px' },
-    unassigned: { fontSize: 9, color: '#f59e0b', border: '1px solid #f59e0b55', borderRadius: 5, padding: '0 5px' },
-    threadCol: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
-    threadHead: { padding: '10px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 13, fontWeight: 700, color: C.text },
-    msgs: { flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8 },
-    row: dir => ({ display: 'flex', justifyContent: dir === 'outbound' ? 'flex-end' : 'flex-start' }),
-    bubble: dir => ({ maxWidth: '78%', padding: '8px 11px', borderRadius: 12, fontSize: 13, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: dir === 'outbound' ? C.accent + '22' : C.surface, border: `1px solid ${dir === 'outbound' ? C.accent + '44' : C.border}`, color: C.text }),
-    meta: { fontSize: 10, color: C.textDim, marginTop: 3, textAlign: 'right' },
-    form: { display: 'flex', gap: 8, padding: 10, borderTop: `1px solid ${C.border}`, background: C.surface, alignItems: 'center' },
-    input: { flex: 1, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '9px 12px', color: C.text, fontSize: 13, outline: 'none', fontFamily: 'inherit' },
-    btn: { padding: '9px 16px', borderRadius: 10, background: C.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.6 : 1, fontFamily: 'inherit' },
-    empty: { margin: 'auto', color: C.textDim, fontSize: 13, textAlign: 'center', padding: 24 },
-    mediaImg: { maxWidth: 200, maxHeight: 220, borderRadius: 8, display: 'block', cursor: 'pointer' },
-    mediaAudio: { width: 230, height: 36 },
-    mediaDoc: { display: 'flex', alignItems: 'center', gap: 8, color: C.accentLight || '#60a5fa', textDecoration: 'none', fontSize: 13, fontWeight: 600 },
-    cap: { fontSize: 12.5, marginTop: 5, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
-    emojiBtn: { width: 34, height: 34, flexShrink: 0, borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, fontSize: 16, cursor: 'pointer', lineHeight: 1 },
-    recOn: { background: (C.red || '#ef4444') + '22', borderColor: C.red || '#ef4444' },
-    emojiPop: { position: 'absolute', bottom: 46, left: 0, background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 10, padding: 8, display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 2, boxShadow: '0 8px 24px rgba(0,0,0,.4)', zIndex: 5, width: 260 },
-    emojiItem: { border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', padding: 3, borderRadius: 6, lineHeight: 1 },
+  function appendEmoji(emoji) { setReplyText(text => text + emoji); window.requestAnimationFrame(() => textRef.current?.focus()) }
+  function renderBody(message) {
+    const type = message.msg_type || 'text'
+    if (type === 'image' && message.media_url) return <><a href={message.media_url} target="_blank" rel="noreferrer"><img src={message.media_url} alt={message.body || 'Imagem recebida'} className="wa-media-image" /></a>{message.body && <div className="wa-caption">{message.body}</div>}</>
+    if (type === 'audio' && message.media_url) return <audio controls src={message.media_url} className="wa-media-audio" />
+    if (type === 'video' && message.media_url) return <><video controls src={message.media_url} className="wa-media-image" />{message.body && <div className="wa-caption">{message.body}</div>}</>
+    if (type === 'document' && message.media_url) return <a href={message.media_url} target="_blank" rel="noreferrer" className="wa-document"><span className="wa-document-icon"><Icon name="document" /></span><span><strong>{message.body || 'Documento'}</strong><small>Abrir arquivo</small></span></a>
+    return <span className="wa-message-text">{message.body}</span>
   }
+  if (loading) return <div className="wa-loading"><span className="wa-spinner" />Carregando conversas…</div>
+  const activeEmojiGroup = EMOJI_GROUPS.find(group => group.id === emojiGroup) || EMOJI_GROUPS[0]
 
-  // Renderiza o corpo da mensagem conforme o tipo (texto já é o padrão).
-  const renderBody = (m) => {
-    const t = m.msg_type || 'text'
-    if (t === 'image' && m.media_url) return (
-      <>
-        <a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt={m.body || 'imagem'} style={s.mediaImg} /></a>
-        {m.body && <div style={s.cap}>{m.body}</div>}
-      </>
-    )
-    if (t === 'audio' && m.media_url) return <audio controls src={m.media_url} style={s.mediaAudio} />
-    if (t === 'video' && m.media_url) return (
-      <>
-        <video controls src={m.media_url} style={{ ...s.mediaImg, maxHeight: 240 }} />
-        {m.body && <div style={s.cap}>{m.body}</div>}
-      </>
-    )
-    if (t === 'document' && m.media_url) return (
-      <a href={m.media_url} target="_blank" rel="noreferrer" style={s.mediaDoc}>📄 {m.body || 'Documento'}</a>
-    )
-    return m.body
-  }
-
-  return (
-    <div style={s.wrap}>
-      <div style={s.listCol}>
-        <div style={s.listHead}>
-          <span style={{ fontSize: 12, color: C.textSub }}>Número:</span>
-          <select style={s.filter} value={filterNumber} onChange={e => setFilterNumber(e.target.value)}>
-            <option value="all">Todos</option>
-            {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
-          </select>
-          {isAdmin && (
-            <>
-              <span style={{ fontSize: 12, color: C.textSub }}>Resp.:</span>
-              <select style={s.filter} value={filterResponsible} onChange={e => setFilterResponsible(e.target.value)} title="Monitorar por responsável">
-                <option value="all">Todos</option>
-                {members.map(m => <option key={m.user_id} value={m.user_id}>{memberLabel[m.user_id]}</option>)}
-                <option value="unassigned">Sem responsável</option>
-              </select>
-            </>
-          )}
-        </div>
-        <div style={s.list}>
-          {conversations.length === 0
-            ? <div style={{ color: C.textDim, fontSize: 13, padding: 20, textAlign: 'center' }}>Nenhuma conversa ainda.</div>
-            : conversations.map(c => (
-                <div key={c.phone} style={s.conv(c.phone === selectedPhone)} onClick={() => setSelectedPhone(c.phone)}>
-                  <div style={s.convTop}>
-                    <span style={s.convName}>{c.name || c.phone}</span>
-                    <span style={s.convTime}>{fmtTime(c.last.created_at)}</span>
-                  </div>
-                  <div style={s.convPrev}>{c.last.direction === 'outbound' ? '→ ' : ''}{previewText(c.last)}</div>
-                  <div style={s.convMeta}>
-                    {c.numberId && numberLabel[c.numberId] && <span style={s.numTag}>{numberLabel[c.numberId]}</span>}
-                    {ownerName(c.numberId) && <span style={s.ownerTag}>{ownerName(c.numberId)}</span>}
-                    {isAdmin && c.numberId && !numberOwner[c.numberId] && <span style={s.unassigned}>sem responsável</span>}
-                    {!c.patientId && <span style={s.unassigned}>⚠ não atribuída</span>}
-                  </div>
-                </div>
-              ))}
-        </div>
+  return <div className={`wa-inbox ${current ? 'wa-has-chat' : ''}`}>
+    <aside className="wa-sidebar">
+      <div className="wa-sidebar-top">
+        <div className="wa-sidebar-title"><span className="wa-brand-icon"><Icon name="whatsapp" size={21}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'contato' : 'contatos'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={() => load({ silent:true })} title="Atualizar conversas" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button></div>
+        <label className="wa-search"><Icon name="search" size={17}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar conversa ou mensagem"/>{search && <button type="button" onClick={() => setSearch('')} aria-label="Limpar busca">×</button>}</label>
+        <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{numbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
       </div>
-
-      <div style={s.threadCol}>
-        {!current
-          ? <div style={s.empty}>Selecione uma conversa à esquerda.</div>
-          : <>
-              <div style={s.threadHead}>
-                {current.name || current.phone}
-                {ownerName(current.numberId) && <span style={{ ...s.ownerTag, marginLeft: 8 }}>{ownerName(current.numberId)}</span>}
-                {!current.patientId && <span style={{ ...s.unassigned, marginLeft: 8 }}>não atribuída</span>}
-              </div>
-              {suggestOpp && (
-                <div style={{ padding: '10px 14px 0' }}>
-                  <SuggestionBox opp={suggestOpp} disabled={suggestBusy}
-                    onAccept={acceptSuggestion} onReject={rejectSuggestion} />
-                </div>
-              )}
-              <div style={s.msgs}>
-                {thread.map(m => (
-                  <div key={m.id} style={s.row(m.direction)}>
-                    <div>
-                      <div style={s.bubble(m.direction)}>{renderBody(m)}</div>
-                      <div style={s.meta}>{fmtTime(m.created_at)}{m.direction === 'outbound' && m.status === 'failed' ? ' · falhou' : ''}</div>
-                    </div>
-                  </div>
-                ))}
-                <div ref={endRef} />
-              </div>
-              <form style={s.form} onSubmit={send}>
-                {numbers.length > 1 && (
-                  <select value={replyNumberId} onChange={e => setReplyNumberId(e.target.value)} style={s.filter} title="Responder por">
-                    {numbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
-                  </select>
-                )}
-                <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={onPickFile} />
-                <button type="button" style={s.emojiBtn} onClick={() => fileRef.current?.click()} disabled={uploading || recording} title="Anexar imagem ou documento" aria-label="Anexar arquivo">📎</button>
-                <div style={{ position: 'relative' }}>
-                  <button type="button" style={s.emojiBtn} onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Inserir emoji">😊</button>
-                  {showEmoji && (
-                    <div style={s.emojiPop}>
-                      {EMOJIS.map(e => (
-                        <button key={e} type="button" style={s.emojiItem} onClick={() => setReplyText(t => t + e)}>{e}</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button type="button" style={{ ...s.emojiBtn, ...(recording ? s.recOn : {}) }} onClick={toggleRecord} disabled={uploading} title={recording ? 'Parar e enviar' : 'Gravar áudio'} aria-label="Gravar áudio">{recording ? '⏹' : '🎤'}</button>
-                <input style={s.input} value={replyText} onChange={e => setReplyText(e.target.value)} placeholder={uploading ? 'Enviando mídia…' : recording ? 'Gravando áudio…' : 'Responder...'} disabled={sending || uploading || recording} />
-                <button type="submit" style={s.btn} disabled={sending || uploading || recording || !replyText.trim()}>{sending ? '...' : 'Enviar'}</button>
-              </form>
-            </>}
-      </div>
-    </div>
-  )
+      <div className="wa-conversation-list">{conversations.length === 0 ? <div className="wa-list-empty"><Icon name="search" size={26}/><strong>Nenhuma conversa encontrada</strong><span>Ajuste a busca ou os filtros.</span></div> : conversations.map(conversation => {
+        const responsible = ownerName(conversation.numberId), active = conversation.phone === selectedPhone
+        return <button type="button" key={conversation.phone} className={`wa-conversation ${active ? 'is-active' : ''}`} onClick={() => setSelectedPhone(conversation.phone)}><span className="wa-avatar">{initials(conversation.name, conversation.phone)}</span><span className="wa-conversation-content"><span className="wa-conversation-line"><strong>{conversation.name || conversation.phone}</strong><time>{fmtConversationTime(conversation.last.created_at)}</time></span><span className="wa-preview"><span className={`wa-direction-dot ${conversation.last.direction}`}/>{previewText(conversation.last)}</span><span className="wa-chips">{conversation.numberId && numberLabel[conversation.numberId] && <span>{numberLabel[conversation.numberId]}</span>}{responsible && <span className="wa-chip-owner">{responsible}</span>}{isAdmin && conversation.numberId && !numberOwner[conversation.numberId] && <span className="wa-chip-warning">sem responsável</span>}{!conversation.patientId && <span className="wa-chip-warning">não atribuída</span>}</span></span></button>
+      })}</div>
+    </aside>
+    <section className="wa-chat">{!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><Icon name="whatsapp" size={46} strokeWidth={1.4}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
+      <header className="wa-chat-header"><button type="button" className="wa-icon-button wa-back" onClick={() => setSelectedPhone(null)} aria-label="Voltar para conversas"><Icon name="back"/></button><span className="wa-avatar wa-avatar-header">{initials(current.name, current.phone)}</span><div className="wa-chat-person"><strong>{current.name || current.phone}</strong><span>{formatPhone(current.phone)}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div><div className="wa-chat-tags">{ownerName(current.numberId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId)}</span>}{!current.patientId && <span className="is-warning">não atribuída</span>}</div></header>
+      {suggestOpp && <div className="wa-suggestion"><SuggestionBox opp={suggestOpp} disabled={suggestBusy} onAccept={acceptSuggestion} onReject={rejectSuggestion}/></div>}
+      {error && <div className="wa-error"><span>!</span><p>{error}</p><button type="button" onClick={() => setError(null)} aria-label="Fechar erro">×</button></div>}
+      <div className="wa-messages">{thread.map((message, index) => {
+        const showDate = index === 0 || dateKey(thread[index - 1].created_at) !== dateKey(message.created_at)
+        return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}><div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{renderBody(message)}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span></div></div></div>
+      })}<div ref={endRef}/></div>
+      <form className="wa-composer" onSubmit={send}>{numbers.length > 1 && <label className="wa-reply-number"><span>Enviar por</span><select value={replyNumberId} onChange={event => setReplyNumberId(event.target.value)}>{numbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select></label>}<div className="wa-composer-row">
+        <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" hidden onChange={onPickFile}/><button type="button" className="wa-icon-button wa-composer-button" onClick={() => fileRef.current?.click()} disabled={uploading || recording} title="Anexar imagem ou documento" aria-label="Anexar arquivo"><Icon name="attach"/></button>
+        <div className="wa-emoji-anchor"><button type="button" className={`wa-icon-button wa-composer-button ${showEmoji ? 'is-active' : ''}`} onClick={() => setShowEmoji(value => !value)} title="Emoji" aria-label="Inserir emoji"><Icon name="smile"/></button>{showEmoji && <div className="wa-emoji-picker"><div className="wa-emoji-tabs">{EMOJI_GROUPS.map(group => <button key={group.id} type="button" className={emojiGroup === group.id ? 'is-active' : ''} onClick={() => setEmojiGroup(group.id)} title={group.label}>{group.icon}</button>)}</div><div className="wa-emoji-title">{activeEmojiGroup.label}</div><div className="wa-emoji-grid">{activeEmojiGroup.items.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={emoji}>{emoji}</button>)}</div></div>}</div>
+        <div className="wa-textarea-wrap"><textarea ref={textRef} rows="1" value={replyText} onChange={resizeComposer} onKeyDown={onComposerKeyDown} placeholder={uploading ? 'Enviando arquivo…' : recording ? 'Gravando áudio…' : 'Responder...'} disabled={sending || uploading || recording}/><small>Enter envia • Shift + Enter quebra linha</small></div>
+        {!replyText.trim() && <button type="button" className={`wa-icon-button wa-composer-button ${recording ? 'is-recording' : ''}`} onClick={toggleRecord} disabled={uploading} title={recording ? 'Parar e enviar' : 'Gravar áudio'} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}><Icon name={recording ? 'stop' : 'mic'}/></button>}{replyText.trim() && <button type="submit" className="wa-send-button" disabled={sending || uploading || recording} aria-label="Enviar mensagem"><Icon name="send" size={19}/>{sending && <span className="wa-send-spinner"/>}</button>}
+      </div></form>
+    </>}</section>
+  </div>
 }
