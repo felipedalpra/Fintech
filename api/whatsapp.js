@@ -3,7 +3,7 @@
 // Roteado por ?action=message (enviar, autenticado) | ?action=webhook (receber do provider).
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
-import { sendWhatsAppText, sendWhatsAppMedia } from './_lib/whatsappClient.js'
+import { sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
 import { parseIncomingMessage, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
@@ -80,10 +80,54 @@ export default async function handler(req, res) {
   const action = req.query.action
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
+  if (action === 'test-connection') return handleTestConnection(req, res)
   if (action === 'dispatch') return handleDispatch(req, res)
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
   if (action === 'meta-sync') return handleMetaSync(req, res)
-  return res.status(400).json({ error: 'Ação inválida. Use ?action=message, ?action=webhook, ?action=dispatch, ?action=meta-webhook ou ?action=meta-sync.' })
+  return res.status(400).json({ error: 'Ação inválida.' })
+}
+
+// ---- Testar credenciais Z-API (autenticado e restrito a admin da clínica) ----
+// Pode testar credenciais ainda não salvas ou as credenciais write-only de um número existente.
+async function handleTestConnection(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing auth' })
+
+  const supabase = adminSupabase()
+  const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
+  if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
+
+  const ownerId = await resolveOwnerId(supabase, user.id)
+  let isAdmin = user.id === ownerId
+  if (!isAdmin) {
+    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
+    if (clinic) {
+      const { data: adminMem } = await supabase.from('clinic_members')
+        .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).eq('role', 'admin').maybeSingle()
+      isAdmin = !!adminMem
+    }
+  }
+  if (!isAdmin) return res.status(403).json({ error: 'Somente administradores podem testar a conexão.' })
+
+  const { whatsappNumberId, instanceUrl: suppliedUrl, apiToken: suppliedToken } = req.body || {}
+  let instanceUrl = suppliedUrl
+  let apiToken = suppliedToken
+  if (whatsappNumberId && (!instanceUrl || !apiToken)) {
+    const { data: number } = await supabase.from('whatsapp_numbers')
+      .select('user_id, instance_url, api_token').eq('id', whatsappNumberId).maybeSingle()
+    if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+    instanceUrl ||= number.instance_url
+    apiToken ||= number.api_token
+  }
+
+  try {
+    const result = await testWhatsAppConnection(instanceUrl, apiToken)
+    return res.status(200).json({ ok: true, connected: true, instanceUrl: result.instanceUrl })
+  } catch (error) {
+    return res.status(502).json({ error: error.message })
+  }
 }
 
 // ---- Meta Ads: webhook de Lead Ads (leadgen) → cria oportunidade no pipeline ----

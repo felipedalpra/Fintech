@@ -19,6 +19,11 @@ export function WhatsAppNumbers() {
   const [apiToken, setApiToken] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editInstanceUrl, setEditInstanceUrl] = useState('')
+  const [editApiToken, setEditApiToken] = useState('')
+  const [connectionBusy, setConnectionBusy] = useState(null)
+  const [connectionStatus, setConnectionStatus] = useState({})
 
   async function load() {
     setLoading(true)
@@ -34,6 +39,20 @@ export function WhatsAppNumbers() {
   }
   useEffect(() => { load() }, [])
 
+  async function testConnection(payload) {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const accessToken = sessionData.session?.access_token
+    if (!accessToken) throw new Error('Sessão inválida. Entre novamente.')
+    const response = await fetch('/api/whatsapp?action=test-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || `Falha ao testar a conexão (HTTP ${response.status}).`)
+    return data
+  }
+
   // Define o responsável (dono) do número: equipe/gestão só veem as conversas dos números delas.
   async function assign(id, assigned_user_id) {
     await supabase.from('whatsapp_numbers').update({ assigned_user_id: assigned_user_id || null }).eq('id', id)
@@ -48,12 +67,20 @@ export function WhatsAppNumbers() {
     }
     setSaving(true)
     setMsg(null)
+    let connection
+    try {
+      connection = await testConnection({ instanceUrl: instanceUrl.trim(), apiToken: apiToken.trim() })
+    } catch (error) {
+      setSaving(false)
+      setMsg({ type: 'error', text: error.message })
+      return
+    }
     const webhook_secret = (crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/-/g, '')
     const { error } = await supabase.from('whatsapp_numbers').insert({
       user_id: ownerId,
       label: label.trim(),
       phone: phone.replace(/\D/g, '') || null,
-      instance_url: instanceUrl.trim(),
+      instance_url: connection.instanceUrl,
       api_token: apiToken.trim(),
       webhook_secret,
       active: true,
@@ -63,6 +90,56 @@ export function WhatsAppNumbers() {
     setMsg({ type: 'success', text: `Número "${label.trim()}" adicionado. Copie a URL de webhook abaixo e cole no Z-API.` })
     setLabel(''); setPhone(''); setInstanceUrl(''); setApiToken('')
     load()
+  }
+
+  function beginEdit(n) {
+    setEditingId(n.id)
+    setEditInstanceUrl('')
+    setEditApiToken('')
+    setMsg(null)
+  }
+
+  async function checkConnection(n) {
+    setConnectionBusy(n.id)
+    setMsg(null)
+    try {
+      await testConnection({ whatsappNumberId: n.id })
+      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: true, text: 'Conectado' } }))
+    } catch (error) {
+      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: false, text: error.message } }))
+      setMsg({ type: 'error', text: error.message })
+    }
+    setConnectionBusy(null)
+  }
+
+  async function saveConnection(n) {
+    if (!editInstanceUrl.trim() || !editApiToken.trim()) {
+      setMsg({ type: 'error', text: 'Informe novamente a URL da instância e o Client-Token.' })
+      return
+    }
+    setConnectionBusy(n.id)
+    setMsg(null)
+    try {
+      const connection = await testConnection({
+        whatsappNumberId: n.id,
+        instanceUrl: editInstanceUrl.trim(),
+        apiToken: editApiToken.trim(),
+      })
+      const { error } = await supabase.from('whatsapp_numbers').update({
+        instance_url: connection.instanceUrl,
+        api_token: editApiToken.trim(),
+      }).eq('id', n.id)
+      if (error) throw error
+      setEditingId(null)
+      setEditInstanceUrl('')
+      setEditApiToken('')
+      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: true, text: 'Conectado' } }))
+      setMsg({ type: 'success', text: `Conexão de "${n.label}" testada e salva.` })
+    } catch (error) {
+      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: false, text: error.message } }))
+      setMsg({ type: 'error', text: error.message })
+    }
+    setConnectionBusy(null)
   }
 
   async function toggleActive(n) {
@@ -93,6 +170,9 @@ export function WhatsAppNumbers() {
     linkBtn: { background: 'none', border: 'none', color: C.accent, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 0 },
     assign: { fontSize: 12, padding: '5px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit' },
     unassignedTag: { fontSize: 10, fontWeight: 700, color: C.yellow || '#f59e0b', border: `1px solid ${(C.yellow || '#f59e0b')}55`, borderRadius: 6, padding: '1px 6px' },
+    connectionOk: { fontSize: 10, fontWeight: 700, color: '#10b981', border: '1px solid #10b98155', borderRadius: 6, padding: '1px 6px' },
+    connectionError: { fontSize: 10, fontWeight: 700, color: C.red || '#ef4444', border: `1px solid ${(C.red || '#ef4444')}55`, borderRadius: 6, padding: '1px 6px' },
+    editor: { marginTop: 6, padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, display: 'flex', flexDirection: 'column', gap: 10 },
   }
 
   return (
@@ -103,6 +183,8 @@ export function WhatsAppNumbers() {
         Cadastre cada número de WhatsApp Business da clínica (até 3). Para cada um, crie uma instância no Z-API, cole a URL da instância e o Client-Token aqui, e configure no Z-API a URL de webhook que vai aparecer.
       </p>
 
+      {msg && <p style={{ fontSize: 12, color: msg.type === 'error' ? (C.red || '#ef4444') : '#10b981', margin: '0 0 12px' }}>{msg.text}</p>}
+
       {loading ? <div style={{ color: C.textSub, fontSize: 14 }}>Carregando...</div>
         : numbers.length === 0 ? <div style={{ color: C.textDim, fontSize: 14, marginBottom: 18 }}>Nenhum número cadastrado ainda.</div>
         : numbers.map(n => (
@@ -112,6 +194,8 @@ export function WhatsAppNumbers() {
                 {n.phone && <span style={s.phone}>{n.phone}</span>}
                 <span style={n.active ? s.tagOn : s.tagOff}>{n.active ? 'ativo' : 'inativo'}</span>
                 <span style={{ flex: 1 }} />
+                <button style={s.linkBtn} disabled={connectionBusy === n.id} onClick={() => checkConnection(n)}>{connectionBusy === n.id ? 'Testando...' : 'Testar conexão'}</button>
+                <button style={s.linkBtn} onClick={() => editingId === n.id ? setEditingId(null) : beginEdit(n)}>{editingId === n.id ? 'Cancelar edição' : 'Editar conexão'}</button>
                 <button style={s.linkBtn} onClick={() => toggleActive(n)}>{n.active ? 'Desativar' : 'Ativar'}</button>
                 <button style={{ ...s.linkBtn, color: C.red || '#ef4444' }} onClick={() => remove(n.id)}>Remover</button>
               </div>
@@ -126,7 +210,21 @@ export function WhatsAppNumbers() {
                   {members.map(m => <option key={m.user_id} value={m.user_id}>{m.member_email} · {m.role}</option>)}
                 </select>
                 {!n.assigned_user_id && <span style={s.unassignedTag}>só admin</span>}
+                {connectionStatus[n.id] && <span style={connectionStatus[n.id].ok ? s.connectionOk : s.connectionError}>{connectionStatus[n.id].text}</span>}
               </div>
+              {editingId === n.id && (
+                <div style={s.editor}>
+                  <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.45 }}>
+                    Por segurança, as credenciais atuais não são exibidas. Informe as duas novamente; a conexão será testada antes de salvar. A URL pode terminar no token ou em <code>/send-text</code> — o sistema normaliza automaticamente.
+                  </div>
+                  <FInput label="URL da instância Z-API" value={editInstanceUrl} onChange={setEditInstanceUrl} placeholder="https://api.z-api.io/instances/ID/token/TOKEN" />
+                  <FInput label="Client-Token Z-API" value={editApiToken} onChange={setEditApiToken} type="password" placeholder="token de segurança da conta" />
+                  <div style={s.row}>
+                    <Btn onClick={() => saveConnection(n)} disabled={connectionBusy === n.id}>{connectionBusy === n.id ? 'Testando...' : 'Testar e salvar'}</Btn>
+                    <button style={s.linkBtn} onClick={() => setEditingId(null)}>Cancelar</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 
@@ -136,8 +234,7 @@ export function WhatsAppNumbers() {
         <FInput label="Telefone (opcional)" value={phone} onChange={setPhone} placeholder="Ex: 5511999990000" />
         <FInput label="URL da instância Z-API" value={instanceUrl} onChange={setInstanceUrl} placeholder="https://api.z-api.io/instances/ID/token/TOKEN" />
         <FInput label="Client-Token Z-API" value={apiToken} onChange={setApiToken} type="password" placeholder="token de segurança da conta" />
-        <Btn onClick={add} disabled={saving}>{saving ? 'Salvando...' : 'Adicionar número'}</Btn>
-        {msg && <p style={{ fontSize: 12, color: msg.type === 'error' ? (C.red || '#ef4444') : '#10b981', marginTop: 2 }}>{msg.text}</p>}
+        <Btn onClick={add} disabled={saving}>{saving ? 'Testando e salvando...' : 'Adicionar número'}</Btn>
       </form>
     </div>
   )
