@@ -6,7 +6,7 @@ import { Btn, FInput } from './UI.jsx'
 
 // Gerência dos números de WhatsApp Business da clínica (admin). Cada número = 1 instância Z-API.
 // Credenciais (instance_url, api_token) são write-only pelo frontend (não lidas de volta).
-const WEBHOOK_BASE = 'https://surgimetrics.com.br/api/whatsapp?action=webhook'
+const WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
 
 export function WhatsAppNumbers() {
   const { ownerId } = useUserRole()

@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (89)
+### Fixed
+- **Recebimento do WhatsApp em produção**: o endpoint do webhook passa a reutilizar `VITE_SUPABASE_URL` quando `SUPABASE_URL` não estiver definida, alinhado aos demais endpoints server-side e à configuração atual da Vercel. Isso evita a falha `supabaseUrl is required` que interrompia os POSTs da Z-API antes da gravação. A URL exibida para configurar novos webhooks também passa a usar `www.surgimetrics.com.br`, hostname coberto pelo certificado TLS. (`api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`.)
+
 ## [Unreleased] - 2026-10-13 (88)
 ### Fixed
 - **Blindagem contra perda de dados — Fases 2 e 3**:

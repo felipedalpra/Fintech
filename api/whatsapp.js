@@ -54,7 +54,8 @@ async function hydrateRequestBody(req) {
 }
 
 function adminSupabase() {
-  return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  return createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY)
 }
 
 // Resolve o user_id do DONO dos dados (clínica) a partir do usuário autenticado.
