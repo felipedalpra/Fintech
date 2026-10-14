@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { normalizePhone, phoneCore, parseIncomingMessage, matchPatientId } from '../../api/_lib/whatsapp.js'
+import { normalizePhone, phoneCore, parseIncomingMessage, parseMessageStatus, matchPatientId } from '../../api/_lib/whatsapp.js'
 
 test('normalizePhone mantém só dígitos', () => {
   expect(normalizePhone('(11) 98888-7777')).toBe('11988887777')
@@ -65,6 +65,21 @@ test('parseIncomingMessage: aceita formatos alternativos de campo', () => {
     .toMatchObject({ phone: '5511988887777', text: 'oi', providerMessageId: 'X1' })
   expect(parseIncomingMessage({ sender: { phone: '5511988887777' }, body: 'oi' }))
     .toMatchObject({ phone: '5511988887777', text: 'oi', providerMessageId: null })
+})
+
+test('parseMessageStatus traduz enviado, entregue e lido da Z-API', () => {
+  expect(parseMessageStatus({ type: 'MessageStatusCallback', status: 'SENT', ids: ['M1'] }))
+    .toEqual({ status: 'sent', providerMessageIds: ['M1'] })
+  expect(parseMessageStatus({ type: 'MessageStatusCallback', status: 'RECEIVED', ids: ['M1'] }))
+    .toEqual({ status: 'delivered', providerMessageIds: ['M1'] })
+  expect(parseMessageStatus({ type: 'MessageStatusCallback', status: 'READ', ids: ['M1', 'M1', 'M2'] }))
+    .toEqual({ status: 'read', providerMessageIds: ['M1', 'M2'] })
+})
+
+test('parseMessageStatus ignora payload comum e status desconhecido', () => {
+  expect(parseMessageStatus({ phone: '5511999', status: 'READ', text: { message: 'oi' } })).toBeNull()
+  expect(parseMessageStatus({ type: 'MessageStatusCallback', status: 'QUEUED', ids: ['M1'] })).toBeNull()
+  expect(parseMessageStatus({ type: 'MessageStatusCallback', status: 'READ', ids: [] })).toBeNull()
 })
 
 const PATIENTS = [

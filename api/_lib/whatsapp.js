@@ -71,6 +71,31 @@ export function parseIncomingMessage(body) {
   }
 }
 
+const MESSAGE_STATUS = {
+  SENT: 'sent',
+  RECEIVED: 'delivered',
+  DELIVERED: 'delivered',
+  READ: 'read',
+  READ_BY_ME: 'read',
+  PLAYED: 'read',
+  FAILED: 'failed',
+  ERROR: 'failed',
+}
+
+// Normaliza o webhook de status da Z-API. Exige a assinatura estrutural do
+// callback (`type` ou `ids[]`) para não confundir mensagens recebidas com status.
+export function parseMessageStatus(body) {
+  if (!body || typeof body !== 'object') return null
+  const isStatusCallback = body.type === 'MessageStatusCallback' || Array.isArray(body.ids)
+  if (!isStatusCallback) return null
+  const status = MESSAGE_STATUS[String(body.status || '').toUpperCase()]
+  if (!status) return null
+  const rawIds = Array.isArray(body.ids) ? body.ids : [body.messageId || body.id]
+  const providerMessageIds = [...new Set(rawIds.filter(Boolean).map(String))]
+  if (!providerMessageIds.length) return null
+  return { status, providerMessageIds }
+}
+
 // Casa um telefone a um paciente pela lista de pacientes da clínica.
 // Estrito: só retorna um id se houver EXATAMENTE um paciente com o mesmo núcleo
 // (últimos 8 dígitos). Zero ou múltiplos (ambíguo) → null — nunca atribui ao paciente errado.
