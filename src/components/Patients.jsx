@@ -8,6 +8,8 @@ import { FilterBar } from './FilterBar.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { initials, avatarColor } from '../lib/avatar.js'
+import { uploadPatientPhoto, signedPatientPhotoUrl, removePatientPhoto } from '../lib/patientPhoto.js'
 
 const SEX_OPTIONS = [
   { v: '', l: 'Não informado' },
@@ -382,6 +384,61 @@ export function Patients({ data }) {
   )
 }
 
+// Avatar do paciente com foto (privada, via URL assinada) + upload/trocar/remover. Cai pras
+// iniciais quando não há foto. Estilos lidos de C dentro do componente (regra de dark mode).
+function PatientPhoto({ patient, ownerId }) {
+  const [path, setPath] = useState(patient.photo_path || null)
+  const [url, setUrl] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const fileRef = useRef(null)
+
+  useEffect(() => { setPath(patient.photo_path || null) }, [patient.id, patient.photo_path])
+  useEffect(() => {
+    let active = true
+    setUrl(null) // some com a foto anterior na hora (não pisca a do paciente/foto antiga)
+    if (!path) return undefined
+    signedPatientPhotoUrl(path).then(u => { if (active) setUrl(u) }).catch(() => {})
+    return () => { active = false }
+  }, [path])
+
+  async function onPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusy(true); setErr('')
+    const res = await uploadPatientPhoto(file, ownerId, patient.id)
+    setBusy(false)
+    if (res.error) { setErr(res.error); return }
+    setPath(res.path)
+    // reflete no objeto em memória para quem reusa `patient`
+    patient.photo_path = res.path
+  }
+  async function onRemove() {
+    setBusy(true); setErr('')
+    const res = await removePatientPhoto(patient.id, path)
+    setBusy(false)
+    if (res.error) { setErr(res.error); return }
+    setPath(null); patient.photo_path = null
+  }
+
+  const size = 56
+  const link = { background: 'none', border: 'none', padding: 0, fontSize: 11.5, fontWeight: 700, color: C.accent, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      {url
+        ? <img src={url} alt={patient.full_name} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${C.borderBright}` }} />
+        : <div style={{ width: size, height: size, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 20, fontWeight: 800, color: '#fff', background: avatarColor(patient.full_name || patient.id) }}>{initials(patient.full_name)}</div>}
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={onPick} />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button type="button" style={link} disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Enviando…' : (path ? 'Trocar' : '+ Foto')}</button>
+        {path && !busy && <button type="button" style={{ ...link, color: C.textDim }} onClick={onRemove}>Remover</button>}
+      </div>
+      {err && <span style={{ fontSize: 10, color: C.red || '#ef4444', maxWidth: 110, textAlign: 'center' }}>{err}</span>}
+    </div>
+  )
+}
+
 function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, totalFinanceiro }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
 
@@ -413,13 +470,16 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
         {/* Header */}
         <div style={{ padding: '20px 24px 0', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text }}>{patient.full_name}</h3>
-              {patient.start_date && (
-                <div style={{ fontSize: 12, color: C.textDim, marginTop: 4 }}>
-                  Acompanhamento desde {formatDateBR(patient.start_date)}
-                </div>
-              )}
+            <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
+              <PatientPhoto patient={patient} ownerId={userId} />
+              <div style={{ minWidth: 0 }}>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text }}>{patient.full_name}</h3>
+                {patient.start_date && (
+                  <div style={{ fontSize: 12, color: C.textDim, marginTop: 4 }}>
+                    Acompanhamento desde {formatDateBR(patient.start_date)}
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Btn variant="ghost" onClick={onEdit} style={{ padding: '6px 12px', fontSize: 12 }}>Editar dados</Btn>
