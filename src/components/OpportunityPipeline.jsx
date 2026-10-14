@@ -87,7 +87,7 @@ export function OpportunityPipeline() {
           .eq('user_id', effectiveUserId)
           .eq('status', 'aberto')
           .order('created_at', { ascending: false }),
-        supabase.from('clinic_members').select('user_id, member_email, role'),
+        supabase.rpc('clinic_team'), // time completo (inclui o dono) — gestão/admin atribuem a qualquer um
       ])
       if (!mounted) return
       if (oppRes.error) { setError(oppRes.error.message); setLoading(false); return }

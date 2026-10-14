@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-13 (91)
+### Fixed
+- **Atribuição de tarefa/responsável para qualquer um da equipe**: a gestão (ex.: Lunara) só conseguia atribuir tarefas/oportunidades a si mesma, porque a RLS de `clinic_members` deixa quem não é admin ver apenas a própria linha. O seletor de responsável (em Tarefas e no Funil/Oportunidade) passa a usar a RPC `clinic_team()` (security definer), que devolve o time completo da clínica a qualquer membro. A `clinic_team()` foi ampliada para **incluir o dono da clínica** (normalmente fora de `clinic_members`), de modo que também dá para atribuir aos dois administradores (`supabase/crm_clinic_team_with_owner.sql`). Admin, gestão e equipe passam a enxergar e atribuir a qualquer pessoa. `src/components/TasksPanel.jsx`, `src/components/OpportunityPipeline.jsx`.
+
 ## [Unreleased] - 2026-10-13 (90)
 ### Added
 - **Teste e edição da conexão Z-API**: cada número de WhatsApp ganha as ações **Testar conexão** e **Editar conexão**. As credenciais continuam write-only; ao editar, URL e Client-Token são informados novamente, validados no servidor contra a própria Z-API e só então salvos. Novos números também precisam passar no teste antes do cadastro. (`src/components/WhatsAppNumbers.jsx`, `api/whatsapp.js`.)

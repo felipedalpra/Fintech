@@ -95,7 +95,7 @@ export function TasksPanel() {
       supabase.from('tasks')
         .select('id, title, due_date, status, assigned_user_id, done_at, created_at, opportunity_id, patient_id, patients(full_name), opportunities(title)')
         .order('due_date', { ascending: true, nullsFirst: false }),
-      supabase.from('clinic_members').select('user_id, member_email').order('created_at', { ascending: true }),
+      supabase.rpc('clinic_team'), // time completo da clínica (inclui o dono) — admin/gestão/equipe atribuem a qualquer um
     ])
     if (taskRes.error) { setError(taskRes.error.message); setLoading(false); return }
     setTasks(taskRes.data ?? [])
