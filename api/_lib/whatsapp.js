@@ -9,11 +9,27 @@ export function normalizePhone(raw) {
   return String(raw).replace(/\D/g, '')
 }
 
+// O WhatsApp pode ocultar o telefone e entregar apenas um Linked ID (`@lid`).
+// Ele não é um número telefônico e nunca pode participar do matching por
+// últimos dígitos, mas é o identificador mais estável da conversa individual.
+export function normalizeWhatsAppLid(raw) {
+  const value = String(raw || '').trim()
+  if (!/@lid$/i.test(value)) return ''
+  const digits = value.replace(/@lid$/i, '').replace(/\D/g, '')
+  return digits ? `${digits}@lid` : ''
+}
+
+export function isWhatsAppLid(raw) {
+  return Boolean(normalizeWhatsAppLid(raw))
+}
+
 // Mantém o endereço de conversa exigido pela Z-API. Contatos usam apenas
 // dígitos; grupos precisam conservar `-group` (ou o hífen do formato legado).
 export function normalizeWhatsAppAddress(raw, groupHint = false) {
   const value = String(raw || '').trim()
   const suffixGroup = /(?:-group|@g\.us)$/i.test(value)
+  const lid = normalizeWhatsAppLid(value)
+  if (!groupHint && lid) return lid
   if (!groupHint && !suffixGroup) return normalizePhone(value)
   const digitParts = value.replace(/@g\.us$/i, '').replace(/-group$/i, '').match(/\d+/g) || []
   if (!digitParts.length) return ''
@@ -24,6 +40,7 @@ export function normalizeWhatsAppAddress(raw, groupHint = false) {
 // Núcleo comparável do número: os últimos 8 dígitos (ignora país/DDI, DDD e o 9º dígito,
 // que variam entre formatos). Ex.: "5511988887777" e "11988887777" → "88887777".
 export function phoneCore(raw) {
+  if (isWhatsAppLid(raw)) return ''
   const digits = normalizePhone(raw)
   return digits.slice(-8)
 }
@@ -58,7 +75,14 @@ export function parseIncomingMessage(body) {
 
   const phoneRaw = body.phone || body.from || body?.sender?.phone || ''
   const isGroup = body.isGroup === true || /(?:-group|@g\.us)$/i.test(String(phoneRaw))
-  const phone = normalizeWhatsAppAddress(phoneRaw, isGroup)
+  const directLid = !isGroup
+    ? (normalizeWhatsAppLid(body.chatLid) || normalizeWhatsAppLid(phoneRaw) || (body.fromMe !== true ? normalizeWhatsAppLid(body.senderLid) : ''))
+    : ''
+  const participantPhone = normalizePhone(body.participantPhone)
+  const rawContactPhone = !isGroup && !isWhatsAppLid(phoneRaw)
+    ? normalizePhone(phoneRaw)
+    : (!isGroup && participantPhone && participantPhone !== normalizePhone(body.connectedPhone) ? participantPhone : '')
+  const phone = isGroup ? normalizeWhatsAppAddress(phoneRaw, true) : (directLid || rawContactPhone)
   if (!phone) return null
 
   const textRaw = body?.text?.message || body?.message?.conversation || body?.body || ''
@@ -67,11 +91,14 @@ export function parseIncomingMessage(body) {
   if (!textRaw && !media) return null
 
   const providerMessageId = body?.messageId || body?.id || null
-  const chatName = body?.chatName || ''
+  // Em callbacks `fromMe`, algumas versões da Z-API devolvem "eu" como
+  // chatName. Não deixe esse rótulo substituir o nome real do contato.
+  const rawChatName = body?.chatName || ''
+  const chatName = body.fromMe === true && /^eu$/i.test(String(rawChatName).trim()) ? '' : rawChatName
   const senderName = body?.senderName || body?.pushname || body?.pushName || (!isGroup ? chatName : '')
   const senderPhone = isGroup
     ? normalizePhone(body?.participantPhone || (body.fromMe === true ? body?.connectedPhone : ''))
-    : normalizePhone(phoneRaw)
+    : rawContactPhone
   const httpsPhoto = raw => {
     try { const url = new URL(String(raw || '')); return url.protocol === 'https:' ? url.toString() : null } catch { return null }
   }
@@ -95,6 +122,8 @@ export function parseIncomingMessage(body) {
 
   return {
     phone,
+    chatLid: directLid || null,
+    contactPhone: rawContactPhone || null,
     isGroup,
     chatName: chatName ? String(chatName) : '',
     chatPhoto,

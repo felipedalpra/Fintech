@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { normalizePhone, normalizeWhatsAppAddress, phoneCore, parseIncomingMessage, parseMessageStatus, matchPatientId } from '../../api/_lib/whatsapp.js'
+import { normalizePhone, normalizeWhatsAppAddress, normalizeWhatsAppLid, phoneCore, parseIncomingMessage, parseMessageStatus, matchPatientId } from '../../api/_lib/whatsapp.js'
 
 test('normalizePhone mantém só dígitos', () => {
   expect(normalizePhone('(11) 98888-7777')).toBe('11988887777')
@@ -13,12 +13,15 @@ test('normalizeWhatsAppAddress preserva o endereço necessário para grupos', ()
   expect(normalizeWhatsAppAddress('120363019502650977@g.us')).toBe('120363019502650977-group')
   expect(normalizeWhatsAppAddress('5511999999999-1623281429', true)).toBe('5511999999999-1623281429')
   expect(normalizeWhatsAppAddress('+55 (11) 98888-7777')).toBe('5511988887777')
+  expect(normalizeWhatsAppAddress('22093462769770@lid')).toBe('22093462769770@lid')
+  expect(normalizeWhatsAppLid('22093462769770@LID')).toBe('22093462769770@lid')
 })
 
 test('phoneCore usa os últimos 8 dígitos (ignora DDI/DDD/9º dígito)', () => {
   expect(phoneCore('5511988887777')).toBe('88887777')
   expect(phoneCore('11988887777')).toBe('88887777')
   expect(phoneCore('(11) 98888-7777')).toBe('88887777')
+  expect(phoneCore('22093462769770@lid')).toBe('')
 })
 
 test('parseIncomingMessage: imagem recebida vira msgType image com url, mime e legenda', () => {
@@ -96,6 +99,49 @@ test('parseIncomingMessage: mensagem enviada no WhatsApp vira saída com data e 
     providerMessageId: 'PHONE-1',
     fromApi: false,
     createdAt: '2026-10-14T16:00:00.000Z',
+  })
+})
+
+test('parseIncomingMessage: usa chatLid como conversa canônica sem confundir com telefone', () => {
+  expect(parseIncomingMessage({
+    phone: '555182452361',
+    chatLid: '22093462769770@lid',
+    text: { message: 'Resposta recebida' },
+    fromMe: false,
+  })).toMatchObject({
+    phone: '22093462769770@lid',
+    chatLid: '22093462769770@lid',
+    contactPhone: '555182452361',
+    direction: 'inbound',
+  })
+
+  expect(parseIncomingMessage({
+    phone: '22093462769770@lid',
+    chatLid: '22093462769770@lid',
+    participantPhone: '555182452361',
+    connectedPhone: '555199999999',
+    text: { message: 'Enviada pelo celular' },
+    fromMe: true,
+  })).toMatchObject({
+    phone: '22093462769770@lid',
+    chatLid: '22093462769770@lid',
+    contactPhone: '555182452361',
+    direction: 'outbound',
+  })
+})
+
+test('parseIncomingMessage: LID sem telefone não cria um telefone fictício', () => {
+  expect(parseIncomingMessage({
+    phone: '184305754083376@lid',
+    chatLid: '184305754083376@lid',
+    connectedPhone: '555199999999',
+    text: { message: 'Somente identidade privada' },
+    fromMe: true,
+  })).toMatchObject({
+    phone: '184305754083376@lid',
+    chatLid: '184305754083376@lid',
+    contactPhone: null,
+    direction: 'outbound',
   })
 })
 
