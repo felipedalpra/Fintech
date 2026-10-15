@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (104)
+### Fixed
+- **Troca de conversas do WhatsApp no celular**: o botão de voltar agora abre e mantém a lista de conversas visível, sem a primeira conversa reabrir automaticamente. É possível alternar repetidamente entre contatos e grupos, preservando o chat selecionado e sem alterar mensagens ou persistência. (`src/components/WhatsAppInbox.jsx`, `tests/e2e/whatsapp-inbox.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (103)
 ### Changed
 - **Histórico paginado por conversa no WhatsApp**: o inbox mantém a lista recente leve, mas passa a buscar blocos anteriores diretamente do chat aberto, com ação “Carregar mensagens anteriores” e preservação da posição de rolagem. A leitura usa a mesma RLS por clínica/número e não regrava, move ou exclui nenhuma mensagem existente. (`src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`.)

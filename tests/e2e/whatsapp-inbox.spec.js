@@ -108,6 +108,26 @@ test('mantém o campo de resposta acessível no celular', async ({ page }) => {
   await expect(page.locator('.wa-messages')).toHaveCSS('overflow-y', 'auto')
 })
 
+test('no celular volta para a lista e permite trocar de conversa repetidamente', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 })
+  await page.goto('/app/inbox')
+
+  await expect(page.locator('.wa-chat')).toBeVisible()
+  await page.getByRole('button', { name: 'Voltar para conversas' }).click()
+  await expect(page.locator('.wa-sidebar')).toBeVisible()
+  await expect(page.locator('.wa-chat')).toBeHidden()
+
+  await page.locator('.wa-conversation').filter({ hasText: 'Ana Silva' }).click()
+  await expect(page.locator('.wa-chat-header')).toContainText('Ana Silva')
+  await expect(page.getByText('Oi, doutora').first()).toBeVisible()
+
+  await page.getByRole('button', { name: 'Voltar para conversas' }).click()
+  await expect(page.locator('.wa-sidebar')).toBeVisible()
+  await page.locator('.wa-conversation').filter({ hasText: 'Equipe Cirúrgica' }).click()
+  await expect(page.locator('.wa-chat-header')).toContainText('Equipe Cirúrgica')
+  await expect(page.locator('.wa-messages').getByText('Confirmado para amanhã', { exact: true })).toBeVisible()
+})
+
 test('inbox lista conversas (inclusive não atribuídas) e abre os threads', async ({ page }) => {
   await page.goto('/app/inbox')
   await expect(page).toHaveURL(/\/app\/inbox$/)
