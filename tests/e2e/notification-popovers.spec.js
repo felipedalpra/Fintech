@@ -42,8 +42,21 @@ test('os dois painéis de notificação abrem sobre a interface no canto superio
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/app/funnel')
 
-  await page.getByRole('button', { name: 'Alertas do CRM', exact: true }).click()
+  const dock = page.getByTestId('notification-bell-dock')
+  await expect(dock).toBeVisible()
+  const dockBox = await dock.boundingBox()
+  expect(1280 - (dockBox.x + dockBox.width)).toBeLessThanOrEqual(20)
+  expect(dockBox.y).toBeLessThanOrEqual(12)
+
+  const crmButton = page.getByRole('button', { name: 'Alertas do CRM', exact: true })
+  await crmButton.click()
   await expectFixedAtTopRight(page, 'crm-alerts-popover')
+  const [buttonBox, panelBox] = await Promise.all([
+    crmButton.boundingBox(),
+    page.getByTestId('crm-alerts-popover').boundingBox(),
+  ])
+  expect(panelBox.y).toBeGreaterThan(buttonBox.y + buttonBox.height)
+  expect(Math.abs((panelBox.x + panelBox.width) - (buttonBox.x + buttonBox.width))).toBeLessThanOrEqual(8)
 
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('crm-alerts-popover')).toBeHidden()
