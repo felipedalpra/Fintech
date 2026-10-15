@@ -8,6 +8,8 @@ import { groupTasksByDue } from '../lib/taskGroups.js'
 import { dayKey } from '../lib/taskViews.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
+import { OperationalOnboarding } from './OperationalOnboarding.jsx'
+import { loadConversationStates, operationalConversationKey, unreadCountForConversation } from '../lib/operationalWorkspace.js'
 
 // "Meu dia": a home do operador. Junta o que a pessoa logada precisa resolver hoje —
 // tarefas de hoje/atrasadas atribuídas a mim, leads (oportunidades) novos do dia atribuídos a mim,
@@ -36,9 +38,11 @@ const I = {
   user: <><circle cx="9" cy="8" r="4" /><path d="M3 20a6 6 0 0 1 12 0M17 11h5M19.5 8.5v5" /></>,
   warn: <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />,
   check: <path d="M20 6 9 17l-5-5" />,
+  chat: <><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
 }
 
-export function MeuDia() {
+export function MeuDia({ data = {} }) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { ownerId } = useUserRole()
@@ -47,6 +51,7 @@ export function MeuDia() {
 
   const [tasks, setTasks] = useState([])
   const [opps, setOpps] = useState([])
+  const [unreadChats, setUnreadChats] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -66,17 +71,27 @@ export function MeuDia() {
         }
         return result
       }
-      const [taskRes, oppRes] = await Promise.all([
+      const [taskRes, oppRes, messageRes, stateRes] = await Promise.all([
         supabase.from('tasks')
           .select('id, title, due_date, status, assigned_user_id, patient_id, opportunity_id, patients(full_name), opportunities(title)')
           .eq('assigned_user_id', uid).eq('status', 'pendente'),
         fetchOpportunities(),
+        supabase.from('whatsapp_messages').select('phone, direction, created_at, whatsapp_number_id, is_group, chat_lid, contact_phone').eq('user_id', effectiveUserId).eq('direction', 'inbound').order('created_at', { ascending:false }).limit(500),
+        loadConversationStates(effectiveUserId),
       ])
       if (!mounted) return
       if (taskRes.error) { setError(taskRes.error.message); setLoading(false); return }
       if (oppRes.error) { setError(oppRes.error.message); setLoading(false); return }
       setTasks(taskRes.data ?? [])
       setOpps(oppRes.data ?? [])
+      const stateMap = new Map((stateRes.data || []).map(state => [state.conversation_key, state]))
+      const grouped = new Map()
+      ;(messageRes.data || []).forEach(message => {
+        const key = operationalConversationKey(message)
+        if (!grouped.has(key)) grouped.set(key, [])
+        grouped.get(key).push(message)
+      })
+      setUnreadChats(Array.from(grouped.entries()).filter(([key, rows]) => unreadCountForConversation(rows, stateMap.get(key)) > 0).length)
       setLoading(false)
     }
     load()
@@ -93,6 +108,13 @@ export function MeuDia() {
     return !Number.isNaN(d.getTime()) && dayKey(d) === hoje
   }), [opps, hoje])
   const parados = useMemo(() => opps.filter(o => (daysSince(o.stage_entered_at) || 0) >= 7).sort((a, b) => (daysSince(b.stage_entered_at) || 0) - (daysSince(a.stage_entered_at) || 0)), [opps])
+  const todayEvents = useMemo(() => {
+    const rows = [
+      ...(data.consultations || []).map(item => ({ ...item, eventType:'Consulta' })),
+      ...(data.surgeries || []).map(item => ({ ...item, eventType:'Cirurgia' })),
+    ]
+    return rows.filter(item => String(item.date || item.surgeryDate || item.consultationDate || item.scheduledDate || '').slice(0, 10) === hoje)
+  }, [data, hoje])
 
   if (loading) return <div style={{ color: C.textSub, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>Carregando seu dia…</div>
   if (error) return <div style={{ color: C.red || '#ef4444', fontSize: 14, padding: 24 }}>Erro: {error}</div>
@@ -104,6 +126,13 @@ export function MeuDia() {
 
   return (
     <div style={grid}>
+      <OperationalOnboarding data={data} />
+      <div style={{ gridColumn:'1 / -1', display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))', gap:10 }}>
+        <QuickCard label="Conversas não lidas" value={unreadChats} color={C.green || '#10B981'} onClick={() => go('inbox')} />
+        <QuickCard label="Agenda de hoje" value={todayEvents.length} color={C.accent} onClick={() => go('calendar')} />
+        <QuickCard label="Tarefas pendentes" value={hojeTarefas.length} color={C.yellow || '#F59E0B'} onClick={() => go('tarefas')} />
+        <QuickCard label="Qualidade financeira" value="Revisar" color={C.purple || '#8B5CF6'} onClick={() => go('data-quality')} />
+      </div>
       <Panel title="Tarefas de hoje" count={hojeTarefas.length} color={C.accent} icon={I.clock} onHeader={() => go('tarefas')}
         empty="Nada pra hoje. 🎉">
         {hojeTarefas.map(t => {
@@ -139,8 +168,16 @@ export function MeuDia() {
           </Row>
         ))}
       </Panel>
+
+      <Panel title="Agenda de hoje" count={todayEvents.length} color={C.accent} icon={I.calendar} onHeader={() => go('calendar')} empty="Nenhum atendimento hoje.">
+        {todayEvents.map((event, index) => <Row key={event.id || `${event.eventType}-${index}`}><span style={{ color:C.accent, fontSize:11, fontWeight:800 }}>{event.eventType}</span><span style={rowText}>{event.patientName || event.patient || event.name || event.procedure || 'Atendimento'}</span></Row>)}
+      </Panel>
     </div>
   )
+}
+
+function QuickCard({ label, value, color, onClick }) {
+  return <button onClick={onClick} style={{ padding:'14px 15px', borderRadius:14, border:`1px solid ${color}44`, background:`linear-gradient(135deg, ${color}14, ${C.card})`, color:C.text, textAlign:'left', cursor:'pointer', fontFamily:'inherit' }}><div style={{ color:C.textSub, fontSize:11, fontWeight:700 }}>{label}</div><div style={{ color, fontSize:22, fontWeight:900, marginTop:4 }}>{value}</div></button>
 }
 
 function Panel({ title, count, color, icon, children, empty, onHeader }) {

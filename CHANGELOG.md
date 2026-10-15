@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (108)
+### Added
+- **Central operacional em nove frentes**: “Meu dia” reúne não lidas, agenda, tarefas, leads e atalhos; contatos e oportunidades ganham visão 360° com notas internas; WhatsApp recebe filas, não lidas, arquivamento reversível, responsável por conversa, respostas rápidas e reenvio de texto; configurações mostram saúde de WhatsApp, Meta, Google e conciliação; e o Financeiro ganha um centro de qualidade derivado exclusivamente do razão canônico. A migração aditiva `supabase/operational_workspace_schema.sql` persiste somente estado operacional, notas, respostas e preferências com RLS por clínica — sem alterar mensagens, pacientes, lançamentos, DRE, caixa ou conciliações.
+
+### Changed
+- **Navegação, onboarding e desempenho**: a navegação foi reduzida a Hoje, Relacionamento, Atendimentos, Financeiro e Configurações; primeiros passos passam a refletir dados reais e podem ser ocultados por usuário; páginas pesadas carregam sob demanda com estado visual de carregamento, reduzindo o JavaScript inicial sem remover rotas existentes.
+- **Notificações acionáveis e menos ruidosas**: alertas do CRM são agrupados por tipo, os dois sinos exibem apenas itens não lidos e permitem marcar o conjunto como lido com preferência persistente por membro da clínica.
+
+### Fixed
+- **Fila de atendimento do WhatsApp**: grupos e conversas arquivadas deixam de poluir a fila padrão, o contador de não lidas respeita a última leitura e todas as ações de atendimento são aditivas/reversíveis. O comportamento anterior continua disponível quando o novo SQL ainda não foi aplicado.
+
 ## [Unreleased] - 2026-10-15 (107)
 ### Added
 - **Ciclo contato → lead → paciente no WhatsApp**: conversas individuais passam a ter um contato CRM persistente, isolado por clínica e número do WhatsApp. No cabeçalho do Inbox, o usuário pode adicionar o contato ao funil, cadastrar um novo paciente, vincular um paciente existente ou ignorar/reativar o contato. Grupos nunca entram nesse ciclo. A migração `supabase/crm_contacts_schema.sql` é aditiva, faz backfill das conversas, usa RLS por `data_owner_id()` e converte/vincula de forma atômica e idempotente, sem apagar mensagens, pacientes, oportunidades ou histórico.

@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom'
 import { C } from '../theme.js'
 import { buildMetrics } from '../useMetrics.js'
 import { fmt, getPeriodRange, today } from '../utils.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
+import { loadWorkspacePreferences, saveWorkspacePreferences } from '../lib/operationalWorkspace.js'
 
 function computeAlerts(data, summary) {
   const safeData = data || {}
@@ -59,13 +62,27 @@ function computeAlerts(data, summary) {
 }
 
 export function AlertsBell({ data, summary, onNavigate }) {
+  const { user } = useAuth()
+  const { ownerId } = useUserRole()
+  const effectiveUserId = ownerId || user?.id
   const [open, setOpen] = useState(false)
+  const [readKeys, setReadKeys] = useState([])
+  const [notificationState, setNotificationState] = useState({})
   const triggerRef = useRef(null)
   const panelRef = useRef(null)
 
-  const alerts = useMemo(() => computeAlerts(data, summary), [data, summary])
-  const dangerCount = alerts.filter(a => a.level === 'danger').length
-  const total = alerts.length
+  const alerts = useMemo(() => computeAlerts(data, summary).map(alert => ({ ...alert, key:`${alert.title}|${alert.body}` })), [data, summary])
+  useEffect(() => {
+    if (!effectiveUserId || !user?.id) return
+    loadWorkspacePreferences(effectiveUserId, user.id).then(result => {
+      const state = result.data?.notification_state || {}
+      setNotificationState(state)
+      setReadKeys(state.finance || [])
+    })
+  }, [effectiveUserId, user?.id])
+  const visibleAlerts = useMemo(() => alerts.filter(alert => !readKeys.includes(alert.key)), [alerts, readKeys])
+  const total = visibleAlerts.length
+  const dangerCount = visibleAlerts.filter(a => a.level === 'danger').length
   const badgeColor = dangerCount > 0 ? C.red : total > 0 ? C.yellow : null
 
   useEffect(() => {
@@ -98,6 +115,13 @@ export function AlertsBell({ data, summary, onNavigate }) {
     border: `1px solid ${C.borderBright}`,
     borderRadius: 14,
     boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+  }
+  async function markAllRead() {
+    const keys = alerts.map(alert => alert.key)
+    setReadKeys(keys)
+    const next = { ...notificationState, finance:keys }
+    setNotificationState(next)
+    await saveWorkspacePreferences(effectiveUserId, user.id, { notification_state:{ finance:keys } })
   }
 
   return (
@@ -143,6 +167,7 @@ export function AlertsBell({ data, summary, onNavigate }) {
             <div style={{ fontSize: 11, fontWeight: 600, color: total === 0 ? C.green : dangerCount > 0 ? C.red : C.yellow }}>
               {total === 0 ? '● Tudo em ordem' : `${total} alerta(s)`}
             </div>
+            {total > 0 && <button type="button" onClick={markAllRead} style={{ border:0, background:'transparent', color:C.accent, cursor:'pointer', fontSize:10, fontWeight:700 }}>Marcar lidos</button>}
           </div>
 
           {total === 0 ? (
@@ -151,13 +176,13 @@ export function AlertsBell({ data, summary, onNavigate }) {
             </div>
           ) : (
             <div>
-              {alerts.map((alert, i) => (
+              {visibleAlerts.map((alert, i) => (
                 <div
-                  key={i}
+                  key={alert.key}
                   onClick={() => { if (alert.link && typeof onNavigate === 'function') { onNavigate(alert.link); setOpen(false) } }}
                   style={{
                     padding: '12px 16px',
-                    borderBottom: i < alerts.length - 1 ? `1px solid ${C.border}22` : 'none',
+                    borderBottom: i < visibleAlerts.length - 1 ? `1px solid ${C.border}22` : 'none',
                     borderLeft: `3px solid ${alert.level === 'danger' ? C.red : C.yellow}`,
                     cursor: alert.link ? 'pointer' : 'default',
                     transition: 'background 0.1s',

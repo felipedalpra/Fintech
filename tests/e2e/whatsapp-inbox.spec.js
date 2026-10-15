@@ -48,6 +48,8 @@ test.beforeEach(async ({ page }) => {
     return route.continue()
   })
   await page.route('**/rest/v1/rpc/clinic_team*', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
+  await page.route('**/rest/v1/whatsapp_conversation_states*', route => route.fulfill({ status: route.request().method() === 'GET' ? 200 : 201, contentType: 'application/json', body: '[]' }))
+  await page.route('**/rest/v1/whatsapp_saved_replies*', route => route.fulfill({ status: route.request().method() === 'GET' ? 200 : 201, contentType: 'application/json', body: '[]' }))
 })
 
 test('mantém lista e histórico roláveis com o compositor sempre visível', async ({ page }) => {
@@ -123,6 +125,7 @@ test('no celular volta para a lista e permite trocar de conversa repetidamente',
 
   await page.getByRole('button', { name: 'Voltar para conversas' }).click()
   await expect(page.locator('.wa-sidebar')).toBeVisible()
+  await page.getByRole('button', { name: 'Grupos', exact: true }).click()
   await page.locator('.wa-conversation').filter({ hasText: 'Equipe Cirúrgica' }).click()
   await expect(page.locator('.wa-chat-header')).toContainText('Equipe Cirúrgica')
   await expect(page.locator('.wa-messages').getByText('Confirmado para amanhã', { exact: true })).toBeVisible()
@@ -137,6 +140,7 @@ test('inbox separa contatos de pacientes e abre os threads', async ({ page }) =>
   const sidebar = page.locator('.wa-sidebar')
   await expect(sidebar.getByText('Ana Silva')).toBeVisible()
   await expect(sidebar.getByText('+55 (11) 97777-6666')).toBeVisible()
+  await expect(sidebar.getByText('Equipe Cirúrgica')).toBeHidden()
   await expect(sidebar.locator('.wa-conversation').filter({ hasText:'+55 (11) 97777-6666' })).toContainText('Contato')
 
   // Abrir a conversa da Ana → thread com as duas mensagens + caixa de resposta.
@@ -163,6 +167,18 @@ test('inbox separa contatos de pacientes e abre os threads', async ({ page }) =>
   await expect(page.getByPlaceholder('Responder...')).toBeVisible()
   await expect(page.getByRole('button', { name:'Adicionar ao funil' })).toBeVisible()
   await expect(page.getByRole('button', { name:'Cadastrar ou vincular paciente' })).toBeVisible()
+})
+
+test('fila separa atendimentos, grupos e não lidas', async ({ page }) => {
+  await page.goto('/app/inbox')
+  const sidebar = page.locator('.wa-sidebar')
+  await expect(sidebar.getByText('Ana Silva')).toBeVisible()
+  await expect(sidebar.getByText('Equipe Cirúrgica')).toBeHidden()
+  await page.getByRole('button', { name:'Grupos', exact:true }).click()
+  await expect(sidebar.getByText('Equipe Cirúrgica')).toBeVisible()
+  await expect(sidebar.getByText('Ana Silva')).toBeHidden()
+  await page.getByRole('button', { name:'Não lidas', exact:true }).click()
+  await expect(sidebar.locator('.wa-unread-badge').first()).toBeVisible()
 })
 
 test('adiciona contato ao funil sem inserir paciente', async ({ page }) => {
@@ -231,6 +247,7 @@ test('reúne telefone e LID no chat correto sem misturar números da clínica', 
 
 test('grupo mostra identidade coletiva e identifica cada participante', async ({ page }) => {
   await page.goto('/app/inbox')
+  await page.getByRole('button', { name:'Grupos', exact:true }).click()
   const sidebar = page.locator('.wa-sidebar')
   const groupConversation = sidebar.locator('.wa-conversation').filter({ hasText:'Equipe Cirúrgica' })
   await expect(groupConversation).toContainText('grupo')
@@ -254,6 +271,8 @@ test('grupo distingue participante por Linked ID quando nome e telefone estão o
   }]) }))
 
   await page.goto('/app/inbox')
+  await page.getByRole('button', { name:'Grupos', exact:true }).click()
+  await page.locator('.wa-conversation').first().click()
   await expect(page.locator('.wa-participant-name')).toContainText('Participante • ID 083376')
   await expect(page.locator('.wa-preview')).toContainText('Participante • ID 083376: Mensagem identificada')
 })

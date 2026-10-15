@@ -10,6 +10,7 @@ import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
 import { WhatsAppAutomations } from './WhatsAppAutomations.jsx'
 import { MetaConnection } from './MetaConnection.jsx'
 import { FollowupRules } from './FollowupRules.jsx'
+import { IntegrationHealth } from './IntegrationHealth.jsx'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -35,7 +36,7 @@ const EMPTY_PROFILE = {
   },
 }
 
-export function Settings() {
+export function Settings({ google }) {
   const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
   const { role, clinicId } = useUserRole()
   const [tab, setTab] = useState('perfil')
@@ -118,13 +119,13 @@ export function Settings() {
 
   const tabs = [
     { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'integracoes', label:'Integrações' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
   ]
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
       <Card style={{ maxWidth:920 }}>
-        <div style={{ display:'flex', gap:0, marginBottom:24, borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ display:'flex', gap:0, marginBottom:24, borderBottom:`1px solid ${C.border}`, overflowX:'auto' }}>
           {tabs.map(t => (
             <button
               key={t.id}
@@ -219,6 +220,10 @@ export function Settings() {
 
         {tab === 'equipe' && role === 'admin' && (
           <TeamSettings clinicId={clinicId} />
+        )}
+
+        {tab === 'integracoes' && role === 'admin' && (
+          <IntegrationHealth google={google} />
         )}
 
         {tab === 'whatsapp' && role === 'admin' && (
