@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (109)
+### Added
+- **Agenda clínica no padrão de calendário moderno**: a tela passa a oferecer visualizações de mês, semana, dia e agenda, mini calendário, botão Hoje, busca por paciente/procedimento, filtros independentes para consultas, cirurgias e eventos externos, indicador da hora atual, eventos de dia inteiro, detecção visual de conflitos e atalhos de teclado. A criação rápida parte do dia/horário clicado, exige paciente cadastrado, respeita a permissão do perfil e salva na mesma fonte real de consultas/cirurgias; eventos locais também podem ser reagendados por arrastar no desktop. (`src/components/Calendar.jsx`, `src/components/Calendar.css`, `src/lib/clinicalCalendar.js`.)
+
+### Changed
+- **Integração Google preservada na nova experiência**: eventos externos continuam sendo carregados e deduplicados dos atendimentos já vinculados; mudanças vindas do Google continuam atualizando data e horário locais, enquanto consultas e cirurgias criadas ou reagendadas na agenda usam o fluxo de gravação confirmada e a sincronização existente. Nenhuma tabela ou função serverless nova foi criada.
+
+### Fixed
+- **Agenda utilizável no celular**: o painel lateral deixa de cobrir o calendário em telas pequenas, a visualização Agenda vira a experiência compacta principal e os controles permanecem acessíveis para alternar período, abrir atendimentos e criar novos registros. A cobertura E2E valida desktop, mobile e persistência após recarregar. (`tests/e2e/calendar-experience.spec.js`, `tests/unit/clinicalCalendar.spec.js`.)
+
 ## [Unreleased] - 2026-10-15 (108)
 ### Added
 - **Central operacional em nove frentes**: “Meu dia” reúne não lidas, agenda, tarefas, leads e atalhos; contatos e oportunidades ganham visão 360° com notas internas; WhatsApp recebe filas, não lidas, arquivamento reversível, responsável por conversa, respostas rápidas e reenvio de texto; configurações mostram saúde de WhatsApp, Meta, Google e conciliação; e o Financeiro ganha um centro de qualidade derivado exclusivamente do razão canônico. A migração aditiva `supabase/operational_workspace_schema.sql` persiste somente estado operacional, notas, respostas e preferências com RLS por clínica — sem alterar mensagens, pacientes, lançamentos, DRE, caixa ou conciliações.

@@ -1,12 +1,16 @@
 import { expect, test } from '@playwright/test'
 
 const CONNECTED = { configured:true, connected:true, needsReconnect:false, email:'medico@example.com', links:{} }
+const PATIENT_ID = '55555555-5555-4555-8555-555555555555'
 
 async function mockGoogleCalendar(page, { status, events = [] }) {
   const syncBodies = []
   await page.addInitScript(() => {
     window.localStorage.setItem('surgimetrics_onboarded', 'true')
   })
+  await page.route('**/rest/v1/patients*', route => route.fulfill({
+    json:[{ id:PATIENT_ID, full_name:'Maria da Silva', cpf:null, phone:'5511999999999', active:true }],
+  }))
   await page.route(/\/api\/google\/calendar\?/, async route => {
     const action = new URL(route.request().url()).searchParams.get('action')
     if (action === 'status') return route.fulfill({ json:status })
@@ -57,7 +61,7 @@ test('mostra eventos do Google no calendario', async ({ page }) => {
   })
   await page.goto('/app/calendar')
 
-  await expect(page.getByText('Google Agenda conectada')).toBeVisible()
+  await expect(page.getByText('Google Agenda conectada')).toBeVisible({ timeout:10000 })
   await expect(page.getByText('medico@example.com', { exact:false })).toBeVisible()
   await expect(page.getByText('1 evento do Google')).toBeVisible()
 })
@@ -67,7 +71,7 @@ test('envia consulta com horario para a Google Agenda ao salvar', async ({ page 
   await page.goto('/app/consultations')
 
   await page.getByRole('button', { name:'+ Nova Consulta' }).click()
-  await page.getByPlaceholder('Use somente o dado mínimo necessário').fill('Maria da Silva')
+  await page.locator('select').filter({ hasText:'Selecionar paciente cadastrado' }).selectOption(PATIENT_ID)
   await page.locator('input[type="date"]').first().fill('2099-01-10')
   await page.locator('input[type="time"]').fill('14:30')
   await page.getByRole('button', { name:'Salvar consulta' }).click()

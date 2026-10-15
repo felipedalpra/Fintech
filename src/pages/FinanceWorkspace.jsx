@@ -172,7 +172,7 @@ const SUBTITLES = {
   plans:'Organize o portfólio de procedimentos da clínica.',
   sales:'Cadastre cirurgias e acompanhe margem por operação.',
   consultations:'Controle consultas, convênios e recebimentos.',
-  calendar:'Visualize cirurgias e consultas no calendário.',
+  calendar:'Organize consultas, cirurgias e eventos externos por mês, semana, dia ou agenda.',
   products:'Gerencie modeladores, compras, vendas e estoque.',
   finance:'Centralize entradas, saídas, contas, DRE e balanço.',
   cashflow:'Movimentações realizadas e saldo por período.',
