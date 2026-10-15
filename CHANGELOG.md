@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (106)
+### Changed
+- **Sinos na barra superior global**: os alertas financeiros e do CRM saem da barra de ações que quebrava linha no conteúdo e passam a ocupar uma área persistente no canto superior direito do app. A navegação de áreas continua rolável de forma independente, e os painéis abrem alinhados abaixo dos respectivos sinos em desktop e celular. (`src/pages/FinanceWorkspace.jsx`, `tests/e2e/notification-popovers.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (105)
 ### Fixed
 - **Notificações visíveis e completas no canto superior direito**: os painéis de alertas financeiros e do CRM agora abrem sobre toda a interface, sem serem recortados pela barra lateral ou pelos contêineres roláveis. O sino do CRM deixa de resumir dezenas de pendências em apenas três linhas e passa a listar cada tarefa, lead sem resposta, lead sem responsável e oportunidade parada; a lista tem cabeçalho fixo, rolagem própria, largura responsiva e fechamento por clique externo ou Esc. (`src/components/AlertsBell.jsx`, `src/components/CrmBell.jsx`, `tests/e2e/notification-popovers.spec.js`.)

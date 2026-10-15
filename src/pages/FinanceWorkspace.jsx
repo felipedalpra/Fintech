@@ -1103,26 +1103,32 @@ export function FinanceWorkspace() {
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
       {/* Barra de áreas (topo, full-width) */}
-      <nav data-testid="area-bar" style={{ display:'flex', alignItems:'center', gap:4, padding:isMobile ? '8px 12px' : '8px 16px', borderBottom:`1px solid ${C.border}`, background:C.surface, overflowX:'auto', flexShrink:0, zIndex:isMobile ? 20 : 11 }}>
-        {accessibleAreas.map(area => {
-          const active = area.id === activeAreaId
-          return (
-            <button
-              key={area.id}
-              onClick={() => {
-                if (area.comingSoon) { navigate(`/app/${area.id}`); if (isMobile) setMobileNavOpen(false); return }
-                const first = area.sections.flatMap(s => s.items).find(i => canAccess(i.id))
-                if (first) navigate(`/app/${first.id}`)
-                if (isMobile) setMobileNavOpen(false)
-              }}
-              style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 12px', borderRadius:10, border:active ? `1px solid ${C.accent}44` : '1px solid transparent', background:active ? C.accent+'16' : 'transparent', color:active ? C.text : C.textSub, fontWeight:active ? 700 : 600, fontSize:13, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap', flexShrink:0 }}
-            >
-              <NavIcon name={area.icon} size={15} />
-              <span>{area.label}</span>
-              {area.comingSoon && <span style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:C.textDim, border:`1px solid ${C.border}`, borderRadius:6, padding:'1px 5px' }}>em breve</span>}
-            </button>
-          )
-        })}
+      <nav data-testid="area-bar" style={{ display:'flex', alignItems:'center', minWidth:0, padding:isMobile ? '8px 12px' : '8px 16px', borderBottom:`1px solid ${C.border}`, background:C.surface, overflow:'hidden', flexShrink:0, zIndex:isMobile ? 20 : 11 }}>
+        <div style={{ minWidth:0, flex:1, display:'flex', alignItems:'center', gap:4, overflowX:'auto', scrollbarWidth:'none' }}>
+          {accessibleAreas.map(area => {
+            const active = area.id === activeAreaId
+            return (
+              <button
+                key={area.id}
+                onClick={() => {
+                  if (area.comingSoon) { navigate(`/app/${area.id}`); if (isMobile) setMobileNavOpen(false); return }
+                  const first = area.sections.flatMap(s => s.items).find(i => canAccess(i.id))
+                  if (first) navigate(`/app/${first.id}`)
+                  if (isMobile) setMobileNavOpen(false)
+                }}
+                style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 12px', borderRadius:10, border:active ? `1px solid ${C.accent}44` : '1px solid transparent', background:active ? C.accent+'16' : 'transparent', color:active ? C.text : C.textSub, fontWeight:active ? 700 : 600, fontSize:13, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap', flexShrink:0 }}
+              >
+                <NavIcon name={area.icon} size={15} />
+                <span>{area.label}</span>
+                {area.comingSoon && <span style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', color:C.textDim, border:`1px solid ${C.border}`, borderRadius:6, padding:'1px 5px' }}>em breve</span>}
+              </button>
+            )
+          })}
+        </div>
+        <div data-testid="notification-bell-dock" style={{ flex:'0 0 auto', display:'flex', alignItems:'center', gap:8, marginLeft:isMobile ? 8 : 14, paddingLeft:isMobile ? 8 : 14, background:C.surface, borderLeft:`1px solid ${C.border}` }}>
+          <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
+          <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
+        </div>
       </nav>
 
       {/* Linha: sidebar (sub-nav da área ativa) + conteúdo */}
@@ -1240,8 +1246,6 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-              <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
-              <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
               <button
                 onClick={toggleTheme}
                 title={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
