@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
 import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
+import { stageLabel } from '../lib/timeline.js'
 
 // Sininho de CRM: alertas derivados dos dados atuais (sem tabela nova) — tarefas atrasadas,
 // leads sem responsável e oportunidades paradas. Clicar leva pra tela do item.
@@ -14,6 +16,14 @@ function daysSince(ts) {
   if (!ts) return null
   const d = Math.floor((Date.now() - new Date(ts).getTime()) / 86400000)
   return d >= 0 ? d : null
+}
+function itemLabel(item) {
+  return item?.patients?.full_name || item?.title || 'Oportunidade'
+}
+function shortDate(value) {
+  if (!value) return 'sem data'
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
 function Ico({ d, size = 16 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
@@ -32,7 +42,8 @@ export function CrmBell({ onNavigate }) {
   const [tasks, setTasks] = useState([])
   const [opps, setOpps] = useState([])
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const triggerRef = useRef(null)
+  const panelRef = useRef(null)
 
   useEffect(() => {
     if (!effectiveUserId) return
@@ -40,8 +51,8 @@ export function CrmBell({ onNavigate }) {
     async function load() {
       try {
         const [taskRes, oppRes] = await Promise.all([
-          supabase.from('tasks').select('id, due_date, status').eq('user_id', effectiveUserId).eq('status', 'pendente'),
-          supabase.from('opportunities').select('id, responsible_user_id, stage_entered_at, status, stage, created_at, first_response_at').eq('user_id', effectiveUserId).eq('status', 'aberto'),
+          supabase.from('tasks').select('id, title, due_date, status, patients(full_name), opportunities(title)').eq('user_id', effectiveUserId).eq('status', 'pendente'),
+          supabase.from('opportunities').select('id, title, responsible_user_id, stage_entered_at, status, stage, created_at, first_response_at, patients(full_name)').eq('user_id', effectiveUserId).eq('status', 'aberto'),
         ])
         if (!mounted) return
         setTasks(taskRes.data ?? [])
@@ -54,7 +65,11 @@ export function CrmBell({ onNavigate }) {
 
   useEffect(() => {
     if (!open) return
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function onDoc(e) {
+      const clickedTrigger = triggerRef.current?.contains(e.target)
+      const clickedPanel = panelRef.current?.contains(e.target)
+      if (!clickedTrigger && !clickedPanel) setOpen(false)
+    }
     function onKey(e) { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
@@ -63,43 +78,82 @@ export function CrmBell({ onNavigate }) {
 
   const { alerts, total } = useMemo(() => {
     const g = groupTasksByDue(tasks)
-    const atrasadas = g.atrasadas.length
-    const semResp = opps.filter(o => !o.responsible_user_id).length
-    const parados = opps.filter(o => (daysSince(o.stage_entered_at) || 0) >= STALE_DAYS).length
-    const slaLate = opps.filter(o => slaForLead(o).state === 'late').length
     const list = []
-    if (slaLate) list.push({ k: 'sla', color: C.red || '#EF4444', icon: I.warn, title: `${slaLate} lead${slaLate > 1 ? 's' : ''} sem 1ª resposta`, desc: `Passaram do alvo de ${SLA_CONFIG.targetMin} min`, go: 'funnel' })
-    if (atrasadas) list.push({ k: 'atr', color: C.red || '#EF4444', icon: I.warn, title: `${atrasadas} tarefa${atrasadas > 1 ? 's' : ''} atrasada${atrasadas > 1 ? 's' : ''}`, desc: 'Resolva ou reagende', go: 'tarefas' })
-    if (semResp) list.push({ k: 'sr', color: C.green || '#10B981', icon: I.user, title: `${semResp} lead${semResp > 1 ? 's' : ''} sem responsável`, desc: 'Distribua para a equipe', go: 'funnel' })
-    if (parados) list.push({ k: 'pa', color: C.yellow || '#F59E0B', icon: I.clock, title: `${parados} oportunidade${parados > 1 ? 's' : ''} parada${parados > 1 ? 's' : ''}`, desc: `Há +${STALE_DAYS} dias no mesmo estágio`, go: 'funnel' })
-    return { alerts: list, total: slaLate + atrasadas + semResp + parados } // badge = nº de itens, não de categorias
+    opps.forEach(opportunity => {
+      const sla = slaForLead(opportunity)
+      if (sla.state === 'late') list.push({
+        k: `sla-${opportunity.id}`, type: '1ª resposta', color: C.red || '#EF4444', icon: I.warn,
+        title: itemLabel(opportunity), desc: `${sla.minutes} min sem resposta · alvo ${SLA_CONFIG.targetMin} min`, go: 'funnel',
+      })
+    })
+    g.atrasadas.forEach(task => list.push({
+      k: `task-${task.id}`, type: 'Tarefa atrasada', color: C.red || '#EF4444', icon: I.warn,
+      title: task.title || 'Tarefa sem título',
+      desc: `${task.patients?.full_name || task.opportunities?.title || 'Pendência do CRM'} · venceu em ${shortDate(task.due_date)}`,
+      go: 'tarefas',
+    }))
+    opps.filter(opportunity => !opportunity.responsible_user_id).forEach(opportunity => list.push({
+      k: `owner-${opportunity.id}`, type: 'Sem responsável', color: C.green || '#10B981', icon: I.user,
+      title: itemLabel(opportunity), desc: 'Distribua este lead para a equipe', go: 'funnel',
+    }))
+    opps.forEach(opportunity => {
+      const days = daysSince(opportunity.stage_entered_at) || 0
+      if (days >= STALE_DAYS) list.push({
+        k: `stale-${opportunity.id}`, type: 'Parada no funil', color: C.yellow || '#F59E0B', icon: I.clock,
+        title: itemLabel(opportunity), desc: `${days} dias em ${stageLabel(opportunity.stage)}`, go: 'funnel',
+      })
+    })
+    return { alerts: list, total: list.length }
   }, [tasks, opps])
 
   const btn = { position: 'relative', width: 38, height: 38, borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center', cursor: 'pointer', color: total ? C.text : C.textSub }
   const badge = { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: C.red || '#EF4444', color: '#fff', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', padding: '0 4px', border: `2px solid ${C.bg}` }
+  const panelStyle = {
+    position: 'fixed',
+    top: 'max(64px, calc(env(safe-area-inset-top) + 12px))',
+    right: 'max(12px, env(safe-area-inset-right))',
+    zIndex: 5000,
+    width: 'min(340px, calc(100vw - 24px))',
+    maxHeight: 'calc(100dvh - 80px)',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    boxSizing: 'border-box',
+    background: C.card,
+    border: `1px solid ${C.borderBright || C.border}`,
+    borderRadius: 14,
+    boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)',
+  }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" style={btn} onClick={() => setOpen(o => !o)} title="Alertas do CRM" aria-label="Alertas do CRM">
+    <div ref={triggerRef} style={{ position: 'relative' }}>
+      <button type="button" style={btn} onClick={() => setOpen(o => !o)} title="Alertas do CRM" aria-label="Alertas do CRM" aria-expanded={open} aria-haspopup="dialog">
         <Ico d={I.bell} size={19} />
         {total > 0 && <span style={badge}>{total}</span>}
       </button>
-      {open && (
-        <div style={{ position: 'absolute', top: 46, right: 0, zIndex: 60, width: 300, background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 14, boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)', overflow: 'hidden' }}>
-          <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 13, fontWeight: 800, color: C.text }}>Alertas do CRM</div>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={panelRef} role="dialog" aria-label="Alertas do CRM" data-testid="crm-alerts-popover" style={panelStyle}>
+          <div style={{ flex: '0 0 auto', padding: '12px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Alertas do CRM</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: total ? (C.red || '#EF4444') : (C.green || '#10B981') }}>{total ? `${total} pendência${total > 1 ? 's' : ''}` : 'Tudo em ordem'}</span>
+          </div>
           {alerts.length === 0
             ? <div style={{ padding: '20px 14px', fontSize: 13, color: C.textSub, textAlign: 'center' }}>Tudo em dia por aqui. 🎉</div>
-            : alerts.map(a => (
-              <div key={a.k} onClick={() => { setOpen(false); onNavigate?.(a.go) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <span style={{ width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center', background: a.color + '22', color: a.color, flexShrink: 0 }}><Ico d={a.icon} size={16} /></span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{a.title}</div>
-                  <div style={{ fontSize: 11, color: C.textSub, marginTop: 1 }}>{a.desc}</div>
+            : <div data-testid="crm-alerts-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarGutter: 'stable' }}>
+              {alerts.map(a => (
+                <div key={a.k} data-testid="crm-alert-item" onClick={() => { setOpen(false); onNavigate?.(a.go) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                  <span style={{ width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center', background: a.color + '22', color: a.color, flexShrink: 0 }}><Ico d={a.icon} size={16} /></span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ marginBottom: 2, color: a.color, fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>{a.type}</div>
+                    <div style={{ overflow: 'hidden', color: C.text, fontSize: 12.5, fontWeight: 700, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+                    <div style={{ marginTop: 1, color: C.textSub, fontSize: 11 }}>{a.desc}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
-        </div>
+              ))}
+            </div>}
+        </div>,
+        document.body,
       )}
     </div>
   )

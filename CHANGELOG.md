@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (105)
+### Fixed
+- **Notificações visíveis e completas no canto superior direito**: os painéis de alertas financeiros e do CRM agora abrem sobre toda a interface, sem serem recortados pela barra lateral ou pelos contêineres roláveis. O sino do CRM deixa de resumir dezenas de pendências em apenas três linhas e passa a listar cada tarefa, lead sem resposta, lead sem responsável e oportunidade parada; a lista tem cabeçalho fixo, rolagem própria, largura responsiva e fechamento por clique externo ou Esc. (`src/components/AlertsBell.jsx`, `src/components/CrmBell.jsx`, `tests/e2e/notification-popovers.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (104)
 ### Fixed
 - **Troca de conversas do WhatsApp no celular**: o botão de voltar agora abre e mantém a lista de conversas visível, sem a primeira conversa reabrir automaticamente. É possível alternar repetidamente entre contatos e grupos, preservando o chat selecionado e sem alterar mensagens ou persistência. (`src/components/WhatsAppInbox.jsx`, `tests/e2e/whatsapp-inbox.spec.js`.)

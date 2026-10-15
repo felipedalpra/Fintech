@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { C } from '../theme.js'
 import { buildMetrics } from '../useMetrics.js'
 import { fmt, getPeriodRange, today } from '../utils.js'
@@ -59,7 +60,8 @@ function computeAlerts(data, summary) {
 
 export function AlertsBell({ data, summary, onNavigate }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const triggerRef = useRef(null)
+  const panelRef = useRef(null)
 
   const alerts = useMemo(() => computeAlerts(data, summary), [data, summary])
   const dangerCount = alerts.filter(a => a.level === 'danger').length
@@ -69,18 +71,43 @@ export function AlertsBell({ data, summary, onNavigate }) {
   useEffect(() => {
     if (!open) return
     function handle(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+      const clickedTrigger = triggerRef.current?.contains(e.target)
+      const clickedPanel = panelRef.current?.contains(e.target)
+      if (!clickedTrigger && !clickedPanel) setOpen(false)
     }
+    function handleKey(e) { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handle)
+      document.removeEventListener('keydown', handleKey)
+    }
   }, [open])
 
+  const panelStyle = {
+    position: 'fixed',
+    top: 'max(64px, calc(env(safe-area-inset-top) + 12px))',
+    right: 'max(12px, env(safe-area-inset-right))',
+    zIndex: 5000,
+    width: 'min(340px, calc(100vw - 24px))',
+    maxHeight: 'calc(100dvh - 80px)',
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    boxSizing: 'border-box',
+    background: C.card,
+    border: `1px solid ${C.borderBright}`,
+    borderRadius: 14,
+    boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
+  }
+
   return (
-    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+    <div ref={triggerRef} style={{ position: 'relative', flexShrink: 0 }}>
       <button
         onClick={() => setOpen(v => !v)}
         title={total === 0 ? 'Sem alertas' : `${total} alerta(s)`}
         aria-label="Alertas"
+        aria-expanded={open}
+        aria-haspopup="dialog"
         style={{
           position: 'relative',
           width: 34, height: 34, borderRadius: 999,
@@ -109,13 +136,8 @@ export function AlertsBell({ data, summary, onNavigate }) {
         )}
       </button>
 
-      {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: 42, zIndex: 500,
-          width: 320, maxHeight: 440, overflowY: 'auto',
-          background: C.card, border: `1px solid ${C.borderBright}`,
-          borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.55)',
-        }}>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={panelRef} role="dialog" aria-label="Alertas financeiros" data-testid="financial-alerts-popover" style={panelStyle}>
           <div style={{ padding: '12px 16px 10px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Alertas</div>
             <div style={{ fontSize: 11, fontWeight: 600, color: total === 0 ? C.green : dangerCount > 0 ? C.red : C.yellow }}>
@@ -151,7 +173,8 @@ export function AlertsBell({ data, summary, onNavigate }) {
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
