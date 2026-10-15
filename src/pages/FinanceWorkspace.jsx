@@ -1003,6 +1003,7 @@ export function FinanceWorkspace() {
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900
   const compactForShortHeight = desktopCompactNav && viewportHeight < 860
   const ultraCompactDesktop = desktopCompactNav && viewportHeight < 760
+  const isInboxPage = page === 'inbox'
   const sidebarStats = isMobile
     ? sidebarQuickStats
     : sidebarQuickStats.slice(0, ultraCompactDesktop ? 0 : (compactForShortHeight ? 1 : 2))
@@ -1098,7 +1099,7 @@ export function FinanceWorkspace() {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', height:isMobile ? 'auto' : '100dvh', background:C.bg }}>
+    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', height:isInboxPage || !isMobile ? '100dvh' : 'auto', background:C.bg }}>
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
       {/* Barra de áreas (topo, full-width) */}
@@ -1211,7 +1212,7 @@ export function FinanceWorkspace() {
         </div>
       </aside>
 
-      <main style={{ flex:1, overflowY:isMobile && mobileNavOpen ? 'hidden' : 'auto', pointerEvents:isMobile && mobileNavOpen ? 'none' : 'auto', padding:isMobile ? '20px 16px 56px' : '20px 22px 34px' }}>
+      <main data-page={page} style={{ flex:1, minWidth:0, minHeight:0, display:isInboxPage ? 'flex' : 'block', flexDirection:isInboxPage ? 'column' : undefined, overflow:isInboxPage || (isMobile && mobileNavOpen) ? 'hidden' : 'auto', pointerEvents:isMobile && mobileNavOpen ? 'none' : 'auto', padding:isInboxPage ? (isMobile ? '8px' : '12px') : (isMobile ? '20px 16px 56px' : '20px 22px 34px') }}>
         {(saveStatus === 'blocked' || saveStatus === 'error') && (
           <div role="alert" style={{ marginBottom:16, borderRadius:12, padding:'12px 16px', background:`${C.red}1a`, border:`1px solid ${C.red}`, color:C.red, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
             <span style={{ fontSize:18 }}>⚠️</span>
@@ -1225,7 +1226,7 @@ export function FinanceWorkspace() {
             )}
           </div>
         )}
-        <div style={{ marginBottom:22 }}>
+        {!isInboxPage && <div style={{ marginBottom:22 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, flexWrap:'wrap' }}>
             <div style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
               {isMobile && <button onClick={() => setMobileNavOpen(true)} style={getIconButton()}>☰</button>}
@@ -1286,9 +1287,19 @@ export function FinanceWorkspace() {
               })}
             </div>
           </div>
-        </div>
+        </div>}
 
-        {isMobile && (
+        {isInboxPage && isMobile && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, flex:'0 0 auto', marginBottom:8 }}>
+            <button onClick={() => setMobileNavOpen(true)} style={getIconButton()} aria-label="Abrir menu">☰</button>
+            <strong style={{ color:C.text, fontSize:17 }}>WhatsApp</strong>
+            <span style={{ flex:1 }} />
+            <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
+            <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
+          </div>
+        )}
+
+        {isMobile && !isInboxPage && (
           <Card style={{ marginBottom:16, padding:14 }}>
             <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10, fontWeight:700 }}>
               Acesso rapido
@@ -1319,7 +1330,7 @@ export function FinanceWorkspace() {
         )}
 
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
-        {!hasData && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
+        {!hasData && !isInboxPage && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
         <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
         {page !== 'inbox' && <CopilotWidget data={safeData} />}
         {page !== 'inbox' && <FAB currentPage={page} />}
