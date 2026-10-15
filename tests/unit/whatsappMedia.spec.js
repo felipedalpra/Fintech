@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildMediaSendRequest, configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
+import { buildMediaSendRequest, configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, normalizeZApiInstanceUrl, resolveZApiPhoneLids, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
 
 const realFetch = globalThis.fetch
 test.afterEach(() => { globalThis.fetch = realFetch })
@@ -117,6 +117,24 @@ test('listZApiChats pagina metadados sem expor credenciais', async () => {
   expect(urls).toHaveLength(2)
   expect(urls[0]).toContain('page=1')
   expect(urls[1]).toContain('page=2')
+})
+
+test('resolveZApiPhoneLids reconcilia telefone e LID em lote', async () => {
+  let request = null
+  globalThis.fetch = async (url, options) => {
+    request = { url:String(url), options }
+    return new Response(JSON.stringify([
+      { exists:true, inputPhone:'555182452361', outputPhone:'555182452361', lid:'22093462769770@lid' },
+      { exists:false, inputPhone:'555100000000', outputPhone:null, lid:null },
+    ]), { status:200 })
+  }
+  await expect(resolveZApiPhoneLids(
+    'https://api.z-api.io/instances/A/token/B',
+    'client-token',
+    ['+55 (51) 8245-2361', '555182452361', '555100000000'],
+  )).resolves.toEqual([{ inputPhone:'555182452361', outputPhone:'555182452361', lid:'22093462769770@lid' }])
+  expect(request.url).toBe('https://api.z-api.io/instances/A/token/B/phone-exists-batch')
+  expect(JSON.parse(request.options.body)).toEqual({ phones:['555182452361', '555100000000'] })
 })
 
 test('buildMediaSendRequest: imagem → send-image com caption', () => {

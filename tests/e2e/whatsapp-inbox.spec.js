@@ -111,12 +111,12 @@ test('mantém o campo de resposta acessível no celular', async ({ page }) => {
 test('inbox lista conversas (inclusive não atribuídas) e abre os threads', async ({ page }) => {
   await page.goto('/app/inbox')
   await expect(page).toHaveURL(/\/app\/inbox$/)
-  await expect(page.locator('.wa-sidebar-title').getByText('Conversas')).toBeVisible()
+  await expect(page.locator('.wa-sidebar-title').getByText('Conversas', { exact:true })).toBeVisible()
 
   // Conversa atribuída (Ana) e a não atribuída (número cru) aparecem na lista.
   const sidebar = page.locator('.wa-sidebar')
   await expect(sidebar.getByText('Ana Silva')).toBeVisible()
-  await expect(sidebar.getByText('5511977776666')).toBeVisible()
+  await expect(sidebar.getByText('+55 (11) 97777-6666')).toBeVisible()
   await expect(page.getByText(/não atribuída/).first()).toBeVisible()
 
   // Abrir a conversa da Ana → thread com as duas mensagens + caixa de resposta.
@@ -138,9 +138,33 @@ test('inbox lista conversas (inclusive não atribuídas) e abre os threads', asy
   expect(outboundBox.x).toBeGreaterThan(inboundBox.x)
 
   // Abrir a conversa NÃO atribuída → dá pra responder mesmo sem paciente vinculado.
-  await sidebar.getByText('5511977776666').click()
+  await sidebar.getByText('+55 (11) 97777-6666').click()
   await expect(page.getByText('Quero fazer rino').first()).toBeVisible()
   await expect(page.getByPlaceholder('Responder...')).toBeVisible()
+})
+
+test('reúne telefone e LID no chat correto sem misturar números da clínica', async ({ page }) => {
+  const lid = '22093462769770@lid'
+  const routedMessages = [
+    { id:'lid-out', phone:lid, chat_lid:lid, contact_phone:'555182452361', direction:'outbound', body:'Enviada pelo celular', status:'sent', created_at:'2026-10-14T21:44:00Z', patient_id:'p-sofia', whatsapp_number_id:'n1', patients:{ full_name:'Sofia Vieira' } },
+    { id:'phone-in', phone:'555182452361', chat_lid:lid, contact_phone:'555182452361', direction:'inbound', body:'Resposta da Sofia', status:'read', created_at:'2026-10-14T21:43:00Z', patient_id:'p-sofia', whatsapp_number_id:'n1', patients:{ full_name:'Sofia Vieira' } },
+    { id:'other-number', phone:lid, chat_lid:lid, contact_phone:'555182452361', direction:'inbound', body:'Conversa da outra instância', status:'read', created_at:'2026-10-14T21:42:00Z', patient_id:'p-sofia', whatsapp_number_id:'n2', patients:{ full_name:'Sofia Vieira' } },
+  ]
+  await page.unroute('**/rest/v1/whatsapp_messages*')
+  await page.route('**/rest/v1/whatsapp_messages*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(routedMessages) }))
+  await page.unroute('**/rest/v1/whatsapp_numbers*')
+  await page.route('**/rest/v1/whatsapp_numbers*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([
+    ...NUMBERS,
+    { id:'n2', label:'Pessoal', phone:'555188888888' },
+  ]) }))
+
+  await page.goto('/app/inbox')
+  await expect(page.locator('.wa-conversation')).toHaveCount(2)
+  await expect(page.locator('.wa-messages')).toContainText('Enviada pelo celular')
+  await expect(page.locator('.wa-messages')).toContainText('Resposta da Sofia')
+  await expect(page.locator('.wa-messages')).not.toContainText('Conversa da outra instância')
+  const outgoing = page.locator('.wa-message-row').filter({ hasText:'Enviada pelo celular' })
+  await expect(outgoing).toHaveClass(/outbound/)
 })
 
 test('grupo mostra identidade coletiva e identifica cada participante', async ({ page }) => {

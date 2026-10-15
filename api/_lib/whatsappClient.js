@@ -110,6 +110,30 @@ export async function listZApiChats(instanceUrl, apiToken, { pageSize = 1000, ma
   return chats
 }
 
+// Resolve, em uma única chamada, os aliases telefone ↔ Linked ID usados pelo
+// WhatsApp. É utilizado apenas na sincronização manual do inbox para reunir o
+// histórico que o provider alternou entre número real e `@lid`.
+export async function resolveZApiPhoneLids(instanceUrl, apiToken, phones) {
+  if (!instanceUrl || !apiToken) throw new Error('Informe a URL da instância e o Client-Token.')
+  const normalized = [...new Set((phones || []).map(phone => String(phone || '').replace(/\D/g, '')).filter(Boolean))]
+  if (!normalized.length) return []
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const response = await fetch(`${baseUrl}/phone-exists-batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Client-Token': apiToken },
+    body: JSON.stringify({ phones: normalized }),
+  })
+  const data = await readZApiResponse(response)
+  if (!Array.isArray(data)) throw new Error('Z-API: resposta inválida ao reconciliar identificadores de contato.')
+  return data.flatMap(item => {
+    const inputPhone = String(item?.inputPhone || '').replace(/\D/g, '')
+    const outputPhone = String(item?.outputPhone || item?.phone || '').replace(/\D/g, '')
+    const lidDigits = /@lid$/i.test(String(item?.lid || '')) ? String(item.lid).replace(/\D/g, '') : ''
+    if (item?.exists !== true || !lidDigits || !(outputPhone || inputPhone)) return []
+    return [{ inputPhone, outputPhone: outputPhone || inputPhone, lid: `${lidDigits}@lid` }]
+  })
+}
+
 // Monta (puro) o endpoint Z-API + corpo para enviar mídia por URL.
 //   image    → /send-image      { phone, image, caption }
 //   document → /send-document/<ext> { phone, document, fileName }

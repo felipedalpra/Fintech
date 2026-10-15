@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (102)
+### Changed
+- **Identidade canônica do WhatsApp por Linked ID**: webhooks passam a preservar o `chatLid`/`@lid` recomendado pelo provider e mantêm o telefone real em campo separado. A atualização manual do inbox reconcilia telefone ↔ LID em lote pela Z-API e reúne o histórico sem aproximação por nome, conteúdo ou últimos dígitos. A migração é aditiva, mantém `phone`, mensagens, pacientes, direção e datas intactos e não executa `DELETE`. (`supabase/whatsapp_lid_routing_schema.sql`, `api/_lib/whatsapp.js`, `api/_lib/whatsappClient.js`, `api/whatsapp.js`.)
+
+### Fixed
+- **Mensagens do celular no chat correto**: IDs privados do WhatsApp deixam de ser reduzidos a números fictícios e nunca entram no casamento de paciente por telefone. Conversas também passam a ser agrupadas pela instância/número da clínica, evitando que o mesmo contato atendido por duas linhas misture históricos. Mensagens `fromMe=true` continuam à direita e usam o endereço canônico para novas respostas. (`src/components/WhatsAppInbox.jsx`, `tests/unit/whatsapp.spec.js`, `tests/unit/whatsappMedia.spec.js`, `tests/e2e/whatsapp-inbox.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (101)
 ### Added
 - **Identidade de grupos e participantes no WhatsApp**: conversas coletivas passam a exibir nome e foto do grupo, selo de grupo e, em cada mensagem recebida, nome, telefone e foto do participante fornecidos pela Z-API. A busca também encontra participantes; o botão Atualizar consulta os metadados oficiais dos chats para recuperar nomes e miniaturas das conversas antigas sem expor credenciais ao navegador. A migração aditiva preserva as mensagens existentes e adiciona somente metadados de conversa/remetente com o mesmo RLS da tabela atual. (`supabase/whatsapp_conversation_identity_schema.sql`, `api/_lib/whatsapp.js`, `api/_lib/whatsappClient.js`, `api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`.)

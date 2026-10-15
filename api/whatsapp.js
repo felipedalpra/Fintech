@@ -3,8 +3,8 @@
 // Roteado por ?action=message (enviar, autenticado) | ?action=webhook (receber do provider).
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
-import { configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
-import { parseIncomingMessage, parseMessageStatus, matchPatientId, normalizeWhatsAppAddress } from './_lib/whatsapp.js'
+import { configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, resolveZApiPhoneLids, sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
+import { parseIncomingMessage, parseMessageStatus, matchPatientId, normalizePhone, normalizeWhatsAppAddress, normalizeWhatsAppLid } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
@@ -21,7 +21,7 @@ export const config = {
 
 const MAX_BODY_BYTES = 1_000_000
 const WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
-const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_photo']
+const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_photo', 'chat_lid', 'contact_phone']
 
 function withoutMessageIdentity(row) {
   return Object.fromEntries(Object.entries(row).filter(([key]) => !MESSAGE_IDENTITY_FIELDS.includes(key)))
@@ -121,34 +121,72 @@ async function handleSyncChatIdentities(req, res) {
   const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
   const ownerId = await resolveOwnerId(supabase, user.id)
-  const [{ data: numbers, error: numberError }, { data: stored, error: messageError }] = await Promise.all([
+  const [{ data: numbers, error: numberError }, storedResult, { data: patients, error: patientError }] = await Promise.all([
     supabase.from('whatsapp_numbers').select('id, instance_url, api_token').eq('user_id', ownerId).eq('active', true),
-    supabase.from('whatsapp_messages').select('phone, whatsapp_number_id').eq('user_id', ownerId).order('created_at', { ascending:false }).limit(1000),
+    supabase.from('whatsapp_messages').select('phone, whatsapp_number_id, patient_id, is_group, chat_lid, contact_phone').eq('user_id', ownerId).order('created_at', { ascending:false }).limit(2000),
+    supabase.from('patients').select('id, phone').eq('user_id', ownerId),
   ])
-  if (numberError || messageError) return res.status(500).json({ error: 'Não foi possível carregar as conversas para sincronização.' })
+  if (numberError || patientError) return res.status(500).json({ error: 'Não foi possível carregar as conversas para sincronização.' })
+  if (missingMessageIdentitySchema(storedResult.error)) {
+    return res.status(200).json({ ok: true, schemaReady: false, updated: 0 })
+  }
+  if (storedResult.error) return res.status(500).json({ error: 'Não foi possível carregar as conversas para sincronização.' })
+  const stored = storedResult.data || []
 
   const storedByNumber = new Map()
-  for (const message of stored || []) {
-    const digits = String(message.phone || '').replace(/\D/g, '')
-    if (!digits || !message.whatsapp_number_id) continue
-    if (!storedByNumber.has(message.whatsapp_number_id)) storedByNumber.set(message.whatsapp_number_id, new Map())
-    const byPhone = storedByNumber.get(message.whatsapp_number_id)
-    if (!byPhone.has(digits)) byPhone.set(digits, new Set())
-    byPhone.get(digits).add(message.phone)
+  for (const message of stored) {
+    if (!message.phone || !message.whatsapp_number_id) continue
+    if (!storedByNumber.has(message.whatsapp_number_id)) storedByNumber.set(message.whatsapp_number_id, [])
+    storedByNumber.get(message.whatsapp_number_id).push(message)
   }
 
   let updated = 0
   for (const number of numbers || []) {
     if (!number.instance_url || !number.api_token) continue
+    const numberMessages = storedByNumber.get(number.id) || []
+    const actualPhones = numberMessages.flatMap(message => {
+      if (message.is_group) return []
+      const explicit = String(message.contact_phone || '').replace(/\D/g, '')
+      if (explicit) return [explicit]
+      const address = String(message.phone || '')
+      const digits = address.replace(/\D/g, '')
+      // O produto opera com telefones brasileiros (12/13 dígitos com DDI).
+      // IDs numéricos maiores deixados pelo parser antigo são LIDs sem sufixo.
+      return !/@lid$/i.test(address) && digits.length >= 10 && digits.length <= 13 ? [digits] : []
+    })
+    let aliases = []
+    try { aliases = await resolveZApiPhoneLids(number.instance_url, number.api_token, actualPhones) } catch { /* metadados ainda podem ser sincronizados */ }
+
+    for (const alias of aliases) {
+      const lidDigits = alias.lid.replace(/\D/g, '')
+      const phoneVariants = [...new Set([alias.inputPhone, alias.outputPhone, alias.lid, lidDigits].filter(Boolean))]
+      const patientId = matchPatientId(patients || [], alias.outputPhone)
+      const patch = { chat_lid: alias.lid, contact_phone: alias.outputPhone }
+      if (patientId) patch.patient_id = patientId
+      const [byAddress, byLid] = await Promise.all([
+        supabase.from('whatsapp_messages').update(patch)
+          .eq('user_id', ownerId).eq('whatsapp_number_id', number.id).eq('is_group', false).in('phone', phoneVariants),
+        supabase.from('whatsapp_messages').update(patch)
+          .eq('user_id', ownerId).eq('whatsapp_number_id', number.id).eq('is_group', false).eq('chat_lid', alias.lid),
+      ])
+      if (byAddress.error || byLid.error) return res.status(500).json({ error: 'Não foi possível reconciliar os identificadores das conversas.' })
+      updated += 1
+    }
+
     let chats = []
     try { chats = await listZApiChats(number.instance_url, number.api_token) } catch { continue }
-    const storedPhones = storedByNumber.get(number.id) || new Map()
     const updates = []
     for (const chat of chats) {
       const digits = String(chat?.phone || '').replace(/\D/g, '')
-      const variants = storedPhones.get(digits)
-      if (!variants?.size) continue
       const isGroup = chat?.isGroup === true || /(?:-group|@g\.us)$/i.test(String(chat?.phone || '')) || digits.length > 15
+      const matchingAlias = aliases.find(alias => alias.inputPhone === digits || alias.outputPhone === digits || alias.lid.replace(/\D/g, '') === digits)
+      const variants = [...new Set(numberMessages.flatMap(message => {
+        const messageDigits = String(message.phone || '').replace(/\D/g, '')
+        const messageLid = String(message.chat_lid || '').replace(/\D/g, '')
+        const aliasesMatch = matchingAlias && [matchingAlias.inputPhone, matchingAlias.outputPhone, matchingAlias.lid.replace(/\D/g, '')].includes(messageDigits)
+        return messageDigits === digits || messageLid === digits || aliasesMatch ? [message.phone] : []
+      }))]
+      if (!variants.length) continue
       let photo = null
       try { const url = new URL(String(chat?.profileThumbnail || '')); if (url.protocol === 'https:') photo = url.toString() } catch { /* sem foto válida */ }
       const patch = {
@@ -161,7 +199,7 @@ async function handleSyncChatIdentities(req, res) {
         patch.patient_id = null
       }
       updates.push(supabase.from('whatsapp_messages').update(patch)
-        .eq('user_id', ownerId).eq('whatsapp_number_id', number.id).in('phone', [...variants]))
+        .eq('user_id', ownerId).eq('whatsapp_number_id', number.id).in('phone', variants))
     }
     const results = await Promise.all(updates)
     const schemaMissing = results.find(result => missingMessageIdentitySchema(result.error))
@@ -358,9 +396,11 @@ async function handleSend(req, res) {
   const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { patientId, phone: rawPhone, isGroup: groupHint, text, whatsappNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
+  const { patientId, phone: rawPhone, contactPhone: rawContactPhone, chatLid: rawChatLid, isGroup: groupHint, text, whatsappNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
   const isGroup = groupHint === true || /(?:-group|@g\.us)$/i.test(String(rawPhone || ''))
   const phone = normalizeWhatsAppAddress(rawPhone, isGroup)
+  const chatLid = isGroup ? null : (normalizeWhatsAppLid(rawChatLid) || normalizeWhatsAppLid(phone) || null)
+  const contactPhone = isGroup ? null : (normalizePhone(rawContactPhone) || (!chatLid ? normalizePhone(phone) : '') || null)
   const isMedia = ['image', 'audio', 'document'].includes(type)
   if (!phone) return res.status(400).json({ error: 'phone é obrigatório' })
   if (!whatsappNumberId) return res.status(400).json({ error: 'whatsappNumberId é obrigatório' })
@@ -405,6 +445,7 @@ async function handleSend(req, res) {
   const msgType = isMedia ? type : 'text'
   const insertBase = {
     user_id: ownerId, patient_id: isGroup ? null : (patientId ?? null), phone, direction: 'outbound', body: bodyText,
+    chat_lid: chatLid, contact_phone: contactPhone,
     is_group: isGroup,
     whatsapp_number_id: num.id, msg_type: msgType, media_url: mediaUrl ?? null, media_mime: mediaMime ?? null,
   }
@@ -493,19 +534,36 @@ async function handleWebhook(req, res) {
 
   const ownerUserId = num.user_id
 
+  // Se o callback veio apenas com `@lid`, reutiliza o vínculo reconciliado por
+  // uma sincronização anterior. A consulta é exata por clínica, número e LID;
+  // nunca tenta adivinhar pelo nome exibido ou pelos últimos dígitos do LID.
+  let historicalIdentity = null
+  if (!parsed.isGroup && parsed.chatLid) {
+    const { data, error } = await supabase.from('whatsapp_messages')
+      .select('patient_id, contact_phone, chat_name, chat_photo')
+      .eq('user_id', ownerUserId)
+      .eq('whatsapp_number_id', num.id)
+      .eq('chat_lid', parsed.chatLid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!missingMessageIdentitySchema(error)) historicalIdentity = data
+  }
+  const contactPhone = parsed.contactPhone || historicalIdentity?.contact_phone || null
+
   // Grupo nunca é paciente. Para conversa individual, o casamento permanece
   // estrito: ambiguidade de telefone não atribui a pessoa errada.
-  let patientId = null
-  if (!parsed.isGroup) {
+  let patientId = historicalIdentity?.patient_id || null
+  if (!parsed.isGroup && !patientId && contactPhone) {
     const { data: patients } = await supabase.from('patients').select('id, phone').eq('user_id', ownerUserId)
-    patientId = matchPatientId(patients || [], parsed.phone)
+    patientId = matchPatientId(patients || [], contactPhone)
   }
 
   // Só uma mensagem recebida cria lead automaticamente. Uma saída feita no celular
   // para um contato desconhecido aparece como não atribuída, sem criar paciente indevido.
-  if (!parsed.isGroup && !patientId && parsed.direction === 'inbound') {
+  if (!parsed.isGroup && !patientId && contactPhone && parsed.direction === 'inbound') {
     const { data: leadId } = await supabase.rpc('ensure_whatsapp_lead', {
-      p_owner: ownerUserId, p_phone: parsed.phone, p_name: parsed.senderName || '',
+      p_owner: ownerUserId, p_phone: contactPhone, p_name: parsed.senderName || '',
     })
     if (leadId) patientId = leadId
   }
@@ -514,9 +572,11 @@ async function handleWebhook(req, res) {
     user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: parsed.direction,
     body: parsed.text, status: parsed.status, provider_message_id: parsed.providerMessageId,
     whatsapp_number_id: num.id,
+    chat_lid: parsed.chatLid,
+    contact_phone: contactPhone,
     is_group: parsed.isGroup,
-    chat_name: parsed.chatName || null,
-    chat_photo: parsed.chatPhoto || null,
+    chat_name: parsed.chatName || historicalIdentity?.chat_name || null,
+    chat_photo: parsed.chatPhoto || historicalIdentity?.chat_photo || null,
     sender_name: parsed.senderName || null,
     sender_phone: parsed.senderPhone || null,
     sender_photo: parsed.senderPhoto || null,
