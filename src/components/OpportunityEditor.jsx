@@ -6,6 +6,7 @@ import { OpportunityTasks } from './OpportunityTasks.jsx'
 import { OpportunityTimeline } from './OpportunityTimeline.jsx'
 import { createOpportunity, updateOpportunity, setOpportunityOutcome } from '../lib/opportunityActions.js'
 import { opportunityPerson } from '../lib/crmContact.js'
+import { Person360Drawer } from './Person360Drawer.jsx'
 
 // Modal de criar/editar oportunidade (+ fechar como ganho/perdido).
 // Ao editar, ganha abas: Dados / Tarefas / Timeline.
@@ -21,10 +22,11 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
   const [error, setError] = useState(null)
   const [losing, setLosing] = useState(false)
   const [lostReason, setLostReason] = useState('')
+  const [show360, setShow360] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setError(null); setLosing(false); setLostReason(''); setTagDraft(''); setTab('dados')
+    setError(null); setLosing(false); setLostReason(''); setTagDraft(''); setTab('dados'); setShow360(false)
     if (opp) {
       const person = opportunityPerson(opp)
       setForm({
@@ -74,13 +76,14 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
     background: active ? C.accent + '18' : 'transparent', color: active ? C.accent : C.textSub,
   })
 
-  return (
+  return <>
     <Modal open={open} onClose={onClose} title={isEdit ? `${form.title || 'Oportunidade'} · ${form.patient_name || ''}` : 'Nova oportunidade'} width={520}>
       {isEdit && (
         <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
           <button type="button" style={tabBtn(tab === 'dados')} onClick={() => setTab('dados')}>Dados</button>
           <button type="button" style={tabBtn(tab === 'tarefas')} onClick={() => setTab('tarefas')}>Tarefas</button>
           <button type="button" style={tabBtn(tab === 'timeline')} onClick={() => setTab('timeline')}>Timeline</button>
+          <button type="button" style={{ ...tabBtn(false), marginLeft:'auto', color:C.accent }} onClick={() => setShow360(true)}>Pessoa 360°</button>
         </div>
       )}
 
@@ -146,7 +149,8 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
         </div>
       </div>
     </Modal>
-  )
+    <Person360Drawer open={show360} onClose={() => setShow360(false)} contactId={opp?.contact_id} patientId={opp?.patient_id} opportunityId={opp?.id} name={form.patient_name} />
+  </>
 }
 
 const SOURCE_SUGGESTIONS = ['Instagram', 'Indicação', 'WhatsApp', 'Google', 'Facebook', 'Site', 'Outro']

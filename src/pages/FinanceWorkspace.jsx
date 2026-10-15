@@ -1,38 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { C } from '../theme.js'
 import { fmt, startOfMonth, today } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
 import { Card, SkeletonBlock } from '../components/UI.jsx'
-import { Dashboard } from '../components/Dashboard.jsx'
-import { Sales } from '../components/Sales.jsx'
-import { Plans } from '../components/Plans.jsx'
-import { Products } from '../components/Products.jsx'
-import { Finance, FINANCE_MODAL_DRAFT_KEY } from '../components/Finance.jsx'
-import { Goals } from '../components/Goals.jsx'
-import { AIAssistant } from '../components/AIAssistant.jsx'
-import { Consultations } from '../components/Consultations.jsx'
-import { Reports } from '../components/Reports.jsx'
-import { LedgerCheck } from '../components/LedgerCheck.jsx'
-import { Recurrences } from '../components/Recurrences.jsx'
-import { ChartOfAccounts } from '../components/ChartOfAccounts.jsx'
-import { BankReconciliation } from '../components/BankReconciliation.jsx'
-import { Settings } from '../components/Settings.jsx'
 import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { FAB } from '../components/FAB.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { NavIcon } from '../components/NavIcon.jsx'
 import { AlertsBell } from '../components/AlertsBell.jsx'
 import { CrmBell } from '../components/CrmBell.jsx'
-import { BillingPage } from './BillingPage.jsx'
-import { Calendar } from '../components/Calendar.jsx'
-import { Patients } from '../components/Patients.jsx'
-import { OpportunityPipeline } from '../components/OpportunityPipeline.jsx'
-import { CrmDashboard } from '../components/CrmDashboard.jsx'
-import { MeuDia } from '../components/MeuDia.jsx'
-import { WhatsAppInbox } from '../components/WhatsAppInbox.jsx'
-import { MetaAdsDashboard } from '../components/MetaAdsDashboard.jsx'
-import { TasksPanel } from '../components/TasksPanel.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -42,6 +19,33 @@ import { mergePendingFinanceSave } from '../lib/pendingFinanceSave.js'
 import { createSerializedTaskQueue } from '../lib/serializedTaskQueue.js'
 import { useGoogleCalendarSync } from '../lib/useGoogleCalendarSync.js'
 
+const lazyNamed = (loader, name) => lazy(() => loader().then(module => ({ default:module[name] })))
+const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
+const Dashboard = lazyNamed(() => import('../components/Dashboard.jsx'), 'Dashboard')
+const Sales = lazyNamed(() => import('../components/Sales.jsx'), 'Sales')
+const Plans = lazyNamed(() => import('../components/Plans.jsx'), 'Plans')
+const Products = lazyNamed(() => import('../components/Products.jsx'), 'Products')
+const Finance = lazyNamed(() => import('../components/Finance.jsx'), 'Finance')
+const Goals = lazyNamed(() => import('../components/Goals.jsx'), 'Goals')
+const AIAssistant = lazyNamed(() => import('../components/AIAssistant.jsx'), 'AIAssistant')
+const Consultations = lazyNamed(() => import('../components/Consultations.jsx'), 'Consultations')
+const Reports = lazyNamed(() => import('../components/Reports.jsx'), 'Reports')
+const LedgerCheck = lazyNamed(() => import('../components/LedgerCheck.jsx'), 'LedgerCheck')
+const Recurrences = lazyNamed(() => import('../components/Recurrences.jsx'), 'Recurrences')
+const ChartOfAccounts = lazyNamed(() => import('../components/ChartOfAccounts.jsx'), 'ChartOfAccounts')
+const BankReconciliation = lazyNamed(() => import('../components/BankReconciliation.jsx'), 'BankReconciliation')
+const DataQualityCenter = lazyNamed(() => import('../components/DataQualityCenter.jsx'), 'DataQualityCenter')
+const Settings = lazyNamed(() => import('../components/Settings.jsx'), 'Settings')
+const BillingPage = lazyNamed(() => import('./BillingPage.jsx'), 'BillingPage')
+const Calendar = lazyNamed(() => import('../components/Calendar.jsx'), 'Calendar')
+const Patients = lazyNamed(() => import('../components/Patients.jsx'), 'Patients')
+const OpportunityPipeline = lazyNamed(() => import('../components/OpportunityPipeline.jsx'), 'OpportunityPipeline')
+const CrmDashboard = lazyNamed(() => import('../components/CrmDashboard.jsx'), 'CrmDashboard')
+const MeuDia = lazyNamed(() => import('../components/MeuDia.jsx'), 'MeuDia')
+const WhatsAppInbox = lazyNamed(() => import('../components/WhatsAppInbox.jsx'), 'WhatsAppInbox')
+const MetaAdsDashboard = lazyNamed(() => import('../components/MetaAdsDashboard.jsx'), 'MetaAdsDashboard')
+const TasksPanel = lazyNamed(() => import('../components/TasksPanel.jsx'), 'TasksPanel')
+
 // Navegação por ÁREAS de domínio (spec de arquitetura, seção 4).
 // Cada área tem uma barra no topo; a sidebar mostra a sub-navegação da área ativa.
 // `roles` controla a visibilidade da área na barra; `comingSoon` = área sem features ainda (Fases 2/4).
@@ -50,7 +54,7 @@ const ALL_ROLES = ['admin', 'gestao', 'concierge', 'equipe']
 
 const AREAS = [
   {
-    id:'inicio', label:'Início', icon:'dashboard', roles:ALL_ROLES,
+    id:'inicio', label:'Hoje', icon:'dashboard', roles:ALL_ROLES,
     sections:[
       { title:null, items:[
         { id:'dashboard', label:'Dashboard', icon:'dashboard', hint:'Visão geral da clínica' },
@@ -59,26 +63,27 @@ const AREAS = [
     ],
   },
   {
-    id:'pacientes', label:'Pacientes', icon:'patients', roles:ALL_ROLES,
+    id:'relacionamento', label:'Relacionamento', icon:'patients', roles:ALL_ROLES,
     sections:[
-      { title:'CRM & Jornada', items:[
+      { title:'Relacionamento', items:[
         { id:'funnel',   label:'Funil',     icon:'funnel',   hint:'Jornada dos pacientes por estágio' },
         { id:'crm-painel', label:'Painel CRM', icon:'reports', hint:'Conversão, origem e desempenho do funil' },
         { id:'patients', label:'Pacientes', icon:'patients', hint:'Cadastro clínico e prontuários' },
-        { id:'calendar', label:'Agenda',    icon:'calendar', hint:'Calendário de cirurgias e consultas' },
         { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
         { id:'ads',      label:'Anúncios',  icon:'reports',  hint:'Desempenho dos anúncios do Meta' },
         { id:'tarefas',  label:'Tarefas',   icon:'tasks',    hint:'Tarefas e follow-ups da equipe' },
       ] },
-      { title:'Atendimentos', items:[
+    ],
+  },
+  {
+    id:'atendimentos', label:'Atendimentos', icon:'consultations', roles:ALL_ROLES,
+    sections:[
+      { title:'Agenda e produção', items:[
+        { id:'calendar', label:'Agenda', icon:'calendar', hint:'Calendário de cirurgias e consultas' },
         { id:'consultations', label:'Consultas', icon:'consultations', hint:'Atendimentos e convênios' },
         { id:'sales',         label:'Cirurgias', icon:'surgery',       hint:'Agenda e resultados' },
       ] },
     ],
-  },
-  {
-    id:'clinico', label:'Clínico', icon:'clinico', roles:['admin', 'gestao'], comingSoon:true,
-    sections:[],
   },
   {
     id:'financeiro', label:'Financeiro', icon:'finance', roles:['admin', 'gestao'],
@@ -99,12 +104,9 @@ const AREAS = [
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
         { id:'reports',  label:'Relatórios', icon:'reports', hint:'Central de exportações em Excel' },
         { id:'ledger-check', label:'Conferência do razão', icon:'reports', hint:'Validação razão × dashboard' },
+        { id:'data-quality', label:'Qualidade dos dados', icon:'reports', hint:'Pendências, categorias e possíveis duplicidades' },
       ] },
     ],
-  },
-  {
-    id:'automacoes', label:'Automações', icon:'automacoes', roles:['admin'], comingSoon:true,
-    sections:[],
   },
   {
     id:'config', label:'Configurações', icon:'settings', roles:['admin'],
@@ -151,6 +153,7 @@ const TITLES = {
   'ledger-check':'Conferência do Razão',
   'chart-of-accounts':'Plano de Contas',
   'bank-reconciliation':'Conciliação Bancária',
+  'data-quality':'Qualidade dos Dados',
   ai:'Central de IA',
   billing:'Assinatura',
   settings:'Configurações',
@@ -181,6 +184,7 @@ const SUBTITLES = {
   'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
   'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
   'bank-reconciliation':'Importe OFX ou CSV e confirme os vínculos com o razão sem alterar os lançamentos.',
+  'data-quality':'Revise pendências e inconsistências sem alterar automaticamente os lançamentos.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
@@ -210,6 +214,7 @@ const PAGES = {
   'ledger-check':LedgerCheck,
   'chart-of-accounts':ChartOfAccounts,
   'bank-reconciliation':BankReconciliation,
+  'data-quality':DataQualityCenter,
   ai:AIAssistant,
   billing:BillingPage,
   settings:Settings,
@@ -667,9 +672,6 @@ export function FinanceWorkspace() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const [quickSearchOpen, setQuickSearchOpen] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(() =>
-    typeof window !== 'undefined' ? window.localStorage.getItem('surgimetrics_onboarded') !== 'true' : false
-  )
   const hydratedRef = useRef(false)
   const saveTimerRef = useRef(null)
   const pendingRef = useRef(false)      // há edição aguardando persistência?
@@ -1126,7 +1128,7 @@ export function FinanceWorkspace() {
           })}
         </div>
         <div data-testid="notification-bell-dock" style={{ flex:'0 0 auto', display:'flex', alignItems:'center', gap:8, marginLeft:isMobile ? 8 : 14, paddingLeft:isMobile ? 8 : 14, background:C.surface, borderLeft:`1px solid ${C.border}` }}>
-          <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
+          {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
           <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
         </div>
       </nav>
@@ -1298,7 +1300,7 @@ export function FinanceWorkspace() {
             <button onClick={() => setMobileNavOpen(true)} style={getIconButton()} aria-label="Abrir menu">☰</button>
             <strong style={{ color:C.text, fontSize:17 }}>WhatsApp</strong>
             <span style={{ flex:1 }} />
-            <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />
+            {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
             <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
           </div>
         )}
@@ -1334,9 +1336,11 @@ export function FinanceWorkspace() {
         )}
 
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
-        {!hasData && !isInboxPage && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>ERP vazio</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O resto alimenta fluxo, DRE, balanço, metas e dashboard automaticamente.</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:<div>1. Procedimentos</div><div>2. Cirurgias, consultas e produtos</div><div>3. Despesas e metas</div></div></div></Card>}
-        <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
-        {page !== 'inbox' && <CopilotWidget data={safeData} />}
+        {!hasData && !isInboxPage && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Operação vazia</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>{canAccess('finance') ? 'Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O restante alimenta os indicadores automaticamente.' : 'Cadastre pacientes e registre os atendimentos disponíveis para o seu perfil.'}</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:{canAccess('plans') && <div>1. Procedimentos</div>}{canAccess('sales') && <div>2. Cirurgias</div>}<div>{canAccess('sales') ? '3' : '1'}. Consultas e produtos</div>{canAccess('finance') && <div>4. Despesas e metas</div>}</div></div></Card>}
+        <Suspense fallback={<div style={{ display:'grid', gap:12 }}><SkeletonBlock w="36%" h={26} /><SkeletonBlock w="100%" h={180} /><SkeletonBlock w="100%" h={220} /></div>}>
+          <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
+        </Suspense>
+        {page !== 'inbox' && canAccess('ai') && <CopilotWidget data={safeData} />}
         {page !== 'inbox' && <FAB currentPage={page} />}
       </main>
       </div>
@@ -1349,10 +1353,6 @@ export function FinanceWorkspace() {
         sections={searchSections}
       />
 
-      {/* Onboarding wizard */}
-      {showOnboarding && !loading && !hasData && (
-        <OnboardingWizard onClose={() => setShowOnboarding(false)} />
-      )}
     </div>
   )
 }

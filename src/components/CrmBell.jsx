@@ -8,6 +8,7 @@ import { groupTasksByDue } from '../lib/taskGroups.js'
 import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
 import { stageLabel } from '../lib/timeline.js'
 import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
+import { loadWorkspacePreferences, saveWorkspacePreferences } from '../lib/operationalWorkspace.js'
 
 // Sininho de CRM: alertas derivados dos dados atuais (sem tabela nova) — tarefas atrasadas,
 // leads sem responsável e oportunidades paradas. Clicar leva pra tela do item.
@@ -43,6 +44,8 @@ export function CrmBell({ onNavigate }) {
   const [tasks, setTasks] = useState([])
   const [opps, setOpps] = useState([])
   const [open, setOpen] = useState(false)
+  const [readKeys, setReadKeys] = useState([])
+  const [notificationState, setNotificationState] = useState({})
   const triggerRef = useRef(null)
   const panelRef = useRef(null)
 
@@ -72,6 +75,15 @@ export function CrmBell({ onNavigate }) {
   }, [effectiveUserId])
 
   useEffect(() => {
+    if (!effectiveUserId || !user?.id) return
+    loadWorkspacePreferences(effectiveUserId, user.id).then(result => {
+      const state = result.data?.notification_state || {}
+      setNotificationState(state)
+      setReadKeys(state.crm || [])
+    })
+  }, [effectiveUserId, user?.id])
+
+  useEffect(() => {
     if (!open) return
     function onDoc(e) {
       const clickedTrigger = triggerRef.current?.contains(e.target)
@@ -84,7 +96,7 @@ export function CrmBell({ onNavigate }) {
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  const { alerts, total } = useMemo(() => {
+  const alerts = useMemo(() => {
     const g = groupTasksByDue(tasks)
     const list = []
     opps.forEach(opportunity => {
@@ -111,8 +123,24 @@ export function CrmBell({ onNavigate }) {
         title: itemLabel(opportunity), desc: `${days} dias em ${stageLabel(opportunity.stage)}`, go: 'funnel',
       })
     })
-    return { alerts: list, total: list.length }
+    return list
   }, [tasks, opps])
+  const unreadAlerts = useMemo(() => alerts.filter(alert => !readKeys.includes(alert.k)), [alerts, readKeys])
+  const total = unreadAlerts.length
+  const groupedAlerts = useMemo(() => Object.values(unreadAlerts.reduce((groups, alert) => {
+    const group = groups[alert.type] || { ...alert, items:[] }
+    group.items.push(alert)
+    groups[alert.type] = group
+    return groups
+  }, {})), [unreadAlerts])
+
+  async function markAllRead() {
+    const keys = alerts.map(alert => alert.k)
+    setReadKeys(keys)
+    const next = { ...notificationState, crm:keys }
+    setNotificationState(next)
+    await saveWorkspacePreferences(effectiveUserId, user.id, { notification_state:{ crm:keys } })
+  }
 
   const btn = { position: 'relative', width: 38, height: 38, borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center', cursor: 'pointer', color: total ? C.text : C.textSub }
   const badge = { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: C.red || '#EF4444', color: '#fff', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', padding: '0 4px', border: `2px solid ${C.bg}` }
@@ -143,19 +171,19 @@ export function CrmBell({ onNavigate }) {
         <div ref={panelRef} role="dialog" aria-label="Alertas do CRM" data-testid="crm-alerts-popover" style={panelStyle}>
           <div style={{ flex: '0 0 auto', padding: '12px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>Alertas do CRM</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: total ? (C.red || '#EF4444') : (C.green || '#10B981') }}>{total ? `${total} pendência${total > 1 ? 's' : ''}` : 'Tudo em ordem'}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: total ? (C.red || '#EF4444') : (C.green || '#10B981') }}>{total ? `${total} não lida${total > 1 ? 's' : ''}` : 'Tudo em ordem'}</span>
+            {total > 0 && <button type="button" onClick={markAllRead} style={{ border:0, background:'transparent', color:C.accent, cursor:'pointer', fontSize:10, fontWeight:700 }}>Marcar lidas</button>}
           </div>
-          {alerts.length === 0
+          {groupedAlerts.length === 0
             ? <div style={{ padding: '20px 14px', fontSize: 13, color: C.textSub, textAlign: 'center' }}>Tudo em dia por aqui. 🎉</div>
             : <div data-testid="crm-alerts-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarGutter: 'stable' }}>
-              {alerts.map(a => (
+              {groupedAlerts.map(a => (
                 <div key={a.k} data-testid="crm-alert-item" onClick={() => { setOpen(false); onNavigate?.(a.go) }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
                   <span style={{ width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center', background: a.color + '22', color: a.color, flexShrink: 0 }}><Ico d={a.icon} size={16} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ marginBottom: 2, color: a.color, fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>{a.type}</div>
-                    <div style={{ overflow: 'hidden', color: C.text, fontSize: 12.5, fontWeight: 700, textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
-                    <div style={{ marginTop: 1, color: C.textSub, fontSize: 11 }}>{a.desc}</div>
+                    <div style={{ marginBottom: 2, color: a.color, fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>{a.type} · {a.items.length}</div>
+                    <div style={{ display:'grid', gap:4, marginTop:4 }}>{a.items.map(item => <div key={item.k} style={{ color:C.text, fontSize:11.5, fontWeight:650, padding:'3px 0', borderBottom:`1px solid ${C.border}66` }}>{item.title}<span style={{ color:C.textDim, fontWeight:500 }}> · {item.desc}</span></div>)}</div>
                   </div>
                 </div>
               ))}
