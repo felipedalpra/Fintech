@@ -7,7 +7,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-10-14 (105)
 ### Fixed
-- **Notificações visíveis no canto superior direito**: os painéis de alertas financeiros e do CRM agora abrem sobre toda a interface, sem serem recortados pela barra lateral ou pelos contêineres roláveis. Ambos respeitam a largura da tela, têm rolagem própria e podem ser fechados por clique externo ou pela tecla Esc. (`src/components/AlertsBell.jsx`, `src/components/CrmBell.jsx`, `tests/e2e/notification-popovers.spec.js`.)
+- **Notificações visíveis e completas no canto superior direito**: os painéis de alertas financeiros e do CRM agora abrem sobre toda a interface, sem serem recortados pela barra lateral ou pelos contêineres roláveis. O sino do CRM deixa de resumir dezenas de pendências em apenas três linhas e passa a listar cada tarefa, lead sem resposta, lead sem responsável e oportunidade parada; a lista tem cabeçalho fixo, rolagem própria, largura responsiva e fechamento por clique externo ou Esc. (`src/components/AlertsBell.jsx`, `src/components/CrmBell.jsx`, `tests/e2e/notification-popovers.spec.js`.)
 
 ## [Unreleased] - 2026-10-14 (104)
 ### Fixed
