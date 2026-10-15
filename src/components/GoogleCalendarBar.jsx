@@ -64,22 +64,27 @@ export function GoogleCalendarBar({ google }) {
   const label = status.connected
     ? 'Google Agenda conectada'
     : status.needsReconnect
-      ? 'Reconectar'
-      : 'Conectar'
+      ? status.canManage ? 'Reconectar' : 'Reconexão necessária'
+      : status.canManage ? 'Conectar' : 'Aguardando conexão'
+  const managementHint = status.canManage
+    ? status.connected
+      ? `${status.email || 'Google Agenda conectada'} — conexão compartilhada pela clínica; clique para desconectar`
+      : 'Conectar a agenda Google compartilhada da clínica'
+    : status.connected
+      ? `${status.email || 'Google Agenda conectada'} — conexão compartilhada e gerenciada pelos administradores da clínica`
+      : 'A conexão compartilhada deve ser feita por um administrador da clínica'
 
   return (
     <div className="google-calendar-control">
       <button
         type="button"
-        className={`google-calendar-button${status.connected ? ' is-connected' : ''}${status.needsReconnect ? ' needs-reconnect' : ''}`}
-        disabled={busy}
+        className={`google-calendar-button${status.connected ? ' is-connected' : ''}${status.needsReconnect ? ' needs-reconnect' : ''}${!status.canManage ? ' is-view-only' : ''}`}
+        disabled={busy || !status.canManage}
         onClick={() => status.connected ? setConfirmOpen(true) : run(google.connect)}
-        aria-label={status.connected ? 'Google Agenda conectada. Desconectar' : `${label} Google Agenda`}
-        title={status.connected
-          ? `${status.email || 'Google Agenda conectada'} — clique para desconectar`
-          : status.needsReconnect
-            ? 'A conexão expirou. Clique para reconectar.'
-            : 'Conectar Google Agenda'}
+        aria-label={status.connected
+          ? status.canManage ? 'Google Agenda da clínica conectada. Desconectar' : 'Google Agenda da clínica conectada'
+          : status.canManage ? `${label} Google Agenda da clínica` : label}
+        title={managementHint}
       >
         <GoogleCalendarIcon />
         <span>{busy ? 'Aguarde…' : label}</span>
@@ -93,7 +98,7 @@ export function GoogleCalendarBar({ google }) {
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => run(google.disconnect)}
         title="Desconectar Google Agenda"
-        message="Os eventos já criados continuam na sua Google Agenda, mas deixam de ser atualizados pela plataforma."
+        message="A conexão é compartilhada por toda a clínica. Os eventos já criados continuam na Google Agenda, mas todos os perfis deixam de receber e enviar atualizações pela plataforma."
         confirmLabel="Desconectar"
       />
     </div>

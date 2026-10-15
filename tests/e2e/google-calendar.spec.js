@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const CONNECTED = { configured:true, connected:true, needsReconnect:false, email:'medico@example.com', links:{} }
+const CONNECTED = { configured:true, connected:true, needsReconnect:false, email:'clinica@example.com', sharedByClinic:true, canManage:true, links:{} }
 const PATIENT_ID = '55555555-5555-4555-8555-555555555555'
 
 async function mockGoogleCalendar(page, { status, events = [] }) {
@@ -36,8 +36,8 @@ test('mostra botao de conectar e confirma conexao ao voltar do Google', async ({
   await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:false, email:'', links:{} } })
   await page.goto('/app/calendar')
 
-  await expect(page.getByRole('button', { name:'Conectar Google Agenda' })).toBeVisible()
-  await page.getByRole('button', { name:'Conectar Google Agenda' }).click()
+  await expect(page.getByRole('button', { name:'Conectar Google Agenda da clínica' })).toBeVisible()
+  await page.getByRole('button', { name:'Conectar Google Agenda da clínica' }).click()
 
   await expect(page.getByText('Google Agenda conectada com sucesso.')).toBeVisible()
   await expect(page).toHaveURL(/\/app\/calendar$/)
@@ -47,7 +47,7 @@ test('mostra Reconectar quando a conexao expirou', async ({ page }) => {
   await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:true, email:'', links:{} } })
   await page.goto('/app/calendar')
 
-  await expect(page.getByRole('button', { name:'Reconectar Google Agenda' })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Reconectar Google Agenda da clínica' })).toBeVisible()
 })
 
 test('mostra eventos do Google no calendario', async ({ page }) => {
@@ -60,8 +60,27 @@ test('mostra eventos do Google no calendario', async ({ page }) => {
   })
   await page.goto('/app/calendar')
 
-  await expect(page.getByRole('button', { name:'Google Agenda conectada. Desconectar' })).toBeVisible({ timeout:10000 })
+  await expect(page.getByRole('button', { name:'Google Agenda da clínica conectada. Desconectar' })).toBeVisible({ timeout:10000 })
   await expect(page.getByText('1 evento do Google')).toBeVisible()
+})
+
+test('membro usa a agenda compartilhada sem poder desconectar', async ({ page }) => {
+  await mockGoogleCalendar(page, { status:{ ...CONNECTED, canManage:false } })
+  await page.goto('/app/calendar')
+
+  const control = page.getByRole('button', { name:'Google Agenda da clínica conectada' })
+  await expect(control).toBeVisible()
+  await expect(control).toBeDisabled()
+  await expect(control).toHaveAttribute('title', /gerenciada pelos administradores/)
+})
+
+test('membro aguarda o administrador conectar a agenda da clínica', async ({ page }) => {
+  await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:false, email:'', sharedByClinic:true, canManage:false, links:{} } })
+  await page.goto('/app/calendar')
+
+  const control = page.getByRole('button', { name:'Aguardando conexão' })
+  await expect(control).toBeVisible()
+  await expect(control).toBeDisabled()
 })
 
 test('envia consulta com horario para a Google Agenda ao salvar', async ({ page }) => {

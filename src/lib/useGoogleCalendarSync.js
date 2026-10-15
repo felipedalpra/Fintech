@@ -8,7 +8,7 @@ import {
 import { MAX_SYNC_BATCH, collectSyncChanges, getBrowserTimeZone, localTodayIso } from './googleCalendarPayload.js'
 
 const SYNC_DEBOUNCE_MS = 1500
-const INITIAL_STATUS = { loading:true, configured:false, connected:false, needsReconnect:false, email:'' }
+const INITIAL_STATUS = { loading:true, configured:false, connected:false, needsReconnect:false, email:'', sharedByClinic:false, canManage:false }
 
 // `enabled` deve ser true somente depois que o dataset foi carregado, para nunca
 // interpretar "ainda não carregou" como "o usuário apagou tudo".
@@ -31,6 +31,10 @@ export function useGoogleCalendarSync({ data, enabled }) {
         connected:Boolean(next.connected),
         needsReconnect:Boolean(next.needsReconnect),
         email:next.email || '',
+        sharedByClinic:Boolean(next.sharedByClinic),
+        // Compatibilidade durante o deploy: a API antiga não enviava este campo e
+        // permitia que qualquer usuário gerenciasse a própria conexão.
+        canManage:next.canManage !== false,
       })
     } catch {
       setStatus(current => ({ ...current, loading:false }))

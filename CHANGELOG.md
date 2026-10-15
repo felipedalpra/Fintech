@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (112)
+### Changed
+- **Google Agenda única por clínica**: conexão, eventos externos e vínculos de consultas/cirurgias passam a usar o `ownerId` canônico da clínica, fazendo todos os perfis com acesso à Agenda enxergarem e sincronizarem o mesmo calendário. Somente o owner e membros com perfil `admin` podem conectar, reconectar ou desconectar; gestão, concierge e equipe usam a agenda compartilhada sem alterar suas credenciais. (`api/google/calendar.js`, `api/_lib/googleCalendarApi.js`, `src/lib/useGoogleCalendarSync.js`, `src/components/GoogleCalendarBar.jsx`.)
+
+### Added
+- **Migração segura do escopo do Google Agenda**: o SQL idempotente `supabase/google_calendar_clinic_scope.sql` promove para a clínica uma conexão antiga de membro somente quando o owner ainda não possui conexão, copia apenas os vínculos do calendário escolhido e preserva as linhas antigas marcadas para rollback, sem apagar eventos, tokens ou dados clínicos e sem risco de reativá-las em uma reexecução futura.
+
+### Fixed
+- **Eventos compartilhados sem duplicação entre perfis**: status, leitura, sincronização e exclusão passam a consultar o mesmo conjunto de vínculos da clínica em vez de criar um conjunto independente para cada usuário. Novos eventos usam ID determinístico no Google, fazendo sincronizações simultâneas de dois perfis convergirem para o mesmo evento; vínculos antigos continuam inalterados. A cobertura valida owner, admin membro, perfis somente usuários e a experiência visual sem permissão de desconexão.
+
 ## [Unreleased] - 2026-10-15 (111)
 ### Added
 - **Financeiro opcional ao agendar**: o modal da Agenda permite salvar a consulta/cirurgia para preencher depois ou expandir “Adicionar informações financeiras” e registrar valor, vencimento, forma/status de pagamento, recebimento, convênio/NF e, nas cirurgias, custos principais. Os dois caminhos gravam o mesmo atendimento, com o mesmo ID e pelo mesmo `saveDataNow`/`financeStore`; não há endpoint, lançamento ou total paralelo. Perfis sem acesso ao Financeiro continuam podendo agendar sem visualizar valores e custos. (`src/components/Calendar.jsx`, `src/components/CalendarFinancialFields.jsx`, `src/lib/calendarFinancialDetails.js`.)

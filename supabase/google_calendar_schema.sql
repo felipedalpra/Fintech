@@ -1,16 +1,19 @@
--- Integração Google Agenda (por usuário).
+-- Integração Google Agenda compartilhada por clínica.
 -- Aplicar ANTES de publicar o código que lê/grava start_time e duration_minutes.
 
 create table if not exists public.google_calendar_connections (
+  -- user_id representa o ownerId canônico da clínica, não o perfil que clicou em conectar.
   user_id uuid primary key references auth.users(id) on delete cascade,
   account_email text,
   refresh_token_encrypted jsonb not null,
   status text not null default 'connected' check (status in ('connected', 'needs_reconnect')),
+  migrated_to_owner_id uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 
 create table if not exists public.google_calendar_event_links (
+  -- user_id representa o ownerId canônico da clínica.
   user_id uuid not null references auth.users(id) on delete cascade,
   record_type text not null check (record_type in ('surgery', 'consultation')),
   record_id uuid not null,

@@ -1,5 +1,6 @@
 import { getAuthenticatedUser } from '../_lib/secureProfile.js'
 import {
+  CalendarAccessError,
   NeedsReconnectError,
   buildAuthUrl,
   deleteConnection,
@@ -11,10 +12,12 @@ import {
   getCalendarConfig,
   getConnection,
   getLinks,
+  googleEventIdForRecord,
   insertEvent,
   isConfigured,
   listEvents,
   markDetached,
+  resolveCalendarAccess,
   saveConnection,
   updateEvent,
   upsertLink,
@@ -51,22 +54,24 @@ function isValidDelete(item) {
 function sendError(res, error) {
   if (error instanceof NeedsReconnectError) return res.status(409).json({ error:'needs_reconnect' })
   const unauthorized = /bearer token|auth token/i.test(error.message || '')
-  return res.status(unauthorized ? 401 : 500).json({ error:error.message || 'Erro na integracao com a Google Agenda.' })
+  return res.status(error.statusCode || (unauthorized ? 401 : 500)).json({ error:error.message || 'Erro na integracao com a Google Agenda.' })
 }
 
 async function handleCallback(req, res, config) {
   const back = result => res.redirect(`${config.appUrl}/app/calendar?google=${result}`)
   try {
     if (req.query.error) return back('denied')
-    const userId = verifyState(req.query.state, config.stateSecret)
-    if (!userId) return res.status(400).send('Estado de autorizacao invalido ou expirado.')
+    const actorUserId = verifyState(req.query.state, config.stateSecret)
+    if (!actorUserId) return res.status(400).send('Estado de autorizacao invalido ou expirado.')
+    const access = await resolveCalendarAccess(actorUserId)
+    if (!access.canManage) throw new CalendarAccessError()
 
     const token = await exchangeCode(config, String(req.query.code))
     if (!String(token.scope || '').includes('calendar.events')) return back('scope')
     if (!token.refresh_token) return back('error')
 
     const profile = await fetchAccountEmail(token.access_token).catch(() => ({}))
-    await saveConnection(userId, { email:profile.email || '', refreshToken:token.refresh_token })
+    await saveConnection(access.ownerId, { email:profile.email || '', refreshToken:token.refresh_token })
     return back('connected')
   } catch {
     return back('error')
@@ -76,13 +81,16 @@ async function handleCallback(req, res, config) {
 async function handleStatus(req, res, config) {
   if (!isConfigured(config)) return res.status(200).json({ configured:false, connected:false })
   const user = await getAuthenticatedUser(req)
-  const connection = await getConnection(user.id)
-  const links = connection ? await getLinks(user.id) : []
+  const access = await resolveCalendarAccess(user.id)
+  const connection = await getConnection(access.ownerId)
+  const links = connection ? await getLinks(access.ownerId) : []
   return res.status(200).json({
     configured:true,
     connected:connection?.status === 'connected',
     needsReconnect:connection?.status === 'needs_reconnect',
     email:connection?.account_email || '',
+    sharedByClinic:true,
+    canManage:access.canManage,
     links:Object.fromEntries(links.map(link => [linkKey(link.record_type, link.record_id), link.synced_hash])),
   })
 }
@@ -90,18 +98,23 @@ async function handleStatus(req, res, config) {
 async function handleConnect(req, res, config) {
   if (!isConfigured(config)) return res.status(503).json({ error:'Integracao Google Agenda nao configurada.' })
   const user = await getAuthenticatedUser(req)
+  const access = await resolveCalendarAccess(user.id)
+  if (!access.canManage) throw new CalendarAccessError()
   const state = signState(user.id, config.stateSecret)
   return res.status(200).json({ url:buildAuthUrl(config, state) })
 }
 
 async function handleDisconnect(req, res) {
   const user = await getAuthenticatedUser(req)
-  await deleteConnection(user.id)
+  const access = await resolveCalendarAccess(user.id)
+  if (!access.canManage) throw new CalendarAccessError()
+  await deleteConnection(access.ownerId)
   return res.status(200).json({ ok:true })
 }
 
 async function handleEvents(req, res, config) {
   const user = await getAuthenticatedUser(req)
+  const access = await resolveCalendarAccess(user.id)
   const timeMin = String(req.query.timeMin || '')
   const timeMax = String(req.query.timeMax || '')
   const timeZone = String(req.query.timeZone || 'America/Sao_Paulo')
@@ -111,9 +124,9 @@ async function handleEvents(req, res, config) {
     return res.status(400).json({ error:'Intervalo invalido.' })
   }
 
-  const accessToken = await getAccessToken(config, user.id)
+  const accessToken = await getAccessToken(config, access.ownerId)
   const items = await listEvents(accessToken, { timeMin, timeMax, timeZone })
-  const links = await getLinks(user.id)
+  const links = await getLinks(access.ownerId)
   const linkByEvent = new Map(links.map(link => [link.google_event_id, link]))
 
   const events = []
@@ -121,7 +134,7 @@ async function handleEvents(req, res, config) {
     const event = normalizeGoogleEvent(item)
     const link = linkByEvent.get(event.googleId)
     if (event.cancelled) {
-      if (link && !link.detached) await markDetached(user.id, link.record_type, link.record_id)
+      if (link && !link.detached) await markDetached(access.ownerId, link.record_type, link.record_id)
       continue
     }
     if (!link) {
@@ -136,6 +149,7 @@ async function handleEvents(req, res, config) {
 
 async function handleSync(req, res, config) {
   const user = await getAuthenticatedUser(req)
+  const access = await resolveCalendarAccess(user.id)
   const upserts = Array.isArray(req.body?.upserts) ? req.body.upserts : []
   const deletes = Array.isArray(req.body?.deletes) ? req.body.deletes : []
   if (upserts.length > MAX_ITEMS_PER_SYNC || deletes.length > MAX_ITEMS_PER_SYNC) {
@@ -145,8 +159,8 @@ async function handleSync(req, res, config) {
     return res.status(400).json({ error:'Payload invalido.' })
   }
 
-  const accessToken = await getAccessToken(config, user.id)
-  const existing = new Map((await getLinks(user.id)).map(link => [linkKey(link.record_type, link.record_id), link]))
+  const accessToken = await getAccessToken(config, access.ownerId)
+  const existing = new Map((await getLinks(access.ownerId)).map(link => [linkKey(link.record_type, link.record_id), link]))
   const result = { links:{}, deleted:[], errors:[] }
 
   for (const item of upserts) {
@@ -168,9 +182,20 @@ async function handleSync(req, res, config) {
           else throw error
         }
       }
-      if (!eventId) eventId = (await insertEvent(accessToken, event)).id
+      if (!eventId) {
+        const deterministicId = googleEventIdForRecord(access.ownerId, item.type, item.id)
+        try {
+          eventId = (await insertEvent(accessToken, event, deterministicId)).id
+        } catch (error) {
+          // Outro perfil pode ter criado o mesmo evento entre a leitura dos vínculos e
+          // este insert. O ID determinístico transforma a colisão em update, não duplicação.
+          if (error.status !== 409) throw error
+          await updateEvent(accessToken, deterministicId, event)
+          eventId = deterministicId
+        }
+      }
 
-      await upsertLink(user.id, { type:item.type, id:item.id, googleEventId:eventId, hash:item.hash, snapshot:snapshotOf(item) })
+      await upsertLink(access.ownerId, { type:item.type, id:item.id, googleEventId:eventId, hash:item.hash, snapshot:snapshotOf(item) })
       result.links[key] = item.hash
     } catch (error) {
       if (error instanceof NeedsReconnectError) throw error
@@ -183,7 +208,7 @@ async function handleSync(req, res, config) {
     try {
       const link = existing.get(key)
       if (link && !link.detached) await deleteEvent(accessToken, link.google_event_id)
-      if (link) await deleteLink(user.id, item.type, item.id)
+      if (link) await deleteLink(access.ownerId, item.type, item.id)
       result.deleted.push(key)
     } catch (error) {
       if (error instanceof NeedsReconnectError) throw error

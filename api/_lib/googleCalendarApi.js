@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { decryptPayload, encryptPayload, getAdminSupabase } from './secureProfile.js'
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -8,11 +9,57 @@ export const CALENDAR_SCOPES = 'https://www.googleapis.com/auth/calendar.events 
 const CONNECTIONS = 'google_calendar_connections'
 const LINKS = 'google_calendar_event_links'
 
+export class CalendarAccessError extends Error {
+  constructor(message = 'Somente administradores da clínica podem gerenciar a conexão com o Google Agenda.') {
+    super(message)
+    this.name = 'CalendarAccessError'
+    this.statusCode = 403
+  }
+}
+
 export class NeedsReconnectError extends Error {
   constructor() {
     super('needs_reconnect')
     this.name = 'NeedsReconnectError'
   }
+}
+
+export function deriveCalendarAccess(userId, { ownedClinic = null, membership = null, memberClinic = null } = {}) {
+  if (ownedClinic?.owner_id === userId) {
+    return { ownerId:userId, clinicId:ownedClinic.id || null, role:'admin', isOwner:true, canManage:true }
+  }
+  if (membership?.clinic_id && memberClinic?.owner_id) {
+    return {
+      ownerId:memberClinic.owner_id,
+      clinicId:membership.clinic_id,
+      role:membership.role || 'equipe',
+      isOwner:false,
+      canManage:membership.role === 'admin',
+    }
+  }
+  // Compatibilidade com contas anteriores à criação de `clinics`: o próprio usuário
+  // continua sendo o escopo canônico e pode administrar a sua conexão.
+  return { ownerId:userId, clinicId:null, role:'admin', isOwner:true, canManage:true }
+}
+
+export async function resolveCalendarAccess(userId) {
+  const admin = getAdminSupabase()
+  const [{ data:ownedClinic, error:ownedError }, { data:membership, error:membershipError }] = await Promise.all([
+    admin.from('clinics').select('id, owner_id').eq('owner_id', userId).maybeSingle(),
+    admin.from('clinic_members').select('clinic_id, role').eq('user_id', userId).maybeSingle(),
+  ])
+  if (ownedError) throw ownedError
+  if (membershipError) throw membershipError
+  if (ownedClinic) return deriveCalendarAccess(userId, { ownedClinic })
+  if (!membership?.clinic_id) return deriveCalendarAccess(userId)
+
+  const { data:memberClinic, error:clinicError } = await admin
+    .from('clinics')
+    .select('id, owner_id')
+    .eq('id', membership.clinic_id)
+    .maybeSingle()
+  if (clinicError) throw clinicError
+  return deriveCalendarAccess(userId, { membership, memberClinic })
 }
 
 export function getCalendarConfig() {
@@ -27,6 +74,13 @@ export function getCalendarConfig() {
 
 export function isConfigured(config) {
   return Boolean(config.clientId && config.clientSecret && config.redirectUri && config.stateSecret)
+}
+
+export function googleEventIdForRecord(ownerId, type, recordId) {
+  // IDs definidos pelo cliente tornam o insert idempotente no próprio Google Calendar.
+  // O formato hexadecimal obedece ao base32hex aceito pela API (a-v e 0-9).
+  const digest = crypto.createHash('sha256').update(`${ownerId}:${type}:${recordId}`).digest('hex')
+  return `sm${digest}`
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -113,7 +167,9 @@ export async function revokeToken(refreshToken) {
   }
 }
 
-// ---------- Conexão e vínculos (service role) ----------
+// ---------- Conexão e vínculos da clínica (service role) ----------
+// `user_id` nestas tabelas guarda o ownerId canônico da clínica. Dessa forma todos os
+// perfis compartilham uma conexão e um conjunto de vínculos, sem criar eventos duplicados.
 
 export async function getConnection(userId) {
   const { data, error } = await getAdminSupabase().from(CONNECTIONS).select('*').eq('user_id', userId).maybeSingle()
@@ -223,11 +279,11 @@ export async function listEvents(accessToken, { timeMin, timeMax, timeZone }) {
   return items
 }
 
-export function insertEvent(accessToken, event) {
+export function insertEvent(accessToken, event, eventId = '') {
   return googleFetch(`${CALENDAR_URL}/events`, {
     method:'POST',
     headers:{ ...bearer(accessToken), 'Content-Type':'application/json' },
-    body:JSON.stringify(event),
+    body:JSON.stringify(eventId ? { ...event, id:eventId } : event),
   })
 }
 
