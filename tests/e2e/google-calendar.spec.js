@@ -36,7 +36,7 @@ test('mostra botao de conectar e confirma conexao ao voltar do Google', async ({
   await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:false, email:'', links:{} } })
   await page.goto('/app/calendar')
 
-  await expect(page.getByText('Conecte sua Google Agenda')).toBeVisible()
+  await expect(page.getByRole('button', { name:'Conectar Google Agenda' })).toBeVisible()
   await page.getByRole('button', { name:'Conectar Google Agenda' }).click()
 
   await expect(page.getByText('Google Agenda conectada com sucesso.')).toBeVisible()
@@ -47,8 +47,7 @@ test('mostra Reconectar quando a conexao expirou', async ({ page }) => {
   await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:true, email:'', links:{} } })
   await page.goto('/app/calendar')
 
-  await expect(page.getByText('A conexão com a Google Agenda expirou')).toBeVisible()
-  await expect(page.getByRole('button', { name:'Reconectar' })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Reconectar Google Agenda' })).toBeVisible()
 })
 
 test('mostra eventos do Google no calendario', async ({ page }) => {
@@ -61,8 +60,7 @@ test('mostra eventos do Google no calendario', async ({ page }) => {
   })
   await page.goto('/app/calendar')
 
-  await expect(page.getByText('Google Agenda conectada')).toBeVisible({ timeout:10000 })
-  await expect(page.getByText('medico@example.com', { exact:false })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Google Agenda conectada. Desconectar' })).toBeVisible({ timeout:10000 })
   await expect(page.getByText('1 evento do Google')).toBeVisible()
 })
 

@@ -211,6 +211,46 @@
 .cal-view-switch button:hover { color: var(--cal-text); }
 .cal-view-switch button.is-active { background: var(--cal-accent); color: white; box-shadow: 0 4px 12px color-mix(in srgb, var(--cal-accent) 28%, transparent); }
 
+.google-calendar-control { position: relative; flex: 0 0 auto; }
+.google-calendar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 11px 0 9px;
+  border: 1px solid var(--cal-border);
+  border-radius: 11px;
+  background: var(--cal-surface);
+  color: var(--cal-sub);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+.google-calendar-button:hover { border-color: var(--cal-border-bright); background: var(--cal-hover); color: var(--cal-text); }
+.google-calendar-button:disabled { cursor: wait; opacity: 0.7; }
+.google-calendar-button svg { flex: 0 0 auto; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.18)); }
+.google-calendar-button i { width: 6px; height: 6px; border-radius: 50%; background: var(--cal-green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cal-green) 12%, transparent); }
+.google-calendar-button.needs-reconnect { border-color: color-mix(in srgb, var(--cal-yellow) 42%, var(--cal-border)); color: var(--cal-yellow); }
+.google-calendar-feedback {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: min(340px, 80vw);
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--google-feedback-color) 38%, var(--cal-border));
+  border-radius: 10px;
+  background: var(--cal-card);
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.3);
+  color: var(--google-feedback-color);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .cal-conflict-banner,
 .cal-result-count { display: flex; align-items: center; gap: 9px; padding: 9px 15px; border-bottom: 1px solid var(--cal-border); background: color-mix(in srgb, var(--cal-yellow) 9%, transparent); color: var(--cal-yellow); font-size: 11px; }
 .cal-conflict-banner span { color: var(--cal-sub); }
@@ -324,6 +364,7 @@
   .cal-toolbar__actions { overflow-x: auto; }
   .cal-search { flex: 0 0 auto; }
   .cal-view-switch { flex: 0 0 auto; }
+  .google-calendar-button { height: 36px; }
   .cal-month { min-width: 720px; }
   .cal-canvas { overflow-x: auto; }
   .cal-agenda { padding-inline: 12px; }
@@ -343,6 +384,8 @@
   .cal-search.is-open { width: 190px; }
   .cal-view-switch button { padding-inline: 9px; }
   .cal-view-switch button:nth-child(2) { display: none; }
+  .google-calendar-button span { display: none; }
+  .google-calendar-button { width: 38px; padding: 0; justify-content: center; }
   .cal-agenda__day { display: block; padding: 14px 0; }
   .cal-agenda__date { margin-bottom: 9px; }
   .cal-agenda__event { grid-template-columns: 4px 82px minmax(0, 1fr); gap: 8px; min-height: 58px; padding-right: 9px; }

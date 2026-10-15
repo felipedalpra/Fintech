@@ -556,8 +556,6 @@ export function Calendar({ data, setData, saveDataNow, google }) {
 
   return (
     <div className="clinical-calendar" style={{ '--cal-bg':C.bg, '--cal-surface':C.surface, '--cal-card':C.card, '--cal-hover':C.cardHover, '--cal-border':C.border, '--cal-border-bright':C.borderBright, '--cal-text':C.text, '--cal-sub':C.textSub, '--cal-dim':C.textDim, '--cal-accent':C.accent, '--cal-accent-light':C.accentLight, '--cal-green':C.green, '--cal-yellow':C.yellow, '--cal-red':C.red }}>
-      <GoogleCalendarBar google={google} />
-
       <div className="cal-shell">
         <aside className={`cal-sidebar${sidebarOpen ? ' is-open' : ''}`}>
           <button type="button" className="cal-create" onClick={() => openCreate(focusDate, '09:00')}><Icon name="plus" size={22} /> Criar</button>
@@ -602,6 +600,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
               <div className="cal-view-switch" role="group" aria-label="Visualização da agenda">
                 {Object.entries(VIEW_LABELS).map(([id, label]) => <button type="button" key={id} className={view === id ? 'is-active' : ''} onClick={() => setView(id)}>{label}</button>)}
               </div>
+              <GoogleCalendarBar google={google} />
             </div>
           </header>
 

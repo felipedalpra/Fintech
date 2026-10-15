@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (110)
+### Changed
+- **Conexão com Google Agenda mais discreta**: o banner de largura total foi substituído por um botão compacto na barra de ferramentas da Agenda, com ícone colorido do Google Calendar e estados claros de conectar, reconectar e conectado. Em telas pequenas, o controle exibe somente o ícone para preservar espaço, mantendo rótulos acessíveis e a confirmação antes de desconectar. (`src/components/GoogleCalendarBar.jsx`, `src/components/Calendar.jsx`, `src/components/Calendar.css`.)
+
 ## [Unreleased] - 2026-10-15 (109)
 ### Added
 - **Agenda clínica no padrão de calendário moderno**: a tela passa a oferecer visualizações de mês, semana, dia e agenda, mini calendário, botão Hoje, busca por paciente/procedimento, filtros independentes para consultas, cirurgias e eventos externos, indicador da hora atual, eventos de dia inteiro, detecção visual de conflitos e atalhos de teclado. A criação rápida parte do dia/horário clicado, exige paciente cadastrado, respeita a permissão do perfil e salva na mesma fonte real de consultas/cirurgias; eventos locais também podem ser reagendados por arrastar no desktop. (`src/components/Calendar.jsx`, `src/components/Calendar.css`, `src/lib/clinicalCalendar.js`.)
