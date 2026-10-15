@@ -24,6 +24,10 @@ const WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?acti
 const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_lid', 'sender_photo', 'chat_lid', 'contact_phone']
 const PREVIOUS_MESSAGE_IDENTITY_FIELDS = MESSAGE_IDENTITY_FIELDS.filter(field => field !== 'sender_lid')
 
+function withoutContactId(row) {
+  return Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'contact_id'))
+}
+
 function withoutMessageIdentity(row) {
   return Object.fromEntries(Object.entries(row).filter(([key]) => !MESSAGE_IDENTITY_FIELDS.includes(key)))
 }
@@ -48,12 +52,46 @@ async function insertWhatsAppMessage(supabase, row, { selectId = false } = {}) {
     if (selectId) query = query.select('id').single()
     return query
   }
-  let result = await run(row)
+  let payload = row
+  let result = await run(payload)
   // Deploy tolerante à ordem: se só a coluna nova ainda não existe, preserva
   // todos os demais metadados de conversa/remetente já suportados pelo banco.
-  if (missingMessageFields(result.error, ['sender_lid'])) result = await run(withoutSenderLid(row))
-  if (missingMessageFields(result.error, PREVIOUS_MESSAGE_IDENTITY_FIELDS)) result = await run(withoutMessageIdentity(row))
+  if (missingMessageFields(result.error, ['contact_id'])) {
+    payload = withoutContactId(payload)
+    result = await run(payload)
+  }
+  if (missingMessageFields(result.error, ['sender_lid'])) {
+    payload = withoutSenderLid(payload)
+    result = await run(payload)
+  }
+  if (missingMessageFields(result.error, PREVIOUS_MESSAGE_IDENTITY_FIELDS)) {
+    payload = withoutMessageIdentity(payload)
+    result = await run(payload)
+  }
   return result
+}
+
+async function ensureWhatsAppContact(supabase, {
+  ownerId, whatsappNumberId, identityKey, phone = null, chatLid = null,
+  name = null, photo = null, patientId = null,
+}) {
+  if (!ownerId || !whatsappNumberId || !identityKey) return null
+  const { data, error } = await supabase.rpc('ensure_crm_whatsapp_contact', {
+    p_owner: ownerId,
+    p_whatsapp_number: whatsappNumberId,
+    p_identity_key: identityKey,
+    p_phone: phone,
+    p_chat_lid: chatLid,
+    p_name: name,
+    p_photo: photo,
+    p_patient: patientId,
+  })
+  // Durante a janela entre deploy e migração, a mensagem continua sendo salva
+  // pelo fallback de schema. O contato será materializado pelo backfill depois.
+  if (error && !['PGRST202', '42883'].includes(error.code)) {
+    console.error('whatsapp contact upsert error:', error.message)
+  }
+  return error ? null : data
 }
 
 async function hydrateRequestBody(req) {
@@ -432,6 +470,19 @@ async function handleSend(req, res) {
     .maybeSingle()
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
 
+  // Nunca confia no patientId vindo do navegador: o vínculo só é aceito se o
+  // paciente pertencer à mesma clínica autenticada.
+  let verifiedPatientId = null
+  if (!isGroup && patientId) {
+    const { data: patient } = await supabase.from('patients')
+      .select('id')
+      .eq('id', patientId)
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    if (!patient) return res.status(400).json({ error: 'Paciente inválido para esta clínica' })
+    verifiedPatientId = patient.id
+  }
+
   // Admin escopado À CLÍNICA (owner ou role='admin' nela). Não admin só envia pelos números dele.
   let isAdmin = user.id === ownerId
   if (!isAdmin) {
@@ -455,8 +506,16 @@ async function handleSend(req, res) {
 
   const bodyText = isMedia ? (caption || '') : text
   const msgType = isMedia ? type : 'text'
+  const contactId = isGroup ? null : await ensureWhatsAppContact(supabase, {
+    ownerId,
+    whatsappNumberId: num.id,
+    identityKey: chatLid || contactPhone || phone,
+    phone: contactPhone,
+    chatLid,
+    patientId: verifiedPatientId,
+  })
   const insertBase = {
-    user_id: ownerId, patient_id: isGroup ? null : (patientId ?? null), phone, direction: 'outbound', body: bodyText,
+    user_id: ownerId, patient_id: verifiedPatientId, contact_id: contactId, phone, direction: 'outbound', body: bodyText,
     chat_lid: chatLid, contact_phone: contactPhone,
     is_group: isGroup,
     whatsapp_number_id: num.id, msg_type: msgType, media_url: mediaUrl ?? null, media_mime: mediaMime ?? null,
@@ -551,15 +610,25 @@ async function handleWebhook(req, res) {
   // nunca tenta adivinhar pelo nome exibido ou pelos últimos dígitos do LID.
   let historicalIdentity = null
   if (!parsed.isGroup && parsed.chatLid) {
-    const { data, error } = await supabase.from('whatsapp_messages')
-      .select('patient_id, contact_phone, chat_name, chat_photo')
+    let identityResult = await supabase.from('whatsapp_messages')
+      .select('patient_id, contact_id, contact_phone, chat_name, chat_photo')
       .eq('user_id', ownerUserId)
       .eq('whatsapp_number_id', num.id)
       .eq('chat_lid', parsed.chatLid)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (!missingMessageIdentitySchema(error)) historicalIdentity = data
+    if (missingMessageFields(identityResult.error, ['contact_id'])) {
+      identityResult = await supabase.from('whatsapp_messages')
+        .select('patient_id, contact_phone, chat_name, chat_photo')
+        .eq('user_id', ownerUserId)
+        .eq('whatsapp_number_id', num.id)
+        .eq('chat_lid', parsed.chatLid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    }
+    if (!missingMessageIdentitySchema(identityResult.error)) historicalIdentity = identityResult.data
   }
   const contactPhone = parsed.contactPhone || historicalIdentity?.contact_phone || null
 
@@ -571,14 +640,18 @@ async function handleWebhook(req, res) {
     patientId = matchPatientId(patients || [], contactPhone)
   }
 
-  // Só uma mensagem recebida cria lead automaticamente. Uma saída feita no celular
-  // para um contato desconhecido aparece como não atribuída, sem criar paciente indevido.
-  if (!parsed.isGroup && !patientId && contactPhone && parsed.direction === 'inbound') {
-    const { data: leadId } = await supabase.rpc('ensure_whatsapp_lead', {
-      p_owner: ownerUserId, p_phone: contactPhone, p_name: parsed.senderName || '',
-    })
-    if (leadId) patientId = leadId
-  }
+  // Toda conversa individual ganha um contato CRM. Isso é apenas identidade e
+  // classificação: não cria paciente nem oportunidade automaticamente.
+  const contactId = parsed.isGroup ? null : (historicalIdentity?.contact_id || await ensureWhatsAppContact(supabase, {
+    ownerId: ownerUserId,
+    whatsappNumberId: num.id,
+    identityKey: parsed.chatLid || contactPhone || parsed.phone,
+    phone: contactPhone,
+    chatLid: parsed.chatLid,
+    name: parsed.senderName || parsed.chatName || null,
+    photo: parsed.chatPhoto || parsed.senderPhoto || null,
+    patientId,
+  }))
 
   // Um mesmo participante pode chegar ora com nome/telefone, ora somente com
   // participantLid. Reutiliza exclusivamente o vínculo exato já observado no
@@ -598,7 +671,7 @@ async function handleWebhook(req, res) {
   }
 
   const row = {
-    user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: parsed.direction,
+    user_id: ownerUserId, patient_id: patientId, contact_id: contactId, phone: parsed.phone, direction: parsed.direction,
     body: parsed.text, status: parsed.status, provider_message_id: parsed.providerMessageId,
     whatsapp_number_id: num.id,
     chat_lid: parsed.chatLid,
@@ -621,9 +694,9 @@ async function handleWebhook(req, res) {
   }
 
   // IA sugere avanço de estágio (sugere e confirma). Nunca derruba o recebimento.
-  if (!parsed.isGroup && patientId && parsed.direction === 'inbound') {
+  if (!parsed.isGroup && (patientId || contactId) && parsed.direction === 'inbound') {
     try {
-      await maybeSuggestStage(supabase, ownerUserId, patientId, parsed)
+      await maybeSuggestStage(supabase, ownerUserId, { patientId, contactId }, parsed)
     } catch (e) {
       console.error('stage suggestion error:', e?.message)
     }
@@ -634,16 +707,16 @@ async function handleWebhook(req, res) {
 
 // Analisa a conversa e, se houver avanço claro, grava uma SUGESTÃO (pending) na oportunidade.
 // A IA nunca move o funil — só o humano confirma. Barato: pré-filtro + cooldown antes de chamar a IA.
-async function maybeSuggestStage(supabase, ownerUserId, patientId, parsed) {
-  const { data: opp } = await supabase
+async function maybeSuggestStage(supabase, ownerUserId, { patientId, contactId }, parsed) {
+  let oppQuery = supabase
     .from('opportunities')
     .select('id, stage, suggestion_status, suggested_at')
     .eq('user_id', ownerUserId)
-    .eq('patient_id', patientId)
     .eq('status', 'aberto')
     .order('created_at', { ascending: false })
     .limit(1)
-    .maybeSingle()
+  oppQuery = contactId ? oppQuery.eq('contact_id', contactId) : oppQuery.eq('patient_id', patientId)
+  const { data: opp } = await oppQuery.maybeSingle()
   if (!opp) return
 
   // Cooldown: não re-sugere se já há sugestão pendente recente (evita spam e custo).
@@ -657,13 +730,14 @@ async function maybeSuggestStage(supabase, ownerUserId, patientId, parsed) {
   if (!shouldRunAI(parsed.text, opp.stage)) return
 
   // Últimas mensagens da conversa (cronológicas) para a classificação.
-  const { data: recent } = await supabase
+  let recentQuery = supabase
     .from('whatsapp_messages')
     .select('direction, body, created_at')
     .eq('user_id', ownerUserId)
-    .eq('phone', parsed.phone)
     .order('created_at', { ascending: false })
     .limit(12)
+  recentQuery = contactId ? recentQuery.eq('contact_id', contactId) : recentQuery.eq('phone', parsed.phone)
+  const { data: recent } = await recentQuery
   const messages = (recent || []).slice().reverse()
 
   const raw = await classifyStageWithAI(buildSuggestionInput(messages, opp.stage))

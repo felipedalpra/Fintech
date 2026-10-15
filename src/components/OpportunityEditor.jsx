@@ -5,11 +5,12 @@ import { PatientSelector } from './PatientSelector.jsx'
 import { OpportunityTasks } from './OpportunityTasks.jsx'
 import { OpportunityTimeline } from './OpportunityTimeline.jsx'
 import { createOpportunity, updateOpportunity, setOpportunityOutcome } from '../lib/opportunityActions.js'
+import { opportunityPerson } from '../lib/crmContact.js'
 
 // Modal de criar/editar oportunidade (+ fechar como ganho/perdido).
 // Ao editar, ganha abas: Dados / Tarefas / Timeline.
 // Estágio só é escolhido na criação; depois muda por mover/arrastar (RPC auditada).
-const BLANK = { patient_id: '', patient_name: '', title: '', value: '', stage: '', source: '', responsible_user_id: '', tags: [] }
+const BLANK = { patient_id: '', contact_id: '', patient_name: '', title: '', value: '', stage: '', source: '', responsible_user_id: '', tags: [] }
 
 export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved }) {
   const isEdit = !!opp
@@ -25,8 +26,9 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
     if (!open) return
     setError(null); setLosing(false); setLostReason(''); setTagDraft(''); setTab('dados')
     if (opp) {
+      const person = opportunityPerson(opp)
       setForm({
-        patient_id: opp.patient_id || '', patient_name: opp.patients?.full_name || '',
+        patient_id: opp.patient_id || '', contact_id: opp.contact_id || '', patient_name: person.name || '',
         title: opp.title && opp.title !== 'Oportunidade' ? opp.title : '',
         value: opp.value ?? '', stage: opp.stage || '', source: opp.source || '',
         responsible_user_id: opp.responsible_user_id || '', tags: Array.isArray(opp.tags) ? opp.tags : [],
@@ -45,7 +47,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
   }
 
   async function save() {
-    if (!form.patient_id) { setError('Selecione um paciente.'); return }
+    if (!form.patient_id && !form.contact_id) { setError('Selecione um paciente ou contato.'); return }
     setSaving(true); setError(null)
     const res = isEdit ? await updateOpportunity(opp.id, form) : await createOpportunity(ownerId, form)
     setSaving(false)
@@ -91,7 +93,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
 
       <div style={{ display: tab === 'dados' ? 'flex' : 'none', flexDirection: 'column', gap: 14 }}>
         {isEdit
-          ? <div><label style={base.label}>Paciente</label>
+          ? <div><label style={base.label}>{form.patient_id ? 'Paciente' : 'Contato'}</label>
               <div style={{ ...base.input, display: 'flex', alignItems: 'center', color: C.text }}>{form.patient_name || '—'}</div></div>
           : <PatientSelector userId={ownerId} value={form.patient_id} onChange={(id, name) => setForm(f => ({ ...f, patient_id: id, patient_name: name }))} />}
 
@@ -139,7 +141,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-            {!losing && <Btn onClick={save} disabled={saving || !form.patient_id}>{saving ? 'Salvando…' : 'Salvar'}</Btn>}
+            {!losing && <Btn onClick={save} disabled={saving || (!form.patient_id && !form.contact_id)}>{saving ? 'Salvando…' : 'Salvar'}</Btn>}
           </div>
         </div>
       </div>

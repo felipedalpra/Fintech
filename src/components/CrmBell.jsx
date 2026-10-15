@@ -7,6 +7,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
 import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
 import { stageLabel } from '../lib/timeline.js'
+import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
 
 // Sininho de CRM: alertas derivados dos dados atuais (sem tabela nova) — tarefas atrasadas,
 // leads sem responsável e oportunidades paradas. Clicar leva pra tela do item.
@@ -18,7 +19,7 @@ function daysSince(ts) {
   return d >= 0 ? d : null
 }
 function itemLabel(item) {
-  return item?.patients?.full_name || item?.title || 'Oportunidade'
+  return opportunityPerson(item).name || item?.title || 'Oportunidade'
 }
 function shortDate(value) {
   if (!value) return 'sem data'
@@ -50,9 +51,16 @@ export function CrmBell({ onNavigate }) {
     let mounted = true
     async function load() {
       try {
+        const fetchOpportunities = async () => {
+          let result = await supabase.from('opportunities').select('id, title, responsible_user_id, stage_entered_at, status, stage, created_at, first_response_at, patient_id, contact_id, patients(full_name, phone), crm_contacts(full_name, phone, status)').eq('user_id', effectiveUserId).eq('status', 'aberto')
+          if (isCrmContactSchemaMissing(result.error)) {
+            result = await supabase.from('opportunities').select('id, title, responsible_user_id, stage_entered_at, status, stage, created_at, first_response_at, patient_id, patients(full_name, phone)').eq('user_id', effectiveUserId).eq('status', 'aberto')
+          }
+          return result
+        }
         const [taskRes, oppRes] = await Promise.all([
           supabase.from('tasks').select('id, title, due_date, status, patients(full_name), opportunities(title)').eq('user_id', effectiveUserId).eq('status', 'pendente'),
-          supabase.from('opportunities').select('id, title, responsible_user_id, stage_entered_at, status, stage, created_at, first_response_at, patients(full_name)').eq('user_id', effectiveUserId).eq('status', 'aberto'),
+          fetchOpportunities(),
         ])
         if (!mounted) return
         setTasks(taskRes.data ?? [])

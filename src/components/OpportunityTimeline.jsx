@@ -24,8 +24,10 @@ export function OpportunityTimeline({ ownerId, opp, userId }) {
     setLoading(true)
     const [histRes, msgRes, taskRes, noteRes] = await Promise.all([
       supabase.from('opportunity_stage_history').select('from_stage, to_stage, source, created_at').eq('opportunity_id', opp.id).order('created_at', { ascending: false }),
-      opp.patient_id
-        ? supabase.from('whatsapp_messages').select('direction, body, created_at').eq('patient_id', opp.patient_id).order('created_at', { ascending: false }).limit(50)
+      opp.patient_id || opp.contact_id
+        ? (opp.contact_id
+          ? supabase.from('whatsapp_messages').select('direction, body, created_at').eq('contact_id', opp.contact_id).order('created_at', { ascending: false }).limit(50)
+          : supabase.from('whatsapp_messages').select('direction, body, created_at').eq('patient_id', opp.patient_id).order('created_at', { ascending: false }).limit(50))
         : Promise.resolve({ data: [] }),
       supabase.from('tasks').select('title, status, done_at, created_at').eq('opportunity_id', opp.id),
       supabase.from('opportunity_notes').select('body, author_id, created_at').eq('opportunity_id', opp.id).order('created_at', { ascending: false }),

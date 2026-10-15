@@ -29,10 +29,10 @@ export async function createOpportunity(ownerId, f) {
     ...cleanFields(f),
   }
   const { data, error } = await supabase.from('opportunities').insert(row)
-    .select('id, title, stage, status, value, source, tags, responsible_user_id, stage_entered_at, patient_id, suggested_stage, suggested_reason, suggested_confidence, suggestion_status, patients(full_name, phone)')
+    .select('*')
     .single()
   if (error) return { error: error.message }
-  return { opp: data }
+  return { opp: { ...data, patients: { full_name:f.patient_name || 'Paciente', phone:null }, crm_contacts:null } }
 }
 
 // Cria um LEAD manual (contato mínimo + oportunidade) via RPC atômica/idempotente.
@@ -61,7 +61,8 @@ export async function createManualLead(ownerId, { name, phone, title, source, va
     ...row,
     tags: Array.isArray(row?.tags) ? row.tags : [],
     suggestion_status: row?.suggestion_status || 'none',
-    patients: { full_name: trimmedName || trimmedPhone || 'Paciente', phone: trimmedPhone || null },
+    patients: row?.patient_id ? { full_name: trimmedName || trimmedPhone || 'Paciente', phone: trimmedPhone || null } : null,
+    crm_contacts: row?.patient_id ? null : { full_name: trimmedName || trimmedPhone || 'Contato', phone: trimmedPhone || null, status: 'lead' },
   }
   return { opp }
 }

@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (107)
+### Added
+- **Ciclo contato → lead → paciente no WhatsApp**: conversas individuais passam a ter um contato CRM persistente, isolado por clínica e número do WhatsApp. No cabeçalho do Inbox, o usuário pode adicionar o contato ao funil, cadastrar um novo paciente, vincular um paciente existente ou ignorar/reativar o contato. Grupos nunca entram nesse ciclo. A migração `supabase/crm_contacts_schema.sql` é aditiva, faz backfill das conversas, usa RLS por `data_owner_id()` e converte/vincula de forma atômica e idempotente, sem apagar mensagens, pacientes, oportunidades ou histórico.
+
+### Changed
+- **WhatsApp não cadastra paciente automaticamente**: o webhook consolidado continua persistindo todas as mensagens, mas número desconhecido agora cria apenas contato; oportunidade só nasce ao clicar em “Adicionar ao funil” e paciente somente após “Cadastrar paciente” ou vínculo explícito. Leads manuais também usam contato CRM em vez de paciente mínimo; se o telefone já pertencer a paciente real, o vínculo existente é preservado. O funil, Meu dia, alertas e timeline passam a exibir e acompanhar oportunidades de contato sem exigir prontuário. Nenhuma função serverless foi adicionada. (`api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`, `src/components/OpportunityPipeline.jsx`, `src/components/OpportunityEditor.jsx`, `src/components/OpportunityTimeline.jsx`, `src/components/MeuDia.jsx`, `src/components/CrmBell.jsx`, `src/lib/crmContact.js`, `src/lib/crmContactActions.js`, `src/lib/opportunityActions.js`.)
+
+### Fixed
+- **Base de pacientes sem contatos indevidos**: novas mensagens, leads manuais, fornecedores, spam e outros contatos deixam de aparecer como pacientes. Registros antigos são preservados e vinculados no backfill quando já possuem paciente, evitando reclassificação automática de pessoas com prontuário, consultas ou dados financeiros. Cobertura valida que adicionar ao funil não executa escrita em `patients` e que a conversão só ocorre após confirmação explícita. (`tests/unit/crmContact.spec.js`, `tests/e2e/whatsapp-inbox.spec.js`, `tests/e2e/opportunity-pipeline.spec.js`.)
+
 ## [Unreleased] - 2026-10-15 (106)
 ### Changed
 - **Sinos na barra superior global**: os alertas financeiros e do CRM saem da barra de ações que quebrava linha no conteúdo e passam a ocupar uma área persistente no canto superior direito do app. A navegação de áreas continua rolável de forma independente, e os painéis abrem alinhados abaixo dos respectivos sinos em desktop e celular. (`src/pages/FinanceWorkspace.jsx`, `tests/e2e/notification-popovers.spec.js`.)

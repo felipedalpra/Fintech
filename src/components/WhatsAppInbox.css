@@ -207,6 +207,10 @@
 .wa-chips .wa-chip-owner { color: #85e3cf; background: rgba(0, 168, 132, .13); }
 .wa-chips .wa-chip-group, .wa-chat-tags .is-group { color: #82d9ff; background: rgba(28, 146, 210, .15); }
 .wa-chips .wa-chip-warning, .wa-chat-tags .is-warning { color: #ffd279; background: rgba(245, 158, 11, .13); }
+.wa-chips .wa-chip-kind.is-contact, .wa-chat-tags .is-contact { color: #c4d0d6; background: rgba(134,150,160,.14); }
+.wa-chips .wa-chip-kind.is-lead, .wa-chat-tags .is-lead { color: #82d9ff; background: rgba(28,146,210,.15); }
+.wa-chips .wa-chip-kind.is-patient, .wa-chat-tags .is-patient { color: #85e3cf; background: rgba(0,168,132,.15); }
+.wa-chips .wa-chip-kind.is-ignored, .wa-chat-tags .is-ignored { color: #aebac1; background: rgba(134,150,160,.09); }
 
 .wa-list-empty { height: 100%; min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 30px; text-align: center; color: var(--wa-muted); }
 .wa-list-empty strong { color: var(--wa-text); font-size: 13px; }
@@ -236,6 +240,19 @@
 .wa-chat-person span { overflow: hidden; color: var(--wa-muted); text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .wa-chat-tags { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .wa-chat-tags > span { max-width: 160px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; color: #85e3cf; background: rgba(0, 168, 132, .13); font-size: 10px; }
+.wa-contact-actions { display: flex; align-items: center; gap: 5px; }
+.wa-contact-actions button { min-height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; color: #d9fdd3; background: rgba(0,168,132,.14); border: 1px solid rgba(37,211,102,.24); border-radius: 8px; cursor: pointer; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.wa-action-icon { font-size: 15px; line-height: 1; }
+.wa-contact-actions button:hover:not(:disabled) { background: rgba(0,168,132,.25); }
+.wa-contact-actions button.is-muted { color: var(--wa-muted); background: transparent; border-color: var(--wa-border); }
+.wa-contact-actions button:disabled { opacity: .5; cursor: wait; }
+
+.wa-contact-modal { display: flex; flex-direction: column; gap: 14px; }
+.wa-contact-modal > p { margin: -6px 0 2px; color: var(--wa-muted, #8696a0); font-size: 12.5px; line-height: 1.5; }
+.wa-contact-modal-error { padding: 10px 12px; border: 1px solid rgba(239,68,68,.4); border-radius: 10px; background: rgba(239,68,68,.1); color: #fca5a5; font-size: 13px; line-height: 1.45; }
+.wa-contact-modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.wa-contact-divider { display: flex; align-items: center; gap: 10px; color: var(--wa-muted, #8696a0); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.wa-contact-divider::before, .wa-contact-divider::after { content: ''; height: 1px; flex: 1; background: var(--wa-border, rgba(134,150,160,.2)); }
 
 .wa-suggestion { flex: 0 0 auto; max-height: 150px; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px 0; background: var(--wa-chat); }
 .wa-error { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; margin: 10px 14px 0; padding: 9px 11px; color: #ffd5d5; background: rgba(239, 68, 68, .14); border: 1px solid rgba(239, 68, 68, .28); border-radius: 10px; font-size: 12px; }
@@ -385,6 +402,8 @@ html[data-theme='light'] .wa-emoji-picker { color: #111b21; background: #fff; }
   .wa-inbox.wa-has-chat .wa-sidebar { display: none; }
   .wa-inbox:not(.wa-has-chat) .wa-chat { display: none; }
   .wa-back { display: inline-flex; }
+  .wa-contact-actions { gap: 3px; }
+  .wa-contact-actions button { width: auto; max-width: 105px; padding: 0 7px; color: #d9fdd3; text-overflow: ellipsis; }
   .wa-messages { padding-inline: 12px; }
   .wa-bubble { max-width: 88%; }
 }
@@ -393,6 +412,8 @@ html[data-theme='light'] .wa-emoji-picker { color: #111b21; background: #fff; }
   .wa-inbox { height: 100%; min-height: 0; border-radius: 10px; }
   .wa-chat-header { padding-inline: 7px 10px; }
   .wa-avatar-header { width: 37px; height: 37px; }
+  .wa-contact-actions button { width: 32px; padding: 0; }
+  .wa-contact-actions .wa-action-label { display: none; }
   .wa-composer-row { gap: 1px; padding-inline: 5px; }
   .wa-composer-button { width: 34px; height: 38px; }
   .wa-textarea-wrap { padding-inline: 10px; }
