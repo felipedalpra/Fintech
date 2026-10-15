@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -32,7 +33,8 @@ export function CrmBell({ onNavigate }) {
   const [tasks, setTasks] = useState([])
   const [opps, setOpps] = useState([])
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const triggerRef = useRef(null)
+  const panelRef = useRef(null)
 
   useEffect(() => {
     if (!effectiveUserId) return
@@ -54,7 +56,11 @@ export function CrmBell({ onNavigate }) {
 
   useEffect(() => {
     if (!open) return
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    function onDoc(e) {
+      const clickedTrigger = triggerRef.current?.contains(e.target)
+      const clickedPanel = panelRef.current?.contains(e.target)
+      if (!clickedTrigger && !clickedPanel) setOpen(false)
+    }
     function onKey(e) { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
@@ -77,15 +83,30 @@ export function CrmBell({ onNavigate }) {
 
   const btn = { position: 'relative', width: 38, height: 38, borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center', cursor: 'pointer', color: total ? C.text : C.textSub }
   const badge = { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: C.red || '#EF4444', color: '#fff', fontSize: 10, fontWeight: 800, display: 'grid', placeItems: 'center', padding: '0 4px', border: `2px solid ${C.bg}` }
+  const panelStyle = {
+    position: 'fixed',
+    top: 'max(64px, calc(env(safe-area-inset-top) + 12px))',
+    right: 'max(12px, env(safe-area-inset-right))',
+    zIndex: 5000,
+    width: 'min(340px, calc(100vw - 24px))',
+    maxHeight: 'calc(100dvh - 80px)',
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    boxSizing: 'border-box',
+    background: C.card,
+    border: `1px solid ${C.borderBright || C.border}`,
+    borderRadius: 14,
+    boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)',
+  }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" style={btn} onClick={() => setOpen(o => !o)} title="Alertas do CRM" aria-label="Alertas do CRM">
+    <div ref={triggerRef} style={{ position: 'relative' }}>
+      <button type="button" style={btn} onClick={() => setOpen(o => !o)} title="Alertas do CRM" aria-label="Alertas do CRM" aria-expanded={open} aria-haspopup="dialog">
         <Ico d={I.bell} size={19} />
         {total > 0 && <span style={badge}>{total}</span>}
       </button>
-      {open && (
-        <div style={{ position: 'absolute', top: 46, right: 0, zIndex: 60, width: 300, background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 14, boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)', overflow: 'hidden' }}>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={panelRef} role="dialog" aria-label="Alertas do CRM" data-testid="crm-alerts-popover" style={panelStyle}>
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${C.border}`, fontSize: 13, fontWeight: 800, color: C.text }}>Alertas do CRM</div>
           {alerts.length === 0
             ? <div style={{ padding: '20px 14px', fontSize: 13, color: C.textSub, textAlign: 'center' }}>Tudo em dia por aqui. 🎉</div>
@@ -99,7 +120,8 @@ export function CrmBell({ onNavigate }) {
                 </div>
               </div>
             ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
