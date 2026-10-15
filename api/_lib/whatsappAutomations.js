@@ -167,10 +167,13 @@ async function dispatchOne(admin, { userId, number, item, automationType, target
   // 2) Envia.
   try {
     const providerId = await sendWhatsAppText(number.instance_url, number.api_token, item.phone, item.message)
-    await admin.from('whatsapp_messages').insert({
+    const { error: messageError } = await admin.from('whatsapp_messages').insert({
       user_id: userId, patient_id: item.patient_id, phone: item.phone, direction: 'outbound',
       body: item.message, status: 'sent', provider_message_id: providerId, whatsapp_number_id: number.id,
     })
+    // Com notifySentByMe ativo, o webhook pode persistir a mesma mensagem antes
+    // desta resposta de envio. A restrição única confirma que ela já está salva.
+    if (messageError && messageError.code !== '23505') throw messageError
     await admin.from('whatsapp_automation_log').update({ status: 'sent' }).match(match)
     summary.sent += 1
   } catch (err) {

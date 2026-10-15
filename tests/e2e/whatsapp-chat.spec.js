@@ -33,7 +33,7 @@ test('aba WhatsApp mostra o histórico e envia mensagem', async ({ page }) => {
   await page.getByText('Ana Paciente').first().click()
 
   // Ir para a aba WhatsApp.
-  await page.getByRole('button', { name: 'WhatsApp' }).click()
+  await page.getByRole('main').getByRole('button', { name: 'WhatsApp' }).click()
 
   // Histórico renderiza (mensagem recebida e enviada), nos lados certos.
   await expect(page.getByText('Oi, doutora, tudo bem?')).toBeVisible()
@@ -54,6 +54,6 @@ test('aba WhatsApp sem telefone pede cadastro de telefone', async ({ page }) => 
   })
   await page.goto('/app/patients')
   await page.getByText('Ana Paciente').first().click()
-  await page.getByRole('button', { name: 'WhatsApp' }).click()
+  await page.getByRole('main').getByRole('button', { name: 'WhatsApp' }).click()
   await expect(page.getByText(/Cadastre um telefone do paciente/)).toBeVisible()
 })

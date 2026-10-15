@@ -104,7 +104,7 @@ export function WhatsAppNumbers() {
     setMsg(null)
     try {
       await testConnection({ whatsappNumberId: n.id })
-      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: true, text: 'Conectado' } }))
+      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: true, text: 'Conectado · celular sincronizado' } }))
     } catch (error) {
       setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: false, text: error.message } }))
       setMsg({ type: 'error', text: error.message })
@@ -133,8 +133,8 @@ export function WhatsAppNumbers() {
       setEditingId(null)
       setEditInstanceUrl('')
       setEditApiToken('')
-      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: true, text: 'Conectado' } }))
-      setMsg({ type: 'success', text: `Conexão de "${n.label}" testada e salva.` })
+      setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: true, text: 'Conectado · celular sincronizado' } }))
+      setMsg({ type: 'success', text: `Conexão de "${n.label}" testada e salva. Mensagens enviadas pelo WhatsApp também serão sincronizadas.` })
     } catch (error) {
       setConnectionStatus(prev => ({ ...prev, [n.id]: { ok: false, text: error.message } }))
       setMsg({ type: 'error', text: error.message })
@@ -180,7 +180,7 @@ export function WhatsAppNumbers() {
       <div style={{ fontSize: 11, color: C.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Integração</div>
       <h3 style={{ margin: '0 0 6px', fontSize: 22, color: C.text, letterSpacing: '-0.03em' }}>Números de WhatsApp</h3>
       <p style={{ fontSize: 13, color: C.textSub, marginTop: 0, marginBottom: 18, lineHeight: 1.5 }}>
-        Cadastre cada número de WhatsApp Business da clínica (até 3). Para cada um, crie uma instância no Z-API, cole a URL da instância e o Client-Token aqui, e configure no Z-API a URL de webhook que vai aparecer.
+        Cadastre cada número de WhatsApp Business da clínica (até 3). Para cada um, crie uma instância no Z-API, cole a URL da instância e o Client-Token aqui, e configure no Z-API a URL de webhook que vai aparecer. Ao testar a conexão, o sistema ativa a sincronização das mensagens enviadas diretamente pelo WhatsApp.
       </p>
 
       {msg && <p style={{ fontSize: 12, color: msg.type === 'error' ? (C.red || '#ef4444') : '#10b981', margin: '0 0 12px' }}>{msg.text}</p>}

@@ -26,9 +26,12 @@ function Icon({ name, size=20, strokeWidth=1.8 }) {
     refresh:<><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 0-2 5"/></>,
     back:<><path d="m15 18-6-6 6-6"/><path d="M9 12h11"/></>,
     user:<><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
-    whatsapp:<><path d="M20.5 11.7a8.5 8.5 0 0 1-12.6 7.5L3 20.5l1.3-4.7A8.5 8.5 0 1 1 20.5 11.7Z"/><path d="M8.3 7.7c.2-.4.4-.4.7-.4h.4c.2 0 .4 0 .5.4l.8 2c.1.3 0 .5-.2.7l-.6.7c-.2.2-.3.4 0 .8.5.9 1.3 1.7 2.2 2.2.4.2.6.2.8 0l.8-1c.2-.3.5-.3.8-.2l1.9.9c.3.1.5.3.4.6-.1.6-.4 1.2-.9 1.6-.5.5-1.2.7-1.9.7-1.1 0-2.7-.6-4.4-2.1-1.4-1.2-2.4-2.8-2.7-3.7-.4-1-.1-2.2.4-3.2Z"/></>,
   }
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
+}
+
+function WhatsAppLogo({ size=22 }) {
+  return <svg data-testid="whatsapp-brand-logo" aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2a9.84 9.84 0 0 0-8.4 14.96L2 22l5.2-1.61A9.93 9.93 0 1 0 12.04 2Zm0 17.92a8 8 0 0 1-4.08-1.12l-.29-.17-3.09.96 1-3-.19-.31a7.94 7.94 0 1 1 6.65 3.64Zm4.36-5.94c-.24-.12-1.41-.7-1.63-.77-.22-.08-.38-.12-.54.12-.16.24-.62.77-.76.93-.14.16-.28.18-.52.06-.24-.12-1.01-.37-1.92-1.19-.71-.63-1.19-1.42-1.33-1.66-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.78-.2-.47-.4-.41-.54-.42h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.69 2.58 4.1 3.62.57.25 1.02.4 1.37.51.58.18 1.1.15 1.51.09.46-.07 1.41-.58 1.61-1.14.2-.56.2-1.04.14-1.14-.06-.1-.22-.16-.46-.28Z"/></svg>
 }
 
 const mediaLabel = type => ({ image:'Foto', audio:'Áudio', video:'Vídeo', document:'Documento' }[type] || '')
@@ -79,7 +82,7 @@ export function WhatsAppInbox() {
   const [replyText, setReplyText] = useState(''), [showEmoji, setShowEmoji] = useState(false), [emojiGroup, setEmojiGroup] = useState('recent')
   const [replyNumberId, setReplyNumberId] = useState(''), [sending, setSending] = useState(false), [uploading, setUploading] = useState(false), [recording, setRecording] = useState(false)
   const [suggestOpp, setSuggestOpp] = useState(null), [suggestBusy, setSuggestBusy] = useState(false)
-  const endRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
+  const messagesRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
 
   const load = useCallback(async ({ silent=false }={}) => {
     silent ? setRefreshing(true) : setLoading(true)
@@ -123,7 +126,11 @@ export function WhatsAppInbox() {
   const current = allConversations.find(conversation => conversation.phone === selectedPhone) || null
   const thread = useMemo(() => current ? [...current.items].reverse() : [], [current])
   useEffect(() => { if (!selectedPhone && conversations[0]) setSelectedPhone(conversations[0].phone); else if (selectedPhone && !allConversations.some(c => c.phone === selectedPhone)) setSelectedPhone(conversations[0]?.phone || null) }, [allConversations, conversations, selectedPhone])
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior:'smooth', block:'end' }) }, [thread.length, selectedPhone])
+  useEffect(() => {
+    const container = messagesRef.current
+    if (!container) return
+    container.scrollTo({ top:container.scrollHeight, behavior:'smooth' })
+  }, [thread.length, selectedPhone])
   useEffect(() => { if (current) setReplyNumberId(current.numberId || numbers[0]?.id || '') }, [current, numbers])
   useEffect(() => { setShowEmoji(false) }, [selectedPhone])
   useEffect(() => {
@@ -185,23 +192,23 @@ export function WhatsAppInbox() {
   return <div className={`wa-inbox ${current ? 'wa-has-chat' : ''}`}>
     <aside className="wa-sidebar">
       <div className="wa-sidebar-top">
-        <div className="wa-sidebar-title"><span className="wa-brand-icon"><Icon name="whatsapp" size={21}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'contato' : 'contatos'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={() => load({ silent:true })} title="Atualizar conversas" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button></div>
+        <div className="wa-sidebar-title"><span className="wa-brand-icon" aria-label="WhatsApp"><WhatsAppLogo size={23}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'contato' : 'contatos'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={() => load({ silent:true })} title="Atualizar conversas" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button></div>
         <label className="wa-search"><Icon name="search" size={17}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar conversa ou mensagem"/>{search && <button type="button" onClick={() => setSearch('')} aria-label="Limpar busca">×</button>}</label>
         <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{numbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
       </div>
-      <div className="wa-conversation-list">{conversations.length === 0 ? <div className="wa-list-empty"><Icon name="search" size={26}/><strong>Nenhuma conversa encontrada</strong><span>Ajuste a busca ou os filtros.</span></div> : conversations.map(conversation => {
+      <div className="wa-conversation-list" aria-label="Lista de conversas">{conversations.length === 0 ? <div className="wa-list-empty"><Icon name="search" size={26}/><strong>Nenhuma conversa encontrada</strong><span>Ajuste a busca ou os filtros.</span></div> : conversations.map(conversation => {
         const responsible = ownerName(conversation.numberId), active = conversation.phone === selectedPhone
         return <button type="button" key={conversation.phone} className={`wa-conversation ${active ? 'is-active' : ''}`} onClick={() => setSelectedPhone(conversation.phone)}><span className="wa-avatar">{initials(conversation.name, conversation.phone)}</span><span className="wa-conversation-content"><span className="wa-conversation-line"><strong>{conversation.name || conversation.phone}</strong><time>{fmtConversationTime(conversation.last.created_at)}</time></span><span className="wa-preview"><span className={`wa-direction-dot ${conversation.last.direction}`}/>{previewText(conversation.last)}</span><span className="wa-chips">{conversation.numberId && numberLabel[conversation.numberId] && <span>{numberLabel[conversation.numberId]}</span>}{responsible && <span className="wa-chip-owner">{responsible}</span>}{isAdmin && conversation.numberId && !numberOwner[conversation.numberId] && <span className="wa-chip-warning">sem responsável</span>}{!conversation.patientId && <span className="wa-chip-warning">não atribuída</span>}</span></span></button>
       })}</div>
     </aside>
-    <section className="wa-chat">{!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><Icon name="whatsapp" size={46} strokeWidth={1.4}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
+    <section className="wa-chat">{!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><WhatsAppLogo size={48}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
       <header className="wa-chat-header"><button type="button" className="wa-icon-button wa-back" onClick={() => setSelectedPhone(null)} aria-label="Voltar para conversas"><Icon name="back"/></button><span className="wa-avatar wa-avatar-header">{initials(current.name, current.phone)}</span><div className="wa-chat-person"><strong>{current.name || current.phone}</strong><span>{formatPhone(current.phone)}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div><div className="wa-chat-tags">{ownerName(current.numberId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId)}</span>}{!current.patientId && <span className="is-warning">não atribuída</span>}</div></header>
       {suggestOpp && <div className="wa-suggestion"><SuggestionBox opp={suggestOpp} disabled={suggestBusy} onAccept={acceptSuggestion} onReject={rejectSuggestion}/></div>}
       {error && <div className="wa-error"><span>!</span><p>{error}</p><button type="button" onClick={() => setError(null)} aria-label="Fechar erro">×</button></div>}
-      <div className="wa-messages">{thread.map((message, index) => {
+      <div ref={messagesRef} className="wa-messages" role="log" aria-label={`Mensagens com ${current.name || current.phone}`} tabIndex="0">{thread.map((message, index) => {
         const showDate = index === 0 || dateKey(thread[index - 1].created_at) !== dateKey(message.created_at)
         return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}><div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{renderBody(message)}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span></div></div></div>
-      })}<div ref={endRef}/></div>
+      })}</div>
       <form className="wa-composer" onSubmit={send}>{numbers.length > 1 && <label className="wa-reply-number"><span>Enviar por</span><select value={replyNumberId} onChange={event => setReplyNumberId(event.target.value)}>{numbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select></label>}<div className="wa-composer-row">
         <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" hidden onChange={onPickFile}/><button type="button" className="wa-icon-button wa-composer-button" onClick={() => fileRef.current?.click()} disabled={uploading || recording} title="Anexar imagem ou documento" aria-label="Anexar arquivo"><Icon name="attach"/></button>
         <div className="wa-emoji-anchor"><button type="button" className={`wa-icon-button wa-composer-button ${showEmoji ? 'is-active' : ''}`} onClick={() => setShowEmoji(value => !value)} title="Emoji" aria-label="Inserir emoji"><Icon name="smile"/></button>{showEmoji && <div className="wa-emoji-picker"><div className="wa-emoji-tabs">{EMOJI_GROUPS.map(group => <button key={group.id} type="button" className={emojiGroup === group.id ? 'is-active' : ''} onClick={() => setEmojiGroup(group.id)} title={group.label}>{group.icon}</button>)}</div><div className="wa-emoji-title">{activeEmojiGroup.label}</div><div className="wa-emoji-grid">{activeEmojiGroup.items.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={emoji}>{emoji}</button>)}</div></div>}</div>

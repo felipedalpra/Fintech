@@ -34,9 +34,8 @@ test('parseIncomingMessage: texto continua msgType text sem mídia', () => {
   expect(r).toMatchObject({ msgType: 'text', text: 'oi', mediaUrl: null, mediaMime: null })
 })
 
-test('parseIncomingMessage: sem texto e sem mídia retorna null; fromMe ignora', () => {
+test('parseIncomingMessage: sem texto e sem mídia retorna null', () => {
   expect(parseIncomingMessage({ phone: '5511988887777' })).toBe(null)
-  expect(parseIncomingMessage({ phone: '5511988887777', fromMe: true, image: { imageUrl: 'x' } })).toBe(null)
 })
 
 test('parseIncomingMessage: mensagem recebida do Z-API', () => {
@@ -50,8 +49,30 @@ test('parseIncomingMessage: extrai o nome do contato (para nomear o lead)', () =
   expect(parseIncomingMessage({ phone: '5511988887777', text: { message: 'oi' } }).senderName).toBe('')
 })
 
-test('parseIncomingMessage: ignora eco da própria mensagem (fromMe)', () => {
-  expect(parseIncomingMessage({ phone: '5511988887777', text: { message: 'oi' }, fromMe: true })).toBeNull()
+test('parseIncomingMessage: mensagem enviada no WhatsApp vira saída com data e origem', () => {
+  expect(parseIncomingMessage({
+    phone: '5511988887777',
+    text: { message: 'Enviei pelo celular' },
+    fromMe: true,
+    fromApi: false,
+    status: 'SENT',
+    momment: 1791993600000,
+    messageId: 'PHONE-1',
+  })).toMatchObject({
+    phone: '5511988887777',
+    direction: 'outbound',
+    status: 'sent',
+    text: 'Enviei pelo celular',
+    providerMessageId: 'PHONE-1',
+    fromApi: false,
+    createdAt: '2026-10-14T16:00:00.000Z',
+  })
+})
+
+test('parseIncomingMessage: saída entregue ou lida preserva o status mais avançado', () => {
+  expect(parseIncomingMessage({ phone: '5511988887777', body: 'oi', fromMe: true, status: 'RECEIVED' }).status).toBe('delivered')
+  expect(parseIncomingMessage({ phone: '5511988887777', body: 'oi', fromMe: true, status: 'READ' }).status).toBe('read')
+  expect(parseIncomingMessage({ phone: '5511988887777', body: 'oi', fromMe: true, status: 'PLAYED' }).status).toBe('read')
 })
 
 test('parseIncomingMessage: ignora payload sem texto ou sem telefone', () => {
@@ -62,7 +83,7 @@ test('parseIncomingMessage: ignora payload sem texto ou sem telefone', () => {
 
 test('parseIncomingMessage: aceita formatos alternativos de campo', () => {
   expect(parseIncomingMessage({ from: '5511988887777', message: { conversation: 'oi' }, id: 'X1' }))
-    .toMatchObject({ phone: '5511988887777', text: 'oi', providerMessageId: 'X1' })
+    .toMatchObject({ phone: '5511988887777', direction: 'inbound', text: 'oi', providerMessageId: 'X1' })
   expect(parseIncomingMessage({ sender: { phone: '5511988887777' }, body: 'oi' }))
     .toMatchObject({ phone: '5511988887777', text: 'oi', providerMessageId: null })
 })

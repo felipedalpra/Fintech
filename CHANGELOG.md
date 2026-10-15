@@ -5,6 +5,15 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (99)
+### Changed
+- **Inbox do WhatsApp em tela útil integral**: a página deixa de repetir o cabeçalho geral no desktop e passa a reservar toda a área disponível para conversas; lista de contatos e histórico têm rolagens independentes, enquanto cabeçalho e compositor permanecem visíveis. No celular, uma barra compacta mantém o acesso ao menu e aos alertas sem roubar o espaço da conversa. (`src/pages/FinanceWorkspace.jsx`, `src/components/WhatsAppInbox.css`.)
+- **Identidade visual correta do WhatsApp**: o símbolo genérico de conversa foi substituído pelo glifo reconhecível do WhatsApp tanto na navegação quanto no cabeçalho e estado vazio do inbox. (`src/components/NavIcon.jsx`, `src/components/WhatsAppInbox.jsx`.)
+
+### Fixed
+- **Conversa cortada e campo de mensagem inacessível**: removida a altura mínima que ultrapassava viewports baixos e trocado o `scrollIntoView` global por rolagem restrita ao histórico, impedindo que mensagens acumuladas desloquem a página ou escondam o compositor. Regressões são cobertas em desktop baixo e celular com threads e listas extensas. (`src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`, `tests/e2e/whatsapp-inbox.spec.js`.)
+- **Mensagens enviadas pelo WhatsApp no lado correto**: webhooks com `fromMe=true` deixam de ser descartados e passam a ser persistidos como saída (`outbound`), aparecendo à direita; mensagens dos contatos permanecem à esquerda. O teste de conexão ativa automaticamente `notifySentByMe` na Z-API, preserva a data/status informados pelo provider e usa `provider_message_id` para não duplicar envios da plataforma ou das automações que retornem pelo webhook. Saídas manuais para números desconhecidos ficam não atribuídas, sem criar pacientes automaticamente. (`api/_lib/whatsapp.js`, `api/_lib/whatsappClient.js`, `api/_lib/whatsappAutomations.js`, `api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`, `tests/e2e/whatsapp-inbox.spec.js`, `tests/unit/whatsapp.spec.js`, `tests/unit/whatsappMedia.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (98)
 ### Fixed
 - **Blindagem multi-usuário (escopo da clínica):** um membro confirmado (ex.: gestão/equipe) cujo `data_owner_id()` não resolvesse caía **em silêncio** para o próprio `user.id` — o que faria a pessoa **ver um app vazio** (lendo pelo id errado) e **gravar dados órfãos**, invisíveis para o resto da clínica. Agora o `UserRoleContext` **tenta de novo** (1 retry) e, se ainda não resolver, expõe `scopeError` em vez de usar o `user.id`; o workspace **bloqueia com aviso** ("Não foi possível vincular sua clínica") + botão Recarregar, nunca renderizando/gravando com escopo errado. Fecha o modo de falha de "desconectado / não aparece / não persiste" entre perfis da mesma conta. `src/context/UserRoleContext.jsx`, `src/pages/FinanceWorkspace.jsx`.
