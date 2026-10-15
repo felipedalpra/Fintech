@@ -5,7 +5,7 @@ const PROFILE_PHOTO = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/s
 const MESSAGES = [
   { id: 'm5', phone: '120363019502650977-group', direction: 'inbound', body: 'Confirmado para amanhã', status: 'read', created_at: '2026-10-10T14:05:00Z', patient_id: null, whatsapp_number_id: 'n1', is_group: true, chat_name: 'Equipe Cirúrgica', chat_photo: PROFILE_PHOTO, sender_name: 'João Instrumentador', sender_phone: '5511966665555', sender_photo: PROFILE_PHOTO, patients: null },
   { id: 'm4', phone: '120363019502650977-group', direction: 'inbound', body: 'Materiais separados', status: 'read', created_at: '2026-10-10T14:00:00Z', patient_id: null, whatsapp_number_id: 'n1', is_group: true, chat_name: 'Equipe Cirúrgica', chat_photo: PROFILE_PHOTO, sender_name: 'Maria Enfermeira', sender_phone: '5511955554444', sender_photo: PROFILE_PHOTO, patients: null },
-  { id: 'm3', phone: '5511977776666', direction: 'inbound', body: 'Quero fazer rino', status: 'read', created_at: '2026-10-10T13:00:00Z', patient_id: null, whatsapp_number_id: 'n1', patients: null },
+  { id: 'm3', phone: '5511977776666', direction: 'inbound', body: 'Quero fazer rino', status: 'read', created_at: '2026-10-10T13:00:00Z', patient_id: null, contact_id: 'c1', whatsapp_number_id: 'n1', patients: null, crm_contacts: { id:'c1', full_name:null, phone:'5511977776666', status:'contact', patient_id:null } },
   { id: 'm2', phone: '5511988887777', direction: 'outbound', body: 'Oi! Como ajudo?\nPode me contar o que procura?', status: 'read', created_at: '2026-10-10T12:05:00Z', patient_id: 'p1', whatsapp_number_id: 'n1', patients: { full_name: 'Ana Silva' } },
   { id: 'm1', phone: '5511988887777', direction: 'inbound', body: 'Oi, doutora', status: 'read', created_at: '2026-10-10T12:00:00Z', patient_id: 'p1', whatsapp_number_id: 'n1', patients: { full_name: 'Ana Silva' } },
 ]
@@ -128,16 +128,16 @@ test('no celular volta para a lista e permite trocar de conversa repetidamente',
   await expect(page.locator('.wa-messages').getByText('Confirmado para amanhã', { exact: true })).toBeVisible()
 })
 
-test('inbox lista conversas (inclusive não atribuídas) e abre os threads', async ({ page }) => {
+test('inbox separa contatos de pacientes e abre os threads', async ({ page }) => {
   await page.goto('/app/inbox')
   await expect(page).toHaveURL(/\/app\/inbox$/)
   await expect(page.locator('.wa-sidebar-title').getByText('Conversas', { exact:true })).toBeVisible()
 
-  // Conversa atribuída (Ana) e a não atribuída (número cru) aparecem na lista.
+  // Paciente confirmado (Ana) e contato ainda não convertido aparecem na lista.
   const sidebar = page.locator('.wa-sidebar')
   await expect(sidebar.getByText('Ana Silva')).toBeVisible()
   await expect(sidebar.getByText('+55 (11) 97777-6666')).toBeVisible()
-  await expect(page.getByText(/não atribuída/).first()).toBeVisible()
+  await expect(sidebar.locator('.wa-conversation').filter({ hasText:'+55 (11) 97777-6666' })).toContainText('Contato')
 
   // Abrir a conversa da Ana → thread com as duas mensagens + caixa de resposta.
   await sidebar.getByText('Ana Silva').click()
@@ -157,10 +157,52 @@ test('inbox lista conversas (inclusive não atribuídas) e abre os threads', asy
   ])
   expect(outboundBox.x).toBeGreaterThan(inboundBox.x)
 
-  // Abrir a conversa NÃO atribuída → dá pra responder mesmo sem paciente vinculado.
+  // Abrir o contato → dá pra responder e classificar sem criar paciente automaticamente.
   await sidebar.getByText('+55 (11) 97777-6666').click()
   await expect(page.getByText('Quero fazer rino').first()).toBeVisible()
   await expect(page.getByPlaceholder('Responder...')).toBeVisible()
+  await expect(page.getByRole('button', { name:'Adicionar ao funil' })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Cadastrar ou vincular paciente' })).toBeVisible()
+})
+
+test('adiciona contato ao funil sem inserir paciente', async ({ page }) => {
+  let rpcPayload = null
+  let patientWrites = 0
+  await page.route('**/rest/v1/rpc/create_whatsapp_contact_lead*', async route => {
+    rpcPayload = JSON.parse(route.request().postData() || '{}')
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ id:'opp-contact', contact_id:'c1', patient_id:null, stage:'primeiro_contato', status:'aberto' }) })
+  })
+  await page.route('**/rest/v1/patients*', async route => {
+    if (route.request().method() !== 'GET') patientWrites += 1
+    await route.fulfill({ status:200, contentType:'application/json', body:'[]' })
+  })
+
+  await page.goto('/app/inbox')
+  await page.locator('.wa-sidebar').getByText('+55 (11) 97777-6666').click()
+  await page.getByRole('button', { name:'Adicionar ao funil' }).click()
+  await expect(page.getByText('Isso não cadastra a pessoa como paciente.')).toBeVisible()
+  await page.getByPlaceholder('Ex.: Rinoplastia').fill('Rinoplastia')
+  await page.getByRole('button', { name:'Adicionar ao funil', exact:true }).last().click()
+
+  await expect.poll(() => rpcPayload).toEqual({ p_contact:'c1', p_title:'Rinoplastia' })
+  expect(patientWrites).toBe(0)
+})
+
+test('converte contato em paciente somente após confirmação explícita', async ({ page }) => {
+  let rpcPayload = null
+  await page.route('**/rest/v1/rpc/convert_crm_contact_to_patient*', async route => {
+    rpcPayload = JSON.parse(route.request().postData() || '{}')
+    await route.fulfill({ status:200, contentType:'application/json', body:'"patient-created"' })
+  })
+  await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+
+  await page.goto('/app/inbox')
+  await page.locator('.wa-sidebar').getByText('+55 (11) 97777-6666').click()
+  await page.getByRole('button', { name:'Cadastrar ou vincular paciente' }).click()
+  await page.getByPlaceholder('Nome completo').fill('Maria Confirmada')
+  await page.getByRole('button', { name:'Criar novo paciente' }).click()
+
+  await expect.poll(() => rpcPayload).toEqual({ p_contact:'c1', p_name:'Maria Confirmada', p_patient:null })
 })
 
 test('reúne telefone e LID no chat correto sem misturar números da clínica', async ({ page }) => {

@@ -36,7 +36,7 @@ export function buildTimeline({ opp, stageHistory = [], messages = [], tasks = [
   }
 
   for (const m of messages) {
-    const who = m.direction === 'outbound' ? 'Clínica' : 'Paciente'
+    const who = m.direction === 'outbound' ? 'Clínica' : (opp?.patient_id ? 'Paciente' : 'Contato')
     events.push({ at: m.created_at, kind: 'whatsapp', icon: '💬', text: `${who}: ${String(m.body || '').slice(0, 140)}`, meta: null })
   }
 

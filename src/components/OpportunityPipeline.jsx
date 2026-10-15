@@ -9,6 +9,7 @@ import { NewLeadModal } from './NewLeadModal.jsx'
 import { createManualLead, patchOpportunity } from '../lib/opportunityActions.js'
 import { slaForLead } from '../lib/slaBusinessTime.js'
 import { initials, avatarColor } from '../lib/avatar.js'
+import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
 
 // Ícones SVG (leitura melhor que emoji). `d` é o miolo do path.
 function Ico({ d, size = 14, sw = 2, fill = 'none' }) {
@@ -85,13 +86,25 @@ export function OpportunityPipeline() {
     async function load() {
       setLoading(true)
       setError(null)
-      const [oppRes, memRes] = await Promise.all([
-        supabase
+      const fetchOpportunities = async () => {
+        let result = await supabase
           .from('opportunities')
-          .select('id, title, stage, status, value, source, tags, stage_entered_at, created_at, first_response_at, patient_id, responsible_user_id, suggested_stage, suggested_reason, suggested_confidence, suggestion_status, patients(full_name, phone)')
+          .select('id, title, stage, status, value, source, tags, stage_entered_at, created_at, first_response_at, patient_id, contact_id, responsible_user_id, suggested_stage, suggested_reason, suggested_confidence, suggestion_status, patients(full_name, phone), crm_contacts(full_name, phone, status)')
           .eq('user_id', effectiveUserId)
           .eq('status', 'aberto')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+        if (isCrmContactSchemaMissing(result.error)) {
+          result = await supabase
+            .from('opportunities')
+            .select('id, title, stage, status, value, source, tags, stage_entered_at, created_at, first_response_at, patient_id, responsible_user_id, suggested_stage, suggested_reason, suggested_confidence, suggestion_status, patients(full_name, phone)')
+            .eq('user_id', effectiveUserId)
+            .eq('status', 'aberto')
+            .order('created_at', { ascending: false })
+        }
+        return result
+      }
+      const [oppRes, memRes] = await Promise.all([
+        fetchOpportunities(),
         supabase.rpc('clinic_team'), // time completo (inclui o dono) — gestão/admin atribuem a qualquer um
       ])
       if (!mounted) return
@@ -112,7 +125,7 @@ export function OpportunityPipeline() {
   const visible = useMemo(() => {
     const q = filters.q.trim().toLowerCase()
     return opps.filter(o => {
-      if (q && !((o.patients?.full_name || '').toLowerCase().includes(q) || (o.title || '').toLowerCase().includes(q))) return false
+      if (q && !((opportunityPerson(o).name || '').toLowerCase().includes(q) || (o.title || '').toLowerCase().includes(q))) return false
       if (filters.responsible !== 'all' && o.responsible_user_id !== (filters.responsible === 'none' ? null : filters.responsible)) return false
       if (filters.source !== 'all' && o.source !== filters.source) return false
       if (filters.tag !== 'all' && !(Array.isArray(o.tags) && o.tags.includes(filters.tag))) return false
@@ -338,8 +351,9 @@ function QuickAddLead({ ownerId, stage, onCreated }) {
 }
 
 function OpportunityCard({ opp, currentStage, allStages, memberLabel, members, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, isMoving }) {
-  const patientName = opp.patients?.full_name || 'Paciente'
-  const hasPhone = !!opp.patients?.phone
+  const person = opportunityPerson(opp)
+  const patientName = person.name
+  const hasPhone = !!person.phone
   const value = fmtBRL(opp.value)
   const days = daysInStage(opp.stage_entered_at)
   const tags = Array.isArray(opp.tags) ? opp.tags : []
@@ -452,7 +466,7 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, members, o
             </div>
           ) : (respLabel && <Avatar label={respLabel} size={24} />)}
           <button type="button" style={s.wa} disabled={!hasPhone}
-            onClick={e => { e.stopPropagation(); if (!hasPhone) return; const digits = String(opp.patients.phone).replace(/\D/g, ''); if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener') }}
+            onClick={e => { e.stopPropagation(); if (!hasPhone) return; const digits = String(person.phone).replace(/\D/g, ''); if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener') }}
             title={hasPhone ? 'Abrir conversa no WhatsApp' : 'Sem telefone'}>
             <Ico d={ICON.wa} size={15} fill="currentColor" sw={0} />
           </button>

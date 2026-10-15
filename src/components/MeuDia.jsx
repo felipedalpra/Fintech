@@ -7,6 +7,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
 import { dayKey } from '../lib/taskViews.js'
 import { initials, avatarColor } from '../lib/avatar.js'
+import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
 
 // "Meu dia": a home do operador. Junta o que a pessoa logada precisa resolver hoje —
 // tarefas de hoje/atrasadas atribuídas a mim, leads (oportunidades) novos do dia atribuídos a mim,
@@ -54,13 +55,22 @@ export function MeuDia() {
     let mounted = true
     async function load() {
       setLoading(true); setError(null)
+      const fetchOpportunities = async () => {
+        let result = await supabase.from('opportunities')
+          .select('id, title, stage, status, value, responsible_user_id, stage_entered_at, created_at, patient_id, contact_id, patients(full_name, phone), crm_contacts(full_name, phone, status)')
+          .eq('user_id', effectiveUserId).eq('responsible_user_id', uid).eq('status', 'aberto')
+        if (isCrmContactSchemaMissing(result.error)) {
+          result = await supabase.from('opportunities')
+            .select('id, title, stage, status, value, responsible_user_id, stage_entered_at, created_at, patient_id, patients(full_name, phone)')
+            .eq('user_id', effectiveUserId).eq('responsible_user_id', uid).eq('status', 'aberto')
+        }
+        return result
+      }
       const [taskRes, oppRes] = await Promise.all([
         supabase.from('tasks')
           .select('id, title, due_date, status, assigned_user_id, patient_id, opportunity_id, patients(full_name), opportunities(title)')
           .eq('assigned_user_id', uid).eq('status', 'pendente'),
-        supabase.from('opportunities')
-          .select('id, title, stage, status, value, responsible_user_id, stage_entered_at, created_at, patients(full_name)')
-          .eq('user_id', effectiveUserId).eq('responsible_user_id', uid).eq('status', 'aberto'),
+        fetchOpportunities(),
       ])
       if (!mounted) return
       if (taskRes.error) { setError(taskRes.error.message); setLoading(false); return }
@@ -112,8 +122,8 @@ export function MeuDia() {
         empty="Nenhum lead novo hoje.">
         {leadsNovos.map(o => (
           <Row key={o.id}>
-            <Avatar label={o.patients?.full_name || 'Paciente'} />
-            <span style={rowText}>{o.patients?.full_name || 'Paciente'}{o.title && o.title !== 'Oportunidade' ? ` · ${o.title}` : ''}</span>
+            <Avatar label={opportunityPerson(o).name} />
+            <span style={rowText}>{opportunityPerson(o).name}{o.title && o.title !== 'Oportunidade' ? ` · ${o.title}` : ''}</span>
             {fmtBRL(o.value) && <Pill color={C.green || '#10B981'}>{fmtBRL(o.value)}</Pill>}
           </Row>
         ))}
@@ -123,8 +133,8 @@ export function MeuDia() {
         empty="Nada parado. 👏">
         {parados.map(o => (
           <Row key={o.id}>
-            <Avatar label={o.patients?.full_name || 'Paciente'} />
-            <span style={rowText}>{o.patients?.full_name || 'Paciente'}{o.title && o.title !== 'Oportunidade' ? ` · ${o.title}` : ''}</span>
+            <Avatar label={opportunityPerson(o).name} />
+            <span style={rowText}>{opportunityPerson(o).name}{o.title && o.title !== 'Oportunidade' ? ` · ${o.title}` : ''}</span>
             <Pill color={C.yellow || '#F59E0B'}>{daysSince(o.stage_entered_at)} dias</Pill>
           </Row>
         ))}

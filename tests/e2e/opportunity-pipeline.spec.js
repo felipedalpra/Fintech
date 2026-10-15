@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 const OPPS = [
   { id: 'o1', title: 'Rinoplastia', stage: 'consulta_agendada', status: 'aberto', value: 15000, source: 'Instagram', tags: ['retorno'], stage_entered_at: '2026-10-07T12:00:00Z', patient_id: 'p1', patients: { full_name: 'Ana Silva', phone: '11988887777' } },
   { id: 'o2', title: 'Oportunidade', stage: 'orcamento_enviado', status: 'aberto', value: 30000, source: null, tags: [], stage_entered_at: '2026-10-09T12:00:00Z', patient_id: 'p2', patients: { full_name: 'Bia Souza', phone: '' } },
+  { id: 'o3', title: 'Blefaroplastia', stage: 'primeiro_contato', status: 'aberto', value: null, source: 'whatsapp', tags: [], stage_entered_at: '2026-10-10T12:00:00Z', patient_id: null, contact_id: 'c1', patients: null, crm_contacts: { full_name: 'Carla Contato', phone: '5511977776666', status: 'lead' } },
 ]
 
 test.beforeEach(async ({ page }) => {
@@ -29,6 +30,7 @@ test('pipeline mostra oportunidades por estágio com valor', async ({ page }) =>
 
   await expect(page.getByText('Ana Silva')).toBeVisible()
   await expect(page.getByText('Bia Souza')).toBeVisible()
+  await expect(page.getByText('Carla Contato')).toBeVisible()
   // R$ 15.000 aparece na soma da coluna e no card — basta um visível.
   await expect(page.getByText('R$ 15.000').first()).toBeVisible()
 })
@@ -41,12 +43,13 @@ test('mover oportunidade via RPC reflete na hora (update otimista persiste)', as
   await page.goto('/app/funnel')
   await expect(page.getByText('Ana Silva')).toBeVisible()
 
-  // Ana está em "Consulta Agendada" (1ª coluna) → seu select é o primeiro.
-  const anaSelect = page.locator('select[aria-label="Mover para estágio"]').first()
+  // Localiza o card da Ana pela identidade, sem depender da ordem de outros contatos.
+  const anaCard = page.locator('div[draggable="true"]').filter({ hasText:'Ana Silva' })
+  const anaSelect = anaCard.locator('select[aria-label="Mover para estágio"]')
   await expect(anaSelect).toHaveValue('consulta_agendada')
 
   await anaSelect.selectOption('consultado')
 
   // Como a RPC retornou sucesso, o update otimista persiste: Ana agora está em "Consultado".
-  await expect(page.locator('select[aria-label="Mover para estágio"]').first()).toHaveValue('consultado')
+  await expect(anaCard.locator('select[aria-label="Mover para estágio"]')).toHaveValue('consultado')
 })

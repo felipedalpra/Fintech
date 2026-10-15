@@ -4,6 +4,10 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { SuggestionBox } from './OpportunityPipeline.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 import { uploadWhatsAppMedia, mediaTypeFromMime } from '../lib/whatsappUpload.js'
+import { conversationKind, CONVERSATION_KIND_LABEL } from '../lib/crmContact.js'
+import { convertContactToPatient, createWhatsAppContactLead, setContactIgnored } from '../lib/crmContactActions.js'
+import { Modal, Btn, FInput } from './UI.jsx'
+import { PatientSelector } from './PatientSelector.jsx'
 import './WhatsAppInbox.css'
 
 const EMOJI_GROUPS = [
@@ -15,17 +19,18 @@ const EMOJI_GROUPS = [
 ]
 
 const THREAD_PAGE_SIZE = 100
+const CONTACT_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, contact_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name), crm_contacts(id, full_name, phone, status, patient_id)'
 const FULL_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name)'
 const ROUTING_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, chat_lid, contact_phone, patients(full_name)'
 const IDENTITY_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, patients(full_name)'
 const LEGACY_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)'
 
 async function selectWhatsAppMessages(configureQuery) {
-  const columnSets = [FULL_MESSAGE_COLUMNS, ROUTING_MESSAGE_COLUMNS, IDENTITY_MESSAGE_COLUMNS, LEGACY_MESSAGE_COLUMNS]
+  const columnSets = [CONTACT_MESSAGE_COLUMNS, FULL_MESSAGE_COLUMNS, ROUTING_MESSAGE_COLUMNS, IDENTITY_MESSAGE_COLUMNS, LEGACY_MESSAGE_COLUMNS]
   let result = null
   for (const columns of columnSets) {
     result = await configureQuery(supabase.from('whatsapp_messages').select(columns))
-    if (!['PGRST204', '42703'].includes(result.error?.code)) return result
+    if (!['PGRST200', 'PGRST204', '42703'].includes(result.error?.code)) return result
   }
   return result
 }
@@ -130,6 +135,8 @@ export function WhatsAppInbox() {
   const [replyText, setReplyText] = useState(''), [showEmoji, setShowEmoji] = useState(false), [emojiGroup, setEmojiGroup] = useState('recent')
   const [replyNumberId, setReplyNumberId] = useState(''), [sending, setSending] = useState(false), [uploading, setUploading] = useState(false), [recording, setRecording] = useState(false)
   const [suggestOpp, setSuggestOpp] = useState(null), [suggestBusy, setSuggestBusy] = useState(false)
+  const [contactModal, setContactModal] = useState(null), [contactBusy, setContactBusy] = useState(false), [contactError, setContactError] = useState(null)
+  const [contactName, setContactName] = useState(''), [leadTitle, setLeadTitle] = useState(''), [selectedPatientId, setSelectedPatientId] = useState('')
   const [olderMessages, setOlderMessages] = useState([]), [olderConversationKey, setOlderConversationKey] = useState(null)
   const [loadingOlder, setLoadingOlder] = useState(false), [hasOlder, setHasOlder] = useState(true)
   const messagesRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
@@ -183,6 +190,7 @@ export function WhatsAppInbox() {
     const grouped = new Map()
     for (const message of messages) {
       const isGroup = message.is_group === true || isGroupPhone(message.phone)
+      const contact = message.crm_contacts || null
       const key = conversationKey(message)
       if (!grouped.has(key)) grouped.set(key, {
         key,
@@ -190,9 +198,11 @@ export function WhatsAppInbox() {
         chatLid:message.chat_lid || null,
         contactPhone:message.contact_phone || (!/@lid$/i.test(String(message.phone || '')) ? message.phone : null),
         last:message,
-        name:isGroup ? (message.chat_name || null) : (message.patients?.full_name || message.chat_name || null),
+        name:isGroup ? (message.chat_name || null) : (message.patients?.full_name || contact?.full_name || message.chat_name || null),
         photo:message.chat_photo || message.sender_photo || null,
-        patientId:isGroup ? null : message.patient_id,
+        patientId:isGroup ? null : (message.patient_id || contact?.patient_id || null),
+        contactId:isGroup ? null : (message.contact_id || contact?.id || null),
+        contactStatus:isGroup ? null : (contact?.status || null),
         numberId:message.whatsapp_number_id,
         isGroup,
         items:[],
@@ -200,11 +210,17 @@ export function WhatsAppInbox() {
       const conversation = grouped.get(key)
       if (!conversation.chatLid && message.chat_lid) { conversation.chatLid = message.chat_lid; conversation.phone = message.chat_lid }
       if (!conversation.contactPhone && message.contact_phone) conversation.contactPhone = message.contact_phone
-      if (!conversation.name) conversation.name = isGroup ? message.chat_name : (message.patients?.full_name || message.chat_name)
+      if (!conversation.name) conversation.name = isGroup ? message.chat_name : (message.patients?.full_name || contact?.full_name || message.chat_name)
       if (!conversation.photo) conversation.photo = message.chat_photo || (!isGroup ? message.sender_photo : null)
+      if (!conversation.patientId) conversation.patientId = message.patient_id || contact?.patient_id || null
+      if (!conversation.contactId) conversation.contactId = message.contact_id || contact?.id || null
+      if (!conversation.contactStatus && contact?.status) conversation.contactStatus = contact.status
       conversation.items.push(message)
     }
-    return Array.from(grouped.values())
+    return Array.from(grouped.values()).map(conversation => ({
+      ...conversation,
+      kind: conversationKind({ isGroup:conversation.isGroup, patientId:conversation.patientId, contactStatus:conversation.contactStatus }),
+    }))
   }, [messages])
   const conversations = useMemo(() => {
     let list = allConversations
@@ -241,13 +257,18 @@ export function WhatsAppInbox() {
     container.scrollTo({ top:container.scrollHeight, behavior:'smooth' })
   }, [thread.length, selectedPhone])
   useEffect(() => { if (current) setReplyNumberId(current.numberId || numbers[0]?.id || '') }, [current, numbers])
-  useEffect(() => { setShowEmoji(false) }, [selectedPhone])
+  useEffect(() => { setShowEmoji(false); setContactModal(null); setContactError(null); setSelectedPatientId('') }, [selectedPhone])
   useEffect(() => {
     let active = true; setSuggestOpp(null)
-    if (!current?.patientId) return undefined
-    ;(async () => { const { data } = await supabase.from('opportunities').select('id, stage, suggested_stage, suggested_reason, suggested_confidence, suggestion_status').eq('patient_id', current.patientId).eq('status', 'aberto').order('created_at', { ascending:false }).limit(1).maybeSingle(); if (active && data?.suggestion_status === 'pending' && data.suggested_stage) setSuggestOpp(data) })()
+    if (!current?.patientId && !current?.contactId) return undefined
+    ;(async () => {
+      let query = supabase.from('opportunities').select('id, stage, suggested_stage, suggested_reason, suggested_confidence, suggestion_status').eq('status', 'aberto').order('created_at', { ascending:false }).limit(1)
+      query = current.contactId ? query.eq('contact_id', current.contactId) : query.eq('patient_id', current.patientId)
+      const { data } = await query.maybeSingle()
+      if (active && data?.suggestion_status === 'pending' && data.suggested_stage) setSuggestOpp(data)
+    })()
     return () => { active = false }
-  }, [current])
+  }, [current?.contactId, current?.patientId])
 
   async function loadOlderMessages() {
     if (!current || loadingOlder || !hasOlder || !thread.length) return
@@ -289,7 +310,7 @@ export function WhatsAppInbox() {
   async function postPayload(extra, target=current) {
     const { data:sessionData } = await supabase.auth.getSession(); const token = sessionData.session?.access_token
     if (!token) throw new Error('Sessão inválida. Entre novamente.')
-    const response = await fetch('/api/whatsapp?action=message', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body:JSON.stringify({ patientId:target.patientId, phone:target.phone, chatLid:target.chatLid, contactPhone:target.contactPhone, isGroup:target.isGroup, whatsappNumberId:replyNumberId, ...extra }) })
+    const response = await fetch('/api/whatsapp?action=message', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body:JSON.stringify({ patientId:target.patientId, contactId:target.contactId, phone:target.phone, chatLid:target.chatLid, contactPhone:target.contactPhone, isGroup:target.isGroup, whatsappNumberId:replyNumberId, ...extra }) })
     const json = await response.json().catch(() => ({})); if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`); await load({ silent:true })
   }
   async function send(event) {
@@ -322,6 +343,40 @@ export function WhatsAppInbox() {
     } catch { setError('Não foi possível acessar o microfone.') }
   }
   function appendEmoji(emoji) { setReplyText(text => text + emoji); window.requestAnimationFrame(() => textRef.current?.focus()) }
+  function openContactModal(type) {
+    setContactModal(type)
+    setContactName(current?.name || formatPhone(current?.contactPhone || current?.phone) || '')
+    setLeadTitle('')
+    setSelectedPatientId('')
+    setContactError(null)
+  }
+  async function addContactToFunnel() {
+    if (!current?.contactId || contactBusy) return
+    setContactBusy(true); setContactError(null)
+    const result = await createWhatsAppContactLead(current.contactId, leadTitle)
+    setContactBusy(false)
+    if (result.error) { setContactError(result.error); return }
+    setContactModal(null)
+    await load({ silent:true })
+  }
+  async function convertCurrentContact(patientId = null) {
+    if (!current?.contactId || contactBusy) return
+    if (!patientId && !contactName.trim()) { setContactError('Informe o nome do novo paciente.'); return }
+    setContactBusy(true); setContactError(null)
+    const result = await convertContactToPatient(current.contactId, { patientId, name:contactName })
+    setContactBusy(false)
+    if (result.error) { setContactError(result.error); return }
+    setContactModal(null)
+    await load({ silent:true })
+  }
+  async function toggleIgnored(ignored) {
+    if (!current?.contactId || contactBusy) return
+    setContactBusy(true); setError(null)
+    const result = await setContactIgnored(current.contactId, ignored)
+    setContactBusy(false)
+    if (result.error) { setError(result.error); return }
+    await load({ silent:true })
+  }
   function openConversation(key) { setSelectedPhone(key); setMobileListOpen(false) }
   function returnToConversationList() { setMobileListOpen(true); setShowEmoji(false) }
   function renderBody(message) {
@@ -349,11 +404,22 @@ export function WhatsAppInbox() {
         const preview = conversation.isGroup && conversation.last.direction === 'inbound'
           ? `${lastParticipant}: ${previewText(conversation.last)}`
           : previewText(conversation.last)
-        return <button type="button" key={conversation.key} className={`wa-conversation ${active ? 'is-active' : ''}`} onClick={() => openConversation(conversation.key)}><Avatar name={title} phone={conversation.contactPhone || conversation.phone} photo={conversation.photo}/><span className="wa-conversation-content"><span className="wa-conversation-line"><strong>{title}</strong><time>{fmtConversationTime(conversation.last.created_at)}</time></span><span className="wa-preview"><span className={`wa-direction-dot ${conversation.last.direction}`}/>{preview}</span><span className="wa-chips">{conversation.isGroup && <span className="wa-chip-group">grupo</span>}{conversation.numberId && numberLabel[conversation.numberId] && <span>{numberLabel[conversation.numberId]}</span>}{responsible && <span className="wa-chip-owner">{responsible}</span>}{isAdmin && conversation.numberId && !numberOwner[conversation.numberId] && <span className="wa-chip-warning">sem responsável</span>}{!conversation.isGroup && !conversation.patientId && <span className="wa-chip-warning">não atribuída</span>}</span></span></button>
+        return <button type="button" key={conversation.key} className={`wa-conversation ${active ? 'is-active' : ''}`} onClick={() => openConversation(conversation.key)}><Avatar name={title} phone={conversation.contactPhone || conversation.phone} photo={conversation.photo}/><span className="wa-conversation-content"><span className="wa-conversation-line"><strong>{title}</strong><time>{fmtConversationTime(conversation.last.created_at)}</time></span><span className="wa-preview"><span className={`wa-direction-dot ${conversation.last.direction}`}/>{preview}</span><span className="wa-chips">{conversation.isGroup && <span className="wa-chip-group">grupo</span>}{!conversation.isGroup && <span className={`wa-chip-kind is-${conversation.kind}`}>{CONVERSATION_KIND_LABEL[conversation.kind]}</span>}{conversation.numberId && numberLabel[conversation.numberId] && <span>{numberLabel[conversation.numberId]}</span>}{responsible && <span className="wa-chip-owner">{responsible}</span>}{isAdmin && conversation.numberId && !numberOwner[conversation.numberId] && <span className="wa-chip-warning">sem responsável</span>}</span></span></button>
       })}</div>
     </aside>
     <section className="wa-chat">{!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><WhatsAppLogo size={48}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
-      <header className="wa-chat-header"><button type="button" className="wa-icon-button wa-back" onClick={returnToConversationList} aria-label="Voltar para conversas"><Icon name="back"/></button><Avatar className="wa-avatar-header" name={current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')} phone={current.contactPhone || current.phone} photo={current.photo}/><div className="wa-chat-person"><strong>{current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')}</strong><span>{current.isGroup ? 'Conversa em grupo' : (current.contactPhone ? formatPhone(current.contactPhone) : 'Identificador privado do WhatsApp')}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div><div className="wa-chat-tags">{current.isGroup && <span className="is-group">grupo</span>}{ownerName(current.numberId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId)}</span>}{!current.isGroup && !current.patientId && <span className="is-warning">não atribuída</span>}</div></header>
+      <header className="wa-chat-header">
+        <button type="button" className="wa-icon-button wa-back" onClick={returnToConversationList} aria-label="Voltar para conversas"><Icon name="back"/></button>
+        <Avatar className="wa-avatar-header" name={current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')} phone={current.contactPhone || current.phone} photo={current.photo}/>
+        <div className="wa-chat-person"><strong>{current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')}</strong><span>{current.isGroup ? 'Conversa em grupo' : (current.contactPhone ? formatPhone(current.contactPhone) : 'Identificador privado do WhatsApp')}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div>
+        <div className="wa-chat-tags">{current.isGroup && <span className="is-group">grupo</span>}{!current.isGroup && <span className={`is-${current.kind}`}>{CONVERSATION_KIND_LABEL[current.kind]}</span>}{ownerName(current.numberId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId)}</span>}</div>
+        {!current.isGroup && current.contactId && <div className="wa-contact-actions">
+          {current.kind === 'contact' && <button type="button" onClick={() => openContactModal('lead')} title="Adicionar ao funil" aria-label="Adicionar ao funil"><span className="wa-action-icon">＋</span><span className="wa-action-label">Funil</span></button>}
+          {['contact','lead'].includes(current.kind) && <button type="button" onClick={() => openContactModal('patient')} title="Cadastrar ou vincular paciente" aria-label="Cadastrar ou vincular paciente"><Icon name="user" size={14}/><span className="wa-action-label">Paciente</span></button>}
+          {current.kind === 'contact' && <button type="button" className="is-muted" onClick={() => toggleIgnored(true)} disabled={contactBusy} title="Ignorar contato" aria-label="Ignorar contato"><span className="wa-action-icon">×</span><span className="wa-action-label">Ignorar</span></button>}
+          {current.kind === 'ignored' && <button type="button" onClick={() => toggleIgnored(false)} disabled={contactBusy} title="Reativar contato" aria-label="Reativar contato"><span className="wa-action-icon">↺</span><span className="wa-action-label">Reativar</span></button>}
+        </div>}
+      </header>
       {suggestOpp && <div className="wa-suggestion"><SuggestionBox opp={suggestOpp} disabled={suggestBusy} onAccept={acceptSuggestion} onReject={rejectSuggestion}/></div>}
       {error && <div className="wa-error"><span>!</span><p>{error}</p><button type="button" onClick={() => setError(null)} aria-label="Fechar erro">×</button></div>}
       <div ref={messagesRef} className="wa-messages" role="log" aria-label={`Mensagens com ${current.name || current.phone}`} tabIndex="0"><div className="wa-history-loader">{hasOlder
@@ -370,5 +436,24 @@ export function WhatsAppInbox() {
         {!replyText.trim() && <button type="button" className={`wa-icon-button wa-composer-button ${recording ? 'is-recording' : ''}`} onClick={toggleRecord} disabled={uploading} title={recording ? 'Parar e enviar' : 'Gravar áudio'} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}><Icon name={recording ? 'stop' : 'mic'}/></button>}{replyText.trim() && <button type="submit" className="wa-send-button" disabled={sending || uploading || recording} aria-label="Enviar mensagem"><Icon name="send" size={19}/>{sending && <span className="wa-send-spinner"/>}</button>}
       </div></form>
     </>}</section>
+    <Modal open={contactModal === 'lead'} onClose={() => !contactBusy && setContactModal(null)} title="Adicionar contato ao funil" width={440}>
+      <div className="wa-contact-modal">
+        <p>Será criada uma oportunidade em <strong>Primeiro contato</strong>. Isso não cadastra a pessoa como paciente.</p>
+        {contactError && <div className="wa-contact-modal-error" role="alert">{contactError}</div>}
+        <FInput label="Interesse / oportunidade" value={leadTitle} onChange={setLeadTitle} placeholder="Ex.: Rinoplastia" />
+        <div className="wa-contact-modal-actions"><Btn variant="ghost" onClick={() => setContactModal(null)} disabled={contactBusy}>Cancelar</Btn><Btn onClick={addContactToFunnel} disabled={contactBusy}>{contactBusy ? 'Adicionando…' : 'Adicionar ao funil'}</Btn></div>
+      </div>
+    </Modal>
+    <Modal open={contactModal === 'patient'} onClose={() => !contactBusy && setContactModal(null)} title="Cadastrar ou vincular paciente" width={480}>
+      <div className="wa-contact-modal">
+        <p>Crie um paciente somente após confirmar a identidade, ou vincule esta conversa a um cadastro existente.</p>
+        {contactError && <div className="wa-contact-modal-error" role="alert">{contactError}</div>}
+        <FInput label="Nome do novo paciente" value={contactName} onChange={setContactName} placeholder="Nome completo" />
+        <Btn onClick={() => convertCurrentContact()} disabled={contactBusy || !contactName.trim()}>{contactBusy ? 'Salvando…' : 'Criar novo paciente'}</Btn>
+        <div className="wa-contact-divider"><span>ou vincule a um cadastro existente</span></div>
+        <PatientSelector userId={ownerId} value={selectedPatientId} onChange={id => setSelectedPatientId(id)} label="Paciente existente" />
+        <div className="wa-contact-modal-actions"><Btn variant="ghost" onClick={() => setContactModal(null)} disabled={contactBusy}>Cancelar</Btn><Btn onClick={() => convertCurrentContact(selectedPatientId)} disabled={contactBusy || !selectedPatientId}>Vincular selecionado</Btn></div>
+      </div>
+    </Modal>
   </div>
 }
