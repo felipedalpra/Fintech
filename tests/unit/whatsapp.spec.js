@@ -1,11 +1,18 @@
 import { expect, test } from '@playwright/test'
-import { normalizePhone, phoneCore, parseIncomingMessage, parseMessageStatus, matchPatientId } from '../../api/_lib/whatsapp.js'
+import { normalizePhone, normalizeWhatsAppAddress, phoneCore, parseIncomingMessage, parseMessageStatus, matchPatientId } from '../../api/_lib/whatsapp.js'
 
 test('normalizePhone mantém só dígitos', () => {
   expect(normalizePhone('(11) 98888-7777')).toBe('11988887777')
   expect(normalizePhone('+55 11 98888 7777')).toBe('5511988887777')
   expect(normalizePhone(null)).toBe('')
   expect(normalizePhone(undefined)).toBe('')
+})
+
+test('normalizeWhatsAppAddress preserva o endereço necessário para grupos', () => {
+  expect(normalizeWhatsAppAddress('120363019502650977-group')).toBe('120363019502650977-group')
+  expect(normalizeWhatsAppAddress('120363019502650977@g.us')).toBe('120363019502650977-group')
+  expect(normalizeWhatsAppAddress('5511999999999-1623281429', true)).toBe('5511999999999-1623281429')
+  expect(normalizeWhatsAppAddress('+55 (11) 98888-7777')).toBe('5511988887777')
 })
 
 test('phoneCore usa os últimos 8 dígitos (ignora DDI/DDD/9º dígito)', () => {
@@ -47,6 +54,29 @@ test('parseIncomingMessage: extrai o nome do contato (para nomear o lead)', () =
   expect(parseIncomingMessage({ phone: '5511988887777', senderName: 'Maria Lead', text: { message: 'oi' } }).senderName).toBe('Maria Lead')
   expect(parseIncomingMessage({ phone: '5511988887777', chatName: 'João', text: { message: 'oi' } }).senderName).toBe('João')
   expect(parseIncomingMessage({ phone: '5511988887777', text: { message: 'oi' } }).senderName).toBe('')
+})
+
+test('parseIncomingMessage: separa grupo, conversa e participante com suas fotos', () => {
+  expect(parseIncomingMessage({
+    isGroup: true,
+    phone: '120363019502650977-group',
+    chatName: 'Equipe da clínica',
+    senderName: 'Maria Souza',
+    participantPhone: '5511988887777',
+    senderPhoto: 'https://cdn.z-api.io/group.jpg',
+    photo: 'https://cdn.z-api.io/maria.jpg',
+    text: { message: 'Bom dia, pessoal' },
+    messageId: 'GROUP-1',
+  })).toMatchObject({
+    phone: '120363019502650977-group',
+    isGroup: true,
+    chatName: 'Equipe da clínica',
+    chatPhoto: 'https://cdn.z-api.io/group.jpg',
+    senderName: 'Maria Souza',
+    senderPhone: '5511988887777',
+    senderPhoto: 'https://cdn.z-api.io/maria.jpg',
+    direction: 'inbound',
+  })
 })
 
 test('parseIncomingMessage: mensagem enviada no WhatsApp vira saída com data e origem', () => {

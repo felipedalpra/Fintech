@@ -76,7 +76,7 @@ export function WhatsAppNumbers() {
       return
     }
     const webhook_secret = (crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/-/g, '')
-    const { error } = await supabase.from('whatsapp_numbers').insert({
+    const { data: createdNumber, error } = await supabase.from('whatsapp_numbers').insert({
       user_id: ownerId,
       label: label.trim(),
       phone: phone.replace(/\D/g, '') || null,
@@ -84,10 +84,18 @@ export function WhatsAppNumbers() {
       api_token: apiToken.trim(),
       webhook_secret,
       active: true,
-    })
+    }).select('id').single()
+    if (error) { setSaving(false); setMsg({ type: 'error', text: error.message }); return }
+    try {
+      await testConnection({ whatsappNumberId: createdNumber.id })
+    } catch (error) {
+      setSaving(false)
+      setMsg({ type: 'error', text: `Número salvo, mas o webhook não foi confirmado: ${error.message}` })
+      load()
+      return
+    }
     setSaving(false)
-    if (error) { setMsg({ type: 'error', text: error.message }); return }
-    setMsg({ type: 'success', text: `Número "${label.trim()}" adicionado. Copie a URL de webhook abaixo e cole no Z-API.` })
+    setMsg({ type: 'success', text: `Número "${label.trim()}" adicionado e webhook configurado automaticamente.` })
     setLabel(''); setPhone(''); setInstanceUrl(''); setApiToken('')
     load()
   }
