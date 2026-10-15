@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { canRoleAccess } from '../lib/roleAccess.js'
 import { useAuth } from './AuthContext.jsx'
 
 const UserRoleContext = createContext(null)
@@ -7,25 +8,7 @@ const UserRoleContext = createContext(null)
 const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 const E2E_USER_ID = import.meta.env.VITE_E2E_USER_ID || 'e2e-user-id'
 const E2E_CLINIC_ID = import.meta.env.VITE_E2E_CLINIC_ID || 'e2e-clinic-id'
-
-const ROLE_ACCESS = {
-  admin: [
-    'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas',
-    'finance', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai', 'billing', 'settings',
-  ],
-  gestao: [
-    'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas',
-    'finance', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai',
-  ],
-  // Jonas (concierge): pode cadastrar cirurgias, consultas e orçamentos — sem acesso financeiro
-  concierge: [
-    'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas',
-  ],
-  // Sumary, Jessica, Joyce: agenda, pacientes, consultas e produtos apenas
-  equipe: [
-    'meu-dia', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas',
-  ],
-}
+const E2E_ROLE = import.meta.env.VITE_E2E_ROLE || 'admin'
 
 export function UserRoleProvider({ children }) {
   const { user } = useAuth()
@@ -55,13 +38,13 @@ export function UserRoleProvider({ children }) {
     setScopeError(false)
     setOwnerId(null) // limpa escopo do usuário anterior antes de reresolver (não vaza ownerId obsoleto)
 
-    // E2E: concede admin sem bater no Supabase (espelha o bypass do AuthContext).
+    // E2E: resolve o perfil configurado sem bater no Supabase (espelha o bypass do AuthContext).
     if (E2E_BYPASS_AUTH) {
-      setRole('admin')
+      setRole(E2E_ROLE)
       setOwnerId(E2E_USER_ID)
       setClinicId(E2E_CLINIC_ID)
       setClinicName('Clínica E2E')
-      setIsOwner(true)
+      setIsOwner(E2E_ROLE === 'admin')
       setLoading(false)
       return
     }
@@ -164,8 +147,7 @@ export function UserRoleProvider({ children }) {
     loading,
     scopeError,
     canAccess(sectionId) {
-      if (!role) return false
-      return (ROLE_ACCESS[role] ?? []).includes(sectionId)
+      return canRoleAccess(role, sectionId)
     },
   }), [role, clinicId, clinicName, ownerId, isOwner, loading, scopeError])
 

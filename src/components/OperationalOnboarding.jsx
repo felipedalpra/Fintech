@@ -9,7 +9,7 @@ import { loadWorkspacePreferences, saveWorkspacePreferences } from '../lib/opera
 export function OperationalOnboarding({ data = {} }) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { ownerId } = useUserRole()
+  const { ownerId, canAccess } = useUserRole()
   const effectiveUserId = ownerId || user?.id
   const [remote, setRemote] = useState({ whatsapp:0, contacts:0 })
   const [dismissed, setDismissed] = useState(true)
@@ -30,12 +30,12 @@ export function OperationalOnboarding({ data = {} }) {
   }, [effectiveUserId, user?.id])
 
   const steps = useMemo(() => [
-    { label:'Conectar WhatsApp', done:remote.whatsapp > 0, go:'settings' },
-    { label:'Revisar plano de contas', done:(data.chartAccounts || []).length > 0, go:'chart-of-accounts' },
-    { label:'Cadastrar primeiro contato', done:remote.contacts > 0 || (data.patients || []).length > 0, go:'inbox' },
-    { label:'Registrar primeiro lançamento', done:(data.expenses || []).length + (data.extraRevenues || []).length > 0, go:'finance' },
-    { label:'Importar e conciliar extrato', done:false, go:'bank-reconciliation' },
-  ], [data, remote])
+    { label:'Conectar WhatsApp', done:remote.whatsapp > 0, go:'settings', visible:canAccess('settings') },
+    { label:'Revisar plano de contas', done:(data.chartAccounts || []).length > 0, go:'chart-of-accounts', visible:canAccess('chart-of-accounts') },
+    { label:'Cadastrar primeiro contato', done:remote.contacts > 0 || (data.patients || []).length > 0, go:'inbox', visible:canAccess('inbox') },
+    { label:'Registrar primeiro lançamento', done:(data.expenses || []).length + (data.extraRevenues || []).length > 0, go:'finance', visible:canAccess('finance') },
+    { label:'Importar e conciliar extrato', done:false, go:'bank-reconciliation', visible:canAccess('bank-reconciliation') },
+  ].filter(step => step.visible), [canAccess, data, remote])
   const done = steps.filter(step => step.done).length
   if (dismissed || done === steps.length) return null
 

@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 
 export function FAB({ currentPage }) {
-  const ACTIONS = [
+  const { canAccess } = useUserRole()
+  const actions = [
     { label: 'Nova cirurgia',     icon: '◈', page: 'sales',         event: 'new-surgery',       color: C.accent },
     { label: 'Nova consulta',     icon: '◎', page: 'consultations',  event: 'new-consultation',  color: C.cyan },
     { label: 'Nova despesa',      icon: '↓', page: 'finance',        event: 'new-expense',       color: C.red },
     { label: 'Nova receita',      icon: '↑', page: 'finance',        event: 'new-extra-revenue', color: C.green },
-  ]
+  ].filter(action => canAccess(action.page))
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
   const ref = useRef(null)
@@ -39,7 +41,7 @@ export function FAB({ currentPage }) {
     <div ref={ref} style={{ position: 'fixed', bottom: 28, left: 28, zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
 
       {/* Action items */}
-      {open && ACTIONS.map((action, i) => (
+      {open && actions.map((action, i) => (
         <button
           key={action.label}
           onClick={() => handleAction(action)}

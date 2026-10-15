@@ -15,6 +15,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 - **Fila de atendimento do WhatsApp**: grupos e conversas arquivadas deixam de poluir a fila padrão, o contador de não lidas respeita a última leitura e todas as ações de atendimento são aditivas/reversíveis. O comportamento anterior continua disponível quando o novo SQL ainda não foi aplicado.
+- **Isolamento financeiro por perfil**: concierge e equipe deixam de receber atalhos, alertas, ações rápidas ou o assistente financeiro; o Supabase restringe lançamentos, saldos, metas e recorrências a admin/gestão, preservando o acesso operacional necessário para registrar consultas, cirurgias e produtos. As regras do WhatsApp permanecem inalteradas.
 
 ## [Unreleased] - 2026-10-15 (107)
 ### Added

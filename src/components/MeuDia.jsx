@@ -45,7 +45,7 @@ const I = {
 export function MeuDia({ data = {} }) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { ownerId } = useUserRole()
+  const { ownerId, canAccess } = useUserRole()
   const uid = user?.id
   const effectiveUserId = ownerId || uid
 
@@ -131,7 +131,7 @@ export function MeuDia({ data = {} }) {
         <QuickCard label="Conversas não lidas" value={unreadChats} color={C.green || '#10B981'} onClick={() => go('inbox')} />
         <QuickCard label="Agenda de hoje" value={todayEvents.length} color={C.accent} onClick={() => go('calendar')} />
         <QuickCard label="Tarefas pendentes" value={hojeTarefas.length} color={C.yellow || '#F59E0B'} onClick={() => go('tarefas')} />
-        <QuickCard label="Qualidade financeira" value="Revisar" color={C.purple || '#8B5CF6'} onClick={() => go('data-quality')} />
+        {canAccess('data-quality') && <QuickCard label="Qualidade financeira" value="Revisar" color={C.purple || '#8B5CF6'} onClick={() => go('data-quality')} />}
       </div>
       <Panel title="Tarefas de hoje" count={hojeTarefas.length} color={C.accent} icon={I.clock} onHeader={() => go('tarefas')}
         empty="Nada pra hoje. 🎉">
