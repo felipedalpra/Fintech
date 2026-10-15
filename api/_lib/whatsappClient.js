@@ -63,6 +63,34 @@ export async function enableZApiSentByMe(instanceUrl, apiToken) {
   return { enabled: true, instanceUrl: baseUrl }
 }
 
+// Regrava o webhook de recebimento pelo endpoint combinado da Z-API, que é o
+// caminho específico para entregar também mensagens enviadas no celular. Em
+// seguida lê /me para não apresentar sucesso quando a configuração não aderiu.
+export async function configureZApiReceiveWebhook(instanceUrl, apiToken, webhookUrl) {
+  if (!instanceUrl || !apiToken) throw new Error('Informe a URL da instância e o Client-Token.')
+  let callbackUrl
+  try { callbackUrl = new URL(String(webhookUrl || '').trim()) } catch { throw new Error('URL de webhook inválida.') }
+  if (callbackUrl.protocol !== 'https:') throw new Error('A URL de webhook precisa usar HTTPS.')
+
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const headers = { 'Content-Type': 'application/json', 'Client-Token': apiToken }
+  const update = await fetch(`${baseUrl}/update-webhook-received-delivery`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ value: callbackUrl.toString() }),
+  })
+  const updated = await readZApiResponse(update)
+  if (updated.value !== true) throw new Error('A Z-API não confirmou o webhook de mensagens enviadas pelo celular.')
+
+  const check = await fetch(`${baseUrl}/me`, { headers: { 'Client-Token': apiToken } })
+  const instance = await readZApiResponse(check)
+  const configuredUrl = instance.receivedCallbackUrl || instance.receivedAndDeliveryCallbackUrl || ''
+  if (instance.receiveCallbackSentByMe !== true || configuredUrl !== callbackUrl.toString()) {
+    throw new Error('A Z-API não manteve ativa a sincronização das mensagens enviadas pelo celular.')
+  }
+  return { enabled: true, instanceUrl: baseUrl, webhookUrl: configuredUrl }
+}
+
 // Monta (puro) o endpoint Z-API + corpo para enviar mídia por URL.
 //   image    → /send-image      { phone, image, caption }
 //   document → /send-document/<ext> { phone, document, fileName }

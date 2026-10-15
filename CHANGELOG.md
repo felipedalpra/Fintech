@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (100)
+### Fixed
+- **Sincronização confirmada das mensagens enviadas pelo celular**: o teste de conexão agora reaplica a URL de recebimento pelo endpoint combinado `update-webhook-received-delivery` da Z-API e valida em `/me` tanto a URL efetiva quanto `receiveCallbackSentByMe`, eliminando o falso positivo em que a flag aparecia ativa sem entrega dos eventos. Novos números recebem essa configuração automaticamente depois de serem persistidos, sem criar função serverless adicional nem alterar mensagens existentes. (`api/_lib/whatsappClient.js`, `api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`, `tests/unit/whatsappMedia.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (99)
 ### Changed
 - **Inbox do WhatsApp em tela útil integral**: a página deixa de repetir o cabeçalho geral no desktop e passa a reservar toda a área disponível para conversas; lista de contatos e histórico têm rolagens independentes, enquanto cabeçalho e compositor permanecem visíveis. No celular, uma barra compacta mantém o acesso ao menu e aos alertas sem roubar o espaço da conversa. (`src/pages/FinanceWorkspace.jsx`, `src/components/WhatsAppInbox.css`.)

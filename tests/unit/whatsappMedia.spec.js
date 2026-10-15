@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildMediaSendRequest, enableZApiSentByMe, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
+import { buildMediaSendRequest, configureZApiReceiveWebhook, enableZApiSentByMe, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
 
 const realFetch = globalThis.fetch
 test.afterEach(() => { globalThis.fetch = realFetch })
@@ -63,6 +63,44 @@ test('enableZApiSentByMe exige confirmação da Z-API', async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ value:false }), { status:200 })
   await expect(enableZApiSentByMe('https://api.z-api.io/instances/A/token/B', 'client-token'))
     .rejects.toThrow(/não confirmou/i)
+})
+
+test('configureZApiReceiveWebhook usa o endpoint combinado e confirma o estado real', async () => {
+  const requests = []
+  const webhookUrl = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook&number=N1&token=S1'
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url:String(url), options })
+    if (String(url).endsWith('/me')) {
+      return new Response(JSON.stringify({
+        connected:true,
+        receiveCallbackSentByMe:true,
+        receivedCallbackUrl:webhookUrl,
+      }), { status:200 })
+    }
+    return new Response(JSON.stringify({ value:true }), { status:200 })
+  }
+
+  await expect(configureZApiReceiveWebhook('https://api.z-api.io/instances/A/token/B', 'client-token', webhookUrl))
+    .resolves.toEqual({ enabled:true, instanceUrl:'https://api.z-api.io/instances/A/token/B', webhookUrl })
+  expect(requests[0].url).toBe('https://api.z-api.io/instances/A/token/B/update-webhook-received-delivery')
+  expect(requests[0].options.method).toBe('PUT')
+  expect(JSON.parse(requests[0].options.body)).toEqual({ value:webhookUrl })
+  expect(requests[1].url).toBe('https://api.z-api.io/instances/A/token/B/me')
+})
+
+test('configureZApiReceiveWebhook rejeita confirmação divergente da Z-API', async () => {
+  let call = 0
+  globalThis.fetch = async () => {
+    call += 1
+    return call === 1
+      ? new Response(JSON.stringify({ value:true }), { status:200 })
+      : new Response(JSON.stringify({ receiveCallbackSentByMe:false, receivedCallbackUrl:'https://example.com' }), { status:200 })
+  }
+  await expect(configureZApiReceiveWebhook(
+    'https://api.z-api.io/instances/A/token/B',
+    'client-token',
+    'https://www.surgimetrics.com.br/api/whatsapp?action=webhook&number=N1&token=S1',
+  )).rejects.toThrow(/não manteve ativa/i)
 })
 
 test('buildMediaSendRequest: imagem → send-image com caption', () => {

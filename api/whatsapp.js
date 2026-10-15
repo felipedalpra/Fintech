@@ -3,7 +3,7 @@
 // Roteado por ?action=message (enviar, autenticado) | ?action=webhook (receber do provider).
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
-import { enableZApiSentByMe, sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
+import { configureZApiReceiveWebhook, enableZApiSentByMe, sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
 import { parseIncomingMessage, parseMessageStatus, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
@@ -20,6 +20,7 @@ export const config = {
 }
 
 const MAX_BODY_BYTES = 1_000_000
+const WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
 
 async function hydrateRequestBody(req) {
   if (req.method === 'GET' || req.method === 'HEAD') return
@@ -114,9 +115,11 @@ async function handleTestConnection(req, res) {
   const { whatsappNumberId, instanceUrl: suppliedUrl, apiToken: suppliedToken } = req.body || {}
   let instanceUrl = suppliedUrl
   let apiToken = suppliedToken
-  if (whatsappNumberId && (!instanceUrl || !apiToken)) {
-    const { data: number } = await supabase.from('whatsapp_numbers')
-      .select('user_id, instance_url, api_token').eq('id', whatsappNumberId).maybeSingle()
+  let number = null
+  if (whatsappNumberId) {
+    const { data: storedNumber } = await supabase.from('whatsapp_numbers')
+      .select('id, user_id, instance_url, api_token, webhook_secret').eq('id', whatsappNumberId).maybeSingle()
+    number = storedNumber
     if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
     instanceUrl ||= number.instance_url
     apiToken ||= number.api_token
@@ -125,7 +128,17 @@ async function handleTestConnection(req, res) {
   try {
     const result = await testWhatsAppConnection(instanceUrl, apiToken)
     await enableZApiSentByMe(result.instanceUrl, apiToken)
-    return res.status(200).json({ ok: true, connected: true, sentByMeEnabled: true, instanceUrl: result.instanceUrl })
+    if (number) {
+      const webhookUrl = `${WHATSAPP_WEBHOOK_BASE}&number=${number.id}&token=${number.webhook_secret || ''}`
+      await configureZApiReceiveWebhook(result.instanceUrl, apiToken, webhookUrl)
+    }
+    return res.status(200).json({
+      ok: true,
+      connected: true,
+      sentByMeEnabled: true,
+      webhookConfigured: Boolean(number),
+      instanceUrl: result.instanceUrl,
+    })
   } catch (error) {
     return res.status(502).json({ error: error.message })
   }
