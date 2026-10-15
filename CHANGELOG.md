@@ -12,6 +12,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 - **Conversa cortada e campo de mensagem inacessível**: removida a altura mínima que ultrapassava viewports baixos e trocado o `scrollIntoView` global por rolagem restrita ao histórico, impedindo que mensagens acumuladas desloquem a página ou escondam o compositor. Regressões são cobertas em desktop baixo e celular com threads e listas extensas. (`src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`, `tests/e2e/whatsapp-inbox.spec.js`.)
+- **Mensagens enviadas pelo WhatsApp no lado correto**: webhooks com `fromMe=true` deixam de ser descartados e passam a ser persistidos como saída (`outbound`), aparecendo à direita; mensagens dos contatos permanecem à esquerda. O teste de conexão ativa automaticamente `notifySentByMe` na Z-API, preserva a data/status informados pelo provider e usa `provider_message_id` para não duplicar envios da plataforma ou das automações que retornem pelo webhook. Saídas manuais para números desconhecidos ficam não atribuídas, sem criar pacientes automaticamente. (`api/_lib/whatsapp.js`, `api/_lib/whatsappClient.js`, `api/_lib/whatsappAutomations.js`, `api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`, `tests/e2e/whatsapp-inbox.spec.js`, `tests/unit/whatsapp.spec.js`, `tests/unit/whatsappMedia.spec.js`.)
 
 ## [Unreleased] - 2026-10-14 (98)
 ### Fixed

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildMediaSendRequest, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
+import { buildMediaSendRequest, enableZApiSentByMe, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
 
 const realFetch = globalThis.fetch
 test.afterEach(() => { globalThis.fetch = realFetch })
@@ -43,6 +43,26 @@ test('testWhatsAppConnection exige instância conectada', async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ connected: false }), { status: 200 })
   await expect(testWhatsAppConnection('https://api.z-api.io/instances/A/token/B', 'client-token'))
     .rejects.toThrow(/desconectada/i)
+})
+
+test('enableZApiSentByMe ativa o histórico de mensagens enviadas no celular', async () => {
+  let request = null
+  globalThis.fetch = async (url, options) => {
+    request = { url:String(url), options }
+    return new Response(JSON.stringify({ value:true }), { status:200 })
+  }
+  await expect(enableZApiSentByMe('https://api.z-api.io/instances/A/token/B', 'client-token'))
+    .resolves.toEqual({ enabled:true, instanceUrl:'https://api.z-api.io/instances/A/token/B' })
+  expect(request.url).toBe('https://api.z-api.io/instances/A/token/B/update-notify-sent-by-me')
+  expect(request.options.method).toBe('PUT')
+  expect(request.options.headers['Client-Token']).toBe('client-token')
+  expect(JSON.parse(request.options.body)).toEqual({ notifySentByMe:true })
+})
+
+test('enableZApiSentByMe exige confirmação da Z-API', async () => {
+  globalThis.fetch = async () => new Response(JSON.stringify({ value:false }), { status:200 })
+  await expect(enableZApiSentByMe('https://api.z-api.io/instances/A/token/B', 'client-token'))
+    .rejects.toThrow(/não confirmou/i)
 })
 
 test('buildMediaSendRequest: imagem → send-image com caption', () => {

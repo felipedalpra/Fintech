@@ -3,7 +3,7 @@
 // Roteado por ?action=message (enviar, autenticado) | ?action=webhook (receber do provider).
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
-import { sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
+import { enableZApiSentByMe, sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
 import { parseIncomingMessage, parseMessageStatus, matchPatientId, normalizePhone } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
@@ -124,7 +124,8 @@ async function handleTestConnection(req, res) {
 
   try {
     const result = await testWhatsAppConnection(instanceUrl, apiToken)
-    return res.status(200).json({ ok: true, connected: true, instanceUrl: result.instanceUrl })
+    await enableZApiSentByMe(result.instanceUrl, apiToken)
+    return res.status(200).json({ ok: true, connected: true, sentByMeEnabled: true, instanceUrl: result.instanceUrl })
   } catch (error) {
     return res.status(502).json({ error: error.message })
   }
@@ -318,9 +319,20 @@ async function handleSend(req, res) {
     return res.status(502).json({ error: err.message })
   }
 
-  const { data: msg } = await supabase.from('whatsapp_messages')
+  const { data: msg, error: insertError } = await supabase.from('whatsapp_messages')
     .insert({ ...insertBase, status: 'sent', provider_message_id: providerId })
     .select('id').single()
+
+  if (insertError?.code === '23505') {
+    const { data: existing, error: existingError } = await supabase.from('whatsapp_messages')
+      .select('id')
+      .eq('user_id', ownerId)
+      .eq('provider_message_id', providerId)
+      .maybeSingle()
+    if (existingError || !existing) return res.status(500).json({ error: 'Mensagem enviada, mas o histórico não pôde ser confirmado.' })
+    return res.status(200).json({ ok: true, messageId: existing.id })
+  }
+  if (insertError) return res.status(500).json({ error: 'Mensagem enviada, mas não foi possível salvá-la no histórico.' })
 
   return res.status(200).json({ ok: true, messageId: msg?.id })
 }
@@ -383,20 +395,23 @@ async function handleWebhook(req, res) {
   const { data: patients } = await supabase.from('patients').select('id, phone').eq('user_id', ownerUserId)
   let patientId = matchPatientId(patients || [], parsed.phone)
 
-  // Número novo → cria o lead automaticamente (paciente + oportunidade em "primeiro_contato").
-  if (!patientId) {
+  // Só uma mensagem recebida cria lead automaticamente. Uma saída feita no celular
+  // para um contato desconhecido aparece como não atribuída, sem criar paciente indevido.
+  if (!patientId && parsed.direction === 'inbound') {
     const { data: leadId } = await supabase.rpc('ensure_whatsapp_lead', {
       p_owner: ownerUserId, p_phone: parsed.phone, p_name: parsed.senderName || '',
     })
     if (leadId) patientId = leadId
   }
 
-  const { error } = await supabase.from('whatsapp_messages').insert({
-    user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: 'inbound',
-    body: parsed.text, status: 'read', provider_message_id: parsed.providerMessageId,
+  const row = {
+    user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: parsed.direction,
+    body: parsed.text, status: parsed.status, provider_message_id: parsed.providerMessageId,
     whatsapp_number_id: num.id,
     msg_type: parsed.msgType || 'text', media_url: parsed.mediaUrl || null, media_mime: parsed.mediaMime || null,
-  })
+  }
+  if (parsed.createdAt) row.created_at = parsed.createdAt
+  const { error } = await supabase.from('whatsapp_messages').insert(row)
 
   // 23505 = índice único (mensagem duplicada) → idempotente, ignora.
   if (error && error.code !== '23505') {
@@ -404,7 +419,7 @@ async function handleWebhook(req, res) {
   }
 
   // IA sugere avanço de estágio (sugere e confirma). Nunca derruba o recebimento.
-  if (patientId) {
+  if (patientId && parsed.direction === 'inbound') {
     try {
       await maybeSuggestStage(supabase, ownerUserId, patientId, parsed)
     } catch (e) {

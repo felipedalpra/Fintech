@@ -124,6 +124,15 @@ test('inbox lista conversas (inclusive não atribuídas) e abre os threads', asy
   await expect(multiline).toHaveCSS('white-space', 'pre-wrap')
   await expect(page.locator('[title="Lida"]')).toBeVisible()
   await expect(page.getByPlaceholder('Responder...')).toBeVisible()
+  const inboundRow = page.locator('.wa-message-row').filter({ hasText: 'Oi, doutora' })
+  const outboundRow = page.locator('.wa-message-row').filter({ hasText: /Oi! Como ajudo/ })
+  await expect(inboundRow).toHaveClass(/inbound/)
+  await expect(outboundRow).toHaveClass(/outbound/)
+  const [inboundBox, outboundBox] = await Promise.all([
+    inboundRow.locator('.wa-bubble').boundingBox(),
+    outboundRow.locator('.wa-bubble').boundingBox(),
+  ])
+  expect(outboundBox.x).toBeGreaterThan(inboundBox.x)
 
   // Abrir a conversa NÃO atribuída → dá pra responder mesmo sem paciente vinculado.
   await sidebar.getByText('5511977776666').click()

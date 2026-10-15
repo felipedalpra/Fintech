@@ -38,13 +38,11 @@ function parseMedia(body) {
   return null
 }
 
-// Normaliza o payload de uma mensagem RECEBIDA do provider (cobre Z-API).
-// Retorna { phone, text, msgType, mediaUrl, mediaMime, providerMessageId, senderName }
-// ou null quando deve ser ignorada (saída ecoada, status, ou sem texto E sem mídia).
+// Normaliza o payload de mensagem do provider (cobre Z-API), inclusive mensagens
+// enviadas diretamente pelo WhatsApp conectado (`fromMe=true`).
+// Retorna direção, conteúdo e metadados ou null para eventos sem mensagem.
 export function parseIncomingMessage(body) {
   if (!body || typeof body !== 'object') return null
-  // Z-API ecoa as mensagens que NÓS enviamos com fromMe=true — não gravar como recebida.
-  if (body.fromMe === true) return null
 
   const phoneRaw = body.phone || body.from || body?.sender?.phone || ''
   const phone = normalizePhone(phoneRaw)
@@ -57,17 +55,34 @@ export function parseIncomingMessage(body) {
 
   const providerMessageId = body?.messageId || body?.id || null
   const senderName = body?.senderName || body?.chatName || body?.pushname || body?.pushName || ''
+  const direction = body.fromMe === true ? 'outbound' : 'inbound'
+  const rawStatus = String(body.status || '').toUpperCase()
+  const status = direction === 'inbound'
+    ? 'read'
+    : rawStatus === 'READ' || rawStatus === 'PLAYED'
+      ? 'read'
+      : rawStatus === 'RECEIVED' || rawStatus === 'DELIVERED'
+        ? 'delivered'
+        : 'sent'
+  const rawMoment = Number(body.momment ?? body.moment)
+  const momentMs = Number.isFinite(rawMoment) && rawMoment > 0 ? (rawMoment < 1e12 ? rawMoment * 1000 : rawMoment) : null
+  const momentDate = momentMs ? new Date(momentMs) : null
+  const createdAt = momentDate && Number.isFinite(momentDate.getTime()) ? momentDate.toISOString() : null
   // body (coluna NOT NULL) guarda o texto; para mídia, a legenda (ou nome do arquivo).
   const text = media ? media.caption : String(textRaw)
 
   return {
     phone,
+    direction,
+    status,
     text,
     msgType: media ? media.msgType : 'text',
     mediaUrl: media ? media.mediaUrl : null,
     mediaMime: media ? media.mediaMime : null,
     providerMessageId: providerMessageId ? String(providerMessageId) : null,
     senderName: senderName ? String(senderName) : '',
+    fromApi: body.fromApi === true,
+    createdAt,
   }
 }
 

@@ -48,6 +48,21 @@ export async function testWhatsAppConnection(instanceUrl, apiToken) {
   return { connected: true, instanceUrl: baseUrl }
 }
 
+// Mantém o histórico completo mesmo quando alguém responde pelo aplicativo do
+// WhatsApp. A Z-API envia essas mensagens no webhook de recebimento com fromMe=true.
+export async function enableZApiSentByMe(instanceUrl, apiToken) {
+  if (!instanceUrl || !apiToken) throw new Error('Informe a URL da instância e o Client-Token.')
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const res = await fetch(`${baseUrl}/update-notify-sent-by-me`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Client-Token': apiToken },
+    body: JSON.stringify({ notifySentByMe: true }),
+  })
+  const data = await readZApiResponse(res)
+  if (data.value !== true) throw new Error('A Z-API não confirmou a sincronização das mensagens enviadas pelo WhatsApp.')
+  return { enabled: true, instanceUrl: baseUrl }
+}
+
 // Monta (puro) o endpoint Z-API + corpo para enviar mídia por URL.
 //   image    → /send-image      { phone, image, caption }
 //   document → /send-document/<ext> { phone, document, fileName }
