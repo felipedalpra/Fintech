@@ -14,6 +14,22 @@ const EMOJI_GROUPS = [
   { id:'life', label:'Objetos e saúde', icon:'🩺', items:['📅','📆','⏰','⌚','📱','💻','⌨️','📞','📧','📌','📍','📊','📈','📉','💰','💳','🧾','💊','💉','🩸','🩹','🩺','🩻','🫁','🧪','🧬','🔬','🧴','🧼','🏥','🏠','🚗','🚕','✈️','✅','⚠️','❌','❓','❗','💡','🎯','🏆','🎁','🎉'] },
 ]
 
+const THREAD_PAGE_SIZE = 100
+const FULL_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name)'
+const ROUTING_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, chat_lid, contact_phone, patients(full_name)'
+const IDENTITY_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, patients(full_name)'
+const LEGACY_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)'
+
+async function selectWhatsAppMessages(configureQuery) {
+  const columnSets = [FULL_MESSAGE_COLUMNS, ROUTING_MESSAGE_COLUMNS, IDENTITY_MESSAGE_COLUMNS, LEGACY_MESSAGE_COLUMNS]
+  let result = null
+  for (const columns of columnSets) {
+    result = await configureQuery(supabase.from('whatsapp_messages').select(columns))
+    if (!['PGRST204', '42703'].includes(result.error?.code)) return result
+  }
+  return result
+}
+
 function Icon({ name, size=20, strokeWidth=1.8 }) {
   const paths = {
     search:<><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
@@ -60,6 +76,19 @@ function formatPhone(phone) {
   if (digits.length === 12 && digits.startsWith('55')) return `+55 (${digits.slice(2,4)}) ${digits.slice(4,8)}-${digits.slice(8)}`
   return phone || ''
 }
+function formatPrivateParticipantId(lid) {
+  const digits = String(lid || '').replace(/\D/g, '')
+  return digits ? `Participante • ID ${digits.slice(-6)}` : ''
+}
+function participantIdentity(message) {
+  const primary = message.direction === 'outbound'
+    ? 'Você'
+    : (message.sender_name || formatPhone(message.sender_phone) || formatPrivateParticipantId(message.sender_lid) || 'Participante')
+  const secondary = message.direction === 'outbound' || !message.sender_name
+    ? null
+    : (formatPhone(message.sender_phone) || formatPrivateParticipantId(message.sender_lid) || null)
+  return { primary, secondary }
+}
 function initials(name, phone) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
   if (parts.length) return `${parts[0][0]}${parts.length > 1 ? parts.at(-1)[0] : ''}`.toUpperCase()
@@ -100,19 +129,14 @@ export function WhatsAppInbox() {
   const [replyText, setReplyText] = useState(''), [showEmoji, setShowEmoji] = useState(false), [emojiGroup, setEmojiGroup] = useState('recent')
   const [replyNumberId, setReplyNumberId] = useState(''), [sending, setSending] = useState(false), [uploading, setUploading] = useState(false), [recording, setRecording] = useState(false)
   const [suggestOpp, setSuggestOpp] = useState(null), [suggestBusy, setSuggestBusy] = useState(false)
+  const [olderMessages, setOlderMessages] = useState([]), [olderConversationKey, setOlderConversationKey] = useState(null)
+  const [loadingOlder, setLoadingOlder] = useState(false), [hasOlder, setHasOlder] = useState(true)
   const messagesRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
+  const pendingScrollRestoreRef = useRef(null)
 
   const load = useCallback(async ({ silent=false }={}) => {
     silent ? setRefreshing(true) : setLoading(true)
-    const routingColumns = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, chat_lid, contact_phone, patients(full_name)'
-    const identityColumns = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, patients(full_name)'
-    const legacyColumns = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)'
-    const messagePromise = (async () => {
-      let result = await supabase.from('whatsapp_messages').select(routingColumns).order('created_at', { ascending:false }).limit(500)
-      if (['PGRST204', '42703'].includes(result.error?.code)) result = await supabase.from('whatsapp_messages').select(identityColumns).order('created_at', { ascending:false }).limit(500)
-      if (['PGRST204', '42703'].includes(result.error?.code)) result = await supabase.from('whatsapp_messages').select(legacyColumns).order('created_at', { ascending:false }).limit(500)
-      return result
-    })()
+    const messagePromise = selectWhatsAppMessages(query => query.order('created_at', { ascending:false }).limit(500))
     const [msgRes, numRes, memRes] = await Promise.all([
       messagePromise,
       supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id').eq('active', true).order('created_at', { ascending:true }),
@@ -186,15 +210,33 @@ export function WhatsAppInbox() {
     if (filterNumber !== 'all') list = list.filter(conversation => conversation.items.some(message => message.whatsapp_number_id === filterNumber))
     if (filterResponsible !== 'all') list = list.filter(conversation => { const id = conversation.numberId ? numberOwner[conversation.numberId] : null; return filterResponsible === 'unassigned' ? !id : id === filterResponsible })
     const query = search.trim().toLocaleLowerCase('pt-BR')
-    if (query) list = list.filter(conversation => `${conversation.name || ''} ${conversation.phone} ${previewText(conversation.last) || ''} ${conversation.items.map(item => item.sender_name || '').join(' ')}`.toLocaleLowerCase('pt-BR').includes(query))
+    if (query) list = list.filter(conversation => `${conversation.name || ''} ${conversation.phone} ${previewText(conversation.last) || ''} ${conversation.items.map(item => `${item.sender_name || ''} ${item.sender_phone || ''} ${item.sender_lid || ''}`).join(' ')}`.toLocaleLowerCase('pt-BR').includes(query))
     return list
   }, [allConversations, filterNumber, filterResponsible, numberOwner, search])
   const current = allConversations.find(conversation => conversation.key === selectedPhone) || null
-  const thread = useMemo(() => current ? [...current.items].reverse() : [], [current])
+  const thread = useMemo(() => {
+    if (!current) return []
+    const history = olderConversationKey === current.key ? olderMessages : []
+    const unique = new Map([...current.items, ...history].map(message => [message.id, message]))
+    return Array.from(unique.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  }, [current, olderConversationKey, olderMessages])
   useEffect(() => { if (!selectedPhone && conversations[0]) setSelectedPhone(conversations[0].key); else if (selectedPhone && !allConversations.some(c => c.key === selectedPhone)) setSelectedPhone(conversations[0]?.key || null) }, [allConversations, conversations, selectedPhone])
+  useEffect(() => {
+    setOlderMessages([])
+    setOlderConversationKey(selectedPhone)
+    setHasOlder(true)
+    setLoadingOlder(false)
+    pendingScrollRestoreRef.current = null
+  }, [selectedPhone])
   useEffect(() => {
     const container = messagesRef.current
     if (!container) return
+    const restore = pendingScrollRestoreRef.current
+    if (restore) {
+      container.scrollTop = container.scrollHeight - restore.scrollHeight + restore.scrollTop
+      pendingScrollRestoreRef.current = null
+      return
+    }
     container.scrollTo({ top:container.scrollHeight, behavior:'smooth' })
   }, [thread.length, selectedPhone])
   useEffect(() => { if (current) setReplyNumberId(current.numberId || numbers[0]?.id || '') }, [current, numbers])
@@ -205,6 +247,41 @@ export function WhatsAppInbox() {
     ;(async () => { const { data } = await supabase.from('opportunities').select('id, stage, suggested_stage, suggested_reason, suggested_confidence, suggestion_status').eq('patient_id', current.patientId).eq('status', 'aberto').order('created_at', { ascending:false }).limit(1).maybeSingle(); if (active && data?.suggestion_status === 'pending' && data.suggested_stage) setSuggestOpp(data) })()
     return () => { active = false }
   }, [current])
+
+  async function loadOlderMessages() {
+    if (!current || loadingOlder || !hasOlder || !thread.length) return
+    const container = messagesRef.current
+    pendingScrollRestoreRef.current = container ? { scrollHeight:container.scrollHeight, scrollTop:container.scrollTop } : null
+    setOlderConversationKey(current.key)
+    setLoadingOlder(true); setError(null)
+    const oldestTimestamp = thread[0].created_at
+    const result = await selectWhatsAppMessages(query => {
+      const numberScoped = current.numberId
+        ? query.eq('whatsapp_number_id', current.numberId)
+        : query.is('whatsapp_number_id', null)
+      const scoped = numberScoped
+        .lt('created_at', oldestTimestamp)
+        .order('created_at', { ascending:false })
+        .limit(THREAD_PAGE_SIZE)
+      if (current.isGroup) return scoped.eq('phone', current.phone)
+      if (current.chatLid) return scoped.eq('chat_lid', current.chatLid)
+      if (current.contactPhone) return scoped.or(`phone.eq.${current.contactPhone},contact_phone.eq.${current.contactPhone}`)
+      return scoped.eq('phone', current.phone)
+    })
+    if (result.error) {
+      pendingScrollRestoreRef.current = null
+      setError(`Não foi possível carregar as mensagens anteriores: ${result.error.message}`)
+    } else {
+      const batch = result.data ?? []
+      if (!batch.length) pendingScrollRestoreRef.current = null
+      setOlderMessages(existing => {
+        const unique = new Map([...existing, ...batch].map(message => [message.id, message]))
+        return Array.from(unique.values())
+      })
+      setHasOlder(batch.length === THREAD_PAGE_SIZE)
+    }
+    setLoadingOlder(false)
+  }
 
   async function acceptSuggestion() { if (!suggestOpp || suggestBusy) return; setSuggestBusy(true); const { error:nextError } = await confirmSuggestion(suggestOpp); nextError ? setError('Não foi possível aplicar a sugestão.') : setSuggestOpp(null); setSuggestBusy(false) }
   async function rejectSuggestion() { if (!suggestOpp || suggestBusy) return; setSuggestBusy(true); const { error:nextError } = await dismissSuggestion(suggestOpp); nextError ? setError('Não foi possível descartar a sugestão.') : setSuggestOpp(null); setSuggestBusy(false) }
@@ -265,8 +342,9 @@ export function WhatsAppInbox() {
       <div className="wa-conversation-list" aria-label="Lista de conversas">{conversations.length === 0 ? <div className="wa-list-empty"><Icon name="search" size={26}/><strong>Nenhuma conversa encontrada</strong><span>Ajuste a busca ou os filtros.</span></div> : conversations.map(conversation => {
         const responsible = ownerName(conversation.numberId), active = conversation.key === selectedPhone
         const title = conversation.name || (conversation.isGroup ? 'Grupo do WhatsApp' : (conversation.contactPhone ? formatPhone(conversation.contactPhone) : 'Contato do WhatsApp'))
-        const preview = conversation.isGroup && conversation.last.direction === 'inbound' && conversation.last.sender_name
-          ? `${conversation.last.sender_name}: ${previewText(conversation.last)}`
+        const lastParticipant = participantIdentity(conversation.last).primary
+        const preview = conversation.isGroup && conversation.last.direction === 'inbound'
+          ? `${lastParticipant}: ${previewText(conversation.last)}`
           : previewText(conversation.last)
         return <button type="button" key={conversation.key} className={`wa-conversation ${active ? 'is-active' : ''}`} onClick={() => setSelectedPhone(conversation.key)}><Avatar name={title} phone={conversation.contactPhone || conversation.phone} photo={conversation.photo}/><span className="wa-conversation-content"><span className="wa-conversation-line"><strong>{title}</strong><time>{fmtConversationTime(conversation.last.created_at)}</time></span><span className="wa-preview"><span className={`wa-direction-dot ${conversation.last.direction}`}/>{preview}</span><span className="wa-chips">{conversation.isGroup && <span className="wa-chip-group">grupo</span>}{conversation.numberId && numberLabel[conversation.numberId] && <span>{numberLabel[conversation.numberId]}</span>}{responsible && <span className="wa-chip-owner">{responsible}</span>}{isAdmin && conversation.numberId && !numberOwner[conversation.numberId] && <span className="wa-chip-warning">sem responsável</span>}{!conversation.isGroup && !conversation.patientId && <span className="wa-chip-warning">não atribuída</span>}</span></span></button>
       })}</div>
@@ -275,10 +353,12 @@ export function WhatsAppInbox() {
       <header className="wa-chat-header"><button type="button" className="wa-icon-button wa-back" onClick={() => setSelectedPhone(null)} aria-label="Voltar para conversas"><Icon name="back"/></button><Avatar className="wa-avatar-header" name={current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')} phone={current.contactPhone || current.phone} photo={current.photo}/><div className="wa-chat-person"><strong>{current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')}</strong><span>{current.isGroup ? 'Conversa em grupo' : (current.contactPhone ? formatPhone(current.contactPhone) : 'Identificador privado do WhatsApp')}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div><div className="wa-chat-tags">{current.isGroup && <span className="is-group">grupo</span>}{ownerName(current.numberId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId)}</span>}{!current.isGroup && !current.patientId && <span className="is-warning">não atribuída</span>}</div></header>
       {suggestOpp && <div className="wa-suggestion"><SuggestionBox opp={suggestOpp} disabled={suggestBusy} onAccept={acceptSuggestion} onReject={rejectSuggestion}/></div>}
       {error && <div className="wa-error"><span>!</span><p>{error}</p><button type="button" onClick={() => setError(null)} aria-label="Fechar erro">×</button></div>}
-      <div ref={messagesRef} className="wa-messages" role="log" aria-label={`Mensagens com ${current.name || current.phone}`} tabIndex="0">{thread.map((message, index) => {
+      <div ref={messagesRef} className="wa-messages" role="log" aria-label={`Mensagens com ${current.name || current.phone}`} tabIndex="0"><div className="wa-history-loader">{hasOlder
+        ? <button type="button" onClick={loadOlderMessages} disabled={loadingOlder}>{loadingOlder ? 'Carregando histórico…' : 'Carregar mensagens anteriores'}</button>
+        : <span>Início do histórico salvo</span>}</div>{thread.map((message, index) => {
         const showDate = index === 0 || dateKey(thread[index - 1].created_at) !== dateKey(message.created_at)
-        const participant = message.direction === 'outbound' ? 'Você' : (message.sender_name || formatPhone(message.sender_phone) || 'Participante')
-        return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}>{current.isGroup && message.direction === 'inbound' && <Avatar className="wa-participant-avatar" name={participant} phone={message.sender_phone} photo={message.sender_photo}/>}<div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{current.isGroup && <span className="wa-participant-name">{participant}{message.sender_phone && message.sender_name ? <small>{formatPhone(message.sender_phone)}</small> : null}</span>}{renderBody(message)}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span></div></div></div>
+        const participant = participantIdentity(message)
+        return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}>{current.isGroup && message.direction === 'inbound' && <Avatar className="wa-participant-avatar" name={participant.primary} phone={message.sender_phone || message.sender_lid} photo={message.sender_photo}/>}<div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{current.isGroup && <span className="wa-participant-name">{participant.primary}{participant.secondary ? <small>{participant.secondary}</small> : null}</span>}{renderBody(message)}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span></div></div></div>
       })}</div>
       <form className="wa-composer" onSubmit={send}>{numbers.length > 1 && <label className="wa-reply-number"><span>Enviar por</span><select value={replyNumberId} onChange={event => setReplyNumberId(event.target.value)}>{numbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select></label>}<div className="wa-composer-row">
         <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" hidden onChange={onPickFile}/><button type="button" className="wa-icon-button wa-composer-button" onClick={() => fileRef.current?.click()} disabled={uploading || recording} title="Anexar imagem ou documento" aria-label="Anexar arquivo"><Icon name="attach"/></button>

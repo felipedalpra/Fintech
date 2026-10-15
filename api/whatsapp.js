@@ -21,14 +21,23 @@ export const config = {
 
 const MAX_BODY_BYTES = 1_000_000
 const WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
-const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_photo', 'chat_lid', 'contact_phone']
+const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_lid', 'sender_photo', 'chat_lid', 'contact_phone']
+const PREVIOUS_MESSAGE_IDENTITY_FIELDS = MESSAGE_IDENTITY_FIELDS.filter(field => field !== 'sender_lid')
 
 function withoutMessageIdentity(row) {
   return Object.fromEntries(Object.entries(row).filter(([key]) => !MESSAGE_IDENTITY_FIELDS.includes(key)))
 }
 
+function withoutSenderLid(row) {
+  return Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'sender_lid'))
+}
+
 function missingMessageIdentitySchema(error) {
   return ['PGRST204', '42703'].includes(error?.code) && MESSAGE_IDENTITY_FIELDS.some(field => String(error.message || '').includes(field))
+}
+
+function missingMessageFields(error, fields) {
+  return ['PGRST204', '42703'].includes(error?.code) && fields.some(field => String(error.message || '').includes(field))
 }
 
 // Compatibilidade de deploy: se o código chegar antes da migração aditiva, a
@@ -40,7 +49,10 @@ async function insertWhatsAppMessage(supabase, row, { selectId = false } = {}) {
     return query
   }
   let result = await run(row)
-  if (missingMessageIdentitySchema(result.error)) result = await run(withoutMessageIdentity(row))
+  // Deploy tolerante à ordem: se só a coluna nova ainda não existe, preserva
+  // todos os demais metadados de conversa/remetente já suportados pelo banco.
+  if (missingMessageFields(result.error, ['sender_lid'])) result = await run(withoutSenderLid(row))
+  if (missingMessageFields(result.error, PREVIOUS_MESSAGE_IDENTITY_FIELDS)) result = await run(withoutMessageIdentity(row))
   return result
 }
 
@@ -568,6 +580,23 @@ async function handleWebhook(req, res) {
     if (leadId) patientId = leadId
   }
 
+  // Um mesmo participante pode chegar ora com nome/telefone, ora somente com
+  // participantLid. Reutiliza exclusivamente o vínculo exato já observado no
+  // mesmo grupo e número da clínica; nunca tenta converter LID em telefone.
+  let historicalSender = null
+  if (parsed.isGroup && parsed.senderLid && (!parsed.senderName || !parsed.senderPhone)) {
+    const { data, error } = await supabase.from('whatsapp_messages')
+      .select('sender_name, sender_phone, sender_photo')
+      .eq('user_id', ownerUserId)
+      .eq('whatsapp_number_id', num.id)
+      .eq('phone', parsed.phone)
+      .eq('sender_lid', parsed.senderLid)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!missingMessageIdentitySchema(error)) historicalSender = data
+  }
+
   const row = {
     user_id: ownerUserId, patient_id: patientId, phone: parsed.phone, direction: parsed.direction,
     body: parsed.text, status: parsed.status, provider_message_id: parsed.providerMessageId,
@@ -577,9 +606,10 @@ async function handleWebhook(req, res) {
     is_group: parsed.isGroup,
     chat_name: parsed.chatName || historicalIdentity?.chat_name || null,
     chat_photo: parsed.chatPhoto || historicalIdentity?.chat_photo || null,
-    sender_name: parsed.senderName || null,
-    sender_phone: parsed.senderPhone || null,
-    sender_photo: parsed.senderPhoto || null,
+    sender_name: parsed.senderName || historicalSender?.sender_name || null,
+    sender_phone: parsed.senderPhone || historicalSender?.sender_phone || null,
+    sender_lid: parsed.senderLid || null,
+    sender_photo: parsed.senderPhoto || historicalSender?.sender_photo || null,
     msg_type: parsed.msgType || 'text', media_url: parsed.mediaUrl || null, media_mime: parsed.mediaMime || null,
   }
   if (parsed.createdAt) row.created_at = parsed.createdAt

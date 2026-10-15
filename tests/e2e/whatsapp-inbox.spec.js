@@ -182,3 +182,36 @@ test('grupo mostra identidade coletiva e identifica cada participante', async ({
   await expect(page.locator('.wa-participant-avatar img')).toHaveCount(2)
   await expect(page.locator('.wa-chat-tags')).not.toContainText('não atribuída')
 })
+
+test('grupo distingue participante por Linked ID quando nome e telefone estão ocultos', async ({ page }) => {
+  await page.unroute('**/rest/v1/whatsapp_messages*')
+  await page.route('**/rest/v1/whatsapp_messages*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{
+    id:'private-participant', phone:'120363019502650977-group', direction:'inbound', body:'Mensagem identificada', status:'read',
+    created_at:'2026-10-14T21:00:00Z', patient_id:null, whatsapp_number_id:'n1', is_group:true,
+    chat_name:'Grupo privado', sender_name:null, sender_phone:null, sender_lid:'184305754083376@lid', patients:null,
+  }]) }))
+
+  await page.goto('/app/inbox')
+  await expect(page.locator('.wa-participant-name')).toContainText('Participante • ID 083376')
+  await expect(page.locator('.wa-preview')).toContainText('Participante • ID 083376: Mensagem identificada')
+})
+
+test('carrega páginas anteriores somente da conversa aberta', async ({ page }) => {
+  const older = {
+    id:'m0', phone:'5511988887777', direction:'inbound', body:'Mensagem antiga preservada', status:'read',
+    created_at:'2026-10-09T11:00:00Z', patient_id:'p1', whatsapp_number_id:'n1', patients:{ full_name:'Ana Silva' },
+  }
+  await page.unroute('**/rest/v1/whatsapp_messages*')
+  await page.route('**/rest/v1/whatsapp_messages*', route => {
+    const cursor = new URL(route.request().url()).searchParams.get('created_at') || ''
+    const body = cursor.startsWith('lt.') ? [older] : MESSAGES
+    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(body) })
+  })
+
+  await page.goto('/app/inbox')
+  await page.locator('.wa-sidebar').getByText('Ana Silva').click()
+  await expect(page.getByText('Mensagem antiga preservada')).toHaveCount(0)
+  await page.getByRole('button', { name:'Carregar mensagens anteriores' }).click()
+  await expect(page.getByText('Mensagem antiga preservada')).toBeVisible()
+  await expect(page.getByText('Início do histórico salvo')).toBeVisible()
+})

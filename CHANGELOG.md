@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (103)
+### Changed
+- **Histórico paginado por conversa no WhatsApp**: o inbox mantém a lista recente leve, mas passa a buscar blocos anteriores diretamente do chat aberto, com ação “Carregar mensagens anteriores” e preservação da posição de rolagem. A leitura usa a mesma RLS por clínica/número e não regrava, move ou exclui nenhuma mensagem existente. (`src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`.)
+
+### Fixed
+- **Participantes de grupo deixam de aparecer todos como a mesma pessoa**: o webhook preserva `participantLid` em uma coluna aditiva quando a Z-API oculta o telefone, reutiliza nome/telefone somente por correspondência exata no mesmo grupo e exibe um identificador privado estável quando nenhum dado público está disponível. O fallback de deploy continua salvando mensagens mesmo antes da migração, sem inventar telefone nem perder os demais metadados. (`api/_lib/whatsapp.js`, `api/whatsapp.js`, `supabase/whatsapp_group_participant_schema.sql`, `src/components/WhatsAppInbox.jsx`, `tests/unit/whatsapp.spec.js`, `tests/e2e/whatsapp-inbox.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (102)
 ### Changed
 - **Identidade canônica do WhatsApp por Linked ID**: webhooks passam a preservar o `chatLid`/`@lid` recomendado pelo provider e mantêm o telefone real em campo separado. A atualização manual do inbox reconcilia telefone ↔ LID em lote pela Z-API e reúne o histórico sem aproximação por nome, conteúdo ou últimos dígitos. A migração é aditiva, mantém `phone`, mensagens, pacientes, direção e datas intactos e não executa `DELETE`. (`supabase/whatsapp_lid_routing_schema.sql`, `api/_lib/whatsapp.js`, `api/_lib/whatsappClient.js`, `api/whatsapp.js`.)
