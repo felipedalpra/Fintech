@@ -99,6 +99,13 @@ export function parseIncomingMessage(body) {
   const senderPhone = isGroup
     ? normalizePhone(body?.participantPhone || (body.fromMe === true ? body?.connectedPhone : ''))
     : rawContactPhone
+  // Em grupos, versões recentes do WhatsApp podem ocultar o telefone e enviar
+  // apenas o Linked ID do participante. Ele não é convertido em telefone: o
+  // valor é preservado como identidade privada para distinguir remetentes sem
+  // inventar dados que o provider não forneceu.
+  const senderLid = isGroup
+    ? (normalizeWhatsAppLid(body?.participantLid) || normalizeWhatsAppLid(body?.senderLid) || null)
+    : null
   const httpsPhoto = raw => {
     try { const url = new URL(String(raw || '')); return url.protocol === 'https:' ? url.toString() : null } catch { return null }
   }
@@ -129,6 +136,7 @@ export function parseIncomingMessage(body) {
     chatPhoto,
     senderName: senderName ? String(senderName) : '',
     senderPhone,
+    senderLid,
     senderPhoto,
     direction,
     status,

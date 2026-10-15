@@ -66,6 +66,7 @@ test('parseIncomingMessage: separa grupo, conversa e participante com suas fotos
     chatName: 'Equipe da clínica',
     senderName: 'Maria Souza',
     participantPhone: '5511988887777',
+    participantLid: '22093462769770@lid',
     senderPhoto: 'https://cdn.z-api.io/group.jpg',
     photo: 'https://cdn.z-api.io/maria.jpg',
     text: { message: 'Bom dia, pessoal' },
@@ -77,8 +78,22 @@ test('parseIncomingMessage: separa grupo, conversa e participante com suas fotos
     chatPhoto: 'https://cdn.z-api.io/group.jpg',
     senderName: 'Maria Souza',
     senderPhone: '5511988887777',
+    senderLid: '22093462769770@lid',
     senderPhoto: 'https://cdn.z-api.io/maria.jpg',
     direction: 'inbound',
+  })
+})
+
+test('parseIncomingMessage: preserva participantLid sem inventar telefone', () => {
+  expect(parseIncomingMessage({
+    isGroup: true,
+    phone: '120363019502650977-group',
+    participantLid: '184305754083376@lid',
+    text: { message: 'Mensagem privada no grupo' },
+  })).toMatchObject({
+    senderName: '',
+    senderPhone: '',
+    senderLid: '184305754083376@lid',
   })
 })
 
