@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-14 (101)
+### Added
+- **Identidade de grupos e participantes no WhatsApp**: conversas coletivas passam a exibir nome e foto do grupo, selo de grupo e, em cada mensagem recebida, nome, telefone e foto do participante fornecidos pela Z-API. A busca também encontra participantes; o botão Atualizar consulta os metadados oficiais dos chats para recuperar nomes e miniaturas das conversas antigas sem expor credenciais ao navegador. A migração aditiva preserva as mensagens existentes e adiciona somente metadados de conversa/remetente com o mesmo RLS da tabela atual. (`supabase/whatsapp_conversation_identity_schema.sql`, `api/_lib/whatsapp.js`, `api/_lib/whatsappClient.js`, `api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppInbox.css`.)
+
+### Fixed
+- **Grupos não são mais tratados como pacientes**: o endereço `-group` deixa de ser removido, respostas mantêm o ID exigido pelo provider e webhooks de grupo nunca criam nem vinculam leads/pacientes. A migração desassocia de forma não destrutiva as mensagens coletivas antigas vinculadas por engano, sem excluir pacientes ou mensagens; o backend mantém fallback de persistência durante a janela entre deploy e aplicação do SQL. (`supabase/whatsapp_conversation_identity_schema.sql`, `api/_lib/whatsapp.js`, `api/whatsapp.js`, `tests/unit/whatsapp.spec.js`, `tests/e2e/whatsapp-inbox.spec.js`.)
+
 ## [Unreleased] - 2026-10-14 (100)
 ### Fixed
 - **Sincronização confirmada das mensagens enviadas pelo celular**: o teste de conexão agora reaplica a URL de recebimento pelo endpoint combinado `update-webhook-received-delivery` da Z-API e valida em `/me` tanto a URL efetiva quanto `receiveCallbackSentByMe`, eliminando o falso positivo em que a flag aparecia ativa sem entrega dos eventos. Novos números recebem essa configuração automaticamente depois de serem persistidos, sem criar função serverless adicional nem alterar mensagens existentes. (`api/_lib/whatsappClient.js`, `api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`, `tests/unit/whatsappMedia.spec.js`.)

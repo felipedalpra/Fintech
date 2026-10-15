@@ -9,6 +9,18 @@ export function normalizePhone(raw) {
   return String(raw).replace(/\D/g, '')
 }
 
+// Mantém o endereço de conversa exigido pela Z-API. Contatos usam apenas
+// dígitos; grupos precisam conservar `-group` (ou o hífen do formato legado).
+export function normalizeWhatsAppAddress(raw, groupHint = false) {
+  const value = String(raw || '').trim()
+  const suffixGroup = /(?:-group|@g\.us)$/i.test(value)
+  if (!groupHint && !suffixGroup) return normalizePhone(value)
+  const digitParts = value.replace(/@g\.us$/i, '').replace(/-group$/i, '').match(/\d+/g) || []
+  if (!digitParts.length) return ''
+  if (suffixGroup || digitParts.length === 1) return `${digitParts.join('')}-group`
+  return digitParts.join('-')
+}
+
 // Núcleo comparável do número: os últimos 8 dígitos (ignora país/DDI, DDD e o 9º dígito,
 // que variam entre formatos). Ex.: "5511988887777" e "11988887777" → "88887777".
 export function phoneCore(raw) {
@@ -45,7 +57,8 @@ export function parseIncomingMessage(body) {
   if (!body || typeof body !== 'object') return null
 
   const phoneRaw = body.phone || body.from || body?.sender?.phone || ''
-  const phone = normalizePhone(phoneRaw)
+  const isGroup = body.isGroup === true || /(?:-group|@g\.us)$/i.test(String(phoneRaw))
+  const phone = normalizeWhatsAppAddress(phoneRaw, isGroup)
   if (!phone) return null
 
   const textRaw = body?.text?.message || body?.message?.conversation || body?.body || ''
@@ -54,7 +67,16 @@ export function parseIncomingMessage(body) {
   if (!textRaw && !media) return null
 
   const providerMessageId = body?.messageId || body?.id || null
-  const senderName = body?.senderName || body?.chatName || body?.pushname || body?.pushName || ''
+  const chatName = body?.chatName || ''
+  const senderName = body?.senderName || body?.pushname || body?.pushName || (!isGroup ? chatName : '')
+  const senderPhone = isGroup
+    ? normalizePhone(body?.participantPhone || (body.fromMe === true ? body?.connectedPhone : ''))
+    : normalizePhone(phoneRaw)
+  const httpsPhoto = raw => {
+    try { const url = new URL(String(raw || '')); return url.protocol === 'https:' ? url.toString() : null } catch { return null }
+  }
+  const chatPhoto = httpsPhoto(isGroup ? body?.senderPhoto : (body?.senderPhoto || body?.photo))
+  const senderPhoto = httpsPhoto(isGroup ? body?.photo : (body?.photo || body?.senderPhoto))
   const direction = body.fromMe === true ? 'outbound' : 'inbound'
   const rawStatus = String(body.status || '').toUpperCase()
   const status = direction === 'inbound'
@@ -73,6 +95,12 @@ export function parseIncomingMessage(body) {
 
   return {
     phone,
+    isGroup,
+    chatName: chatName ? String(chatName) : '',
+    chatPhoto,
+    senderName: senderName ? String(senderName) : '',
+    senderPhone,
+    senderPhoto,
     direction,
     status,
     text,
@@ -80,7 +108,6 @@ export function parseIncomingMessage(body) {
     mediaUrl: media ? media.mediaUrl : null,
     mediaMime: media ? media.mediaMime : null,
     providerMessageId: providerMessageId ? String(providerMessageId) : null,
-    senderName: senderName ? String(senderName) : '',
     fromApi: body.fromApi === true,
     createdAt,
   }

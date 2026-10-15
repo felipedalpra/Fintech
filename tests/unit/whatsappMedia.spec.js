@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildMediaSendRequest, configureZApiReceiveWebhook, enableZApiSentByMe, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
+import { buildMediaSendRequest, configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, normalizeZApiInstanceUrl, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
 
 const realFetch = globalThis.fetch
 test.afterEach(() => { globalThis.fetch = realFetch })
@@ -101,6 +101,22 @@ test('configureZApiReceiveWebhook rejeita confirmação divergente da Z-API', as
     'client-token',
     'https://www.surgimetrics.com.br/api/whatsapp?action=webhook&number=N1&token=S1',
   )).rejects.toThrow(/não manteve ativa/i)
+})
+
+test('listZApiChats pagina metadados sem expor credenciais', async () => {
+  const urls = []
+  globalThis.fetch = async url => {
+    urls.push(String(url))
+    const page = new URL(String(url)).searchParams.get('page')
+    return new Response(JSON.stringify(page === '1'
+      ? [{ phone:'120363-group', name:'Grupo' }, { phone:'5511999', name:'Maria' }]
+      : [{ phone:'5511888', name:'João' }]), { status:200 })
+  }
+  await expect(listZApiChats('https://api.z-api.io/instances/A/token/B', 'client-token', { pageSize:2, maxPages:3 }))
+    .resolves.toHaveLength(3)
+  expect(urls).toHaveLength(2)
+  expect(urls[0]).toContain('page=1')
+  expect(urls[1]).toContain('page=2')
 })
 
 test('buildMediaSendRequest: imagem → send-image com caption', () => {

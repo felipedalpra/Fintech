@@ -91,6 +91,25 @@ export async function configureZApiReceiveWebhook(instanceUrl, apiToken, webhook
   return { enabled: true, instanceUrl: baseUrl, webhookUrl: configuredUrl }
 }
 
+// Metadados leves das conversas (nome e miniatura). Paginação limitada evita
+// chamadas sem fim se o provider retornar uma página cheia repetidamente.
+export async function listZApiChats(instanceUrl, apiToken, { pageSize = 1000, maxPages = 5 } = {}) {
+  if (!instanceUrl || !apiToken) throw new Error('Informe a URL da instância e o Client-Token.')
+  const baseUrl = normalizeZApiInstanceUrl(instanceUrl)
+  const chats = []
+  for (let page = 1; page <= maxPages; page += 1) {
+    const url = new URL(`${baseUrl}/chats`)
+    url.searchParams.set('page', String(page))
+    url.searchParams.set('pageSize', String(pageSize))
+    const response = await fetch(url, { headers: { 'Client-Token': apiToken } })
+    const data = await readZApiResponse(response)
+    const batch = Array.isArray(data) ? data : (Array.isArray(data?.chats) ? data.chats : [])
+    chats.push(...batch)
+    if (batch.length < pageSize) break
+  }
+  return chats
+}
+
 // Monta (puro) o endpoint Z-API + corpo para enviar mídia por URL.
 //   image    → /send-image      { phone, image, caption }
 //   document → /send-document/<ext> { phone, document, fileName }
