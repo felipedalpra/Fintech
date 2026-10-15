@@ -336,6 +336,20 @@
 .cal-editor__types button:disabled { cursor: default; opacity: 0.78; }
 .cal-editor__row { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px; }
 .cal-editor__hint { padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--cal-accent) 9%, transparent); color: var(--cal-sub); font-size: 11px; line-height: 1.5; }
+.cal-finance { overflow: hidden; border: 1px solid var(--cal-border); border-radius: 13px; background: var(--cal-surface); }
+.cal-finance.is-open { border-color: color-mix(in srgb, var(--cal-green) 35%, var(--cal-border)); }
+.cal-finance__toggle { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 11px 13px; border: 0; background: transparent; color: var(--cal-text); font: inherit; text-align: left; cursor: pointer; }
+.cal-finance__toggle:hover { background: var(--cal-hover); }
+.cal-finance__icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: color-mix(in srgb, var(--cal-green) 14%, transparent); color: var(--cal-green); }
+.cal-finance__toggle > span:nth-child(2) { display: flex; flex-direction: column; min-width: 0; }
+.cal-finance__toggle strong { font-size: 12px; }
+.cal-finance__toggle small { margin-top: 3px; color: var(--cal-dim); font-size: 10px; }
+.cal-finance__chevron { color: var(--cal-dim); font-size: 18px; transition: transform 150ms ease; }
+.cal-finance.is-open .cal-finance__chevron { transform: rotate(180deg); }
+.cal-finance__panel { padding: 14px; border-top: 1px solid var(--cal-border); }
+.cal-finance__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cal-finance__notice { margin-bottom: 12px; padding: 9px 11px; border-radius: 9px; background: color-mix(in srgb, var(--cal-yellow) 10%, transparent); color: var(--cal-yellow); font-size: 10px; line-height: 1.45; }
+.cal-finance__footnote { margin: 12px 0 0; color: var(--cal-dim); font-size: 10px; line-height: 1.45; }
 .cal-editor__legacy-patient { margin-top: -10px; padding: 8px 10px; border-radius: 9px; background: color-mix(in srgb, var(--cal-yellow) 9%, transparent); color: var(--cal-sub); font-size: 10px; }
 .cal-editor__legacy-patient strong { color: var(--cal-yellow); }
 .cal-editor__actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 4px; }
@@ -393,6 +407,7 @@
   .cal-agenda__body strong { font-size: 12px; }
   .cal-editor__row { grid-template-columns: 1fr 1fr; }
   .cal-editor__row > :last-child { grid-column: 1 / -1; }
+  .cal-finance__grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

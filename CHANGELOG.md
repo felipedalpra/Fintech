@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (111)
+### Added
+- **Financeiro opcional ao agendar**: o modal da Agenda permite salvar a consulta/cirurgia para preencher depois ou expandir “Adicionar informações financeiras” e registrar valor, vencimento, forma/status de pagamento, recebimento, convênio/NF e, nas cirurgias, custos principais. Os dois caminhos gravam o mesmo atendimento, com o mesmo ID e pelo mesmo `saveDataNow`/`financeStore`; não há endpoint, lançamento ou total paralelo. Perfis sem acesso ao Financeiro continuam podendo agendar sem visualizar valores e custos. (`src/components/Calendar.jsx`, `src/components/CalendarFinancialFields.jsx`, `src/lib/calendarFinancialDetails.js`.)
+
+### Fixed
+- **Configurações avançadas preservadas**: ao editar pela Agenda um atendimento com pagamento misto ou por datas, a codificação existente é mantida enquanto o usuário não troca explicitamente a forma de pagamento no formulário rápido.
+
 ## [Unreleased] - 2026-10-15 (110)
 ### Changed
 - **Conexão com Google Agenda mais discreta**: o banner de largura total foi substituído por um botão compacto na barra de ferramentas da Agenda, com ícone colorido do Google Calendar e estados claros de conectar, reconectar e conectado. Em telas pequenas, o controle exibe somente o ícone para preservar espaço, mantendo rótulos acessíveis e a confirmação antes de desconectar. (`src/components/GoogleCalendarBar.jsx`, `src/components/Calendar.jsx`, `src/components/Calendar.css`.)

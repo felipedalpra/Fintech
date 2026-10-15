@@ -3,6 +3,7 @@ import { C } from '../theme.js'
 import { fmt, today, uid } from '../utils.js'
 import { Btn, FInput, Modal } from './UI.jsx'
 import { GoogleCalendarBar } from './GoogleCalendarBar.jsx'
+import { CalendarFinancialFields } from './CalendarFinancialFields.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -25,6 +26,7 @@ import {
   moveCalendarFocus,
   startOfCalendarWeek,
 } from '../lib/clinicalCalendar.js'
+import { buildCalendarFinancialPatch, createCalendarFinancialDraft } from '../lib/calendarFinancialDetails.js'
 import './Calendar.css'
 
 const WEEKDAYS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
@@ -264,7 +266,7 @@ function AgendaView({ events, conflicts, onEvent, onDay }) {
   )
 }
 
-function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurgery, onClose, onSave, busy }) {
+function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurgery, canManageFinance, financeOpen, setFinanceOpen, onClose, onSave, busy }) {
   const isGoogle = event?.source === 'google'
   const editing = Boolean(event?.source === 'local')
   const isReadOnly = isGoogle || (event?.type === 'surgery' && !canCreateSurgery)
@@ -282,8 +284,8 @@ function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurger
       ) : (
         <div className="cal-editor">
           <div className="cal-editor__types" role="group" aria-label="Tipo de atendimento">
-            <button type="button" disabled={editing} className={draft.type === 'consultation' ? 'is-active' : ''} onClick={() => setDraft(current => ({ ...current, type:'consultation', durationMinutes:current.type === 'surgery' ? 60 : current.durationMinutes }))}>Consulta</button>
-            {canCreateSurgery && <button type="button" disabled={editing} className={draft.type === 'surgery' ? 'is-active' : ''} onClick={() => setDraft(current => ({ ...current, type:'surgery', durationMinutes:current.type === 'consultation' ? 180 : current.durationMinutes }))}>Cirurgia</button>}
+            <button type="button" disabled={editing} className={draft.type === 'consultation' ? 'is-active' : ''} onClick={() => { setDraft(current => ({ ...current, ...createCalendarFinancialDraft('consultation', {}, current.date), type:'consultation', durationMinutes:current.type === 'surgery' ? 60 : current.durationMinutes })); setFinanceOpen(false) }}>Consulta</button>
+            {canCreateSurgery && <button type="button" disabled={editing} className={draft.type === 'surgery' ? 'is-active' : ''} onClick={() => { setDraft(current => ({ ...current, ...createCalendarFinancialDraft('surgery', {}, current.date), type:'surgery', durationMinutes:current.type === 'consultation' ? 180 : current.durationMinutes })); setFinanceOpen(false) }}>Cirurgia</button>}
           </div>
           <PatientSelector
             value={draft.patientId}
@@ -300,10 +302,11 @@ function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurger
           ) : (
             <FInput label="Procedimento" value={draft.procedureId} onChange={procedureId => setDraft(current => ({ ...current, procedureId }))} options={[{ v:'', l:'Selecione o procedimento' }, ...procedures.map(item => ({ v:item.id, l:item.name }))]} />
           )}
+          {canManageFinance && <CalendarFinancialFields open={financeOpen} onToggle={() => setFinanceOpen(current => !current)} draft={draft} setDraft={setDraft} editing={editing} />}
           <div className="cal-editor__hint">O atendimento será salvo na clínica e, se a integração estiver ativa, sincronizado com o Google Agenda.</div>
           <div className="cal-editor__actions">
             <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-            <Btn disabled={busy || (!draft.patientId && !draft.patient.trim()) || !draft.date || !draft.startTime || (draft.type === 'surgery' && !draft.procedureId)} onClick={onSave}>{busy ? 'Salvando…' : editing ? 'Salvar alterações' : 'Criar atendimento'}</Btn>
+            <Btn disabled={busy || (!draft.patientId && !draft.patient.trim()) || !draft.date || !draft.startTime || (draft.type === 'surgery' && !draft.procedureId)} onClick={onSave}>{busy ? 'Salvando…' : editing ? 'Salvar alterações' : canManageFinance && !financeOpen ? 'Salvar e preencher depois' : 'Criar atendimento'}</Btn>
           </div>
         </div>
       )}
@@ -327,6 +330,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
   const [googleEvents, setGoogleEvents] = useState([])
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [editorOpen, setEditorOpen] = useState(false)
+  const [financeOpen, setFinanceOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState({ type:'consultation', patient:'', patientId:'', date:today(), startTime:'09:00', durationMinutes:60, consultationType:'avaliacao', procedureId:'' })
   const searchRef = useRef(null)
@@ -334,6 +338,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
   dataRef.current = data
   const googleConnected = Boolean(google?.status.connected)
   const canCreateSurgery = canAccess('sales')
+  const canManageFinance = canAccess('finance')
   const range = useMemo(() => calendarRange(view, focusDate), [view, focusDate])
 
   function setView(nextView) {
@@ -413,7 +418,9 @@ export function Calendar({ data, setData, saveDataNow, google }) {
 
   function openCreate(date, startTime = '09:00') {
     setSelectedEvent(null)
+    setFinanceOpen(false)
     setDraft({
+      ...createCalendarFinancialDraft('consultation', {}, date),
       type:'consultation',
       patient:'',
       patientId:'',
@@ -428,7 +435,9 @@ export function Calendar({ data, setData, saveDataNow, google }) {
 
   function openEvent(event) {
     setSelectedEvent(event)
+    setFinanceOpen(false)
     setDraft({
+      ...createCalendarFinancialDraft(event.type, event.record || {}, event.date),
       type:event.type,
       patient:event.patient || event.title || '',
       patientId:event.patientId || '',
@@ -448,10 +457,15 @@ export function Calendar({ data, setData, saveDataNow, google }) {
 
   async function saveEvent() {
     if (!draft.patient.trim() || !draft.date || !draft.startTime) return
+    if (financeOpen && draft.paymentStatus === 'pago' && !draft.paymentDate) {
+      toast('Informe a data do recebimento para marcar como pago.', 'warning')
+      return
+    }
     setBusy(true)
     try {
       if (selectedEvent?.source === 'local') {
         const collection = selectedEvent.type === 'surgery' ? 'surgeries' : 'consultations'
+        const financialPatch = financeOpen ? buildCalendarFinancialPatch(selectedEvent.type, draft) : {}
         await persist(current => ({
           ...current,
           [collection]:(current[collection] || []).map(item => item.id === selectedEvent.recordId ? {
@@ -464,34 +478,28 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             startTime:draft.startTime,
             durationMinutes:Math.max(15, Number(draft.durationMinutes) || (selectedEvent.type === 'surgery' ? 180 : 60)),
             ...(selectedEvent.type === 'surgery' ? { procedureId:draft.procedureId } : { consultationType:draft.consultationType }),
+            ...financialPatch,
           } : item),
         }))
         toast('Atendimento atualizado e salvo.', 'success')
       } else {
         const id = uid()
+        const financialPatch = buildCalendarFinancialPatch(draft.type, draft)
         if (draft.type === 'surgery') {
           const record = {
             id,
             patient:draft.patient.trim(),
             patientId:draft.patientId || null,
             procedureId:draft.procedureId,
-            // Agendar não deve criar receita presumida: o valor é revisado no cadastro financeiro da cirurgia.
-            totalValue:0,
+            // O valor só entra quando informado explicitamente; o fluxo "preencher depois" mantém zero.
+            ...financialPatch,
             date:draft.date,
             competenceDate:draft.date,
-            dueDate:draft.date,
+            dueDate:financialPatch.dueDate || draft.date,
             startTime:draft.startTime,
             durationMinutes:Math.max(15, Number(draft.durationMinutes) || 180),
-            paymentMethod:'pix',
-            paymentStatus:'pendente',
             surgeon:'',
-            hospitalCost:0,
-            anesthesiaCost:0,
-            materialCost:0,
-            otherCosts:0,
-            invoiceIssuancePercent:0,
             costSettlements:{},
-            paymentDate:'',
             notes:'',
             referredBy:'',
           }
@@ -503,19 +511,12 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             patientId:draft.patientId || null,
             date:draft.date,
             competenceDate:draft.date,
-            dueDate:draft.date,
+            ...financialPatch,
+            dueDate:financialPatch.dueDate || draft.date,
             startTime:draft.startTime,
             durationMinutes:Math.max(15, Number(draft.durationMinutes) || 60),
             consultationType:draft.consultationType,
-            value:0,
-            invoiceIssuancePercent:0,
             costSettlements:{},
-            paymentType:'particular',
-            paymentMethod:'pix',
-            insurance:'',
-            paymentStatus:'pendente',
-            forecastPaymentDate:draft.date,
-            paymentDate:'',
           }
           await persist(current => ({ ...current, consultations:[...(current.consultations || []), record] }))
         }
@@ -615,7 +616,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
         </section>
       </div>
 
-      <EventEditor open={editorOpen} draft={draft} setDraft={setDraft} event={selectedEvent} procedures={data.procedures || []} canCreateSurgery={canCreateSurgery} onClose={() => setEditorOpen(false)} onSave={saveEvent} busy={busy} />
+      <EventEditor open={editorOpen} draft={draft} setDraft={setDraft} event={selectedEvent} procedures={data.procedures || []} canCreateSurgery={canCreateSurgery} canManageFinance={canManageFinance} financeOpen={financeOpen} setFinanceOpen={setFinanceOpen} onClose={() => setEditorOpen(false)} onSave={saveEvent} busy={busy} />
     </div>
   )
 }

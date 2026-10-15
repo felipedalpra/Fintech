@@ -69,13 +69,81 @@ test('alterna visualizações, cria atendimento e mantém após recarregar', asy
   await page.getByRole('button', { name:'Criar', exact:true }).click()
   await page.getByRole('combobox').first().selectOption(PATIENT_ID)
   await page.locator('input[type="time"]').fill('14:30')
-  await page.getByRole('button', { name:'Criar atendimento' }).click()
+  await page.getByRole('button', { name:'Salvar e preencher depois' }).click()
   await expect(page.getByText('Atendimento criado e salvo.')).toBeVisible()
   await expect.poll(() => store.getPayload().consultations.length).toBe(2)
 
   await page.reload()
   await page.getByRole('group', { name:'Visualização da agenda' }).getByRole('button', { name:'Agenda', exact:true }).click()
   await expect(page.getByText('Ana Costa', { exact:true })).toHaveCount(3)
+})
+
+test('salva financeiro pela agenda no mesmo atendimento e mantém após recarregar', async ({ page }) => {
+  const store = await mockCalendarData(page)
+  await page.goto('/app/calendar')
+
+  await page.getByRole('button', { name:'Criar', exact:true }).click()
+  await page.getByRole('combobox').first().selectOption(PATIENT_ID)
+  await page.locator('input[type="time"]').fill('15:30')
+  await page.getByRole('button', { name:'Adicionar informações financeiras' }).click()
+
+  const finance = page.getByTestId('calendar-financial-fields')
+  const valueInput = finance.getByText('Valor da consulta', { exact:true }).locator('..').locator('input')
+  await valueInput.fill('450')
+  await valueInput.press('Tab')
+  await finance.locator('select').filter({ hasText:'PIXCartãoDinheiroBoletoTransferência' }).selectOption('cartao')
+  await finance.locator('select').filter({ hasText:'PendentePagoGlosadoCancelado' }).selectOption('pago')
+  await finance.locator('input[type="date"]').last().fill(isoToday())
+  await page.getByRole('button', { name:'Criar atendimento' }).click()
+
+  await expect.poll(() => store.getPayload().consultations.length).toBe(2)
+  const created = store.getPayload().consultations.at(-1)
+  expect(created).toMatchObject({ value:450, paymentMethod:'cartao', paymentStatus:'pago', paymentDate:isoToday() })
+
+  await page.reload()
+  await page.getByRole('group', { name:'Visualização da agenda' }).getByRole('button', { name:'Agenda', exact:true }).click()
+  await expect(page.locator('.cal-agenda__value').getByText('R$ 450,00')).toBeVisible()
+
+  await page.locator('.cal-agenda__event').filter({ hasText:'R$ 450,00' }).click()
+  await page.getByRole('button', { name:'Ver informações financeiras' }).click()
+  const editedValue = page.getByTestId('calendar-financial-fields').getByText('Valor da consulta', { exact:true }).locator('..').locator('input')
+  await editedValue.click()
+  await editedValue.press('ControlOrMeta+A')
+  await editedValue.fill('500')
+  await editedValue.press('Tab')
+  await page.getByRole('button', { name:'Salvar alterações' }).click()
+
+  await expect.poll(() => store.getPayload().consultations.at(-1).value).toBe(500)
+  expect(store.getPayload().consultations).toHaveLength(2)
+  expect(store.getPayload().consultations.at(-1).id).toBe(created.id)
+})
+
+test('cadastra valor e custos de cirurgia pela agenda sem criar lançamento paralelo', async ({ page }) => {
+  const store = await mockCalendarData(page)
+  await page.goto('/app/calendar')
+
+  await page.getByRole('button', { name:'Criar', exact:true }).click()
+  await page.getByRole('button', { name:'Cirurgia', exact:true }).click()
+  await page.getByRole('combobox').first().selectOption(PATIENT_ID)
+  await page.getByRole('button', { name:'Adicionar informações financeiras' }).click()
+
+  const finance = page.getByTestId('calendar-financial-fields')
+  const totalInput = finance.getByText('Valor total da cirurgia', { exact:true }).locator('..').locator('input')
+  await totalInput.fill('18000')
+  await totalInput.press('Tab')
+  const hospitalInput = finance.getByText('Custo hospital', { exact:true }).locator('..').locator('input')
+  await hospitalInput.fill('3000')
+  await hospitalInput.press('Tab')
+  await page.getByRole('button', { name:'Criar atendimento' }).click()
+
+  await expect.poll(() => store.getPayload().surgeries.length).toBe(2)
+  expect(store.getPayload().surgeries.at(-1)).toMatchObject({
+    patientId:PATIENT_ID,
+    procedureId:PROCEDURE_ID,
+    totalValue:18000,
+    hospitalCost:3000,
+    paymentStatus:'pendente',
+  })
 })
 
 test('agenda mobile permite navegar e abrir um atendimento', async ({ page }) => {
