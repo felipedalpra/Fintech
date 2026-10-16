@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   addDays, formatBR, renderTemplate, planReminders, planFollowups,
-  formatBRL, receivableDueDate, planPayments, planAnamnese,
+  formatBRL, receivableDueDate, planPayments, planAnamnese, automationRetryAction,
 } from '../../api/_lib/whatsappAutomations.js'
 
 test('addDays: soma/subtrai sem drift de fuso, cruza mês e ano', () => {
@@ -97,4 +97,18 @@ test('planAnamnese: injeta {link} junto de nome e data; pula sem telefone', () =
   })
   expect(plan).toHaveLength(1)
   expect(plan[0].message).toBe('Oi Ana, consulta 13/10/2026, ficha: https://clinica.com/anamnese')
+})
+
+test('retry de automação nunca reenvia quando o provider já aceitou', () => {
+  const now = Date.parse('2026-10-16T12:00:00Z')
+  expect(automationRetryAction({ status:'accepted', provider_message_id:'MSG-1', attempts:1 }, now)).toBe('persist')
+  expect(automationRetryAction({ status:'failed', provider_message_id:'MSG-1', attempts:2 }, now)).toBe('persist')
+  expect(automationRetryAction({ status:'sent', provider_message_id:'MSG-1' }, now)).toBe('skip')
+})
+
+test('retry de automação usa backoff e não abandona falha transitória', () => {
+  const now = Date.parse('2026-10-16T12:00:00Z')
+  expect(automationRetryAction({ status:'failed', attempts:1, last_attempt_at:'2026-10-16T11:57:00Z' }, now)).toBe('skip')
+  expect(automationRetryAction({ status:'failed', attempts:1, last_attempt_at:'2026-10-16T11:54:00Z' }, now)).toBe('send')
+  expect(automationRetryAction({ status:'pending', attempts:1, last_attempt_at:'2026-10-15T00:00:00Z' }, now)).toBe('skip')
 })

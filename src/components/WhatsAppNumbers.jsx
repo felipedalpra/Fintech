@@ -27,22 +27,22 @@ export function WhatsAppNumbers() {
   const [connectionBusy, setConnectionBusy] = useState(null)
   const [connectionStatus, setConnectionStatus] = useState({})
   const [qrCode, setQrCode] = useState(null)
+  const [pendingEvents, setPendingEvents] = useState([])
+  const [replayBusy, setReplayBusy] = useState(null)
 
   async function load() {
     setLoading(true)
-    let [numRes, memRes] = await Promise.all([
-      supabase.from('whatsapp_numbers')
-        .select('id, label, phone, active, webhook_secret, assigned_user_id, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at')
-        .order('created_at', { ascending: true }),
+    const [numResult, memRes] = await Promise.allSettled([
+      whatsappApi('list-numbers', {}),
       supabase.rpc('clinic_team'), // roster via RPC: admin-membro (não-owner) também enxerga o time
     ])
-    if (['PGRST204', '42703'].includes(numRes.error?.code)) {
-      numRes = await supabase.from('whatsapp_numbers')
-        .select('id, label, phone, active, webhook_secret, assigned_user_id')
-        .order('created_at', { ascending: true })
+    if (numResult.status === 'fulfilled') {
+      setNumbers(numResult.value.numbers || [])
+      setPendingEvents(numResult.value.pendingEvents || [])
     }
-    setNumbers((numRes.data ?? []).map(number => ({ provider: 'zapi', connection_state: 'unknown', ...number })))
-    setMembers((memRes.data ?? []).filter(m => m.user_id))
+    else setMsg({ type:'error', text:numResult.reason?.message || 'Não foi possível carregar os números.' })
+    if (memRes.status === 'fulfilled' && !memRes.value.error) setMembers((memRes.value.data ?? []).filter(m => m.user_id))
+    else setMsg(current => current || ({ type:'error', text:'Não foi possível carregar a equipe.' }))
     setLoading(false)
   }
   useEffect(() => { load() }, [])
@@ -68,7 +68,8 @@ export function WhatsAppNumbers() {
 
   // Define o responsável (dono) do número: equipe/gestão só veem as conversas dos números delas.
   async function assign(id, assigned_user_id) {
-    await supabase.from('whatsapp_numbers').update({ assigned_user_id: assigned_user_id || null }).eq('id', id)
+    const { error } = await supabase.from('whatsapp_numbers').update({ assigned_user_id: assigned_user_id || null }).eq('id', id)
+    if (error) { setMsg({ type:'error', text:`Não foi possível atribuir o número: ${error.message}` }); return }
     setNumbers(prev => prev.map(x => x.id === id ? { ...x, assigned_user_id: assigned_user_id || null } : x))
   }
 
@@ -112,7 +113,7 @@ export function WhatsAppNumbers() {
       api_token: apiToken.trim(),
       webhook_secret,
       provider: 'zapi',
-      active: true,
+      active: false,
     }).select('id').single()
     if (error) { setSaving(false); setMsg({ type: 'error', text: error.message }); return }
     try {
@@ -178,11 +179,6 @@ export function WhatsAppNumbers() {
         instanceUrl: editInstanceUrl.trim(),
         apiToken: editApiToken.trim(),
       })
-      const { error } = await supabase.from('whatsapp_numbers').update({
-        instance_url: connection.instanceUrl,
-        api_token: editApiToken.trim(),
-      }).eq('id', n.id)
-      if (error) throw error
       setEditingId(null)
       setEditInstanceUrl('')
       setEditApiToken('')
@@ -196,8 +192,33 @@ export function WhatsAppNumbers() {
   }
 
   async function toggleActive(n) {
-    await supabase.from('whatsapp_numbers').update({ active: !n.active }).eq('id', n.id)
-    setNumbers(prev => prev.map(x => x.id === n.id ? { ...x, active: !x.active } : x))
+    setConnectionBusy(n.id)
+    setMsg(null)
+    try {
+      const result = await whatsappApi('set-number-active', { whatsappNumberId:n.id, active:!n.active })
+      setNumbers(prev => prev.map(x => x.id === n.id ? { ...x, active:result.active } : x))
+    } catch (error) {
+      setMsg({ type:'error', text:error.message })
+    } finally {
+      setConnectionBusy(null)
+    }
+  }
+
+  async function replayPending(n) {
+    const events = pendingEvents.filter(event => event.whatsapp_number_id === n.id)
+    if (!n.active) { setMsg({ type:'error', text:'Ative e reconecte o número antes de reprocessar os eventos.' }); return }
+    setReplayBusy(n.id)
+    setMsg(null)
+    try {
+      for (const event of events) await whatsappApi('replay-webhook', { eventId:event.id })
+      setMsg({ type:'success', text:`${events.length} evento(s) reprocessado(s) com sucesso.` })
+      await load()
+    } catch (error) {
+      setMsg({ type:'error', text:`Reprocessamento interrompido: ${error.message}` })
+      await load()
+    } finally {
+      setReplayBusy(null)
+    }
   }
 
   function webhookUrl(n) {
@@ -258,7 +279,9 @@ export function WhatsAppNumbers() {
 
       {loading ? <div style={{ color: C.textSub, fontSize: 14 }}>Carregando...</div>
         : numbers.length === 0 ? <div style={{ color: C.textDim, fontSize: 14, marginBottom: 18 }}>Nenhum número cadastrado ainda.</div>
-        : numbers.map(n => (
+        : numbers.map(n => {
+          const numberPending = pendingEvents.filter(event => event.whatsapp_number_id === n.id)
+          return (
             <div key={n.id} style={s.item}>
               <div style={s.row}>
                 <span style={s.label}>{n.label}</span>
@@ -293,6 +316,14 @@ export function WhatsAppNumbers() {
                   {n.last_webhook_at && <>Último evento recebido em {new Date(n.last_webhook_at).toLocaleString('pt-BR')}{n.last_webhook_event ? ` (${n.last_webhook_event})` : ''}.</>}
                 </div>
               )}
+              {numberPending.length > 0 && (
+                <div style={{ ...s.row, color:C.textSub, fontSize:12 }}>
+                  <span>{numberPending.length} evento(s) aguardando reprocessamento.</span>
+                  <button style={s.linkBtn} disabled={replayBusy === n.id} onClick={() => replayPending(n)}>
+                    {replayBusy === n.id ? 'Reprocessando...' : 'Reprocessar agora'}
+                  </button>
+                </div>
+              )}
               {editingId === n.id && n.provider !== 'evolution' && (
                 <div style={s.editor}>
                   <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.45 }}>
@@ -307,7 +338,8 @@ export function WhatsAppNumbers() {
                 </div>
               )}
             </div>
-          ))}
+          )
+        })}
 
       <form onSubmit={add} style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 520 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Adicionar número</div>

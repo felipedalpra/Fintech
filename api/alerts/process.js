@@ -38,6 +38,12 @@ export default async function handler(req, res) {
 
   try {
     const users = await listAuthUsers(admin)
+    // Retenção LGPD do payload técnico bruto. Mensagens consolidadas e mídias
+    // seguem sua política própria; apenas o envelope de auditoria expira aqui.
+    const purge = await admin.from('whatsapp_webhook_events')
+      .delete()
+      .lt('expires_at', new Date().toISOString())
+    if (purge.error && !['42P01', '42703', 'PGRST204', 'PGRST205'].includes(purge.error.code)) throw purge.error
     await ensureSubscribers(admin, users)
 
     const { data:subs, error:subErr } = await admin

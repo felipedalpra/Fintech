@@ -1,11 +1,9 @@
 import { supabase } from './supabase.js'
+import { mediaTypeFromMime } from './whatsappMediaTypes.js'
 
-// Tipo de mensagem a partir do MIME do arquivo (imagem vs documento).
-export function mediaTypeFromMime(mime) {
-  return String(mime || '').startsWith('image/') ? 'image' : 'document'
-}
+export { mediaTypeFromMime } from './whatsappMediaTypes.js'
 
-// Sobe o arquivo direto para o Storage (bucket wa-media) e devolve a URL pública + metadados.
+// Sobe o arquivo direto para o Storage privado e devolve apenas a referência estável.
 // O navegador faz o upload (não o endpoint) para não esbarrar no limite de corpo da função.
 export async function uploadWhatsAppMedia(file, ownerId, { type } = {}) {
   if (!file) throw new Error('Nenhum arquivo para enviar.')
@@ -18,9 +16,8 @@ export async function uploadWhatsAppMedia(file, ownerId, { type } = {}) {
     upsert: false,
   })
   if (error) throw new Error(`Falha no upload: ${error.message}`)
-  const { data } = supabase.storage.from('wa-media').getPublicUrl(path)
   return {
-    url: data.publicUrl,
+    url: `storage://wa-media/${path}`,
     mime: file.type || null,
     fileName: file.name || path.split('/').pop(),
     type: type || mediaTypeFromMime(file.type),

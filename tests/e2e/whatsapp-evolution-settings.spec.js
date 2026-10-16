@@ -43,6 +43,11 @@ test('admin cria instância Evolution por QR sem receber credenciais da infraest
       }),
     })
   })
+  await page.route('**/api/whatsapp?action=list-numbers', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({ numbers, pendingEvents:[] }),
+  }))
 
   await page.goto('/app/settings')
   await page.getByRole('button', { name:'WhatsApp', exact:true }).click()

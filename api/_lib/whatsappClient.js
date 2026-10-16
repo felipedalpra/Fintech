@@ -48,6 +48,63 @@ export async function testWhatsAppConnection(instanceUrl, apiToken) {
   return { connected: true, instanceUrl: baseUrl }
 }
 
+function allowedZApiMediaHost(hostname) {
+  const host = String(hostname || '').toLowerCase()
+  const configured = String(process.env.ZAPI_MEDIA_ALLOWED_HOSTS || '')
+    .split(',').map(value => value.trim().toLowerCase()).filter(Boolean)
+  return host === 'z-api.io' || host.endsWith('.z-api.io') || configured.includes(host)
+}
+
+function checkedZApiMediaUrl(raw) {
+  let url
+  try { url = new URL(String(raw || '').trim()) } catch { throw new Error('A Z-API enviou uma URL de mídia inválida.') }
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') || !allowedZApiMediaHost(url.hostname)) {
+    throw new Error('A mídia Z-API veio de um host não autorizado.')
+  }
+  return url
+}
+
+// Copia imediatamente a mídia temporária da Z-API para o Storage privado. A
+// allowlist é conferida novamente em cada redirect para impedir SSRF.
+export async function downloadZApiMedia(rawUrl, { maxBytes = 16 * 1024 * 1024 } = {}) {
+  let url = checkedZApiMediaUrl(rawUrl)
+  for (let redirects = 0; redirects <= 3; redirects += 1) {
+    const response = await fetch(url, { redirect:'manual' })
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get('location')
+      if (!location || redirects === 3) throw new Error('A Z-API redirecionou a mídia de forma inválida.')
+      url = checkedZApiMediaUrl(new URL(location, url).toString())
+      continue
+    }
+    if (!response.ok) throw new Error(`A Z-API não liberou a mídia recebida (HTTP ${response.status}).`)
+    const declaredLength = Number(response.headers.get('content-length') || 0)
+    if (declaredLength > maxBytes) throw new Error('A mídia recebida excede 16 MB.')
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('A Z-API devolveu a mídia sem conteúdo.')
+    const chunks = []
+    let total = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {})
+        throw new Error('A mídia recebida excede 16 MB.')
+      }
+      chunks.push(Buffer.from(value))
+    }
+    if (!total) throw new Error('A mídia recebida está vazia.')
+    const mimetype = String(response.headers.get('content-type') || 'application/octet-stream').split(';')[0].toLowerCase()
+    if (['text/html', 'application/xhtml+xml'].includes(mimetype)) throw new Error('A Z-API devolveu conteúdo inseguro no lugar da mídia.')
+    return {
+      base64: Buffer.concat(chunks, total).toString('base64'),
+      mimetype,
+      fileName: url.pathname.split('/').pop() || '',
+    }
+  }
+  throw new Error('Não foi possível baixar a mídia da Z-API.')
+}
+
 // Mantém o histórico completo mesmo quando alguém responde pelo aplicativo do
 // WhatsApp. A Z-API envia essas mensagens no webhook de recebimento com fromMe=true.
 export async function enableZApiSentByMe(instanceUrl, apiToken) {
@@ -136,11 +193,15 @@ export async function resolveZApiPhoneLids(instanceUrl, apiToken, phones) {
 
 // Monta (puro) o endpoint Z-API + corpo para enviar mídia por URL.
 //   image    → /send-image      { phone, image, caption }
+//   video    → /send-video      { phone, video, caption }
 //   document → /send-document/<ext> { phone, document, fileName }
 //   audio    → /send-ptt (nota de voz) { phone, audio }
 export function buildMediaSendRequest(type, { to, mediaUrl, caption = '', fileName = '' }) {
   if (type === 'image') {
     return { path: 'send-image', body: { phone: to, image: mediaUrl, caption } }
+  }
+  if (type === 'video') {
+    return { path: 'send-video', body: { phone: to, video: mediaUrl, caption } }
   }
   if (type === 'document') {
     // Extensão sanitizada (a..z/0..9, 1-8 chars) e só se houver mesmo um ponto no nome.

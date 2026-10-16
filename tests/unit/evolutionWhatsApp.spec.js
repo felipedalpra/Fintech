@@ -4,14 +4,18 @@ import {
   configureEvolutionWebhook,
   createEvolutionInstance,
   downloadEvolutionMedia,
+  evolutionInstanceMissing,
   evolutionRecipient,
   normalizeEvolutionBaseUrl,
   sendEvolutionText,
 } from '../../api/_lib/evolutionClient.js'
 import {
+  clinicWhatsAppMediaPath,
   parseEvolutionIncomingMessage,
   parseEvolutionMessageStatus,
+  parseEvolutionMessageStatuses,
   providerWebhookMetadata,
+  redactWebhookPayload,
 } from '../../api/_lib/whatsapp.js'
 
 const originalFetch = globalThis.fetch
@@ -82,6 +86,7 @@ test('configuração do webhook é conferida depois da escrita', async () => {
     return new Response(JSON.stringify({
       enabled: true,
       url: 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook&number=N1',
+      headers: { 'X-Webhook-Token':'secret' },
       events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'MESSAGES_DELETE', 'SEND_MESSAGE', 'CONNECTION_UPDATE'],
     }), { status: 200 })
   }
@@ -94,6 +99,14 @@ test('configuração do webhook é conferida depois da escrita', async () => {
     'https://evolution.surgimetrics.com.br/webhook/set/surgimetrics_teste',
     'https://evolution.surgimetrics.com.br/webhook/find/surgimetrics_teste',
   ])
+})
+
+test('rejeita webhook quando a Evolution não preserva o segredo', async () => {
+  globalThis.fetch = async (_url, options = {}) => options.method === 'POST'
+    ? new Response('{}', { status:201 })
+    : new Response(JSON.stringify({ enabled:true, url:'https://www.surgimetrics.com.br/hook', events:['MESSAGES_UPSERT','MESSAGES_UPDATE','MESSAGES_DELETE','SEND_MESSAGE','CONNECTION_UPDATE'] }), { status:200 })
+  await expect(configureEvolutionWebhook('surgimetrics_teste', 'https://www.surgimetrics.com.br/hook', 'secret'))
+    .rejects.toThrow(/não manteve/i)
 })
 
 test('mídia usa endpoint dedicado para áudio e sendMedia para documento', () => {
@@ -161,6 +174,53 @@ test('normaliza confirmação numérica de entrega da Evolution', () => {
     event: 'messages.update',
     data: { key: { id: 'EV-4' }, update: { status: 3 } },
   })).toEqual({ status: 'delivered', providerMessageIds: ['EV-4'] })
+  expect(parseEvolutionMessageStatus({
+    event: 'messages.update',
+    data: { keyId:'EV-REAL', status:4 },
+  })).toEqual({ status:'read', providerMessageIds:['EV-REAL'] })
   expect(providerWebhookMetadata('evolution', { event: 'MESSAGES_UPSERT', instance: 'inst-1' }))
     .toEqual({ eventType: 'messages.upsert', instanceName: 'inst-1' })
+})
+
+test('preserva todos os grupos de status em um callback Evolution misto', () => {
+  expect(parseEvolutionMessageStatuses({ event:'messages.update', data:[
+    { keyId:'READ-1', status:4 },
+    { keyId:'DELIVERED-1', status:3 },
+    { keyId:'DELIVERED-2', status:3 },
+    { keyId:'FAILED-1', status:0 },
+  ] })).toEqual([
+    { status:'read', providerMessageIds:['READ-1'] },
+    { status:'delivered', providerMessageIds:['DELIVERED-1', 'DELIVERED-2'] },
+    { status:'failed', providerMessageIds:['FAILED-1'] },
+  ])
+})
+
+test('desembrulha texto efêmero e mídia view-once sem perder o envelope de download', () => {
+  const ephemeral = parseEvolutionIncomingMessage({ event:'messages.upsert', data:{
+    key:{ id:'EV-EPH', fromMe:false, remoteJid:'5551999@s.whatsapp.net' },
+    message:{ ephemeralMessage:{ message:{ conversation:'temporária' } } },
+  } })
+  expect(ephemeral).toMatchObject({ text:'temporária', providerMessageId:'EV-EPH' })
+
+  const viewOnce = parseEvolutionIncomingMessage({ event:'messages.upsert', data:{
+    key:{ id:'EV-VIEW', fromMe:false, remoteJid:'5551999@s.whatsapp.net' },
+    message:{ viewOnceMessageV2:{ message:{ videoMessage:{ mimetype:'video/mp4', caption:'vídeo' } } } },
+  } })
+  expect(viewOnce).toMatchObject({ msgType:'video', text:'vídeo' })
+  expect(viewOnce.providerMediaMessage.message.viewOnceMessageV2).toBeTruthy()
+})
+
+test('redige segredos do evento e valida referência privada pela clínica exata', () => {
+  expect(redactWebhookPayload({ apikey:'secret', nested:{ Authorization:'Bearer x', safe:'ok' } })).toEqual({
+    apikey:'[REDACTED]', nested:{ Authorization:'[REDACTED]', safe:'ok' },
+  })
+  expect(clinicWhatsAppMediaPath('storage://wa-media/owner-1/file.mp4', 'owner-1')).toBe('owner-1/file.mp4')
+  expect(clinicWhatsAppMediaPath('storage://wa-media/owner-2/file.mp4', 'owner-1')).toBeNull()
+  expect(clinicWhatsAppMediaPath('https://evil.test/storage://wa-media/owner-1/file.mp4', 'owner-1')).toBeNull()
+})
+
+test('reconhece instância ausente sem confundir outros erros', () => {
+  expect(evolutionInstanceMissing({ statusCode:404, message:'not found' })).toBe(true)
+  expect(evolutionInstanceMissing(new Error('Instance does not exist'))).toBe(true)
+  expect(evolutionInstanceMissing(new Error('timeout'))).toBe(false)
 })

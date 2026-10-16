@@ -1,27 +1,18 @@
 -- whatsapp_media_storage.sql
 -- WhatsApp · Inbox rico (B2) — bucket de Storage para a mídia ENVIADA (imagem/documento/áudio).
 -- O navegador sobe o arquivo direto para o Storage (evita o limite de 1MB do endpoint) e manda a
--- URL para o backend, que repassa à Z-API. Bucket público: a Z-API precisa buscar a URL.
+-- referência privada para o backend, que gera uma URL assinada curta ao provider.
 -- ISOLAMENTO POR CLÍNICA: o upload só é permitido na pasta da própria clínica (1º segmento do
 -- path = data_owner_id()), e NÃO há policy de SELECT para authenticated — assim ninguém LISTA/
--- enumera a mídia de outra clínica (a leitura do arquivo em si é pela URL pública do bucket).
+-- enumera nem lê a mídia de outra clínica; a visualização também usa URL assinada autenticada.
 -- Idempotente. Rodar no Supabase SQL Editor.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'wa-media', 'wa-media', true, 16777216,  -- 16 MB (limite prático do WhatsApp)
-  array[
-    'image/jpeg','image/png','image/webp','image/gif',
-    'audio/ogg','audio/mpeg','audio/mp4','audio/aac','audio/webm',
-    'video/mp4',
-    'application/pdf','application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  ]
+  'wa-media', 'wa-media', false, 16777216, null -- privado; tipos reais variam no WhatsApp
 )
 on conflict (id) do update
-  set public = true,
+  set public = false,
       file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
 

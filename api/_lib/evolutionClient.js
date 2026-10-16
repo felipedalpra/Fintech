@@ -46,7 +46,9 @@ async function readResponse(response) {
   try { data = raw ? JSON.parse(raw) : {} } catch { data = {} }
   if (!response.ok) {
     const detail = data?.response?.message || data?.message || data?.error || raw || `HTTP ${response.status}`
-    throw new Error(`Evolution API: ${Array.isArray(detail) ? detail.join(', ') : detail}`)
+    const error = new Error(`Evolution API: ${Array.isArray(detail) ? detail.join(', ') : detail}`)
+    error.statusCode = response.status
+    throw error
   }
   return data
 }
@@ -89,7 +91,7 @@ function webhookPayload(webhookUrl, webhookSecret) {
 }
 
 function connectionState(data) {
-  return String(data?.instance?.state || data?.instance?.connectionStatus || data?.state || data?.connectionStatus || '').toLowerCase()
+  return String(data?.instance?.state || data?.instance?.status || data?.instance?.connectionStatus || data?.state || data?.status || data?.connectionStatus || '').toLowerCase()
 }
 
 function qrResult(data) {
@@ -121,6 +123,12 @@ export async function connectEvolutionInstance(instanceName) {
   return { instanceName: name, ...qrResult(data) }
 }
 
+export function evolutionInstanceMissing(error) {
+  if (Number(error?.statusCode) === 404) return true
+  return /instance[^\n]*(?:not found|does not exist|n[aã]o encontrad)|(?:not found|does not exist)[^\n]*instance/i
+    .test(String(error?.message || ''))
+}
+
 export async function getEvolutionConnection(instanceName) {
   const name = safeInstanceName(instanceName)
   const data = await evolutionRequest(`/instance/connectionState/${encodeURIComponent(name)}`)
@@ -139,7 +147,14 @@ export async function configureEvolutionWebhook(instanceName, webhookUrl, webhoo
   const actual = current?.webhook || current || {}
   const actualEvents = new Set(actual.events || [])
   const eventsOk = EVOLUTION_EVENTS.every(event => actualEvents.has(event))
-  if (actual.enabled === false || actual.url !== expected.url || !eventsOk) {
+  let actualHeaders = actual.headers && typeof actual.headers === 'object' ? actual.headers : {}
+  if (typeof actual.headers === 'string') {
+    try { actualHeaders = JSON.parse(actual.headers) } catch { actualHeaders = {} }
+  }
+  const actualSecret = Object.entries(actualHeaders)
+    .find(([key]) => key.toLowerCase() === 'x-webhook-token')?.[1]
+  const secretOk = !webhookSecret || actualSecret === webhookSecret
+  if (actual.enabled !== true || actual.url !== expected.url || !eventsOk || !secretOk) {
     throw new Error('A Evolution API não manteve a configuração esperada do webhook.')
   }
   return { enabled: true, webhookUrl: actual.url, events: [...actualEvents] }

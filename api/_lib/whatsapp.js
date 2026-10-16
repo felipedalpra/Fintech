@@ -9,6 +9,31 @@ export function normalizePhone(raw) {
   return String(raw).replace(/\D/g, '')
 }
 
+const SECRET_WEBHOOK_KEYS = new Set([
+  'apikey', 'api_key', 'token', 'authorization', 'secret', 'password', 'clienttoken', 'client_token',
+])
+
+// O payload bruto ajuda na auditoria/reprocessamento, mas nunca deve transformar
+// credenciais enviadas pelo provider em dado persistente.
+export function redactWebhookPayload(value, depth = 0) {
+  if (depth > 20 || value == null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(item => redactWebhookPayload(item, depth + 1))
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    SECRET_WEBHOOK_KEYS.has(key.toLowerCase()) ? '[REDACTED]' : redactWebhookPayload(item, depth + 1),
+  ]))
+}
+
+export function clinicWhatsAppMediaPath(raw, ownerId, bucket = 'wa-media') {
+  const prefix = `storage://${bucket}/`
+  const value = String(raw || '')
+  if (!value.startsWith(prefix)) return null
+  const path = value.slice(prefix.length)
+  const ownerPrefix = `${String(ownerId || '')}/`
+  if (!path.startsWith(ownerPrefix) || path.length <= ownerPrefix.length || path.includes('..')) return null
+  return path
+}
+
 // O WhatsApp pode ocultar o telefone e entregar apenas um Linked ID (`@lid`).
 // Ele não é um número telefônico e nunca pode participar do matching por
 // últimos dígitos, mas é o identificador mais estável da conversa individual.
@@ -207,6 +232,21 @@ function evolutionMedia(message) {
   return null
 }
 
+function unwrapEvolutionMessage(message) {
+  let current = message && typeof message === 'object' ? message : {}
+  for (let depth = 0; depth < 8; depth += 1) {
+    const next = current.ephemeralMessage?.message
+      || current.viewOnceMessage?.message
+      || current.viewOnceMessageV2?.message
+      || current.viewOnceMessageV2Extension?.message
+      || current.documentWithCaptionMessage?.message
+      || current.editedMessage?.message
+    if (!next || typeof next !== 'object' || next === current) break
+    current = next
+  }
+  return current
+}
+
 // Normaliza o envelope v2 da Evolution API/Baileys para o contrato canônico
 // usado pelo restante do produto. Mensagens de mídia sem URL pública ainda são
 // persistidas com tipo/legenda; o payload bruto fica no inbox de eventos para
@@ -218,7 +258,8 @@ export function parseEvolutionIncomingMessage(body) {
 
   const data = body.data?.message && body.data?.key ? body.data : (body.data || body)
   const key = data?.key || data?.message?.key || {}
-  const message = data?.message?.message && data?.message?.key ? data.message.message : (data?.message || {})
+  const rawMessage = data?.message?.message && data?.message?.key ? data.message.message : (data?.message || {})
+  const message = unwrapEvolutionMessage(rawMessage)
   const remoteJid = String(key.remoteJid || data.remoteJid || '')
   const remoteJidAlt = String(key.remoteJidAlt || data.remoteJidAlt || '')
   const isGroup = /@g\.us$/i.test(remoteJid) || /@g\.us$/i.test(remoteJidAlt)
@@ -296,26 +337,27 @@ export function parseMessageStatus(body) {
   return { status, providerMessageIds }
 }
 
-export function parseEvolutionMessageStatus(body) {
+export function parseEvolutionMessageStatuses(body) {
   if (!body || typeof body !== 'object') return null
   const event = evolutionEvent(body)
   if (!['messages.update', 'send.message.update'].includes(event)) return null
   const rows = Array.isArray(body.data) ? body.data : [body.data || body]
   const grouped = new Map()
   for (const row of rows) {
-    const id = row?.key?.id || row?.id || row?.messageId
+    const id = row?.key?.id || row?.keyId || row?.id || row?.messageId
     if (!id) continue
     const status = evolutionStatus(row?.update?.status ?? row?.status ?? row?.messageStatus)
     if (!grouped.has(status)) grouped.set(status, [])
     grouped.get(status).push(String(id))
   }
   if (!grouped.size) return null
-  // O handler atual processa um status por callback. A Evolution normalmente
-  // envia um item; em lote, preservamos o status mais avançado primeiro.
-  for (const status of ['read', 'delivered', 'failed', 'sent']) {
-    if (grouped.has(status)) return { status, providerMessageIds: [...new Set(grouped.get(status))] }
-  }
-  return null
+  return ['read', 'delivered', 'failed', 'sent']
+    .filter(status => grouped.has(status))
+    .map(status => ({ status, providerMessageIds: [...new Set(grouped.get(status))] }))
+}
+
+export function parseEvolutionMessageStatus(body) {
+  return parseEvolutionMessageStatuses(body)?.[0] || null
 }
 
 export function parseProviderIncomingMessage(provider, body) {
@@ -324,6 +366,12 @@ export function parseProviderIncomingMessage(provider, body) {
 
 export function parseProviderMessageStatus(provider, body) {
   return provider === 'evolution' ? parseEvolutionMessageStatus(body) : parseMessageStatus(body)
+}
+
+export function parseProviderMessageStatuses(provider, body) {
+  if (provider === 'evolution') return parseEvolutionMessageStatuses(body) || []
+  const status = parseMessageStatus(body)
+  return status ? [status] : []
 }
 
 export function providerWebhookMetadata(provider, body) {

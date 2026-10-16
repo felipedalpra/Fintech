@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
+import { WhatsAppMedia } from './WhatsAppMedia.jsx'
 
 // Chat de WhatsApp por paciente (inbox na área Pacientes).
 // Lê o histórico de whatsapp_messages (RLS por data_owner_id) e envia pelo endpoint
@@ -110,10 +111,11 @@ export function WhatsAppChat({ patient }) {
 
   const renderBody = (m) => {
     const t = m.msg_type || 'text'
-    if (t === 'image' && m.media_url) return (<><a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt={m.body || 'imagem'} style={s.mediaImg} /></a>{m.body && <div style={s.cap}>{m.body}</div>}</>)
-    if (t === 'audio' && m.media_url) return <audio controls src={m.media_url} style={s.mediaAudio} />
-    if (t === 'video' && m.media_url) return (<><video controls src={m.media_url} style={{ ...s.mediaImg, maxHeight: 220 }} />{m.body && <div style={s.cap}>{m.body}</div>}</>)
-    if (t === 'document' && m.media_url) return <a href={m.media_url} target="_blank" rel="noreferrer" style={s.mediaDoc}>📄 {m.body || 'Documento'}</a>
+    const fallback = <span>{m.body || 'Mídia indisponível'}</span>
+    if (t === 'image' && m.media_url) return <WhatsAppMedia message={m} fallback={fallback}>{url => <><a href={url} target="_blank" rel="noreferrer"><img src={url} alt={m.body || 'imagem'} style={s.mediaImg} /></a>{m.body && <div style={s.cap}>{m.body}</div>}</>}</WhatsAppMedia>
+    if (t === 'audio' && m.media_url) return <WhatsAppMedia message={m} fallback={fallback}>{url => <audio controls src={url} style={s.mediaAudio} />}</WhatsAppMedia>
+    if (t === 'video' && m.media_url) return <WhatsAppMedia message={m} fallback={fallback}>{url => <><video controls src={url} style={{ ...s.mediaImg, maxHeight: 220 }} />{m.body && <div style={s.cap}>{m.body}</div>}</>}</WhatsAppMedia>
+    if (t === 'document' && m.media_url) return <WhatsAppMedia message={m} fallback={fallback}>{url => <a href={url} target="_blank" rel="noreferrer" style={s.mediaDoc}>📄 {m.body || 'Documento'}</a>}</WhatsAppMedia>
     return m.body
   }
 

@@ -1,5 +1,6 @@
 import {
   configureZApiReceiveWebhook,
+  downloadZApiMedia,
   enableZApiSentByMe,
   listZApiChats,
   resolveZApiPhoneLids,
@@ -72,8 +73,9 @@ export async function resolveProviderPhoneLids(number, phones, options) {
 }
 
 export async function downloadProviderMedia(number, message) {
-  if (whatsappProvider(number) !== 'evolution') throw new Error('Download de mídia não disponível para este provedor.')
-  return downloadEvolutionMedia(number.provider_instance_name, message)
+  return whatsappProvider(number) === 'evolution'
+    ? downloadEvolutionMedia(number.provider_instance_name, message)
+    : downloadZApiMedia(typeof message === 'string' ? message : message?.mediaUrl)
 }
 
 export { createEvolutionInstance, connectEvolutionInstance, getEvolutionConnection }
