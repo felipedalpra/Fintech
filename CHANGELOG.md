@@ -5,6 +5,19 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-16 (119)
+### Added
+- **Evolution API self-hosted no WhatsApp**: o admin cria uma instância Baileys pelo SurgiMetrics e recebe o QR Code sem que URL ou chave global cheguem ao navegador. O adaptador multiprovedor cobre texto, imagem, áudio, documento, conversas, LID, estado da conexão e verificação do webhook, mantendo números Z-API existentes como rollback. (`api/_lib/evolutionClient.js`, `api/_lib/whatsappProvider.js`, `api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`.)
+- **Inbox durável de webhooks e mídia**: a migração `supabase/whatsapp_evolution_provider_schema.sql` registra provedor por número/mensagem, escopa a idempotência por instância e preserva cada evento bruto antes do processamento em uma tabela acessível apenas ao backend. Imagens, áudios, vídeos e documentos recebidos são decriptados pela Evolution e copiados para o Storage estável antes da confirmação do webhook; a tela exibe estado, última verificação e último evento recebido.
+- **Runbook de implantação e homologação**: infraestrutura HostGator, DNS, variáveis Vercel, segurança, testes do número e migração gradual estão documentados em `docs/EVOLUTION_API_DEPLOY.md`.
+
+### Changed
+- **Envio, recebimento e automações independentes do provedor**: inbox, chat por paciente, régua automática, confirmações de entrega, grupos e reconciliação de `@lid` usam o mesmo contrato para Evolution ou Z-API. O webhook autentica o segredo por header na Evolution e por query string somente no legado.
+- **Cadastro preserva histórico**: a configuração permite ativar/desativar números, mas deixa de apagar o registro e perder a atribuição histórica das conversas.
+
+### Fixed
+- **Fidelidade e isolamento das mensagens**: callbacks repetidos não duplicam conteúdo; eventos falhos ou interrompidos podem ser retomados; IDs iguais em números ou provedores diferentes não colidem; status atrasado não regride leitura/entrega; falha ao persistir retorna erro para provocar nova entrega; e um webhook de outra instância é rejeitado. Testes unitários e de navegador cobrem o contrato Evolution, QR sem segredo e normalização de texto, mídia, LID e status. (`tests/unit/evolutionWhatsApp.spec.js`, `tests/e2e/whatsapp-evolution-settings.spec.js`, `tests/e2e/whatsapp-chat.spec.js`.)
+
 ## [Unreleased] - 2026-10-16 (118)
 ### Added
 - **Área Clínica e prontuário imutável**: a navegação passa a oferecer Clínico → Prontuário para perfis autorizados, com seleção de paciente, linha do tempo, autoria profissional, assinatura lógica da evolução e correções exclusivamente por adendo. Abertura, criação de evolução e adendo ficam registradas em uma trilha append-only. (`src/components/ClinicalRecords.jsx`, `src/components/MedicalRecord.jsx`, `src/lib/clinicalRecord.js`.)

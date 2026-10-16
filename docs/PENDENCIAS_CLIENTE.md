@@ -43,7 +43,10 @@
 ---
 
 ### WhatsApp CRM e Automações (Fase 2)
-- [ ] **Provedor de WhatsApp escolhido** — Evolution API (self-hosted) ou serviço gerenciado (Z-API, WPPConnect)? Ou API oficial Meta Business?
+- [x] **Provedor de WhatsApp escolhido** — Evolution API self-hosted, com Z-API temporariamente disponível para rollback. ✅ 2026-10-16
+- [ ] **Acesso à VPS HostGator NVMe 4** com Ubuntu 22.04 sem cPanel e IP público
+- [ ] **DNS de `evolution.surgimetrics.com.br`** apontado para a VPS
+- [ ] **Número de homologação** disponível para ler o QR Code e executar envio/recebimento controlado
 - [ ] **Templates de mensagem** — textos das automações que a Dra. quer usar:
   - Lembrete de consulta (ex: "Olá {nome}, lembro sua consulta amanhã às {hora}…")
   - Lembrete de cirurgia
@@ -99,6 +102,7 @@
 | Permissões detalhadas por módulo (financeiro, WhatsApp, etc.) | 2026-10-08 | ✅ |
 | Emails de toda a equipe (Vitoria, Augusto, Lunara, Jonas, Sumary, Jessica) | 2026-10-08 | ✅ |
 | WhatsApp Business obrigatório (não pessoal) | 2026-10-08 | ✅ |
+| Provedor do WhatsApp: Evolution API self-hosted, com migração gradual da Z-API | 2026-10-16 | ✅ |
 | Escopo excluído: receituário de controle especial (azul/amarela) | — | ✅ |
 | Escopo excluído: histórico clínico antigo do Amigo | — | ✅ |
 | Certificado digital ICP-Brasil é responsabilidade da clínica | — | ✅ |

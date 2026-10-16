@@ -3,8 +3,30 @@
 // Roteado por ?action=message (enviar, autenticado) | ?action=webhook (receber do provider).
 //   webhook por número: /api/whatsapp?action=webhook&number=<id>&token=<webhook_secret>
 import { createClient } from '@supabase/supabase-js'
-import { configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, resolveZApiPhoneLids, sendWhatsAppText, sendWhatsAppMedia, testWhatsAppConnection } from './_lib/whatsappClient.js'
-import { parseIncomingMessage, parseMessageStatus, matchPatientId, normalizePhone, normalizeWhatsAppAddress, normalizeWhatsAppLid } from './_lib/whatsapp.js'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import {
+  configureProviderWebhook,
+  connectEvolutionInstance,
+  createEvolutionInstance,
+  downloadProviderMedia,
+  listProviderChats,
+  providerReady,
+  resolveProviderPhoneLids,
+  sendProviderMedia,
+  sendProviderText,
+  testProviderConnection,
+  whatsappProvider,
+} from './_lib/whatsappProvider.js'
+import { evolutionConfig } from './_lib/evolutionClient.js'
+import {
+  matchPatientId,
+  normalizePhone,
+  normalizeWhatsAppAddress,
+  normalizeWhatsAppLid,
+  parseProviderIncomingMessage,
+  parseProviderMessageStatus,
+  providerWebhookMetadata,
+} from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
@@ -20,7 +42,9 @@ export const config = {
 }
 
 const MAX_BODY_BYTES = 1_000_000
-const WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
+const MAX_WHATSAPP_MEDIA_BYTES = 16 * 1024 * 1024
+const DEFAULT_WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
+const NUMBER_PROVIDER_FIELDS = 'id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at'
 const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_lid', 'sender_photo', 'chat_lid', 'contact_phone']
 const PREVIOUS_MESSAGE_IDENTITY_FIELDS = MESSAGE_IDENTITY_FIELDS.filter(field => field !== 'sender_lid')
 
@@ -36,12 +60,82 @@ function withoutSenderLid(row) {
   return Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'sender_lid'))
 }
 
+function withoutProvider(row) {
+  return Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'provider'))
+}
+
 function missingMessageIdentitySchema(error) {
   return ['PGRST204', '42703'].includes(error?.code) && MESSAGE_IDENTITY_FIELDS.some(field => String(error.message || '').includes(field))
 }
 
 function missingMessageFields(error, fields) {
   return ['PGRST204', '42703'].includes(error?.code) && fields.some(field => String(error.message || '').includes(field))
+}
+
+function whatsappWebhookBase() {
+  return String(process.env.WHATSAPP_WEBHOOK_BASE_URL || DEFAULT_WHATSAPP_WEBHOOK_BASE).trim()
+}
+
+function webhookUrlFor(number) {
+  const url = new URL(whatsappWebhookBase())
+  url.searchParams.set('action', 'webhook')
+  url.searchParams.set('number', number.id)
+  // Z-API não suporta header customizado; Evolution recebe o segredo no header.
+  if (whatsappProvider(number) === 'zapi' && number.webhook_secret) url.searchParams.set('token', number.webhook_secret)
+  return url.toString()
+}
+
+function providerColumnsMissing(error) {
+  return ['PGRST204', '42703'].includes(error?.code)
+    && ['provider', 'provider_instance_name', 'connection_state'].some(field => String(error.message || '').includes(field))
+}
+
+function withLegacyProvider(number) {
+  return number ? { provider: 'zapi', provider_instance_name: null, connection_state: 'unknown', ...number } : number
+}
+
+async function getWhatsAppNumber(supabase, id) {
+  let result = await supabase.from('whatsapp_numbers').select(NUMBER_PROVIDER_FIELDS).eq('id', id).maybeSingle()
+  if (providerColumnsMissing(result.error)) {
+    result = await supabase.from('whatsapp_numbers')
+      .select('id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret')
+      .eq('id', id)
+      .maybeSingle()
+  }
+  return { ...result, data: withLegacyProvider(result.data) }
+}
+
+async function listWhatsAppNumbers(supabase, ownerId, { activeOnly = false } = {}) {
+  let query = supabase.from('whatsapp_numbers').select(NUMBER_PROVIDER_FIELDS).eq('user_id', ownerId)
+  if (activeOnly) query = query.eq('active', true)
+  let result = await query
+  if (providerColumnsMissing(result.error)) {
+    query = supabase.from('whatsapp_numbers')
+      .select('id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret')
+      .eq('user_id', ownerId)
+    if (activeOnly) query = query.eq('active', true)
+    result = await query
+  }
+  return { ...result, data: (result.data || []).map(withLegacyProvider) }
+}
+
+async function resolveClinicAdmin(supabase, user, ownerId) {
+  if (user.id === ownerId) return true
+  const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
+  if (!clinic) return false
+  const { data: adminMember } = await supabase.from('clinic_members')
+    .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).eq('role', 'admin').maybeSingle()
+  return Boolean(adminMember)
+}
+
+function evolutionInstanceName(ownerId) {
+  const ownerPrefix = String(ownerId || '').replace(/-/g, '').slice(0, 10)
+  const suffix = randomUUID().replace(/-/g, '').slice(0, 12)
+  return `surgimetrics_${ownerPrefix}_${suffix}`
+}
+
+function secureWebhookSecret() {
+  return randomBytes(32).toString('hex')
 }
 
 // Compatibilidade de deploy: se o código chegar antes da migração aditiva, a
@@ -54,6 +148,10 @@ async function insertWhatsAppMessage(supabase, row, { selectId = false } = {}) {
   }
   let payload = row
   let result = await run(payload)
+  if (missingMessageFields(result.error, ['provider'])) {
+    payload = withoutProvider(payload)
+    result = await run(payload)
+  }
   // Deploy tolerante à ordem: se só a coluna nova ainda não existe, preserva
   // todos os demais metadados de conversa/remetente já suportados pelo banco.
   if (missingMessageFields(result.error, ['contact_id'])) {
@@ -69,6 +167,107 @@ async function insertWhatsAppMessage(supabase, row, { selectId = false } = {}) {
     result = await run(payload)
   }
   return result
+}
+
+function webhookDedupKey(provider, eventType, rawBody, body) {
+  const source = rawBody?.length ? rawBody : Buffer.from(JSON.stringify(body || {}))
+  return createHash('sha256').update(provider).update('\n').update(eventType).update('\n').update(source).digest('hex')
+}
+
+function webhookEventTableMissing(error) {
+  return ['42P01', 'PGRST204', 'PGRST205'].includes(error?.code)
+    && String(error?.message || '').includes('whatsapp_webhook_events')
+}
+
+async function beginWebhookEvent(supabase, number, metadata, req) {
+  const provider = whatsappProvider(number)
+  const dedupKey = webhookDedupKey(provider, metadata.eventType, req.rawBody, req.body)
+  const result = await supabase.from('whatsapp_webhook_events').insert({
+    user_id: number.user_id,
+    whatsapp_number_id: number.id,
+    provider,
+    provider_instance: metadata.instanceName,
+    event_type: metadata.eventType,
+    dedup_key: dedupKey,
+    payload: req.body || {},
+  }).select('id').single()
+  if (result.error?.code === '23505') {
+    const existingResult = await supabase.from('whatsapp_webhook_events')
+      .select('id, processing_status, attempts, received_at')
+      .eq('whatsapp_number_id', number.id)
+      .eq('dedup_key', dedupKey)
+      .maybeSingle()
+    if (existingResult.error) throw existingResult.error
+    const existing = existingResult.data
+    if (!existing) return { duplicate: true, id: null }
+
+    // Falhas explícitas sempre podem ser reprocessadas. Um evento que ficou em
+    // `received` por mais de um minuto é retomado depois de provável interrupção
+    // da função; entregas concorrentes recentes continuam idempotentes.
+    const staleReceived = existing.processing_status === 'received'
+      && Date.now() - Date.parse(existing.received_at) > 60_000
+    if (existing.processing_status === 'failed' || staleReceived) {
+      const retryResult = await supabase.from('whatsapp_webhook_events').update({
+        processing_status: 'received',
+        attempts: Number(existing.attempts || 1) + 1,
+        error_message: null,
+        processed_at: null,
+      })
+        .eq('id', existing.id)
+        .in('processing_status', existing.processing_status === 'failed' ? ['failed'] : ['received'])
+        .select('id')
+        .maybeSingle()
+      if (retryResult.error) throw retryResult.error
+      if (retryResult.data?.id) return { duplicate: false, id: retryResult.data.id, retry: true }
+    }
+    return { duplicate: true, id: null }
+  }
+  if (webhookEventTableMissing(result.error)) return { duplicate: false, id: null }
+  if (result.error) throw result.error
+  return { duplicate: false, id: result.data?.id || null }
+}
+
+async function finishWebhookEvent(supabase, id, status, errorMessage = null) {
+  if (!id) return
+  await supabase.from('whatsapp_webhook_events').update({
+    processing_status: status,
+    processed_at: status === 'processed' || status === 'ignored' ? new Date().toISOString() : null,
+    error_message: errorMessage ? String(errorMessage).slice(0, 1000) : null,
+  }).eq('id', id)
+}
+
+function inboundMediaExtension(mimetype, fileName) {
+  const supplied = String(fileName || '').split('.').pop()?.toLowerCase()
+  if (/^[a-z0-9]{1,8}$/.test(supplied || '')) return supplied
+  const byMime = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+    'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm',
+    'video/mp4': 'mp4', 'application/pdf': 'pdf',
+  }
+  return byMime[String(mimetype || '').split(';')[0].toLowerCase()] || 'bin'
+}
+
+async function persistEvolutionInboundMedia(supabase, number, parsed) {
+  if (whatsappProvider(number) !== 'evolution' || !parsed.providerMediaMessage) return null
+  const media = await downloadProviderMedia(number, parsed.providerMediaMessage)
+  const encoded = String(media.base64).replace(/^data:[^;]+;base64,/, '')
+  const bytes = Buffer.from(encoded, 'base64')
+  if (!bytes.length) throw new Error('A mídia recebida está vazia.')
+  if (bytes.length > MAX_WHATSAPP_MEDIA_BYTES) throw new Error('A mídia recebida excede 16 MB.')
+  const mimetype = String(media.mimetype || parsed.mediaMime || 'application/octet-stream').split(';')[0]
+  const stableId = String(parsed.providerMessageId || webhookDedupKey('evolution', 'media', null, parsed.providerMediaMessage))
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 120)
+  const extension = inboundMediaExtension(mimetype, media.fileName)
+  const path = `${number.user_id}/incoming/${number.id}/${stableId || randomUUID()}.${extension}`
+  const upload = await supabase.storage.from('wa-media').upload(path, bytes, {
+    contentType: mimetype,
+    upsert: true,
+  })
+  if (upload.error) throw new Error(`Não foi possível preservar a mídia recebida: ${upload.error.message}`)
+  const { data } = supabase.storage.from('wa-media').getPublicUrl(path)
+  if (!data?.publicUrl) throw new Error('O Storage não confirmou a URL da mídia recebida.')
+  return { mediaUrl: data.publicUrl, mediaMime: mimetype }
 }
 
 async function ensureWhatsAppContact(supabase, {
@@ -143,6 +342,19 @@ async function resolveOwnerId(supabase, userId) {
   return userId
 }
 
+async function authenticatedAdmin(req) {
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) return { error: { status: 401, message: 'Missing auth' } }
+  const supabase = adminSupabase()
+  const { data: { user } = {}, error: authError } = await supabase.auth.getUser(authHeader.slice(7))
+  if (authError || !user) return { error: { status: 401, message: 'Unauthorized' } }
+  const ownerId = await resolveOwnerId(supabase, user.id)
+  if (!await resolveClinicAdmin(supabase, user, ownerId)) {
+    return { error: { status: 403, message: 'Somente administradores podem gerenciar a conexão.' } }
+  }
+  return { supabase, user, ownerId }
+}
+
 export default async function handler(req, res) {
   try {
     await hydrateRequestBody(req)
@@ -154,11 +366,107 @@ export default async function handler(req, res) {
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
   if (action === 'test-connection') return handleTestConnection(req, res)
+  if (action === 'provision-number') return handleProvisionNumber(req, res)
+  if (action === 'connect-instance') return handleConnectInstance(req, res)
   if (action === 'sync-chat-identities') return handleSyncChatIdentities(req, res)
   if (action === 'dispatch') return handleDispatch(req, res)
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
   if (action === 'meta-sync') return handleMetaSync(req, res)
   return res.status(400).json({ error: 'Ação inválida.' })
+}
+
+// ---- Provisionar número na Evolution sem expor a chave global ao navegador ----
+async function handleProvisionNumber(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+
+  const { supabase, ownerId } = auth
+  const label = String(req.body?.label || '').trim()
+  const phone = normalizePhone(req.body?.phone) || null
+  if (label.length < 2 || label.length > 80) return res.status(400).json({ error: 'Informe um nome de 2 a 80 caracteres.' })
+
+  try { evolutionConfig() } catch (error) {
+    return res.status(503).json({ error: `Evolution ainda não configurada no servidor: ${error.message}` })
+  }
+
+  const { count, error: countError } = await supabase.from('whatsapp_numbers')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', ownerId)
+  if (countError) return res.status(500).json({ error: 'Não foi possível conferir os números cadastrados.' })
+  if ((count || 0) >= 3) return res.status(409).json({ error: 'A clínica já possui o limite de 3 números.' })
+
+  const instanceName = evolutionInstanceName(ownerId)
+  const webhookSecret = secureWebhookSecret()
+  const { data: number, error: insertError } = await supabase.from('whatsapp_numbers').insert({
+    user_id: ownerId,
+    label,
+    phone,
+    active: true,
+    provider: 'evolution',
+    provider_instance_name: instanceName,
+    webhook_secret: webhookSecret,
+    connection_state: 'connecting',
+  }).select('id, label, phone, active, assigned_user_id, provider, provider_instance_name, connection_state').single()
+  if (insertError) {
+    if (providerColumnsMissing(insertError)) return res.status(409).json({ error: 'Aplique primeiro whatsapp_evolution_provider_schema.sql.' })
+    return res.status(500).json({ error: 'Não foi possível criar o número no SurgiMetrics.' })
+  }
+
+  const providerNumber = { ...number, user_id: ownerId, webhook_secret: webhookSecret }
+  try {
+    const result = await createEvolutionInstance(instanceName, {
+      webhookUrl: webhookUrlFor(providerNumber),
+      webhookSecret,
+    })
+    // A configuração enviada na criação varia entre releases da Evolution.
+    // Grava como verificada somente depois de reler e comparar URL/eventos.
+    await configureProviderWebhook(providerNumber, webhookUrlFor(providerNumber))
+    await supabase.from('whatsapp_numbers').update({
+      connection_state: result.state || 'connecting',
+      last_health_at: new Date().toISOString(),
+      webhook_verified_at: new Date().toISOString(),
+    }).eq('id', number.id)
+    return res.status(201).json({ ok: true, number: { ...number, connection_state: result.state || 'connecting' }, qrcode: { base64: result.base64, code: result.code, pairingCode: result.pairingCode } })
+  } catch (error) {
+    await supabase.from('whatsapp_numbers').update({ connection_state: 'error', last_health_at: new Date().toISOString() }).eq('id', number.id)
+    return res.status(502).json({
+      error: `Número salvo, mas a instância ou o webhook não puderam ser confirmados: ${error.message}`,
+      numberId: number.id,
+      retryable: true,
+    })
+  }
+}
+
+async function handleConnectInstance(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const { supabase, ownerId } = auth
+  const { data: number, error } = await getWhatsAppNumber(supabase, req.body?.whatsappNumberId)
+  if (error || !number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+  if (whatsappProvider(number) !== 'evolution') return res.status(400).json({ error: 'Este número não usa Evolution API.' })
+
+  try {
+    const result = await connectEvolutionInstance(number.provider_instance_name)
+    await configureProviderWebhook(number, webhookUrlFor(number))
+    let state = 'connecting'
+    try {
+      const connection = await testProviderConnection(number)
+      state = connection.state || (connection.connected ? 'open' : 'connecting')
+    } catch { /* QR ainda aguardando leitura */ }
+    const now = new Date().toISOString()
+    await supabase.from('whatsapp_numbers').update({
+      connection_state: state,
+      last_health_at: now,
+      webhook_verified_at: now,
+      ...(state === 'open' ? { connected_at: now } : {}),
+    }).eq('id', number.id)
+    return res.status(200).json({ ok: true, state, qrcode: { base64: result.base64, code: result.code, pairingCode: result.pairingCode } })
+  } catch (connectError) {
+    await supabase.from('whatsapp_numbers').update({ connection_state: 'error', last_health_at: new Date().toISOString() }).eq('id', number.id)
+    return res.status(502).json({ error: connectError.message })
+  }
 }
 
 // ---- Atualizar nomes/fotos de conversas existentes (sem nova função serverless) ----
@@ -172,7 +480,7 @@ async function handleSyncChatIdentities(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
   const ownerId = await resolveOwnerId(supabase, user.id)
   const [{ data: numbers, error: numberError }, storedResult, { data: patients, error: patientError }] = await Promise.all([
-    supabase.from('whatsapp_numbers').select('id, instance_url, api_token').eq('user_id', ownerId).eq('active', true),
+    listWhatsAppNumbers(supabase, ownerId, { activeOnly: true }),
     supabase.from('whatsapp_messages').select('phone, whatsapp_number_id, patient_id, is_group, chat_lid, contact_phone').eq('user_id', ownerId).order('created_at', { ascending:false }).limit(2000),
     supabase.from('patients').select('id, phone').eq('user_id', ownerId),
   ])
@@ -192,7 +500,7 @@ async function handleSyncChatIdentities(req, res) {
 
   let updated = 0
   for (const number of numbers || []) {
-    if (!number.instance_url || !number.api_token) continue
+    if (!providerReady(number)) continue
     const numberMessages = storedByNumber.get(number.id) || []
     const actualPhones = numberMessages.flatMap(message => {
       if (message.is_group) return []
@@ -204,8 +512,10 @@ async function handleSyncChatIdentities(req, res) {
       // IDs numéricos maiores deixados pelo parser antigo são LIDs sem sufixo.
       return !/@lid$/i.test(address) && digits.length >= 10 && digits.length <= 13 ? [digits] : []
     })
+    let chats = []
+    try { chats = await listProviderChats(number) } catch { continue }
     let aliases = []
-    try { aliases = await resolveZApiPhoneLids(number.instance_url, number.api_token, actualPhones) } catch { /* metadados ainda podem ser sincronizados */ }
+    try { aliases = await resolveProviderPhoneLids(number, actualPhones, { chats }) } catch { /* metadados ainda podem ser sincronizados */ }
 
     for (const alias of aliases) {
       const lidDigits = alias.lid.replace(/\D/g, '')
@@ -223,12 +533,11 @@ async function handleSyncChatIdentities(req, res) {
       updated += 1
     }
 
-    let chats = []
-    try { chats = await listZApiChats(number.instance_url, number.api_token) } catch { continue }
     const updates = []
     for (const chat of chats) {
-      const digits = String(chat?.phone || '').replace(/\D/g, '')
-      const isGroup = chat?.isGroup === true || /(?:-group|@g\.us)$/i.test(String(chat?.phone || '')) || digits.length > 15
+      const chatAddress = chat?.phone || chat?.remoteJid || chat?.id || ''
+      const digits = String(chatAddress).replace(/\D/g, '')
+      const isGroup = chat?.isGroup === true || /(?:-group|@g\.us)$/i.test(String(chatAddress)) || (whatsappProvider(number) === 'zapi' && digits.length > 15)
       const matchingAlias = aliases.find(alias => alias.inputPhone === digits || alias.outputPhone === digits || alias.lid.replace(/\D/g, '') === digits)
       const variants = [...new Set(numberMessages.flatMap(message => {
         const messageDigits = String(message.phone || '').replace(/\D/g, '')
@@ -238,14 +547,14 @@ async function handleSyncChatIdentities(req, res) {
       }))]
       if (!variants.length) continue
       let photo = null
-      try { const url = new URL(String(chat?.profileThumbnail || '')); if (url.protocol === 'https:') photo = url.toString() } catch { /* sem foto válida */ }
+      try { const url = new URL(String(chat?.profileThumbnail || chat?.profilePicUrl || '')); if (url.protocol === 'https:') photo = url.toString() } catch { /* sem foto válida */ }
       const patch = {
-        chat_name: chat?.name ? String(chat.name) : null,
+        chat_name: chat?.name || chat?.pushName ? String(chat.name || chat.pushName) : null,
         is_group: isGroup,
       }
       if (photo) patch.chat_photo = photo
       if (isGroup) {
-        patch.phone = normalizeWhatsAppAddress(chat.phone, true)
+        patch.phone = normalizeWhatsAppAddress(chatAddress, true)
         patch.patient_id = null
       }
       updates.push(supabase.from('whatsapp_messages').update(patch)
@@ -261,58 +570,53 @@ async function handleSyncChatIdentities(req, res) {
   return res.status(200).json({ ok: true, schemaReady: true, updated })
 }
 
-// ---- Testar credenciais Z-API (autenticado e restrito a admin da clínica) ----
-// Pode testar credenciais ainda não salvas ou as credenciais write-only de um número existente.
+// ---- Testar conexão do provedor (autenticado e restrito a admin da clínica) ----
+// Z-API legado ainda pode testar credenciais antes de salvar. Evolution usa a
+// instância server-side já criada, sem expor a chave global.
 async function handleTestConnection(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing auth' })
-
-  const supabase = adminSupabase()
-  const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
-  if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
-
-  const ownerId = await resolveOwnerId(supabase, user.id)
-  let isAdmin = user.id === ownerId
-  if (!isAdmin) {
-    const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
-    if (clinic) {
-      const { data: adminMem } = await supabase.from('clinic_members')
-        .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).eq('role', 'admin').maybeSingle()
-      isAdmin = !!adminMem
-    }
-  }
-  if (!isAdmin) return res.status(403).json({ error: 'Somente administradores podem testar a conexão.' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const { supabase, ownerId } = auth
 
   const { whatsappNumberId, instanceUrl: suppliedUrl, apiToken: suppliedToken } = req.body || {}
-  let instanceUrl = suppliedUrl
-  let apiToken = suppliedToken
   let number = null
   if (whatsappNumberId) {
-    const { data: storedNumber } = await supabase.from('whatsapp_numbers')
-      .select('id, user_id, instance_url, api_token, webhook_secret').eq('id', whatsappNumberId).maybeSingle()
+    const { data: storedNumber } = await getWhatsAppNumber(supabase, whatsappNumberId)
     number = storedNumber
     if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
-    instanceUrl ||= number.instance_url
-    apiToken ||= number.api_token
+  } else {
+    number = withLegacyProvider({ instance_url: suppliedUrl, api_token: suppliedToken })
   }
 
   try {
-    const result = await testWhatsAppConnection(instanceUrl, apiToken)
-    await enableZApiSentByMe(result.instanceUrl, apiToken)
-    if (number) {
-      const webhookUrl = `${WHATSAPP_WEBHOOK_BASE}&number=${number.id}&token=${number.webhook_secret || ''}`
-      await configureZApiReceiveWebhook(result.instanceUrl, apiToken, webhookUrl)
+    const result = await testProviderConnection(number)
+    if (number.id) {
+      await configureProviderWebhook(number, webhookUrlFor(number))
+      const now = new Date().toISOString()
+      await supabase.from('whatsapp_numbers').update({
+        connection_state: result.state || 'open',
+        connected_at: now,
+        last_health_at: now,
+        webhook_verified_at: now,
+      }).eq('id', number.id)
     }
     return res.status(200).json({
       ok: true,
       connected: true,
+      provider: whatsappProvider(number),
+      state: result.state || 'open',
       sentByMeEnabled: true,
-      webhookConfigured: Boolean(number),
-      instanceUrl: result.instanceUrl,
+      webhookConfigured: Boolean(number.id),
+      ...(result.instanceUrl ? { instanceUrl: result.instanceUrl } : {}),
     })
   } catch (error) {
+    if (number?.id) {
+      await supabase.from('whatsapp_numbers').update({
+        connection_state: 'close',
+        last_health_at: new Date().toISOString(),
+      }).eq('id', number.id)
+    }
     return res.status(502).json({ error: error.message })
   }
 }
@@ -463,11 +767,7 @@ async function handleSend(req, res) {
   const ownerId = await resolveOwnerId(supabase, user.id)
 
   // Credenciais do número escolhido (deve pertencer à clínica).
-  const { data: num } = await supabase
-    .from('whatsapp_numbers')
-    .select('id, user_id, assigned_user_id, instance_url, api_token')
-    .eq('id', whatsappNumberId)
-    .maybeSingle()
+  const { data: num } = await getWhatsAppNumber(supabase, whatsappNumberId)
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
 
   // Nunca confia no patientId vindo do navegador: o vínculo só é aceito se o
@@ -497,7 +797,7 @@ async function handleSend(req, res) {
     return res.status(403).json({ error: 'Este número não está atribuído a você.' })
   }
 
-  if (!num.instance_url || !num.api_token) return res.status(502).json({ error: 'Número sem credenciais Z-API configuradas' })
+  if (!providerReady(num)) return res.status(502).json({ error: 'Número sem conexão de WhatsApp configurada' })
 
   // Mídia só pode apontar para o Storage da PRÓPRIA clínica (fecha URL externa/javascript: e cross-clínica).
   if (isMedia && !String(mediaUrl).includes(`/storage/v1/object/public/wa-media/${ownerId}/`)) {
@@ -518,14 +818,14 @@ async function handleSend(req, res) {
     user_id: ownerId, patient_id: verifiedPatientId, contact_id: contactId, phone, direction: 'outbound', body: bodyText,
     chat_lid: chatLid, contact_phone: contactPhone,
     is_group: isGroup,
-    whatsapp_number_id: num.id, msg_type: msgType, media_url: mediaUrl ?? null, media_mime: mediaMime ?? null,
+    whatsapp_number_id: num.id, provider: whatsappProvider(num), msg_type: msgType, media_url: mediaUrl ?? null, media_mime: mediaMime ?? null,
   }
 
   let providerId = null
   try {
     providerId = isMedia
-      ? await sendWhatsAppMedia(num.instance_url, num.api_token, type, { to: phone, mediaUrl, caption: caption || '', fileName: fileName || '' })
-      : await sendWhatsAppText(num.instance_url, num.api_token, phone, text)
+      ? await sendProviderMedia(num, type, { to: phone, mediaUrl, caption: caption || '', fileName: fileName || '', mediaMime: mediaMime || '' })
+      : await sendProviderText(num, phone, text)
   } catch (err) {
     await insertWhatsAppMessage(supabase, { ...insertBase, status: 'failed' })
     return res.status(502).json({ error: err.message })
@@ -541,6 +841,8 @@ async function handleSend(req, res) {
     const { data: existing, error: existingError } = await supabase.from('whatsapp_messages')
       .select('id')
       .eq('user_id', ownerId)
+      .eq('whatsapp_number_id', num.id)
+      .eq('provider', whatsappProvider(num))
       .eq('provider_message_id', providerId)
       .maybeSingle()
     if (existingError || !existing) return res.status(500).json({ error: 'Mensagem enviada, mas o histórico não pôde ser confirmado.' })
@@ -564,11 +866,7 @@ async function handleWebhook(req, res) {
   if (!numberId) return res.status(200).json({ ok: true })
 
   const supabase = adminSupabase()
-  const { data: num } = await supabase
-    .from('whatsapp_numbers')
-    .select('id, user_id, webhook_secret')
-    .eq('id', numberId)
-    .maybeSingle()
+  const { data: num } = await getWhatsAppNumber(supabase, numberId)
   if (!num) return res.status(200).json({ ok: true })
 
   // Valida o token do webhook deste número.
@@ -577,9 +875,34 @@ async function handleWebhook(req, res) {
     return res.status(401).json({ error: 'Invalid webhook token' })
   }
 
+  const provider = whatsappProvider(num)
+  const metadata = providerWebhookMetadata(provider, req.body)
+  if (provider === 'evolution' && metadata.instanceName && metadata.instanceName !== num.provider_instance_name) {
+    return res.status(401).json({ error: 'Webhook instance mismatch' })
+  }
+
+  let audit
+  try {
+    audit = await beginWebhookEvent(supabase, num, metadata, req)
+  } catch (error) {
+    console.error('whatsapp webhook audit error:', error.message)
+    return res.status(500).json({ error: 'Webhook could not be durably recorded' })
+  }
+  if (audit.duplicate) return res.status(200).json({ ok: true, duplicate: true })
+
+  const receivedAt = new Date().toISOString()
+  const healthPatch = { last_webhook_at: receivedAt, last_webhook_event: metadata.eventType }
+  if (provider === 'evolution' && metadata.eventType === 'connection.update') {
+    const state = String(req.body?.data?.state || req.body?.data?.status || req.body?.state || 'unknown').toLowerCase()
+    healthPatch.connection_state = state
+    healthPatch.last_health_at = receivedAt
+    if (state === 'open') healthPatch.connected_at = receivedAt
+  }
+  await supabase.from('whatsapp_numbers').update(healthPatch).eq('id', num.id)
+
   // Atualiza o ciclo real da mensagem enviada (enviada → entregue → lida).
   // Nunca regride um status mais avançado se callbacks chegarem fora de ordem.
-  const statusEvent = parseMessageStatus(req.body)
+  const statusEvent = parseProviderMessageStatus(provider, req.body)
   if (statusEvent) {
     const priorStatuses = {
       sent: ['sent'],
@@ -590,18 +913,42 @@ async function handleWebhook(req, res) {
     const { error } = await supabase.from('whatsapp_messages')
       .update({ status: statusEvent.status })
       .eq('user_id', num.user_id)
+      .eq('whatsapp_number_id', num.id)
+      .eq('provider', provider)
       .eq('direction', 'outbound')
       .in('provider_message_id', statusEvent.providerMessageIds)
       .in('status', priorStatuses)
     if (error) {
       console.error('whatsapp status update error:', error.message)
+      await finishWebhookEvent(supabase, audit.id, 'failed', error.message)
       return res.status(500).json({ error: 'Message status update failed' })
     }
+    await finishWebhookEvent(supabase, audit.id, 'processed')
     return res.status(200).json({ ok: true })
   }
 
-  const parsed = parseIncomingMessage(req.body)
-  if (!parsed) return res.status(200).json({ ok: true })
+  const parsed = parseProviderIncomingMessage(provider, req.body)
+  if (!parsed) {
+    await finishWebhookEvent(supabase, audit.id, 'ignored')
+    return res.status(200).json({ ok: true })
+  }
+
+  // URLs do WhatsApp/Baileys normalmente apontam para conteúdo criptografado e
+  // expiram. Para não depender delas, a mídia é baixada pela própria Evolution
+  // e copiada para o Storage antes de confirmar o webhook.
+  let mediaHydrationError = null
+  if (provider === 'evolution' && parsed.providerMediaMessage) {
+    try {
+      const persistedMedia = await persistEvolutionInboundMedia(supabase, num, parsed)
+      if (persistedMedia) {
+        parsed.mediaUrl = persistedMedia.mediaUrl
+        parsed.mediaMime = persistedMedia.mediaMime
+      }
+    } catch (error) {
+      mediaHydrationError = error
+      console.error('whatsapp evolution media persistence error:', error.message)
+    }
+  }
 
   const ownerUserId = num.user_id
 
@@ -673,7 +1020,7 @@ async function handleWebhook(req, res) {
   const row = {
     user_id: ownerUserId, patient_id: patientId, contact_id: contactId, phone: parsed.phone, direction: parsed.direction,
     body: parsed.text, status: parsed.status, provider_message_id: parsed.providerMessageId,
-    whatsapp_number_id: num.id,
+    whatsapp_number_id: num.id, provider,
     chat_lid: parsed.chatLid,
     contact_phone: contactPhone,
     is_group: parsed.isGroup,
@@ -691,6 +1038,35 @@ async function handleWebhook(req, res) {
   // 23505 = índice único (mensagem duplicada) → idempotente, ignora.
   if (error && error.code !== '23505') {
     console.error('whatsapp webhook insert error:', error.message)
+    await finishWebhookEvent(supabase, audit.id, 'failed', error.message)
+    return res.status(500).json({ error: 'Message persistence failed' })
+  }
+  if (error?.code === '23505') {
+    if (!mediaHydrationError && parsed.mediaUrl && parsed.providerMessageId) {
+      const { error: mediaUpdateError } = await supabase.from('whatsapp_messages').update({
+        media_url: parsed.mediaUrl,
+        media_mime: parsed.mediaMime || null,
+      })
+        .eq('user_id', ownerUserId)
+        .eq('whatsapp_number_id', num.id)
+        .eq('provider', provider)
+        .eq('provider_message_id', parsed.providerMessageId)
+      if (mediaUpdateError) {
+        await finishWebhookEvent(supabase, audit.id, 'failed', mediaUpdateError.message)
+        return res.status(500).json({ error: 'Stored media could not be linked to the message' })
+      }
+    }
+    if (mediaHydrationError) {
+      await finishWebhookEvent(supabase, audit.id, 'failed', mediaHydrationError.message)
+      return res.status(500).json({ error: 'Media persistence failed' })
+    }
+    await finishWebhookEvent(supabase, audit.id, 'ignored')
+    return res.status(200).json({ ok: true, duplicate: true })
+  }
+
+  if (mediaHydrationError) {
+    await finishWebhookEvent(supabase, audit.id, 'failed', mediaHydrationError.message)
+    return res.status(500).json({ error: 'Message saved, but media persistence failed' })
   }
 
   // IA sugere avanço de estágio (sugere e confirma). Nunca derruba o recebimento.
@@ -702,6 +1078,7 @@ async function handleWebhook(req, res) {
     }
   }
 
+  await finishWebhookEvent(supabase, audit.id, 'processed')
   return res.status(200).json({ ok: true })
 }
 

@@ -3,7 +3,7 @@
 // Parte PURA (testável): addDays, formatBR, renderTemplate, planReminders, planFollowups.
 // Parte orquestração: runWhatsAppAutomations(admin, { todayISO }) — lê fontes, agenda, envia.
 // Idempotente: guard-log (índice único) antes de enviar. Fail-safe: nunca lança pra cima.
-import { sendWhatsAppText } from './whatsappClient.js'
+import { providerReady, sendProviderText, whatsappProvider } from './whatsappProvider.js'
 
 // ---------- Puro ----------
 
@@ -166,10 +166,11 @@ async function dispatchOne(admin, { userId, number, item, automationType, target
 
   // 2) Envia.
   try {
-    const providerId = await sendWhatsAppText(number.instance_url, number.api_token, item.phone, item.message)
+    const providerId = await sendProviderText(number, item.phone, item.message)
     const { error: messageError } = await admin.from('whatsapp_messages').insert({
       user_id: userId, patient_id: item.patient_id, phone: item.phone, direction: 'outbound',
       body: item.message, status: 'sent', provider_message_id: providerId, whatsapp_number_id: number.id,
+      provider: whatsappProvider(number),
     })
     // Com notifySentByMe ativo, o webhook pode persistir a mesma mensagem antes
     // desta resposta de envio. A restrição única confirma que ela já está salva.
@@ -185,12 +186,19 @@ async function dispatchOne(admin, { userId, number, item, automationType, target
 async function runForOwner(admin, auto, todayISO, summary) {
   // Sem número de envio configurado → pronto-pra-credencial: não envia nada (skip silencioso).
   if (!auto.whatsapp_number_id) return
-  const { data: number } = await admin
+  let numberResult = await admin
     .from('whatsapp_numbers')
-    .select('id, instance_url, api_token')
+    .select('id, instance_url, api_token, provider, provider_instance_name')
     .eq('id', auto.whatsapp_number_id)
     .maybeSingle()
-  if (!number || !number.instance_url || !number.api_token) return
+  if (['PGRST204', '42703'].includes(numberResult.error?.code)) {
+    numberResult = await admin.from('whatsapp_numbers')
+      .select('id, instance_url, api_token')
+      .eq('id', auto.whatsapp_number_id)
+      .maybeSingle()
+  }
+  const number = numberResult.data ? { provider: 'zapi', ...numberResult.data } : null
+  if (!number || !providerReady(number)) return
 
   // LEMBRETE: eventos de (hoje + days_before).
   if (auto.reminder_enabled) {

@@ -150,6 +150,127 @@ export function parseIncomingMessage(body) {
   }
 }
 
+function evolutionEvent(body) {
+  return String(body?.event || body?.type || '').trim().toLowerCase().replace(/_/g, '.')
+}
+
+function evolutionTimestamp(raw) {
+  let value = raw
+  if (value && typeof value === 'object') value = value.low ?? value.seconds ?? value.value
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return null
+  const date = new Date(numeric < 1e12 ? numeric * 1000 : numeric)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null
+}
+
+function evolutionStatus(raw, direction = 'outbound') {
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric) && String(raw).trim() !== '') {
+    if (numeric >= 4) return 'read'
+    if (numeric === 3) return 'delivered'
+    if (numeric === 0) return 'failed'
+    return direction === 'inbound' ? 'read' : 'sent'
+  }
+  const value = String(raw || '').toUpperCase()
+  if (['READ', 'READ_BY_ME', 'PLAYED'].includes(value)) return 'read'
+  if (['DELIVERY_ACK', 'DELIVERED', 'RECEIVED'].includes(value)) return 'delivered'
+  if (['ERROR', 'FAILED'].includes(value)) return 'failed'
+  return direction === 'inbound' ? 'read' : 'sent'
+}
+
+function evolutionMedia(message) {
+  const kinds = [
+    { key: 'imageMessage', type: 'image', placeholder: '[Imagem]' },
+    { key: 'audioMessage', type: 'audio', placeholder: '[Áudio]' },
+    { key: 'videoMessage', type: 'video', placeholder: '[Vídeo]' },
+    { key: 'documentMessage', type: 'document', placeholder: '[Documento]' },
+    { key: 'documentWithCaptionMessage', type: 'document', placeholder: '[Documento]' },
+  ]
+  for (const kind of kinds) {
+    let value = message?.[kind.key]
+    if (kind.key === 'documentWithCaptionMessage') value = value?.message?.documentMessage || value?.documentMessage || value
+    if (!value || typeof value !== 'object') continue
+    const candidate = value.url || value.mediaUrl || value.directPath || null
+    let mediaUrl = null
+    try {
+      const url = new URL(String(candidate || ''))
+      if (url.protocol === 'https:') mediaUrl = url.toString()
+    } catch { /* mídia sem URL pública: o evento bruto permite reconciliação posterior */ }
+    const caption = value.caption || value.fileName || value.title || kind.placeholder
+    return {
+      msgType: kind.type,
+      mediaUrl,
+      mediaMime: value.mimetype || value.mimeType || null,
+      caption: String(caption),
+    }
+  }
+  return null
+}
+
+// Normaliza o envelope v2 da Evolution API/Baileys para o contrato canônico
+// usado pelo restante do produto. Mensagens de mídia sem URL pública ainda são
+// persistidas com tipo/legenda; o payload bruto fica no inbox de eventos para
+// recuperação posterior, em vez de a mensagem desaparecer.
+export function parseEvolutionIncomingMessage(body) {
+  if (!body || typeof body !== 'object') return null
+  const event = evolutionEvent(body)
+  if (event && !['messages.upsert', 'send.message'].includes(event)) return null
+
+  const data = body.data?.message && body.data?.key ? body.data : (body.data || body)
+  const key = data?.key || data?.message?.key || {}
+  const message = data?.message?.message && data?.message?.key ? data.message.message : (data?.message || {})
+  const remoteJid = String(key.remoteJid || data.remoteJid || '')
+  const remoteJidAlt = String(key.remoteJidAlt || data.remoteJidAlt || '')
+  const isGroup = /@g\.us$/i.test(remoteJid) || /@g\.us$/i.test(remoteJidAlt)
+  const direction = key.fromMe === true || data.fromMe === true ? 'outbound' : 'inbound'
+  const directLid = isGroup ? '' : (normalizeWhatsAppLid(remoteJid) || normalizeWhatsAppLid(remoteJidAlt))
+  const directPhoneJid = [remoteJid, remoteJidAlt].find(value => /@s\.whatsapp\.net$/i.test(value)) || ''
+  const directPhone = isGroup ? '' : normalizePhone(directPhoneJid || (!directLid ? remoteJid : ''))
+  const phone = isGroup ? normalizeWhatsAppAddress(remoteJid || remoteJidAlt, true) : (directLid || directPhone)
+  if (!phone) return null
+
+  const textRaw = message.conversation
+    || message.extendedTextMessage?.text
+    || message.buttonsResponseMessage?.selectedDisplayText
+    || message.listResponseMessage?.title
+    || message.templateButtonReplyMessage?.selectedDisplayText
+    || data.body
+    || ''
+  const media = evolutionMedia(message)
+  if (!textRaw && !media) return null
+
+  const participant = String(key.participant || data.participant || '')
+  const participantAlt = String(key.participantAlt || data.participantAlt || '')
+  const participantPhoneJid = [participant, participantAlt].find(value => /@s\.whatsapp\.net$/i.test(value)) || ''
+  const participantLid = [participant, participantAlt].find(value => /@lid$/i.test(value)) || ''
+  const chatName = String(data.chatName || data.pushName || data.pushname || '')
+  const senderName = String(data.pushName || data.pushname || data.senderName || (!isGroup ? chatName : ''))
+  const rawStatus = data.status ?? data.update?.status ?? data.messageStatus
+
+  return {
+    phone,
+    chatLid: directLid || null,
+    contactPhone: directPhone || null,
+    isGroup,
+    chatName,
+    chatPhoto: null,
+    senderName,
+    senderPhone: isGroup ? normalizePhone(participantPhoneJid) : directPhone,
+    senderLid: isGroup ? (normalizeWhatsAppLid(participantLid) || null) : null,
+    senderPhoto: null,
+    direction,
+    status: evolutionStatus(rawStatus, direction),
+    text: media ? media.caption : String(textRaw),
+    msgType: media ? media.msgType : 'text',
+    mediaUrl: media?.mediaUrl || null,
+    mediaMime: media?.mediaMime || null,
+    providerMessageId: key.id ? String(key.id) : (data.id ? String(data.id) : null),
+    providerMediaMessage: media ? data : null,
+    fromApi: event === 'send.message',
+    createdAt: evolutionTimestamp(data.messageTimestamp || data.message?.messageTimestamp || body.date_time),
+  }
+}
+
 const MESSAGE_STATUS = {
   SENT: 'sent',
   RECEIVED: 'delivered',
@@ -173,6 +294,46 @@ export function parseMessageStatus(body) {
   const providerMessageIds = [...new Set(rawIds.filter(Boolean).map(String))]
   if (!providerMessageIds.length) return null
   return { status, providerMessageIds }
+}
+
+export function parseEvolutionMessageStatus(body) {
+  if (!body || typeof body !== 'object') return null
+  const event = evolutionEvent(body)
+  if (!['messages.update', 'send.message.update'].includes(event)) return null
+  const rows = Array.isArray(body.data) ? body.data : [body.data || body]
+  const grouped = new Map()
+  for (const row of rows) {
+    const id = row?.key?.id || row?.id || row?.messageId
+    if (!id) continue
+    const status = evolutionStatus(row?.update?.status ?? row?.status ?? row?.messageStatus)
+    if (!grouped.has(status)) grouped.set(status, [])
+    grouped.get(status).push(String(id))
+  }
+  if (!grouped.size) return null
+  // O handler atual processa um status por callback. A Evolution normalmente
+  // envia um item; em lote, preservamos o status mais avançado primeiro.
+  for (const status of ['read', 'delivered', 'failed', 'sent']) {
+    if (grouped.has(status)) return { status, providerMessageIds: [...new Set(grouped.get(status))] }
+  }
+  return null
+}
+
+export function parseProviderIncomingMessage(provider, body) {
+  return provider === 'evolution' ? parseEvolutionIncomingMessage(body) : parseIncomingMessage(body)
+}
+
+export function parseProviderMessageStatus(provider, body) {
+  return provider === 'evolution' ? parseEvolutionMessageStatus(body) : parseMessageStatus(body)
+}
+
+export function providerWebhookMetadata(provider, body) {
+  if (provider !== 'evolution') {
+    return { eventType: String(body?.type || (Array.isArray(body?.ids) ? 'message.status' : 'message.received')), instanceName: null }
+  }
+  return {
+    eventType: evolutionEvent(body) || 'unknown',
+    instanceName: String(body?.instance || body?.instanceName || body?.data?.instance || '').trim() || null,
+  }
 }
 
 // Casa um telefone a um paciente pela lista de pacientes da clínica.
