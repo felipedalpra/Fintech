@@ -45,14 +45,16 @@
 ### WhatsApp CRM e Automações (Fase 2)
 - [x] **Provedor de WhatsApp escolhido** — Evolution API self-hosted, com Z-API temporariamente disponível para rollback. ✅ 2026-10-16
 
+> **Status em 2026-10-16:** implementação revisada, testada, publicada e integrada à `main`; SQLs de mídia e Evolution aplicados no Supabase. A ativação externa foi **adiada a pedido do responsável** e não será executada hoje. Ao retomar, começar pela contratação/acesso da VPS e DNS, depois configurar as variáveis na Vercel e somente então homologar com um número de teste. Não migrar o número definitivo antes dessa homologação.
+
 #### O que Felipe / cliente precisa providenciar
 
 - [ ] **Contratar ou confirmar a VPS HostGator NVMe 4** na região Brasil, com Ubuntu 22.04 e sem cPanel
 - [ ] **Fornecer o acesso administrativo à VPS por canal seguro**: IP público, usuário SSH e cadastro de uma chave pública autorizada; nunca enviar chave privada nem registrá-la neste repositório
 - [ ] **Dar acesso ao DNS de `surgimetrics.com.br` ou criar o registro A** de `evolution.surgimetrics.com.br` apontando para o IP da VPS
 - [ ] **Confirmar acesso ao projeto correto da Vercel**, para que as variáveis server-side sejam configuradas sem compartilhar token no código ou na documentação
-- [ ] **Aplicar no Supabase o novo SQL** `supabase/whatsapp_evolution_provider_schema.sql`
-- [ ] **Confirmar que `supabase/whatsapp_media_storage.sql` já foi aplicado**; se não foi, executá-lo antes da homologação de anexos
+- [x] **Aplicar no Supabase o novo SQL** `supabase/whatsapp_evolution_provider_schema.sql` ✅ aplicado em 2026-10-16
+- [x] **Confirmar/aplicar `supabase/whatsapp_media_storage.sql`** antes da homologação de anexos ✅ aplicado em 2026-10-16
 - [ ] **Separar o número de homologação** com WhatsApp Business ativo, celular disponível e responsável presente para ler o QR Code em “Dispositivos conectados”
 - [ ] **Definir contatos de teste autorizados** para validar texto, áudio, imagem, documento, grupos e mensagens enviadas diretamente pelo celular
 - [ ] **Informar qual será o número definitivo da clínica** depois da homologação
