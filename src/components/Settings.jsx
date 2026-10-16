@@ -11,6 +11,7 @@ import { WhatsAppAutomations } from './WhatsAppAutomations.jsx'
 import { MetaConnection } from './MetaConnection.jsx'
 import { FollowupRules } from './FollowupRules.jsx'
 import { IntegrationHealth } from './IntegrationHealth.jsx'
+import { BillingConnection } from './BillingConnection.jsx'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -119,7 +120,7 @@ export function Settings({ google }) {
 
   const tabs = [
     { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'integracoes', label:'Integrações' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
   ]
 
   return (
@@ -224,6 +225,10 @@ export function Settings({ google }) {
 
         {tab === 'integracoes' && role === 'admin' && (
           <IntegrationHealth google={google} />
+        )}
+
+        {tab === 'cobrancas' && role === 'admin' && (
+          <BillingConnection />
         )}
 
         {tab === 'whatsapp' && role === 'admin' && (

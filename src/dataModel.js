@@ -49,6 +49,7 @@ export function normalizeData(data) {
         competenceDate:item.competenceDate || item.date || '',
         dueDate:item.dueDate || item.date || '',
         costSettlements:item.costSettlements && typeof item.costSettlements === 'object' ? item.costSettlements : {},
+        receiptSettlements:item.receiptSettlements && typeof item.receiptSettlements === 'object' ? item.receiptSettlements : {},
       }))
     : Array.isArray(data?.sales)
       ? data.sales.map(sale => ({
@@ -86,6 +87,7 @@ export function normalizeData(data) {
       competenceDate:item.competenceDate || item.date || '',
       dueDate:item.dueDate || item.forecastPaymentDate || item.date || '',
       costSettlements:item.costSettlements && typeof item.costSettlements === 'object' ? item.costSettlements : {},
+      receiptSettlements:item.receiptSettlements && typeof item.receiptSettlements === 'object' ? item.receiptSettlements : {},
     })) : [],
     products,
     productSales: Array.isArray(data?.productSales) ? data.productSales.map(item => ({
@@ -95,6 +97,7 @@ export function normalizeData(data) {
       competenceDate:item.competenceDate || item.saleDate || '',
       dueDate:item.dueDate || item.saleDate || '',
       receivedDate:item.receivedDate || '',
+      receiptSettlements:item.receiptSettlements && typeof item.receiptSettlements === 'object' ? item.receiptSettlements : {},
     })) : [],
     productPurchases: Array.isArray(data?.productPurchases) ? data.productPurchases.map(item => ({
       ...item,

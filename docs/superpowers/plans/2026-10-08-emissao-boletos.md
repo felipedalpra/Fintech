@@ -1,5 +1,7 @@
 # Emissão de Boletos — Implementation Plan
 
+> **Implementado em 2026-10-16 na branch `feat/cobranca-asaas-fase3`.** A decisão final foi o Caminho A com Asaas. Para respeitar o limite atual de funções da Vercel, status, conexão, emissão, cancelamento e webhook foram consolidados no endpoint existente `api/financial/analysis.js`, com lógica em `api/_lib/billing.js` e `api/_lib/billingProvider.js`. A emissão parte da parcela persistida do razão (sem valor/vencimento editáveis), suporta Pix e boleto, usa idempotência local + `externalReference`, baixa transacional por webhook e registra a tarifa como despesa financeira separada. A automação de WhatsApp envia somente cobranças ativas e para após confirmação. O restante deste documento é o plano histórico e pode citar nomes de arquivos que foram substituídos por essa arquitetura final.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Emitir boletos bancários diretamente do sistema para cobranças de cirurgias e consultas, com **registro automático** no banco e **baixa automática** de pagamento — sem precisar entrar no sistema do banco manualmente.

@@ -11,7 +11,6 @@ import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPri
 import { useToast } from '../context/ToastContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { supabase } from '../lib/supabase.js'
-import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { syncRecurringLedger } from '../lib/ledgerPersistence.js'
@@ -20,6 +19,8 @@ import { findChartAccount, nextChildAccountCode, nextSiblingOrder, postingAccoun
 import { createChartAccount, ensureDefaultChartAccounts, fetchChartAccounts, isChartSchemaMissing } from '../lib/chartOfAccountsStore.js'
 import { buildDrePresentation, flattenVisibleDreRows } from '../lib/drePresentation.js'
 import { releaseBankStatementLineClaims } from '../lib/bankReconciliationStore.js'
+import { BillingChargeButton } from './BillingChargeButton.jsx'
+import { paymentScheduleFlow } from '../lib/paymentScheduleFlow.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -54,6 +55,43 @@ export const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', saving:false, error:'' }
+
+function settleReceivableInstallment(record, account) {
+  const installment = account.openInstallmentRows?.[0] || { installmentNumber:1, amount:account.value }
+  const receivedDate = today()
+  const legacyFlow = paymentScheduleFlow(record.totalValue ?? record.value ?? account.value, record)
+  const legacySettlements = Object.fromEntries((legacyFlow.paidInstallments || []).map(entry => [String(entry.index + 1), {
+    receivedDate:entry.settlementDate || record.paymentDate || receivedDate,
+    amount:entry.amount,
+    method:entry.method || record.paymentMethod || 'manual',
+    legacy:true,
+  }]))
+  const receiptSettlements = {
+    ...legacySettlements,
+    ...(record.receiptSettlements || {}),
+    [String(installment.installmentNumber)]:{
+      receivedDate,
+      amount:installment.amount,
+      method:record.paymentMethod || 'manual',
+    },
+  }
+  return {
+    ...record,
+    receiptSettlements,
+    paymentDate:receivedDate,
+    paymentStatus:(account.openInstallmentRows?.length || 1) === 1 ? 'pago' : 'pendente',
+  }
+}
+
+function settleProductSaleInstallment(record, account) {
+  const settled = settleReceivableInstallment(record, account)
+  const allPaid = (account.openInstallmentRows?.length || 1) === 1
+  return {
+    ...settled,
+    paymentStatus:allPaid ? 'recebido' : 'pendente',
+    receivedDate:today(),
+  }
+}
 
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'marketing_vendas', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'juros', 'depreciacao', 'amortizacao', 'fornecedores', 'variaveis', 'outros']
 
@@ -704,33 +742,14 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       return
     }
     if (item.source === 'venda_produto') {
-      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? { ...record, paymentStatus:'recebido', receivedDate:today() } : record) }))
-      toast('Venda de produto marcada como recebida.')
+      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? settleProductSaleInstallment(record, item) : record) }))
+      toast((item.openInstallmentRows?.length || 1) === 1 ? 'Venda de produto marcada como recebida.' : 'Parcela da venda marcada como recebida.')
       return
     }
     if (item.source === 'cirurgia') {
       setData(current => ({
         ...current,
-        surgeries:current.surgeries.map(record => {
-          if (record.id !== item.sourceId) return record
-          const decoded = decodePaymentMethod(record.paymentMethod)
-          const scheduledPayments = Array.isArray(decoded.payments)
-            ? decoded.payments
-              .map(entry => ({ date:String(entry?.date || '').trim(), amount:Number(entry?.amount || 0) }))
-              .filter(entry => entry.date && entry.amount > 0)
-              .sort((a, b) => a.date.localeCompare(b.date))
-            : []
-          if (scheduledPayments.length <= 1) {
-            return { ...record, paymentStatus:'pago', paymentDate:today() }
-          }
-          const currentCutoff = String(record.paymentDate || '').trim()
-          const paidCount = currentCutoff ? scheduledPayments.filter(entry => entry.date <= currentCutoff).length : 0
-          const installmentToReceive = scheduledPayments.find(entry => entry.date === item.dueDate) || scheduledPayments[Math.min(paidCount, scheduledPayments.length - 1)]
-          if (!installmentToReceive) return record
-          const nextPaymentDate = currentCutoff && currentCutoff > installmentToReceive.date ? currentCutoff : installmentToReceive.date
-          const allPaid = scheduledPayments.every(entry => entry.date <= nextPaymentDate)
-          return { ...record, paymentDate:nextPaymentDate, paymentStatus:allPaid ? 'pago' : 'pendente' }
-        }),
+        surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item) : record),
       }))
       toast('Parcela marcada como recebida.')
       return
@@ -738,38 +757,21 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     if (item.source === 'consulta') {
       setData(current => ({
         ...current,
-        consultations:current.consultations.map(record => {
-          if (record.id !== item.sourceId) return record
-          const decoded = decodePaymentMethod(record.paymentMethod)
-          const scheduledPayments = decoded.paymentScheduleMode === 'duas_datas'
-            ? (decoded.payments || [])
-              .map(entry => ({ date:String(entry?.date || '').trim(), amount:Number(entry?.amount || 0) }))
-              .filter(entry => entry.date && entry.amount > 0)
-              .sort((a, b) => a.date.localeCompare(b.date))
-            : []
-          if (scheduledPayments.length === 0) {
-            return { ...record, paymentStatus:'pago', paymentDate:today() }
-          }
-          const currentCutoff = String(record.paymentDate || '').trim()
-          const paidCount = currentCutoff
-            ? scheduledPayments.filter(entry => entry.date <= currentCutoff).length
-            : 0
-          const installmentToReceive = scheduledPayments.find(entry => entry.date === item.dueDate) || scheduledPayments[Math.min(paidCount, scheduledPayments.length - 1)]
-          if (!installmentToReceive) return record
-          const nextPaymentDate = currentCutoff && currentCutoff > installmentToReceive.date ? currentCutoff : installmentToReceive.date
-          const allPaid = scheduledPayments.every(entry => entry.date <= nextPaymentDate)
-          return {
-            ...record,
-            paymentDate:nextPaymentDate,
-            paymentStatus:allPaid ? 'pago' : 'pendente',
-          }
-        }),
+        consultations:current.consultations.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item) : record),
       }))
       toast('Parcela marcada como recebida.')
       return
     }
     toast('Marcado como recebido.')
   }
+
+  const receivableActions = item => item.source === 'recorrencia'
+    ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div>
+    : <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+      <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>{item.source === 'outra_receita' ? 'Recebido' : 'Marcar recebido'}</Btn>
+      {item.source === 'outra_receita' && <Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn>}
+      <BillingChargeButton item={item} />
+    </div>
 
   const markReceivableAsPending = item => {
     if (item.source === 'outra_receita') {
@@ -1373,7 +1375,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
           onOpen={item => openDrilldown(`Recebíveis de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.patient || '', origin:resolveOrigin(row), description:row.description || row.patient || 'Conta a receber' })), item.total)}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, ['recorrencia','outra_receita'].includes(item.source) ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Recebido</Btn><Btn variant="ghost" onClick={() => markReceivableAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, receivableActions(item)] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -1566,7 +1568,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
                   formatDateBR(item.dueDate),
                   <span style={{ color:C.red, fontWeight:700 }}>{item.daysOverdue}d</span>,
                   <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>,
-                  <Btn onClick={() => markReceivableAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar recebido</Btn>,
+                  receivableActions(item),
                 ],
                 rawCells:[item.patient, item.description, item.dueDate, item.daysOverdue, item.value, 0],
               }))}

@@ -166,6 +166,7 @@ async function fetchRelationalData(userId) {
       otherCosts:Number(item.other_costs || 0),
       invoiceIssuancePercent:Number(item.invoice_issuance_percent || 0),
       costSettlements:item.cost_settlements && typeof item.cost_settlements === 'object' ? item.cost_settlements : {},
+      receiptSettlements:item.receipt_settlements && typeof item.receipt_settlements === 'object' ? item.receipt_settlements : {},
       notes:item.notes || '',
     })),
     consultations:(consultationsResult.data || []).map(item => ({
@@ -181,6 +182,7 @@ async function fetchRelationalData(userId) {
       paymentMethod:item.payment_method || 'pix',
       invoiceIssuancePercent:Number(item.invoice_issuance_percent || 0),
       costSettlements:item.cost_settlements && typeof item.cost_settlements === 'object' ? item.cost_settlements : {},
+      receiptSettlements:item.receipt_settlements && typeof item.receipt_settlements === 'object' ? item.receipt_settlements : {},
       insurance:item.insurance || '',
       paymentStatus:item.payment_status || 'pendente',
       forecastPaymentDate:item.forecast_payment_date || '',
@@ -201,6 +203,7 @@ async function fetchRelationalData(userId) {
       dueDate:item.due_date || item.sale_date || '',
       receivedDate:item.received_date || '',
       paymentMethod:item.payment_method || 'pix',
+      receiptSettlements:item.receipt_settlements && typeof item.receipt_settlements === 'object' ? item.receipt_settlements : {},
       competenceDate:item.competence_date || item.sale_date || '',
     })),
     productPurchases:(productPurchasesResult.data || []).map(item => ({
@@ -323,6 +326,7 @@ function mapSurgeriesRows(userId, data) {
     other_costs:item.otherCosts || 0,
     invoice_issuance_percent:item.invoiceIssuancePercent || 0,
     cost_settlements:item.costSettlements || {},
+    receipt_settlements:item.receiptSettlements || {},
     notes:item.notes || null,
   }))
 }
@@ -344,6 +348,7 @@ function mapConsultationsRows(userId, data) {
     payment_method:item.paymentMethod || null,
     invoice_issuance_percent:item.invoiceIssuancePercent || 0,
     cost_settlements:item.costSettlements || {},
+    receipt_settlements:item.receiptSettlements || {},
     insurance:item.insurance || null,
     payment_status:item.paymentStatus || 'pendente',
     forecast_payment_date:item.forecastPaymentDate || null,
@@ -367,6 +372,7 @@ function mapProductSalesRows(userId, data) {
     due_date:item.dueDate || item.saleDate || null,
     received_date:item.receivedDate || null,
     payment_method:item.paymentMethod || null,
+    receipt_settlements:item.receiptSettlements || {},
   }))
 }
 

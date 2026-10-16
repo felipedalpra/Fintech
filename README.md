@@ -26,6 +26,7 @@ VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anon
 SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
 APP_DATA_ENCRYPTION_KEY=uma-chave-forte-para-criptografar-perfis
+BILLING_DATA_ENCRYPTION_KEY=uma-chave-forte-exclusiva-para-credenciais-de-cobranca
 VITE_APP_URL=https://sua-url-publica
 APP_URL=https://sua-url-publica
 STRIPE_SECRET_KEY=sk_live_ou_sk_test
@@ -54,6 +55,8 @@ META_GRAPH_VERSION=vXX.X
 
 8. Se a base já existir de uma versão anterior, aplique os scripts incrementais e valide as tabelas `billing_accounts` e `secure_profiles`.
 
+9. Para cobranças clínicas por boleto/Pix, aplique `supabase/billing_charges_schema.sql`, mantenha `APP_URL` no domínio HTTPS público (`https://www.surgimetrics.com.br`) e conecte a chave da conta Asaas da clínica em **Configurações → Cobranças**. A chave não é variável do frontend: ela é validada e armazenada cifrada pelo backend. `BILLING_DATA_ENCRYPTION_KEY` é recomendada; na ausência dela, o sistema usa `APP_DATA_ENCRYPTION_KEY`.
+
 ## Rodar localmente
 
 ```bash
@@ -79,6 +82,7 @@ A saída fica em `dist`.
 - `VITE_APP_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_DATA_ENCRYPTION_KEY`
+- `BILLING_DATA_ENCRYPTION_KEY` (recomendada para a credencial Asaas; fallback seguro para `APP_DATA_ENCRYPTION_KEY`)
 - `APP_URL`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
@@ -113,6 +117,7 @@ A saída fica em `dist`.
 - cadastrar cirurgia ou produto
 - recarregar a página
 - confirmar persistência dos dados
+- em sandbox Asaas, emitir Pix/boleto de uma conta a receber, simular o pagamento e confirmar baixa única no razão, origem e caixa
 
 5. Conferir deploy SPA:
 - `vercel.json` ativo

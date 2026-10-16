@@ -92,12 +92,11 @@ export function planAnamnese({ events, template, targetDate, link }) {
   return planEvents({ events, template, targetDate, extraVars: { link: link || '' } })
 }
 
-// Cobrança: conta a receber cujo VENCIMENTO cai na data-alvo, ainda não paga e com telefone.
-// items: [{ id, source, patient_id, date, due_date, forecast_payment_date?, value, patients:{full_name,phone} }]
+// Cobrança emitida cujo vencimento cai na data-alvo. Só cobranças ativas entram na consulta.
 export function planPayments({ items, template, targetDueDate }) {
   const out = []
   for (const it of items || []) {
-    if (receivableDueDate(it, it.source) !== targetDueDate) continue // vencimento != alvo
+    if (it.due_date !== targetDueDate) continue
     const phone = it.patients?.phone
     if (!phone) continue
     out.push({
@@ -109,6 +108,9 @@ export function planPayments({ items, template, targetDueDate }) {
         patient_name: firstName(it.patients?.full_name),
         value: formatBRL(it.value),
         date: formatBR(targetDueDate),
+        payment_link:it.payment_link || '',
+        pix_code:it.pix_payload || '',
+        payment_type:it.billing_type === 'PIX' ? 'Pix' : 'boleto',
       }),
     })
   }
@@ -133,22 +135,20 @@ async function fetchEvents(admin, userId, targetDate, { consultations = true, su
   ]
 }
 
-// Contas a receber ainda não pagas (mesmo filtro da view accounts_receivable: not in pago/cancelado),
-// com paciente vinculado. O vencimento é calculado em JS (receivableDueDate) para filtrar a data-alvo.
+// Cobranças efetivamente emitidas e ainda ativas. Quando o webhook recebe/confirma, o status sai
+// deste filtro e a régua para automaticamente, sem depender de leitura eventual do lançamento.
 async function fetchReceivables(admin, userId) {
-  const notPaid = q => q.not('payment_status', 'in', '("pago","cancelado")').not('patient_id', 'is', null)
-  const [cRes, sRes] = await Promise.all([
-    notPaid(admin.from('consultations')
-      .select('id, date, forecast_payment_date, due_date, value, patient_id, patients(full_name, phone)')
-      .eq('user_id', userId)),
-    notPaid(admin.from('surgeries')
-      .select('id, date, due_date, total_value, patient_id, patients(full_name, phone)')
-      .eq('user_id', userId)),
-  ])
-  return [
-    ...((cRes.data || []).map(r => ({ ...r, source: 'consultation', value: r.value }))),
-    ...((sRes.data || []).map(r => ({ ...r, source: 'surgery', value: r.total_value }))),
-  ]
+  const { data, error } = await admin.from('billing_charges')
+    .select('id,billing_type,amount,due_date,invoice_url,bank_slip_url,pix_payload,patient_id,patients(full_name,phone)')
+    .eq('user_id', userId)
+    .in('status', ['pending','overdue'])
+  if (error) throw error
+  return (data || []).map(row => ({
+    ...row,
+    source:'billing_charge',
+    value:Number(row.amount || 0),
+    payment_link:row.bank_slip_url || row.invoice_url || '',
+  }))
 }
 
 // Guard-log + envio de uma mensagem. Idempotente (índice único (user_id, type, ref_id, target_date)).
