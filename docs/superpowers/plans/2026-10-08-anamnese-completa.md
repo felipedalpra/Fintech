@@ -1,5 +1,7 @@
 # Anamnese Completa + Link para Paciente — Implementation Plan
 
+> **Atualização de segurança (2026-10-16):** este plano será reescrito sobre `patient_clinical_profiles`, criado pela fundação clínica. Não execute literalmente as RPCs abaixo: a versão antiga devolvia nome e anamnese existente pela rota pública, não rejeitava `used_at` e não consumia o token atomicamente.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Expandir a anamnese para incluir campos estruturados (peso/altura/IMC, campos sim/não, texto livre) e gerar um link público que a paciente preenche sem precisar de conta.

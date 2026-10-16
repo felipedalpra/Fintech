@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
-import { MedicalRecord } from './MedicalRecord.jsx'
 import { WhatsAppChat } from './WhatsAppChat.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { supabase } from '../lib/supabase.js'
@@ -27,8 +26,7 @@ const CIVIL_STATUS_OPTIONS = [
   { v: 'uniao_estavel', l: 'União estável' },
 ]
 
-const DRAWER_TABS = ['resumo', 'pessoal', 'anamnese', 'prontuario', 'financeiro', 'whatsapp']
-const DRAWER_TAB_LABELS = { resumo: 'Resumo', pessoal: 'Dados', anamnese: 'Anamnese', prontuario: 'Prontuário', financeiro: 'Financeiro', whatsapp: 'WhatsApp' }
+const DRAWER_TAB_LABELS = { resumo:'Resumo', pessoal:'Dados', anamnese:'Anamnese', financeiro:'Financeiro', whatsapp:'WhatsApp' }
 
 const emptyForm = {
   full_name: '',
@@ -68,12 +66,13 @@ const emptyForm = {
 
 export function Patients({ data }) {
   const { user } = useAuth()
-  const { ownerId } = useUserRole()
+  const { ownerId, clinicalAccess } = useUserRole()
   const effectiveUserId = ownerId || user?.id
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
 
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ativos') // 'ativos' | 'arquivados' | 'todos'
   const [consentFilter, setConsentFilter] = useState('todos') // 'todos' | 'assinado' | 'pendente'
@@ -86,31 +85,50 @@ export function Patients({ data }) {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [confirmArchiveId, setConfirmArchiveId] = useState(null)
 
   useEffect(() => {
     if (!effectiveUserId) return
     load()
-  }, [effectiveUserId])
+  }, [effectiveUserId, clinicalAccess])
 
   async function load() {
     setLoading(true)
-    const { data: rows } = await supabase
-      .from('patients')
-      .select('*')
-      .eq('user_id', effectiveUserId)
-      .order('full_name')
-    setPatients(rows || [])
+    setLoadError('')
+    const [patientsResult, profileResult] = await Promise.all([
+      supabase.from('patients').select('*').eq('user_id', effectiveUserId).order('full_name'),
+      clinicalAccess
+        ? supabase.from('patient_clinical_profiles').select('*').eq('user_id', effectiveUserId)
+        : Promise.resolve({ data:[] }),
+    ])
+    if (patientsResult.error) {
+      setPatients([])
+      setLoadError('Não foi possível confirmar o cadastro dos pacientes. Nenhuma edição foi liberada para evitar perda de dados.')
+      setLoading(false)
+      return
+    }
+    if (clinicalAccess && profileResult.error) {
+      setPatients([])
+      setLoadError('Não foi possível confirmar os dados clínicos. A edição foi bloqueada para impedir que uma falha de leitura substitua informações existentes.')
+      setLoading(false)
+      return
+    }
+    const rows = patientsResult.data || []
+    const profiles = new Map((profileResult.data || []).map(profile => [profile.patient_id, profile]))
+    setPatients(rows.map(patient => ({ ...patient, ...(profiles.get(patient.id) || {}) })))
     setLoading(false)
   }
 
   function openAdd() {
     setForm(emptyForm)
+    setSaveError('')
     setEditingId(null)
     setShowForm(true)
   }
 
   function openEdit(p) {
+    setSaveError('')
     setForm({
       full_name: p.full_name || '',
       cpf: p.cpf || '',
@@ -153,7 +171,8 @@ export function Patients({ data }) {
   async function save() {
     if (!form.full_name.trim()) return
     setSaving(true)
-    const payload = {
+    setSaveError('')
+    const patientPayload = {
       full_name: form.full_name.trim(),
       cpf: form.cpf || null,
       date_of_birth: form.date_of_birth || null,
@@ -172,44 +191,71 @@ export function Patients({ data }) {
       address_state: form.address_state || null,
       address_zip: form.address_zip || null,
       start_date: form.start_date || null,
-      chief_complaint: form.chief_complaint || null,
-      hda: form.hda || null,
-      previous_surgeries: form.previous_surgeries || null,
-      hospitalizations: form.hospitalizations || null,
-      chronic_diseases: form.chronic_diseases || null,
-      allergies: form.allergies || null,
-      current_medications: form.current_medications || null,
-      smoking: form.smoking || null,
-      alcohol: form.alcohol || null,
-      physical_activity: form.physical_activity || null,
-      family_history: form.family_history || null,
-      gynecological_history: form.gynecological_history || null,
-      clinical_notes: form.clinical_notes || null,
-      consent_signed: form.consent_signed,
-      consent_date: form.consent_signed ? (form.consent_date || null) : null,
     }
 
+    const clinicalPayload = {
+      user_id:effectiveUserId,
+      chief_complaint:form.chief_complaint || null,
+      hda:form.hda || null,
+      previous_surgeries:form.previous_surgeries || null,
+      hospitalizations:form.hospitalizations || null,
+      chronic_diseases:form.chronic_diseases || null,
+      allergies:form.allergies || null,
+      current_medications:form.current_medications || null,
+      smoking:form.smoking || null,
+      alcohol:form.alcohol || null,
+      physical_activity:form.physical_activity || null,
+      family_history:form.family_history || null,
+      gynecological_history:form.gynecological_history || null,
+      clinical_notes:form.clinical_notes || null,
+      consent_signed:Boolean(form.consent_signed),
+      consent_date:form.consent_signed ? (form.consent_date || null) : null,
+      updated_at:new Date().toISOString(),
+    }
+
+    let savedPatient = null
     if (editingId) {
-      const { data: updated } = await supabase
+      const { data:updated, error:updateError } = await supabase
         .from('patients')
-        .update(payload)
+        .update(patientPayload)
         .eq('id', editingId)
         .eq('user_id', effectiveUserId)
         .select()
         .single()
-      if (updated) {
-        setPatients(ps => ps.map(p => p.id === editingId ? updated : p))
-        if (selected?.id === editingId) setSelected(updated)
-      }
+      if (updateError) setSaveError(updateError.message)
+      savedPatient = updated
     } else {
-      const { data: created } = await supabase
+      const { data:created, error:createError } = await supabase
         .from('patients')
-        .insert({ ...payload, user_id: effectiveUserId })
+        .insert({ ...patientPayload, user_id: effectiveUserId })
         .select()
         .single()
-      if (created) setPatients(ps => [...ps, created].sort((a, b) => a.full_name.localeCompare(b.full_name)))
+      if (createError) setSaveError(createError.message)
+      savedPatient = created
     }
 
+    if (savedPatient && clinicalAccess) {
+      const { data:savedClinical, error:clinicalError } = await supabase
+        .from('patient_clinical_profiles')
+        .upsert({ ...clinicalPayload, patient_id:savedPatient.id }, { onConflict:'patient_id' })
+        .select()
+        .single()
+      if (clinicalError) {
+        setSaveError('Os dados cadastrais foram salvos, mas o conteúdo clínico não foi confirmado. Tente salvar novamente.')
+        setSaving(false)
+        return
+      }
+      savedPatient = { ...savedPatient, ...savedClinical }
+    }
+
+    if (!savedPatient) {
+      setSaving(false)
+      return
+    }
+    setPatients(current => editingId
+      ? current.map(patient => patient.id === savedPatient.id ? savedPatient : patient)
+      : [...current, savedPatient].sort((a, b) => a.full_name.localeCompare(b.full_name)))
+    if (selected?.id === savedPatient.id) setSelected(savedPatient)
     setSaving(false)
     setShowForm(false)
   }
@@ -271,9 +317,9 @@ export function Patients({ data }) {
           { label: 'Status', value: statusFilter, onChange: setStatusFilter, options: [
             { v: 'ativos', l: 'Ativos' }, { v: 'arquivados', l: 'Arquivados' }, { v: 'todos', l: 'Todos' },
           ] },
-          { label: 'TCLE', value: consentFilter, onChange: setConsentFilter, options: [
+          ...(clinicalAccess ? [{ label: 'TCLE', value: consentFilter, onChange: setConsentFilter, options: [
             { v: 'todos', l: 'Todos' }, { v: 'assinado', l: 'Assinado' }, { v: 'pendente', l: 'Pendente' },
-          ] },
+          ] }] : []),
           { label: 'Ordenar', value: sortBy, onChange: setSortBy, options: [
             { v: 'nome', l: 'Nome (A→Z)' }, { v: 'recentes', l: 'Mais recentes' },
           ] },
@@ -281,19 +327,26 @@ export function Patients({ data }) {
         count={filtered.length}
         countLabel="paciente"
         onClear={clearFilters}
-        right={<Btn onClick={openAdd}>+ Novo paciente</Btn>}
+        right={<Btn onClick={openAdd} disabled={loading || Boolean(loadError)}>+ Novo paciente</Btn>}
       />
+
+      {loadError && (
+        <div role="alert" style={{ padding:'13px 15px', borderRadius:10, border:`1px solid ${C.red}55`, background:C.red + '0D', color:C.textSub, fontSize:12, lineHeight:1.6 }}>
+          {loadError}
+          <Btn variant="ghost" onClick={load} style={{ marginLeft:10 }}>Tentar novamente</Btn>
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (
         <div style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: 32 }}>Carregando…</div>
-      ) : (
+      ) : !loadError && (
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                  {['Nome', 'CPF', 'Telefone', 'Início', 'TCLE', ''].map(h => (
+                  {['Nome', 'CPF', 'Telefone', 'Início', ...(clinicalAccess ? ['TCLE'] : []), ''].map(h => (
                     <th key={h} style={{ padding: '14px 18px', textAlign: 'left', fontSize: 11, color: C.textSub, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -301,7 +354,7 @@ export function Patients({ data }) {
               <tbody>
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ padding: 40, textAlign: 'center', color: C.textDim, fontSize: 13 }}>
+                    <td colSpan={clinicalAccess ? 6 : 5} style={{ padding: 40, textAlign: 'center', color: C.textDim, fontSize: 13 }}>
                       {search ? 'Nenhum paciente encontrado.' : 'Nenhum paciente cadastrado ainda.'}
                     </td>
                   </tr>
@@ -320,11 +373,11 @@ export function Patients({ data }) {
                     <td style={{ padding: '13px 18px', color: C.textSub, fontSize: 13 }}>{p.cpf || '—'}</td>
                     <td style={{ padding: '13px 18px', color: C.textSub, fontSize: 13 }}>{p.phone || '—'}</td>
                     <td style={{ padding: '13px 18px', color: C.textSub, fontSize: 13 }}>{p.start_date ? formatDateBR(p.start_date) : '—'}</td>
-                    <td style={{ padding: '13px 18px' }}>
+                    {clinicalAccess && <td style={{ padding: '13px 18px' }}>
                       {p.consent_signed
                         ? <Badge color={C.green} small>Assinado</Badge>
                         : <Badge color={C.yellow} small>Pendente</Badge>}
-                    </td>
+                    </td>}
                     <td style={{ padding: '13px 18px' }}>
                       <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                         <Btn variant="ghost" onClick={() => openEdit(p)} style={{ padding: '5px 10px', fontSize: 11 }}>Editar</Btn>
@@ -353,6 +406,7 @@ export function Patients({ data }) {
           surgeries={patientSurgeries}
           consultations={patientConsultations}
           totalFinanceiro={totalFinanceiro}
+          clinicalAccess={clinicalAccess}
         />
       )}
 
@@ -369,6 +423,8 @@ export function Patients({ data }) {
           onSave={save}
           onCancel={() => setShowForm(false)}
           saving={saving}
+          clinicalAccess={clinicalAccess}
+          error={saveError}
         />
       </Modal>
 
@@ -439,8 +495,9 @@ function PatientPhoto({ patient, ownerId }) {
   )
 }
 
-function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, totalFinanceiro }) {
+function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, totalFinanceiro, clinicalAccess }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  const drawerTabs = ['resumo', 'pessoal', ...(clinicalAccess ? ['anamnese'] : []), 'financeiro', 'whatsapp']
 
   return (
     <>
@@ -492,7 +549,7 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 4 }}>
-            {DRAWER_TABS.map(t => (
+            {drawerTabs.map(t => (
               <button
                 key={t}
                 onClick={() => onTabChange(t)}
@@ -524,13 +581,11 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
               surgeries={surgeries}
               consultations={consultations}
               totalFinanceiro={totalFinanceiro}
+              clinicalAccess={clinicalAccess}
             />
           )}
           {tab === 'pessoal' && <PessoalTab patient={patient} />}
-          {tab === 'anamnese' && <AnamneseTab patient={patient} />}
-          {tab === 'prontuario' && (
-            <MedicalRecord patientId={patient.id} userId={userId} />
-          )}
+          {tab === 'anamnese' && clinicalAccess && <AnamneseTab patient={patient} />}
           {tab === 'financeiro' && (
             <FinanceiroTab
               surgeries={surgeries}
@@ -564,25 +619,11 @@ function TabSection({ title, children }) {
   )
 }
 
-function ResumoTab({ patient, userId, surgeries, consultations, totalFinanceiro }) {
-  const [records, setRecords] = useState([])
-  useEffect(() => {
-    if (!patient?.id || !userId) return
-    supabase.from('medical_records').select('id,session_date,evolution_notes,procedures_applied,archived')
-      .eq('patient_id', patient.id).eq('user_id', userId).eq('archived', false)
-      .order('session_date', { ascending: false })
-      .then(({ data }) => setRecords(data || []))
-  }, [patient?.id, userId])
-
+function ResumoTab({ patient, surgeries, consultations, totalFinanceiro, clinicalAccess }) {
   const sexLabel = { F: 'Feminino', M: 'Masculino', outro: 'Outro' }
 
   // Unified timeline
   const timeline = [
-    ...records.map(r => ({
-      id: r.id, date: r.session_date, type: 'prontuario',
-      label: 'Sessão', desc: r.procedures_applied || r.evolution_notes?.slice(0, 80),
-      color: C.accent,
-    })),
     ...surgeries.map(s => ({
       id: s.id, date: s.date, type: 'cirurgia',
       label: 'Cirurgia', desc: fmt(s.totalValue),
@@ -605,16 +646,15 @@ function ResumoTab({ patient, userId, surgeries, consultations, totalFinanceiro 
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
         {age !== null && <Field label="Idade" value={`${age} anos`} />}
         {patient.sex && <Field label="Sexo" value={sexLabel[patient.sex] || patient.sex} />}
-        {patient.chief_complaint && <Field label="Queixa principal" value={patient.chief_complaint} />}
+        {clinicalAccess && patient.chief_complaint && <Field label="Queixa principal" value={patient.chief_complaint} />}
         {patient.phone && <Field label="Telefone" value={patient.phone} />}
-        {patient.allergies && <Field label="Alergias" value={patient.allergies} />}
-        {patient.current_medications && <Field label="Medicamentos" value={patient.current_medications} />}
+        {clinicalAccess && patient.allergies && <Field label="Alergias" value={patient.allergies} />}
+        {clinicalAccess && patient.current_medications && <Field label="Medicamentos" value={patient.current_medications} />}
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
         {[
-          { label: 'Sessões', value: records.length, color: C.accent },
           { label: 'Procedimentos', value: surgeries.length + consultations.length, color: C.cyan },
           { label: 'Total', value: fmt(totalFinanceiro), color: C.green },
         ].map(s => (
@@ -626,10 +666,10 @@ function ResumoTab({ patient, userId, surgeries, consultations, totalFinanceiro 
       </div>
 
       {/* TCLE */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: patient.consent_signed ? C.green + '10' : C.yellow + '10', border: `1px solid ${patient.consent_signed ? C.green : C.yellow}33`, borderRadius: 8 }}>
+      {clinicalAccess && <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: patient.consent_signed ? C.green + '10' : C.yellow + '10', border: `1px solid ${patient.consent_signed ? C.green : C.yellow}33`, borderRadius: 8 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: patient.consent_signed ? C.green : C.yellow, flexShrink: 0 }} />
         <span style={{ fontSize: 12, color: C.text }}>TCLE — {patient.consent_signed ? `Assinado${patient.consent_date ? ` em ${formatDateBR(patient.consent_date)}` : ''}` : 'Pendente'}</span>
-      </div>
+      </div>}
 
       {/* Timeline */}
       <div>
@@ -777,7 +817,7 @@ const FORM_STEPS = [
   { id: 'revisao',       label: 'Revisão' },
 ]
 
-function PatientForm({ form, setForm, onSave, onCancel, saving }) {
+function PatientForm({ form, setForm, onSave, onCancel, saving, clinicalAccess, error }) {
   const [step, setStep] = useState(0)
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const grid = { display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14 }
@@ -795,7 +835,10 @@ function PatientForm({ form, setForm, onSave, onCancel, saving }) {
     />
   )
 
-  const isLast = step === FORM_STEPS.length - 1
+  const formSteps = clinicalAccess
+    ? FORM_STEPS
+    : FORM_STEPS.filter(item => !['anamnese', 'tcle'].includes(item.id))
+  const isLast = step === formSteps.length - 1
   const canSave = form.full_name.trim()
 
   const stepContent = {
@@ -832,7 +875,7 @@ function PatientForm({ form, setForm, onSave, onCancel, saving }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={grid}>
           {fi('start_date', 'Início do acompanhamento', { type: 'date' })}
-          {fi('chief_complaint', 'Queixa principal', { placeholder: 'Motivo da busca pelo atendimento' })}
+          {clinicalAccess && fi('chief_complaint', 'Queixa principal', { placeholder: 'Motivo da busca pelo atendimento' })}
         </div>
       </div>
     ),
@@ -893,7 +936,7 @@ function PatientForm({ form, setForm, onSave, onCancel, saving }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {/* Step pills */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, flexWrap: 'wrap' }}>
-        {FORM_STEPS.map((s, i) => {
+        {formSteps.map((s, i) => {
           const active = i === step
           const done = i < step
           return (
@@ -921,8 +964,10 @@ function PatientForm({ form, setForm, onSave, onCancel, saving }) {
 
       {/* Step content */}
       <div style={{ minHeight: 180 }}>
-        {stepContent[FORM_STEPS[step].id]}
+        {stepContent[formSteps[step].id]}
       </div>
+
+      {error && <div role="alert" style={{ marginTop:12, color:C.red, fontSize:12, lineHeight:1.5 }}>{error}</div>}
 
       {/* Navigation */}
       <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 24, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>

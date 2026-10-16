@@ -7,7 +7,7 @@ export default defineConfig({
   workers:1,
   use:{ baseURL:'http://127.0.0.1:4174', headless:true },
   webServer:{
-    command:'VITE_E2E_BYPASS_AUTH=true VITE_E2E_ROLE=equipe npm run dev -- --host 127.0.0.1 --port 4174',
+    command:'VITE_E2E_BYPASS_AUTH=true VITE_E2E_ROLE=equipe VITE_E2E_CLINICAL_ACCESS=false npm run dev -- --host 127.0.0.1 --port 4174',
     url:'http://127.0.0.1:4174',
     reuseExistingServer:false,
     timeout:120_000,

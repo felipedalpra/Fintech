@@ -1,5 +1,7 @@
 # Prontuário Completo — Implementation Plan
 
+> **Atualização de segurança (2026-10-16):** a fundação e o prontuário imutável foram redesenhados e implementados conforme `docs/superpowers/specs/2026-10-16-clinical-foundation-record-design.md`. Não execute literalmente os snippets antigos abaixo: eles usavam RLS por `auth.uid()` sem permissão clínica independente e ainda previam operações incompatíveis com a imutabilidade adotada.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Evoluir o prontuário eletrônico existente para incluir linha do tempo visual, adendos (sem editar registro original), e upload de anexos (exames, fotos, TCLE assinado).
