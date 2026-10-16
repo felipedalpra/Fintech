@@ -1,6 +1,9 @@
 const ALLOWED_COLLECTIONS = new Set(['extraRevenues', 'expenses'])
 
 export function mergePendingFinanceSave(data, pendingSave) {
+  if (Array.isArray(pendingSave?.operations)) {
+    return pendingSave.operations.reduce((current, operation) => mergePendingFinanceSave(current, operation), data)
+  }
   const collection = pendingSave?.collection
   const record = pendingSave?.record
   if (!ALLOWED_COLLECTIONS.has(collection) || !record?.id) return data

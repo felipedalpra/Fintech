@@ -100,7 +100,10 @@ export function proposalForStatementLine(line, accounts = [], fileName = '') {
   const costCenter = String(metadata.costCenter || '').trim()
   const reference = String(metadata.reference || '').trim()
   const observation = String(metadata.observation || '').trim()
-  const account = mappedAccount(accounts, category, direction)
+  const explicitAccount = metadata.chartAccountId
+    ? compatibleAccount(findChartAccount(accounts, { id:metadata.chartAccountId, direction }), direction)
+    : null
+  const account = explicitAccount || mappedAccount(accounts, category, direction)
   const accountName = account?.name || (isRevenue ? 'Receita a classificar' : 'Pagamento a classificar')
   const unclassified = account?.nature === 'unclassified' || !account?.id
   const reasons = []

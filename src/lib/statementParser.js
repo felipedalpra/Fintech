@@ -290,14 +290,7 @@ export async function parseXlsxStatement(buffer, options = {}) {
       sourceMetadata:{ sheetName, excelRow:displayLine, category, costCenter, reference, observation, cashPayment, installmentInfo },
     })
   })
-  const totals = lines.reduce((acc, line) => {
-    if (line.amount > 0) acc.receipts += line.amount
-    else acc.expenses += Math.abs(line.amount)
-    return acc
-  }, { receipts:0, expenses:0 })
-  totals.receipts = Math.round(totals.receipts * 100) / 100
-  totals.expenses = Math.round(totals.expenses * 100) / 100
-  totals.net = Math.round((totals.receipts - totals.expenses) * 100) / 100
+  const totals = statementTotals(lines)
   return { format:'xlsx', sheetNames, sheetName, headerRow:headerIndex, headers, lines, errors, requiresMapping:false, mapping, totals }
 }
 
@@ -313,6 +306,44 @@ function csvLineAmount(row, mapping) {
 
 function lineKey({ externalId, lineIndex, postedDate, amount, description }) {
   return externalId || `${lineIndex}:${postedDate}:${Number(amount).toFixed(2)}:${normalizeStatementDescription(description)}`
+}
+
+export function statementTotals(lines = []) {
+  const totals = lines.reduce((acc, line) => {
+    if (Number(line.amount) > 0) acc.receipts += Number(line.amount)
+    else acc.expenses += Math.abs(Number(line.amount))
+    return acc
+  }, { receipts:0, expenses:0 })
+  totals.receipts = Math.round(totals.receipts * 100) / 100
+  totals.expenses = Math.round(totals.expenses * 100) / 100
+  totals.net = Math.round((totals.receipts - totals.expenses) * 100) / 100
+  return totals
+}
+
+export function updateStatementLine(line, changes = {}) {
+  const postedDate = parseIsoOrBrDate(changes.postedDate ?? line.postedDate)
+  if (!postedDate) throw new Error('Informe uma data válida.')
+  const amount = parseStatementAmount(changes.amount ?? line.amount)
+  if (amount == null || amount === 0) throw new Error('Informe um valor diferente de zero.')
+  const description = String(changes.description ?? line.description ?? '').trim()
+  const currentMetadata = line.sourceMetadata || line.source_metadata || {}
+  const sourceMetadata = {
+    ...currentMetadata,
+    category:String(changes.category ?? currentMetadata.category ?? '').trim(),
+    costCenter:String(changes.costCenter ?? currentMetadata.costCenter ?? '').trim(),
+    reference:String(changes.reference ?? currentMetadata.reference ?? '').trim(),
+    observation:String(changes.observation ?? currentMetadata.observation ?? '').trim(),
+  }
+  const roundedAmount = Math.round(amount * 100) / 100
+  return {
+    ...line,
+    postedDate,
+    amount:roundedAmount,
+    description,
+    normalizedDescription:normalizeStatementDescription([description, sourceMetadata.reference, sourceMetadata.observation].filter(Boolean).join(' ')),
+    sourceLineKey:lineKey({ externalId:line.externalId, lineIndex:line.lineIndex, postedDate, amount:roundedAmount, description }),
+    sourceMetadata,
+  }
 }
 
 export function statementMovementFingerprint(line) {

@@ -226,6 +226,12 @@ export function BankReconciliation({ data, saveDataNow }) {
     setParsed(null)
     setSourceFile(file)
     setMapping({})
+    if (/\.xlsx?$/i.test(file.name || '')) {
+      setError('Planilhas de lançamentos devem ser enviadas em Financeiro → Importar lançamentos. Aqui use apenas um extrato OFX ou CSV.')
+      if (fileRef.current) fileRef.current.value = ''
+      setSourceFile(null)
+      return
+    }
     if (file.size > MAX_FILE_BYTES) {
       setError('O arquivo excede o limite de 10 MB.')
       return
@@ -602,9 +608,9 @@ export function BankReconciliation({ data, saveDataNow }) {
         <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
           <div>
             <div style={{ fontSize:18, fontWeight:900, color:C.text }}>Importar extrato</div>
-            <div style={{ ...s.muted, marginTop:5 }}>O arquivo é interpretado no navegador. Depois da sua confirmação, somente as linhas normalizadas são salvas.</div>
+            <div style={{ ...s.muted, marginTop:5 }}>O extrato é interpretado no navegador e cruzado com os lançamentos já existentes. Para importar uma planilha retroativa, use “Importar lançamentos”.</div>
           </div>
-          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX / CSV / XLSX · sem Open Finance</span>
+          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX / CSV · sem Open Finance</span>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(220px,0.7fr) minmax(280px,1.3fr)', gap:14, marginTop:18 }}>
           <div>
@@ -624,7 +630,7 @@ export function BankReconciliation({ data, saveDataNow }) {
           </div>
           <div>
             <label style={s.label}>Arquivo bancário</label>
-            <input ref={fileRef} aria-label="Arquivo OFX, CSV ou XLSX" type="file" accept=".ofx,.csv,.txt,.xlsx,.xls,text/csv,application/x-ofx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={onFileChange} style={{ ...s.input, cursor:'pointer' }} />
+            <input ref={fileRef} aria-label="Arquivo OFX ou CSV" type="file" accept=".ofx,.csv,.txt,text/csv,application/x-ofx" onChange={onFileChange} style={{ ...s.input, cursor:'pointer' }} />
             <div style={{ ...s.muted, marginTop:6 }}>Até 10 MB e 50.000 linhas. O arquivo bruto não é enviado nem guardado.</div>
           </div>
         </div>

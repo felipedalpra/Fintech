@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test'
-import * as XLSX from 'xlsx'
 
 const USER_ID = process.env.E2E_USER_ID || '11111111-1111-4111-8111-111111111111'
 const ACCOUNT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -13,7 +12,7 @@ test('persiste importação, vínculo e reversão no PostgreSQL local real', asy
   await page.goto('/app/bank-reconciliation')
   await expect(page.getByRole('heading', { name:'Conciliação Bancária' })).toBeVisible()
   await page.getByLabel('Conta financeira').selectOption(ACCOUNT_ID)
-  await page.getByLabel('Arquivo OFX, CSV ou XLSX').setInputFiles({
+  await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
     name:'extrato-real-e2e.ofx',
     mimeType:'application/x-ofx',
     buffer:Buffer.from(`OFXHEADER:100\n<OFX><BANKTRANLIST>
@@ -162,52 +161,4 @@ test('persiste importação, vínculo e reversão no PostgreSQL local real', asy
   expect(databaseGuardrails.accountMissing).toMatchObject({ status:400, body:{ message:expect.stringContaining('exige justificativa') } })
   expect(databaseGuardrails.justifiedMissing).toMatchObject({ status:200, body:{ financial_installment_id:'99999999-9999-4999-8999-999999999993' } })
 
-  const sheet = XLSX.utils.aoa_to_sheet([
-    ['DATA', 'DESCRIÇÃO', 'RECEITA', 'DESPESA', 'CATEGORIA', 'CENTRO DE CUSTO'],
-    ['15/10/2026', 'TARIFA XLSX REAL E2E UNIQUE', '', 7.35, 'DESP. BANCÁRIA', 'FINANCEIRO'],
-  ])
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Movimentos')
-  const xlsxBuffer = Buffer.from(XLSX.write(workbook, { type:'array', bookType:'xlsx' }))
-
-  await page.getByLabel('Arquivo OFX, CSV ou XLSX').setInputFiles({
-    name:'movimentos-real-e2e.xlsx',
-    mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer:xlsxBuffer,
-  })
-  await expect(page.getByTestId('statement-preview')).toContainText('1 linha(s) válida(s)')
-  await page.getByRole('button', { name:'Confirmar importação' }).click()
-  const xlsxReview = page.locator('[data-review-status="new"]')
-  await expect(xlsxReview).toContainText('TARIFA XLSX REAL E2E UNIQUE')
-  await xlsxReview.getByRole('button', { name:'Aprovar lançamento' }).click()
-  await page.getByRole('button', { name:'Confirmar aprovação' }).click()
-  await expect(page.locator('[data-review-status="reconciled"]')).toContainText('TARIFA XLSX REAL E2E UNIQUE')
-
-  const xlsxStored = await page.evaluate(async ({ anonKey }) => {
-    const headers = { apikey:anonKey, Authorization:`Bearer ${anonKey}` }
-    const lineResponse = await fetch('/rest/v1/bank_statement_lines?description=eq.TARIFA%20XLSX%20REAL%20E2E%20UNIQUE&select=id', { headers })
-    const lines = await lineResponse.json()
-    const lineId = lines[0]?.id
-    const [sourcesResponse, entriesResponse] = await Promise.all([
-      fetch(`/rest/v1/expenses?id=eq.${lineId}&select=id,value,status`, { headers }),
-      fetch(`/rest/v1/financial_entries?source_id=eq.${lineId}&select=id,source_id,financial_installments(id,amount,status)`, { headers }),
-    ])
-    return { lineId, sources:await sourcesResponse.json(), entries:await entriesResponse.json() }
-  }, { anonKey:ANON_KEY })
-  expect(xlsxStored.lineId).toBeTruthy()
-  expect(xlsxStored.sources).toEqual([expect.objectContaining({ id:xlsxStored.lineId, value:7.35, status:'pago' })])
-  expect(xlsxStored.entries).toEqual([expect.objectContaining({
-    source_id:xlsxStored.lineId,
-    financial_installments:[expect.objectContaining({ amount:7.35, status:'paid' })],
-  })])
-
-  await page.reload()
-  await expect(page.locator('[data-review-status="reconciled"]')).toContainText('TARIFA XLSX REAL E2E UNIQUE')
-  await page.getByLabel('Arquivo OFX, CSV ou XLSX').setInputFiles({
-    name:'movimentos-real-e2e.xlsx',
-    mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    buffer:xlsxBuffer,
-  })
-  await page.getByRole('button', { name:'Confirmar importação' }).click()
-  await expect(page.getByRole('alert')).toContainText('já foi importado')
 })

@@ -88,7 +88,7 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
   await page.goto('/app/bank-reconciliation')
   await expect(page.getByRole('heading', { name:'Conciliação Bancária' })).toBeVisible()
   await page.getByLabel('Conta financeira').selectOption(ACCOUNT_ID)
-  await page.getByLabel('Arquivo OFX, CSV ou XLSX').setInputFiles({
+  await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
     name:'extrato-e2e.ofx',
     mimeType:'application/x-ofx',
     buffer:Buffer.from(`OFXHEADER:100\n<OFX><BANKTRANLIST>
@@ -127,7 +127,7 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
   expect(manualDraft.reconciliationReturn.claimToken).toMatch(/^[0-9a-f-]{36}$/i)
 })
 
-test('importa XLSX, aprova lançamento canônico, recarrega e mantém revisão reversível', async ({ page }) => {
+test.skip('fluxo XLSX legado foi movido para Importar lançamentos', async ({ page }) => {
   const importId = '22222222-2222-4222-8222-222222222222'
   const feeLineId = '33333333-3333-4333-8333-333333333333'
   const transferLineId = '44444444-4444-4444-8444-444444444444'

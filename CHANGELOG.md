@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (114)
+### Added
+- **Importador financeiro retroativo independente**: “Financeiro → Importar lançamentos” recebe `.xlsx`/`.xls` sem exigir conta bancária, mostra integralmente todas as linhas interpretadas, permite editar data, valor, descrição, plano de contas, categoria, centro de custo e referência, e oferece aprovação/rejeição individual, selecionada ou em lote. A planilha só vira receita/despesa canônica depois da confirmação explícita; IDs determinísticos e comparação com o razão identificam lançamentos existentes e possíveis duplicidades antes de salvar. (`src/components/FinancialImport.jsx`, `src/lib/financialImport.js`.)
+- **Recuperação durável de importações em lote**: todas as receitas/despesas aprovadas ficam registradas como uma única operação recuperável no navegador antes da atualização em memória; se a confirmação do servidor falhar, o lote pode ser reaplicado sem apagar registros existentes. (`src/pages/FinanceWorkspace.jsx`, `src/lib/pendingFinanceSave.js`.)
+
+### Changed
+- **Conciliação novamente restrita a extratos**: a área de conciliação aceita somente OFX/CSV e mantém a seleção de conta financeira porque seu papel é cruzar movimentações bancárias com lançamentos existentes. Planilhas contábeis retroativas são direcionadas ao novo importador, sem alterar importações históricas já salvas. (`src/components/BankReconciliation.jsx`, `src/pages/FinanceWorkspace.jsx`.)
+
+### Fixed
+- **Prévia incompleta e sem edição antes da importação**: removida a amostra fixa de oito linhas do fluxo retroativo. A nova tela exibe todas as linhas, informa a contagem integral e disponibiliza edição e decisão em cada sugestão antes de qualquer impacto no financeiro; testes cobrem mais de oito linhas, edição, aprovação explícita, duplicidade e persistência protegida. (`tests/e2e/financial-import.spec.js`, `tests/unit/financialImport.spec.js`, `tests/unit/statementParser.spec.js`.)
+
 ## [Unreleased] - 2026-10-15 (113)
 ### Added
 - **Importação assistida de lançamentos em Excel**: a Conciliação bancária passa a aceitar `.xlsx`/`.xls`, interpretar o arquivo integralmente no navegador e apresentar cada linha no modelo financeiro da plataforma antes de qualquer inclusão. A revisão separa correspondências existentes, novos lançamentos, possíveis duplicidades, transferências e pendências de classificação; permite seleção segura, aprovação individual/em lote, rejeição reversível e criação editável. Novos registros aprovados usam o `saveDataNow` e o razão canônico, com o UUID da linha como chave idempotente; vínculos com lançamentos existentes não alteram valores, datas ou baixas. Nenhuma função serverless foi criada. (`src/components/BankReconciliation.jsx`, `src/lib/statementParser.js`, `src/lib/statementImportReview.js`, `src/lib/bankReconciliationStore.js`.)
