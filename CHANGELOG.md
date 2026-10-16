@@ -5,6 +5,17 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-16 (117)
+### Added
+- **Identidade e proveniência bancária verificáveis**: contas passam a registrar instituição, agência, final mascarado da conta, titular, origem, estado de verificação e futura conexão externa sem persistir número/documento completos ou credenciais. A migração aditiva cria `bank_connections` separada das cobranças, com consentimento, cursor e saúde de sincronização preparados para Open Finance ou API bancária direta. (`supabase/bank_reconciliation_robustness_schema.sql`, `src/lib/bankReconciliationStore.js`.)
+- **Controles de integridade do extrato**: o OFX passa a preservar banco, conta mascarada, moeda, período, saldo final/disponível e data do saldo. A prévia sugere a conta exata, bloqueia instituição/conta/moeda incompatíveis, sinaliza sobreposição e compara o saldo com o último extrato verificável; o banco repete as validações e impede conciliação de importação inconsistente ou movimento não efetivado. (`src/lib/statementParser.js`, `src/lib/bankStatementIntegrity.js`, `supabase/bank_reconciliation_robustness_schema.sql`.)
+
+### Changed
+- **Conciliação orientada por evidência**: a tela exibe qualidade da fonte, período, movimento líquido, diferença de controle e cobertura de linhas conciliadas/ignoradas/pendentes. Motivos para ignorar são padronizados e o matching reconhece identificador bancário exato, Pix `endToEndId`, `txid`, referência e cheque antes do fallback por data/descrição. (`src/components/BankReconciliation.jsx`, `src/lib/bankReconciliationMatch.js`.)
+
+### Fixed
+- **Conta errada e confirmação enganosa**: um OFX identificado deixa de poder ser importado na conta errada; mensagens que diziam “confirmado no banco” passam a dizer “confirmado no sistema”, distinguindo persistência no Supabase de confirmação pela instituição financeira. Testes unitários e no navegador cobrem identidade divergente, saldo, sobreposição, cobertura e o fluxo completo de importação/conciliação. (`tests/unit/bankStatementIntegrity.spec.js`, `tests/unit/statementParser.spec.js`, `tests/unit/bankReconciliationMatch.spec.js`, `tests/e2e/bank-reconciliation.spec.js`.)
+
 ## [Unreleased] - 2026-10-15 (116)
 ### Changed
 - **Salvamento financeiro incremental**: cada sincronização passa a enviar somente registros novos ou realmente alterados em cada tabela e somente os títulos/parcelas impactados no razão canônico. O baseline da sessão continua sendo usado para soft-delete seguro, o read-back continua confirmando todas as linhas enviadas e uma tentativa sem baseline preserva a carga completa conservadora. Isso reduz drasticamente o volume de gravação após importações grandes, sem criar endpoint, tabela ou total paralelo. (`src/lib/financeSync.js`, `src/lib/financeStore.js`, `src/lib/ledgerPersistence.js`.)

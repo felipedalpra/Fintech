@@ -45,6 +45,27 @@ function candidateDescription(installment) {
   return [entry.description, entry.party_name_snapshot, entry.category, entry.origin_label].filter(Boolean).join(' ')
 }
 
+function referenceValues(values) {
+  return new Set(values
+    .flatMap(value => Array.isArray(value) ? value : [value])
+    .map(value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''))
+    .filter(value => value.length >= 6))
+}
+
+function matchingReference(line, installment) {
+  const metadata = line.source_metadata || line.sourceMetadata || {}
+  const entry = entryOf(installment)
+  const bankReferences = referenceValues([
+    line.external_id, line.externalId, metadata.endToEndId, metadata.txid,
+    metadata.referenceNumber, metadata.checkNumber, metadata.externalReference,
+  ])
+  const financialReferences = referenceValues([
+    installment.external_id, installment.external_reference, installment.end_to_end_id,
+    installment.txid, entry.external_id, entry.external_reference, entry.source_id,
+  ])
+  return [...bankReferences].find(value => financialReferences.has(value)) || null
+}
+
 function lineDirection(line) {
   return Number(line.amount) > 0 ? 'receivable' : 'payable'
 }
@@ -73,9 +94,10 @@ function rankCandidate(line, installment, windowDays) {
   const differenceDays = daysBetween(line.postedDate, referenceDate)
   if (!Number.isFinite(differenceDays) || differenceDays > windowDays) return null
   const similarity = descriptionSimilarity(line.normalizedDescription || line.description, candidateDescription(installment))
+  const exactReference = matchingReference(line, installment)
   const datePoints = Math.max(0, 30 - (differenceDays * 6))
   const descriptionPoints = Math.round(similarity * 15)
-  const score = 55 + datePoints + descriptionPoints
+  const score = Math.min(100, 55 + datePoints + descriptionPoints + (exactReference ? 35 : 0))
   return {
     installment,
     installmentId:installment.id,
@@ -83,8 +105,10 @@ function rankCandidate(line, installment, windowDays) {
     differenceAmount:amountDifferenceCents / 100,
     differenceDays,
     descriptionSimilarity:similarity,
+    exactReference,
     reasons:[
       'valor exato',
+      ...(exactReference ? ['identificador bancário exato'] : []),
       differenceDays === 0 ? 'mesma data' : `${differenceDays} dia(s) de diferença`,
       similarity > 0 ? `descrição ${Math.round(similarity * 100)}% semelhante` : 'descrição sem termos em comum',
     ],

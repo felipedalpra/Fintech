@@ -11,6 +11,11 @@ export function isBankReconciliationSchemaMissing(error) {
     || message.includes('review_status')
     || message.includes('review_claim_token')
     || message.includes('movement_fingerprint')
+    || message.includes('statement_metadata')
+    || message.includes('verification_status')
+    || message.includes('institution_code')
+    || message.includes('provider_transaction_id')
+    || message.includes('create_financial_bank_account')
     || message.includes('set_bank_statement_lines_review')
     || message.includes('claim_bank_statement_lines_for_creation')
     || message.includes('release_bank_statement_line_claims')
@@ -31,7 +36,7 @@ export async function fetchFinancialAccounts(ownerId) {
   if (!ownerId) return []
   const { data, error } = await supabase
     .from('financial_accounts')
-    .select('id,name,account_type,active,archived_at')
+    .select('id,name,account_type,opening_balance,opening_balance_date,institution_code,institution_name,branch_code,account_number_masked,account_number_suffix,holder_name,holder_document_suffix,currency,source,external_account_id,connection_id,verification_status,verified_at,last_synced_at,active,archived_at')
     .eq('user_id', ownerId)
     .eq('active', true)
     .is('archived_at', null)
@@ -40,16 +45,30 @@ export async function fetchFinancialAccounts(ownerId) {
   return data || []
 }
 
-export async function createFinancialAccount(ownerId, { name, accountType = 'checking' }) {
+export async function createFinancialAccount(ownerId, {
+  name,
+  accountType = 'checking',
+  institutionCode = null,
+  institutionName = null,
+  branchCode = null,
+  accountNumberSuffix = null,
+  holderName = null,
+  holderDocumentSuffix = null,
+}) {
   const cleanName = String(name || '').trim()
   if (!ownerId || !cleanName) throw new Error('Informe o nome da conta financeira.')
-  const { data, error } = await supabase
-    .from('financial_accounts')
-    .insert({ user_id:ownerId, name:cleanName, account_type:accountType, active:true })
-    .select('id,name,account_type,active,archived_at')
-    .single()
+  const { data, error } = await supabase.rpc('create_financial_bank_account', {
+    p_name:cleanName,
+    p_account_type:accountType,
+    p_institution_code:String(institutionCode || '').trim() || null,
+    p_institution_name:String(institutionName || '').trim() || null,
+    p_branch_code:String(branchCode || '').trim() || null,
+    p_account_number_suffix:String(accountNumberSuffix || '').replace(/\D/g, '').slice(-4) || null,
+    p_holder_name:String(holderName || '').trim() || null,
+    p_holder_document_suffix:String(holderDocumentSuffix || '').replace(/\D/g, '').slice(-4) || null,
+  })
   if (error) throw error
-  if (!data?.id) throw new Error('A conta não foi confirmada pelo banco.')
+  if (!data?.id) throw new Error('A conta não foi confirmada pelo sistema.')
   return data
 }
 
@@ -57,26 +76,33 @@ export async function fetchBankStatementImports(ownerId) {
   if (!ownerId) return []
   return fetchAll(() => supabase
     .from('bank_statement_imports')
-    .select('id,user_id,financial_account_id,file_name,file_hash,source_format,expected_line_count,line_count,status,period_start,period_end,imported_by,created_at,ready_at,archived_at')
+    .select('id,user_id,financial_account_id,connection_id,file_name,file_hash,source_format,source_type,expected_line_count,line_count,status,period_start,period_end,declared_period_start,declared_period_end,institution_code,statement_account_masked,statement_account_fingerprint,currency,closing_balance,available_balance,balance_date,net_movement,control_difference,verification_status,verification_notes,imported_by,created_at,ready_at,archived_at')
     .eq('user_id', ownerId)
     .is('archived_at', null)
     .order('created_at', { ascending:false }))
 }
 
 function toLineRow(ownerId, accountId, importId, line) {
+  const metadata = line.sourceMetadata || {}
   return {
     user_id:ownerId,
     import_id:importId,
     financial_account_id:accountId,
     source_line_key:line.sourceLineKey,
     external_id:line.externalId || null,
+    provider_transaction_id:metadata.providerTransactionId || null,
+    end_to_end_id:metadata.endToEndId || null,
+    txid:metadata.txid || null,
+    booking_status:metadata.transactionStatus || 'booked',
+    counterparty_name:metadata.counterpartyName || null,
+    counterparty_document_suffix:metadata.counterpartyDocumentSuffix || null,
     posted_date:line.postedDate,
     amount:Number(line.amount),
     currency:'BRL',
     description:String(line.description || ''),
     normalized_description:String(line.normalizedDescription || ''),
     movement_fingerprint:statementMovementFingerprint(line),
-    source_metadata:line.sourceMetadata || {},
+    source_metadata:metadata,
     line_index:Number(line.lineIndex),
   }
 }
@@ -84,7 +110,7 @@ function toLineRow(ownerId, accountId, importId, line) {
 function assertReadBack(expected, persisted) {
   const returned = new Set((persisted || []).map(row => row.source_line_key))
   const missing = expected.filter(row => !returned.has(row.source_line_key))
-  if (missing.length) throw new Error(`${missing.length} linha(s) do extrato não foram confirmadas pelo banco.`)
+  if (missing.length) throw new Error(`${missing.length} linha(s) do extrato não foram confirmadas pelo sistema.`)
 }
 
 export async function importBankStatement({ ownerId, accountId, parsed }) {
@@ -97,9 +123,10 @@ export async function importBankStatement({ ownerId, accountId, parsed }) {
     p_file_hash:parsed.fileHash,
     p_format:parsed.format,
     p_expected_count:parsed.lines.length,
+    p_statement_metadata:parsed.statementMetadata || {},
   })
   if (startError) throw startError
-  if (!started?.id) throw new Error('A abertura da importação não foi confirmada pelo banco.')
+  if (!started?.id) throw new Error('A abertura da importação não foi confirmada pelo sistema.')
 
   try {
     const rows = parsed.lines.map(line => toLineRow(ownerId, accountId, started.id, line))
@@ -115,7 +142,7 @@ export async function importBankStatement({ ownerId, accountId, parsed }) {
     const { data:ready, error:finishError } = await supabase.rpc('finalize_bank_statement_import', { p_import_id:started.id })
     if (finishError) throw finishError
     if (ready?.status !== 'ready' || Number(ready.line_count) !== rows.length) {
-      throw new Error('A importação não foi finalizada integralmente pelo banco.')
+      throw new Error('A importação não foi finalizada integralmente pelo sistema.')
     }
     return ready
   } catch (error) {
@@ -127,7 +154,7 @@ export async function importBankStatement({ ownerId, accountId, parsed }) {
 export async function fetchStatementLines(ownerId, importId) {
   return fetchAll(() => supabase
     .from('bank_statement_lines')
-    .select('id,user_id,import_id,financial_account_id,source_line_key,external_id,posted_date,amount,currency,description,normalized_description,movement_fingerprint,source_metadata,line_index,review_status,review_reason,reviewed_by,reviewed_at,created_at,archived_at')
+    .select('id,user_id,import_id,financial_account_id,source_line_key,external_id,provider_transaction_id,end_to_end_id,txid,booking_status,counterparty_name,counterparty_document_suffix,posted_date,amount,currency,description,normalized_description,movement_fingerprint,source_metadata,line_index,review_status,review_reason,reviewed_by,reviewed_at,created_at,archived_at')
     .eq('user_id', ownerId)
     .eq('import_id', importId)
     .is('archived_at', null)
@@ -144,7 +171,7 @@ export async function setBankStatementLinesReview({ lineIds, status, reason = nu
     p_reason:reason ? String(reason).trim() : null,
   })
   if (error) throw error
-  if (Number(data) !== ids.length) throw new Error('Nem todas as linhas tiveram a revisão confirmada pelo banco.')
+  if (Number(data) !== ids.length) throw new Error('Nem todas as linhas tiveram a revisão confirmada pelo sistema.')
   return Number(data)
 }
 
@@ -247,7 +274,7 @@ export async function confirmBankReconciliation({ lineId, installmentId, method,
   })
   if (error) throw error
   if (!data?.id || data.statement_line_id !== lineId || data.financial_installment_id !== installmentId) {
-    throw new Error('A conciliação não foi confirmada pelo banco.')
+    throw new Error('A conciliação não foi confirmada pelo sistema.')
   }
   return data
 }
@@ -258,13 +285,13 @@ export async function reverseBankReconciliation(reconciliationId, reason) {
     p_reason:String(reason || '').trim(),
   })
   if (error) throw error
-  if (!data?.id || !data.reversed_at) throw new Error('A desconciliação não foi confirmada pelo banco.')
+  if (!data?.id || !data.reversed_at) throw new Error('A desconciliação não foi confirmada pelo sistema.')
   return data
 }
 
 export async function archiveBankStatementImport(importId) {
   const { data, error } = await supabase.rpc('archive_bank_statement_import', { p_import_id:importId })
   if (error) throw error
-  if (!data?.id || data.status !== 'archived') throw new Error('O arquivamento não foi confirmado pelo banco.')
+  if (!data?.id || data.status !== 'archived') throw new Error('O arquivamento não foi confirmado pelo sistema.')
   return data
 }

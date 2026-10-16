@@ -424,10 +424,56 @@ function ofxDate(value) {
   return validDate(raw.slice(0, 4), raw.slice(4, 6), raw.slice(6, 8))
 }
 
+function maskAccountNumber(value) {
+  const normalized = String(value || '').replace(/\s+/g, '').trim()
+  if (!normalized) return null
+  const suffix = normalized.replace(/[^a-z0-9]/gi, '').slice(-4)
+  return suffix ? `••••${suffix}` : null
+}
+
+function extractEndToEndId(value) {
+  const match = String(value || '').match(/\bE\d{8}[A-Z0-9]{23}\b/i)
+  return match ? match[0].toUpperCase() : null
+}
+
+function ofxStatementMetadata(text) {
+  const accountId = extractOfxTag(text, 'ACCTID')
+  const institutionCode = extractOfxTag(text, 'BANKID') || extractOfxTag(text, 'FID') || null
+  const agencyCode = extractOfxTag(text, 'BRANCHID') || null
+  const accountType = extractOfxTag(text, 'ACCTTYPE') || null
+  const currency = (extractOfxTag(text, 'CURDEF') || 'BRL').toUpperCase()
+  const periodStart = ofxDate(extractOfxTag(text, 'DTSTART'))
+  const periodEnd = ofxDate(extractOfxTag(text, 'DTEND'))
+  const ledgerBlock = text.match(/<LEDGERBAL>([\s\S]*?)(?:<\/LEDGERBAL>|<AVAILBAL>|<\/STMTRS>)/i)?.[1] || ''
+  const closingBalance = parseStatementAmount(extractOfxTag(ledgerBlock, 'BALAMT'))
+  const balanceDate = ofxDate(extractOfxTag(ledgerBlock, 'DTASOF'))
+  const availableBlock = text.match(/<AVAILBAL>([\s\S]*?)(?:<\/AVAILBAL>|<LEDGERBAL>|<BANKTRANLIST>|<\/STMTRS>)/i)?.[1] || ''
+  const availableBalance = parseStatementAmount(extractOfxTag(availableBlock, 'BALAMT'))
+  const suffix = accountId.replace(/[^a-z0-9]/gi, '').slice(-4) || null
+  return {
+    institutionCode,
+    institutionName:extractOfxTag(text, 'ORG') || null,
+    agencyCode,
+    accountNumberMasked:maskAccountNumber(accountId),
+    accountNumberSuffix:suffix,
+    accountType,
+    currency,
+    periodStart,
+    periodEnd,
+    closingBalance,
+    availableBalance,
+    balanceDate,
+    accountFingerprint:institutionCode && suffix
+      ? `${String(institutionCode).toLowerCase()}:${String(agencyCode || '').toLowerCase()}:${suffix.toLowerCase()}:${String(accountType || '').toLowerCase()}`
+      : null,
+  }
+}
+
 export function parseOfxStatement(content) {
   const text = stripBom(content)
+  const statementMetadata = ofxStatementMetadata(text)
   const starts = [...text.matchAll(/<STMTTRN>/gi)]
-  if (!starts.length) return { format:'ofx', lines:[], errors:[{ line:1, reason:'Nenhuma transação OFX foi encontrada.' }], requiresMapping:false, mapping:null }
+  if (!starts.length) return { format:'ofx', lines:[], errors:[{ line:1, reason:'Nenhuma transação OFX foi encontrada.' }], requiresMapping:false, mapping:null, statementMetadata }
   const lines = []
   const errors = []
   const seenIds = new Set()
@@ -439,7 +485,11 @@ export function parseOfxStatement(content) {
     const postedDate = ofxDate(extractOfxTag(block, 'DTPOSTED'))
     const amount = parseStatementAmount(extractOfxTag(block, 'TRNAMT'))
     const externalId = extractOfxTag(block, 'FITID') || null
-    const description = extractOfxTag(block, 'MEMO') || extractOfxTag(block, 'NAME') || extractOfxTag(block, 'CHECKNUM') || ''
+    const memo = extractOfxTag(block, 'MEMO')
+    const name = extractOfxTag(block, 'NAME')
+    const checkNumber = extractOfxTag(block, 'CHECKNUM') || null
+    const referenceNumber = extractOfxTag(block, 'REFNUM') || null
+    const description = memo || name || checkNumber || ''
     if (!postedDate) errors.push({ line:displayLine, reason:'DTPOSTED inválido ou ausente.' })
     if (amount == null || amount === 0) errors.push({ line:displayLine, reason:'TRNAMT inválido, ausente ou igual a zero.' })
     if (externalId && seenIds.has(externalId)) errors.push({ line:displayLine, reason:`FITID duplicado no arquivo: ${externalId}.` })
@@ -454,10 +504,18 @@ export function parseOfxStatement(content) {
       description,
       normalizedDescription,
       lineIndex:displayLine,
-      sourceMetadata:{ transactionType:extractOfxTag(block, 'TRNTYPE') || null },
+      sourceMetadata:{
+        transactionType:extractOfxTag(block, 'TRNTYPE') || null,
+        transactionStatus:'booked',
+        checkNumber,
+        referenceNumber,
+        txid:extractOfxTag(block, 'TXID') || null,
+        endToEndId:extractEndToEndId(`${memo} ${name} ${referenceNumber || ''}`),
+        counterpartyName:name || null,
+      },
     })
   })
-  return { format:'ofx', lines, errors, requiresMapping:false, mapping:null }
+  return { format:'ofx', lines, errors, requiresMapping:false, mapping:null, statementMetadata }
 }
 
 export function parseStatementText(content, options = {}) {

@@ -1,10 +1,10 @@
 # Conciliação bancária assistida — Design Spec
 
 **Data:** 2026-10-14  
-**Status:** proposta pronta para revisão; implementação ainda não iniciada  
-**Branch:** `feat/conciliacao-bancaria`  
+**Status:** implementada; robustez de identidade, saldo e proveniência adicionada em 2026-10-16
+**Branches:** `feat/conciliacao-bancaria` e `feat/conciliacao-bancaria-robusta`
 **Escopo:** Fase 3 · item 1 — importar OFX/CSV e cruzar com o razão existente  
-**Fora de escopo:** boleto, cobrança automática, integração com adquirente e Open Finance
+**Fora de escopo:** contratação/homologação de um conector Open Finance ou banco específico. A fundação neutra de conexão, consentimento e sincronização está modelada, mas nenhum provedor é simulado como integração real.
 
 ---
 

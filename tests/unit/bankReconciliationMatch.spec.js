@@ -26,6 +26,14 @@ test('recomenda por valor, direção, data e descrição com motivos explicávei
   expect(result[0].recommendedCandidate.reasons).toContain('valor exato')
 })
 
+test('explica quando há identificador bancário exato', () => {
+  const bankLine = line('line-ref', { external_id:'E1234567890123456789012345678901' })
+  const candidate = installment('inst-ref', { external_reference:'E1234567890123456789012345678901' })
+  const result = matchBankStatementLines([bankLine], [candidate])
+  expect(result[0].recommendedCandidate).toMatchObject({ installmentId:'inst-ref', exactReference:'e1234567890123456789012345678901' })
+  expect(result[0].recommendedCandidate.reasons).toContain('identificador bancário exato')
+})
+
 test('não cruza crédito com conta a pagar nem tolera valor diferente automaticamente', () => {
   const payable = installment('payable', { financial_entry:{ direction:'payable', description:'Maria', status:'paid' } })
   const wrongAmount = installment('wrong', { amount:499.5 })

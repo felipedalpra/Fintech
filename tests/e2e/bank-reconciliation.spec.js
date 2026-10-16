@@ -30,7 +30,7 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
     }
     if (path.endsWith('/rpc/finalize_bank_statement_import')) {
       imported = true
-      const ready = { id:IMPORT_ID, user_id:USER_ID, financial_account_id:ACCOUNT_ID, file_name:'extrato-e2e.ofx', file_hash:'a'.repeat(64), source_format:'ofx', expected_line_count:2, line_count:2, status:'ready', period_start:'2026-10-13', period_end:'2026-10-14', created_at:'2026-10-14T12:00:00Z', ready_at:'2026-10-14T12:00:01Z', archived_at:null }
+      const ready = { id:IMPORT_ID, user_id:USER_ID, financial_account_id:ACCOUNT_ID, file_name:'extrato-e2e.ofx', file_hash:'a'.repeat(64), source_format:'ofx', expected_line_count:2, line_count:2, status:'ready', period_start:'2026-10-13', period_end:'2026-10-14', institution_code:'341', statement_account_masked:'••••8765', currency:'BRL', closing_balance:1481.1, net_movement:481.1, verification_status:'partially_verified', verification_notes:['Sem saldo anterior verificado para conferir a equação.'], created_at:'2026-10-14T12:00:00Z', ready_at:'2026-10-14T12:00:01Z', archived_at:null }
       imports.splice(0, imports.length, ready)
       return fulfill(ready)
     }
@@ -56,7 +56,7 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
     }
     if (path.endsWith('/rpc/archive_bank_statement_import')) return fulfill({ ...imports[0], status:'archived', archived_at:'2026-10-14T12:04:00Z' })
 
-    if (path.endsWith('/financial_accounts')) return fulfill([{ id:ACCOUNT_ID, user_id:USER_ID, name:'Banco E2E', account_type:'checking', active:true, archived_at:null }])
+    if (path.endsWith('/financial_accounts')) return fulfill([{ id:ACCOUNT_ID, user_id:USER_ID, name:'Banco E2E', account_type:'checking', institution_code:'341', institution_name:'Itaú', branch_code:'1234', account_number_masked:'••••8765', account_number_suffix:'8765', verification_status:'partially_verified', active:true, archived_at:null }])
     if (path.endsWith('/bank_statement_imports')) return fulfill(imported ? imports : [])
     if (path.endsWith('/bank_statement_lines')) {
       if (method === 'POST') {
@@ -91,13 +91,16 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
   await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
     name:'extrato-e2e.ofx',
     mimeType:'application/x-ofx',
-    buffer:Buffer.from(`OFXHEADER:100\n<OFX><BANKTRANLIST>
+    buffer:Buffer.from(`OFXHEADER:100\n<OFX><CURDEF>BRL<BANKACCTFROM><BANKID>341<BRANCHID>1234<ACCTID>00098765<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST><DTSTART>20261001000000<DTEND>20261031235959
       <STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013<TRNAMT>500.00<FITID>fit-1<MEMO>PIX MARIA</STMTTRN>
       <STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261014<TRNAMT>-18.90<FITID>fit-2<MEMO>TARIFA BANCO</STMTTRN>
-    </BANKTRANLIST></OFX>`),
+    </BANKTRANLIST><LEDGERBAL><BALAMT>1481.10<DTASOF>20261014</LEDGERBAL></OFX>`),
   })
   await expect(page.getByTestId('statement-preview')).toContainText('2 linha(s) válida(s)')
+  await expect(page.getByTestId('statement-integrity')).toContainText('Extrato parcialmente verificado')
+  await expect(page.getByTestId('statement-integrity')).toContainText('conta conferida')
   await page.getByRole('button', { name:'Confirmar importação' }).click()
+  await expect(page.getByTestId('reconciliation-coverage')).toContainText('Verificação parcial')
   await expect(page.getByText('Sugestões', { exact:true })).toBeVisible()
   await expect(page.getByTestId('statement-line-suggestion')).toContainText('PIX MARIA')
   await expect(page.getByTestId('statement-line-unmatched')).toContainText('TARIFA BANCO')
@@ -125,6 +128,34 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
   const manualDraft = await page.evaluate(() => JSON.parse(localStorage.getItem('surgimetrics_modal_draft_finance') || 'null'))
   expect(manualDraft.reconciliationReturn).toMatchObject({ lineId:LINE_EXPENSE_ID, sourceId:LINE_EXPENSE_ID })
   expect(manualDraft.reconciliationReturn.claimToken).toMatch(/^[0-9a-f-]{36}$/i)
+})
+
+test('bloqueia OFX de outra conta e exige identificação no cadastro bancário', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{"connected":false}' }))
+  await page.route('**/rest/v1/**', route => {
+    const url = new URL(route.request().url())
+    const body = url.pathname.endsWith('/financial_accounts')
+      ? [{ id:ACCOUNT_ID, user_id:USER_ID, name:'Itaú principal', account_type:'checking', institution_code:'341', institution_name:'Itaú', account_number_suffix:'8765', verification_status:'partially_verified', active:true, archived_at:null }]
+      : []
+    return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/1' }, body:JSON.stringify(body) })
+  })
+
+  await page.goto('/app/bank-reconciliation')
+  await page.getByLabel('Conta financeira').selectOption(ACCOUNT_ID)
+  await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
+    name:'conta-errada.ofx',
+    mimeType:'application/x-ofx',
+    buffer:Buffer.from('OFXHEADER:100\n<OFX><CURDEF>BRL<BANKACCTFROM><BANKID>001<ACCTID>00009999</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013<TRNAMT>100.00<FITID>wrong-1<MEMO>PIX TESTE</STMTTRN></BANKTRANLIST></OFX>'),
+  })
+  await expect(page.getByTestId('statement-integrity')).toContainText('Extrato incompatível')
+  await expect(page.getByTestId('statement-integrity')).toContainText('não corresponde')
+  await expect(page.getByRole('button', { name:'Confirmar importação' })).toBeDisabled()
+
+  await page.getByRole('button', { name:'+ Criar conta bancária' }).click()
+  await expect(page.getByLabel('Instituição financeira')).toBeVisible()
+  await expect(page.getByLabel('Final da conta bancária')).toBeVisible()
+  await expect(page.getByRole('button', { name:'Salvar conta' })).toBeDisabled()
 })
 
 test.skip('fluxo XLSX legado foi movido para Importar lançamentos', async ({ page }) => {
