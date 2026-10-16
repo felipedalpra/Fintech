@@ -52,7 +52,7 @@ export function Reports({ data }) {
     setLoadWarning('')
 
     Promise.all([
-      supabase.from('patients').select('*').eq('user_id', effectiveUserId).order('full_name'),
+      supabase.from('patients').select('id, full_name, cpf, date_of_birth, sex, phone, email, profession, address_city, address_state, start_date, active, created_at').eq('user_id', effectiveUserId).order('full_name'),
       supabase.from('recorrencias').select('*').eq('user_id', effectiveUserId).order('created_at'),
     ]).then(([patientsResult, recurrencesResult]) => {
       if (!active) return

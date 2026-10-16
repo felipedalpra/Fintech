@@ -15,6 +15,11 @@ export const ROLE_ACCESS = {
   ],
 }
 
-export function canRoleAccess(role, sectionId) {
+export const CLINICAL_SECTIONS = new Set(['clinical-records'])
+
+export function canRoleAccess(role, sectionId, { clinicalAccess = false } = {}) {
+  if (CLINICAL_SECTIONS.has(sectionId)) {
+    return clinicalAccess === true
+  }
   return Boolean(role && (ROLE_ACCESS[role] || []).includes(sectionId))
 }

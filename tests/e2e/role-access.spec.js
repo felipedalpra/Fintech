@@ -9,6 +9,7 @@ test('equipe não recebe dados ou ações financeiras na interface', async ({ pa
   await page.goto('/app/meu-dia')
 
   await expect(page.getByRole('button', { name:'Financeiro', exact:true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name:'Clínico', exact:true })).toHaveCount(0)
   await expect(page.getByRole('button', { name:'Configurações', exact:true })).toHaveCount(0)
   await expect(page.getByText('Qualidade financeira', { exact:true })).toHaveCount(0)
   await expect(page.getByRole('button', { name:'Alertas', exact:true })).toHaveCount(0)

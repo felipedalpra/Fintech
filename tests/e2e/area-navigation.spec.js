@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
-// Em e2e o usuário é admin (bypass), então vê as 6 áreas.
-const AREAS = ['Início', 'Pacientes', 'Clínico', 'Financeiro', 'Automações', 'Configurações']
+// Em e2e o usuário é admin (bypass), então vê todas as áreas ativas.
+const AREAS = ['Hoje', 'Relacionamento', 'Atendimentos', 'Clínico', 'Financeiro', 'Configurações']
 
 // Dispensa o overlay de onboarding (fixed, z-index alto) que bloquearia os cliques.
 test.beforeEach(async ({ page }) => {
@@ -29,20 +29,26 @@ test('trocar de área troca a sub-navegação e navega', async ({ page }) => {
   await expect(subNav.getByText('Relatórios')).toBeVisible()
   await expect(subNav.getByText('Impostos')).toHaveCount(0)
 
-  await bar.getByRole('button', { name: /Pacientes/ }).click()
+  await bar.getByRole('button', { name: /Relacionamento/ }).click()
   await expect(page).toHaveURL(/\/app\/funnel$/)
   await expect(subNav.getByText('Funil')).toBeVisible()
-  await expect(subNav.getByText('Agenda')).toBeVisible()
-  await expect(subNav.getByText('Cirurgias')).toBeVisible()
   // Itens exclusivos do Financeiro saíram da sub-nav da área Pacientes.
   await expect(subNav.getByText('Relatórios')).toHaveCount(0)
 })
 
-test('área "em breve" (Clínico) mostra placeholder', async ({ page }) => {
+test('área Clínica abre o prontuário ativo', async ({ page }) => {
+  await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Vitória', registrationId:'CRM-SP 123' } } }) }))
+  await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'p1', full_name:'Ana Clínica', date_of_birth:'1990-04-10', active:true, start_date:'2026-01-10' }]) }))
+  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
+  await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.goto('/app/dashboard')
   await page.getByTestId('area-bar').getByRole('button', { name: /Clínico/ }).click()
-  await expect(page).toHaveURL(/\/app\/clinico$/)
-  await expect(page.getByText('Área Clínico')).toBeVisible()
+  await expect(page).toHaveURL(/\/app\/clinical-records$/)
+  await expect(page.getByTestId('clinical-records-page')).toBeVisible()
+  await page.getByRole('button', { name:/Ana Clínica/ }).click()
+  await expect(page.getByTestId('medical-record')).toBeVisible()
+  await expect(page.getByRole('button', { name:'+ Nova evolução' })).toBeEnabled()
 })
 
 test('deep-link /app/finance abre na área Financeiro', async ({ page }) => {

@@ -57,6 +57,8 @@ META_GRAPH_VERSION=vXX.X
 
 9. Para cobranças clínicas por boleto/Pix, aplique `supabase/billing_charges_schema.sql`, mantenha `APP_URL` no domínio HTTPS público (`https://www.surgimetrics.com.br`) e conecte o provedor da clínica em **Configurações → Cobranças**. O Asaas é o primeiro adaptador homologado; bancos diretos reutilizam o mesmo contrato após definição da instituição e homologação. Credenciais nunca vão ao frontend: são validadas e armazenadas cifradas pelo backend. `BILLING_DATA_ENCRYPTION_KEY` é recomendada; na ausência dela, o sistema usa `APP_DATA_ENCRYPTION_KEY`.
 
+10. Antes de publicar a área Clínica, aplique `supabase/clinical_record_foundation_schema.sql` depois de `patients_schema.sql`, `patients_anamnese_migration.sql` e `access_control_schema.sql`. A migração preserva e transfere a anamnese existente, ativa o acesso clínico separado por membro e torna evoluções/adendos imutáveis.
+
 ## Rodar localmente
 
 ```bash

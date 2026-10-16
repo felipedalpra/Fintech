@@ -40,6 +40,7 @@ const Settings = lazyNamed(() => import('../components/Settings.jsx'), 'Settings
 const BillingPage = lazyNamed(() => import('./BillingPage.jsx'), 'BillingPage')
 const Calendar = lazyNamed(() => import('../components/Calendar.jsx'), 'Calendar')
 const Patients = lazyNamed(() => import('../components/Patients.jsx'), 'Patients')
+const ClinicalRecords = lazyNamed(() => import('../components/ClinicalRecords.jsx'), 'ClinicalRecords')
 const OpportunityPipeline = lazyNamed(() => import('../components/OpportunityPipeline.jsx'), 'OpportunityPipeline')
 const CrmDashboard = lazyNamed(() => import('../components/CrmDashboard.jsx'), 'CrmDashboard')
 const MeuDia = lazyNamed(() => import('../components/MeuDia.jsx'), 'MeuDia')
@@ -83,6 +84,14 @@ const AREAS = [
         { id:'calendar', label:'Agenda', icon:'calendar', hint:'Calendário de cirurgias e consultas' },
         { id:'consultations', label:'Consultas', icon:'consultations', hint:'Atendimentos e convênios' },
         { id:'sales',         label:'Cirurgias', icon:'surgery',       hint:'Agenda e resultados' },
+      ] },
+    ],
+  },
+  {
+    id:'clinico', label:'Clínico', icon:'clinico', roles:ALL_ROLES,
+    sections:[
+      { title:'Cuidado clínico', items:[
+        { id:'clinical-records', label:'Prontuário', icon:'clinico', hint:'Evoluções imutáveis, adendos e auditoria' },
       ] },
     ],
   },
@@ -166,6 +175,7 @@ const TITLES = {
   inbox:'WhatsApp',
   ads:'Anúncios — Meta Ads',
   tarefas:'Tarefas',
+  'clinical-records':'Prontuário Clínico',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -198,6 +208,7 @@ const SUBTITLES = {
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
   tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, agrupadas por vencimento.',
+  'clinical-records':'Evoluções clínicas imutáveis, correções por adendo e acesso auditado.',
 }
 
 const PAGES = {
@@ -229,6 +240,7 @@ const PAGES = {
   inbox:WhatsAppInbox,
   ads:MetaAdsDashboard,
   tarefas:TasksPanel,
+  'clinical-records':ClinicalRecords,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])

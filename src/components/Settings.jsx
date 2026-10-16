@@ -39,7 +39,7 @@ const EMPTY_PROFILE = {
 
 export function Settings({ google }) {
   const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
-  const { role, clinicId } = useUserRole()
+  const { role, clinicId, isOwner } = useUserRole()
   const [tab, setTab] = useState('perfil')
   const [profile, setProfile] = useState(EMPTY_PROFILE)
   const [loading, setLoading] = useState(true)
@@ -94,6 +94,17 @@ export function Settings({ google }) {
 
     try {
       await saveSecureProfile(profile)
+      if (isOwner && clinicId) {
+        const { error:clinicalIdentityError } = await supabase
+          .from('clinics')
+          .update({
+            clinical_professional_name:profile.doctor.fullName.trim() || null,
+            clinical_professional_registration:profile.doctor.registrationId.trim() || null,
+            clinical_professional_council:'CRM',
+          })
+          .eq('id', clinicId)
+        if (clinicalIdentityError) throw new Error('O perfil foi salvo, mas a identidade clínica não foi confirmada. Aplique a migração clínica e tente novamente.')
+      }
       setMessage('Informações pessoais e da clínica salvas com sucesso!')
     } catch (nextError) {
       setError(nextError.message || 'Não foi possivel salvar as configuracoes.')
@@ -349,7 +360,7 @@ function TeamSettings({ clinicId }) {
     setLoadingMembers(true)
     const { data, error } = await supabase
       .from('clinic_members')
-      .select('id, user_id, role, member_email, created_at')
+      .select('id, user_id, role, member_email, clinical_access, professional_name, professional_registration, professional_council, created_at')
       .eq('clinic_id', clinicId)
       .order('created_at')
     if (!error) setMembers(data ?? [])
@@ -393,6 +404,15 @@ function TeamSettings({ clinicId }) {
       .update({ role: newRole })
       .eq('id', memberId)
     if (!error) setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m))
+  }
+
+  const updateClinicalIdentity = async (memberId, patch) => {
+    const { error } = await supabase
+      .from('clinic_members')
+      .update(patch)
+      .eq('id', memberId)
+    if (!error) setMembers(prev => prev.map(m => m.id === memberId ? { ...m, ...patch } : m))
+    else setTeamError(error.message || 'Não foi possível atualizar o acesso clínico.')
   }
 
   const removeMember = async (memberId) => {
@@ -452,22 +472,57 @@ function TeamSettings({ clinicId }) {
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {members.map(m => (
-              <div key={m.id} style={{ display:'flex', gap:12, alignItems:'center', padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.bg, flexWrap:'wrap' }}>
-                <div style={{ flex:1, minWidth:180 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.member_email || '—'}</div>
-                  <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{ROLE_LABELS[m.role]}</div>
+              <div key={m.id} style={{ display:'grid', gap:12, padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.bg }}>
+                <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
+                  <div style={{ flex:1, minWidth:180 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.member_email || '—'}</div>
+                    <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{ROLE_LABELS[m.role]}</div>
+                  </div>
+                  <select
+                    value={m.role}
+                    onChange={e => changeRole(m.id, e.target.value)}
+                    style={{ padding:'6px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}
+                  >
+                    <option value="admin">Administrador</option>
+                    <option value="gestao">Gestão</option>
+                    <option value="concierge">Concierge</option>
+                    <option value="equipe">Equipe</option>
+                  </select>
+                  <Btn variant="ghost" onClick={() => removeMember(m.id)}>Remover</Btn>
                 </div>
-                <select
-                  value={m.role}
-                  onChange={e => changeRole(m.id, e.target.value)}
-                  style={{ padding:'6px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}
-                >
-                  <option value="admin">Administrador</option>
-                  <option value="gestao">Gestão</option>
-                  <option value="concierge">Concierge</option>
-                  <option value="equipe">Equipe</option>
-                </select>
-                <Btn variant="ghost" onClick={() => removeMember(m.id)}>Remover</Btn>
+                <label style={{ display:'flex', gap:9, alignItems:'center', color:C.text, fontSize:12, fontWeight:700 }}>
+                  <input
+                    type="checkbox"
+                    checked={m.clinical_access === true}
+                    onChange={event => updateClinicalIdentity(m.id, { clinical_access:event.target.checked })}
+                  />
+                  Acesso ao prontuário clínico
+                </label>
+                {m.clinical_access && (
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:10 }}>
+                    <input
+                      value={m.professional_name || ''}
+                      onChange={event => setMembers(prev => prev.map(row => row.id === m.id ? { ...row, professional_name:event.target.value } : row))}
+                      onBlur={event => updateClinicalIdentity(m.id, { professional_name:event.target.value.trim() || null })}
+                      placeholder="Nome profissional"
+                      style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
+                    />
+                    <input
+                      value={m.professional_registration || ''}
+                      onChange={event => setMembers(prev => prev.map(row => row.id === m.id ? { ...row, professional_registration:event.target.value } : row))}
+                      onBlur={event => updateClinicalIdentity(m.id, { professional_registration:event.target.value.trim() || null })}
+                      placeholder="Número do registro"
+                      style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
+                    />
+                    <input
+                      value={m.professional_council || 'CRM'}
+                      onChange={event => setMembers(prev => prev.map(row => row.id === m.id ? { ...row, professional_council:event.target.value } : row))}
+                      onBlur={event => updateClinicalIdentity(m.id, { professional_council:event.target.value.trim() || 'CRM' })}
+                      placeholder="Conselho"
+                      style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>

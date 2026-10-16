@@ -5,6 +5,19 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-16 (118)
+### Added
+- **Área Clínica e prontuário imutável**: a navegação passa a oferecer Clínico → Prontuário para perfis autorizados, com seleção de paciente, linha do tempo, autoria profissional, assinatura lógica da evolução e correções exclusivamente por adendo. Abertura, criação de evolução e adendo ficam registradas em uma trilha append-only. (`src/components/ClinicalRecords.jsx`, `src/components/MedicalRecord.jsx`, `src/lib/clinicalRecord.js`.)
+- **Fundação clínica protegida no banco**: a migração `supabase/clinical_record_foundation_schema.sql` adiciona permissão clínica independente do cargo, identidade profissional, anamnese isolada em `patient_clinical_profiles`, adendos imutáveis e auditoria de acesso. RLS combina autorização clínica com `data_owner_id()`; evoluções/adendos não aceitam `UPDATE` nem `DELETE`, e vínculos restritivos impedem exclusão em cascata do prontuário. As RPCs derivam a autoria de `auth.uid()` no banco e confirmam registro + auditoria na mesma transação, sem confiar no nome/CRM enviados pelo navegador; eventos de escrita não podem ser forjados pela RPC pública de leitura.
+
+### Changed
+- **Separação entre cadastro e saúde**: anamnese e TCLE existentes são copiados antes de serem removidos da tabela administrativa `patients`. Um trigger de compatibilidade transfere gravações da versão anterior durante o rollout, e relatórios administrativos deixam de consultar consentimentos ou conteúdo clínico. (`src/components/Patients.jsx`, `src/components/Reports.jsx`, `src/lib/reportCatalog.js`.)
+- **Acesso clínico explícito da equipe**: Configurações → Equipe permite ao admin habilitar o prontuário e cadastrar nome, conselho e registro profissional de cada membro sem transformar gestão, concierge ou equipe em perfil clínico automaticamente. (`src/components/Settings.jsx`, `src/context/UserRoleContext.jsx`, `src/lib/roleAccess.js`.)
+
+### Fixed
+- **Evoluções sobrescritas e dados clínicos excessivamente expostos**: o prontuário deixa de editar/arquivar o conteúdo original e a tela administrativa de pacientes deixa de buscar evoluções sem auditoria. Registros antigos são preservados e marcados como autoria legada, sem atribuir um profissional fictício. Testes unitários, PostgreSQL real e navegador cobrem migração idempotente, acesso, assinatura e adendo. (`tests/unit/clinicalRecord.spec.js`, `tests/unit/roleAccess.spec.js`, `tests/e2e/clinical-records.spec.js`, `tests/e2e/area-navigation.spec.js`, `tests/e2e/role-access.spec.js`.)
+- **Falha de leitura não vira dado vazio**: se o cadastro administrativo ou o perfil clínico protegido não puder ser confirmado, a lista bloqueia inclusão/edição e oferece nova tentativa, impedindo que indisponibilidade de rede ou RLS sobrescreva uma anamnese existente com campos nulos. (`src/components/Patients.jsx`, `tests/e2e/patients-clinical-safety.spec.js`.)
+
 ## [Unreleased] - 2026-10-16 (117)
 ### Added
 - **Base multiprovedor para bancos e gateways**: cobranças passam por um contrato único de capacidades para emissão Pix/boleto, consulta, cancelamento, webhook, estorno e tarifas. O Asaas permanece como conector homologado; banco direto aparece como indisponível até a instituição, contrato e credenciais reais serem definidos, evitando integrações fictícias. A consulta manual recupera o status no provedor e reaplica a mesma baixa transacional e idempotente do webhook. (`api/_lib/billingProvider.js`, `api/_lib/billing.js`, `src/components/BillingConnection.jsx`, `src/components/BillingChargeButton.jsx`.)
