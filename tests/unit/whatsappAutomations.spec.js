@@ -72,17 +72,16 @@ test('receivableDueDate: usa due_date (vencimento) com fallback igual à migraç
 
 test('planPayments: só vencimento = alvo, com telefone; usa valor e data do vencimento', () => {
   const items = [
-    // vence no alvo (consulta, por forecast) -> entra
-    { id: 'c1', source: 'consultation', patient_id: 'p1', due_date: null, forecast_payment_date: '2026-10-20', date: '2026-10-01', value: 300, patients: { full_name: 'Ana Souza', phone: '5511999' } },
-    // vence no alvo (cirurgia por due_date) mas sem telefone -> pula
-    { id: 's1', source: 'surgery', patient_id: 'p2', due_date: '2026-10-20', date: '2026-10-05', value: 5000, patients: { full_name: 'João', phone: null } },
+    { id: 'c1', source: 'billing_charge', billing_type:'PIX', patient_id: 'p1', due_date: '2026-10-20', value: 300, payment_link:'https://pay.test/c1', pix_payload:'000201', patients: { full_name: 'Ana Souza', phone: '5511999' } },
+    // vence no alvo mas sem telefone -> pula
+    { id: 's1', source: 'billing_charge', billing_type:'BOLETO', patient_id: 'p2', due_date: '2026-10-20', value: 5000, payment_link:'https://pay.test/s1', patients: { full_name: 'João', phone: null } },
     // vence em outro dia -> fora
-    { id: 'c2', source: 'consultation', patient_id: 'p3', due_date: '2026-10-25', date: '2026-10-03', value: 400, patients: { full_name: 'Bia', phone: '5511888' } },
+    { id: 'c2', source: 'billing_charge', patient_id: 'p3', due_date: '2026-10-25', value: 400, patients: { full_name: 'Bia', phone: '5511888' } },
   ]
-  const plan = planPayments({ items, template: '{patient_name}: {value} vence {date}', targetDueDate: '2026-10-20' })
+  const plan = planPayments({ items, template: '{patient_name}: {value} vence {date} {payment_type} {payment_link} {pix_code}', targetDueDate: '2026-10-20' })
   expect(plan).toHaveLength(1)
-  expect(plan[0]).toMatchObject({ ref_type: 'consultation', ref_id: 'c1', patient_id: 'p1', phone: '5511999' })
-  expect(plan[0].message).toBe('Ana: R$ 300,00 vence 20/10/2026')
+  expect(plan[0]).toMatchObject({ ref_type: 'billing_charge', ref_id: 'c1', patient_id: 'p1', phone: '5511999' })
+  expect(plan[0].message).toBe('Ana: R$ 300,00 vence 20/10/2026 Pix https://pay.test/c1 000201')
 })
 
 test('planAnamnese: injeta {link} junto de nome e data; pula sem telefone', () => {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { handleBillingRequest } from '../_lib/billing.js'
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
@@ -10,6 +11,10 @@ function readQuery(req) {
 }
 
 export default async function handler(req, res) {
+  const query = readQuery(req)
+  const action = String(query.action || '')
+  if (action.startsWith('billing-')) return handleBillingRequest(req, res, action)
+
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET')
     return res.status(405).json({ error:'Method not allowed' })
@@ -23,7 +28,6 @@ export default async function handler(req, res) {
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
   if (!token) return res.status(401).json({ error:'Missing bearer token' })
 
-  const query = readQuery(req)
   const startDate = String(query.startDate || '')
   const endDate = String(query.endDate || '')
   const granularity = String(query.granularity || 'month').toLowerCase()

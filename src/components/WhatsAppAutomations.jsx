@@ -17,7 +17,7 @@ const DEFAULTS = {
   followup_template: 'Olá {patient_name}! Como você está depois da sua consulta? Se tiver qualquer dúvida, estamos à disposição. 🌿',
   payment_enabled: false,
   payment_offset_days: 0,
-  payment_template: 'Olá {patient_name}! Consta um pagamento de {value} com vencimento em {date}. Qualquer dúvida sobre o pagamento, estamos à disposição.',
+  payment_template: 'Olá {patient_name}! Sua cobrança de {value} vence em {date}. Pague por aqui: {payment_link}',
   anamnese_enabled: false,
   anamnese_days_before: 2,
   anamnese_link: '',
@@ -198,6 +198,7 @@ export function WhatsAppAutomations() {
               <label style={s.label}>Mensagem</label>
               <textarea rows={3} style={s.textarea} value={cfg.payment_template}
                 onChange={e => set('payment_template', e.target.value)} />
+              <div style={{ color:C.textDim, fontSize:11, lineHeight:1.5 }}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'}, {'{payment_link}'}, {'{pix_code}'}, {'{payment_type}'}. Só cobranças do provedor ativo pendentes ou vencidas são enviadas; a régua para após a confirmação do pagamento.</div>
               <div style={s.vars}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'} (vencimento)</div>
             </div>
           </div>

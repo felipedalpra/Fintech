@@ -25,8 +25,8 @@ function statusFromAmounts(paid, open, canceled) {
 // Numera e ordena as parcelas (pagas + abertas) de um item com cronograma.
 function installmentsFromFlow(flow, canceled) {
   const all = [
-    ...(flow.paidInstallments || []).map(p => ({ amount: round2(p.amount), due_date: p.date || null, settlement_date: p.date || null, payment_method:p.method || null, status: 'paid' })),
-    ...(flow.openInstallments || []).map(o => ({ amount: round2(o.amount), due_date: o.date || null, settlement_date: null, payment_method:o.method || null, status: 'pending' })),
+    ...(flow.paidInstallments || []).map(p => ({ amount: round2(p.amount), due_date: p.dueDate || p.date || null, settlement_date: p.settlementDate || p.date || null, payment_method:p.method || null, status: 'paid' })),
+    ...(flow.openInstallments || []).map(o => ({ amount: round2(o.amount), due_date: o.dueDate || o.date || null, settlement_date: null, payment_method:o.method || null, status: 'pending' })),
   ].sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
   all.forEach((x, i) => {
     x.installment_number = i + 1

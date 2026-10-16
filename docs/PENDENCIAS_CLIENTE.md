@@ -55,7 +55,8 @@
 ---
 
 ### Emissão de Boletos (se escolher Caminho A — gateway)
-- [ ] **Conta criada no gateway escolhido** (Asaas, EFÍ ou Iugu) com CNPJ da clínica
+- [ ] **Definir o primeiro provedor de cobrança**: Asaas para ativação imediata ou o banco PJ da clínica para integração direta
+- [ ] Para banco direto: contratar/habilitar as APIs de Pix Cob, boleto, consulta/cancelamento, webhook e extrato; obter sandbox, convênio/carteira e exigências de certificado mTLS/IP fixo
 - [ ] **Access Token / API Key** do gateway
 - [ ] Confirmar **quais dados dos pacientes** serão usados na cobrança (CPF obrigatório no Asaas — verificar se todos os pacientes têm CPF cadastrado)
 

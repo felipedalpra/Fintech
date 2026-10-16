@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { Btn } from './UI.jsx'
+import { fetchBillingStatus } from '../lib/billingClient.js'
 
 export function IntegrationHealth({ google }) {
   const [loading, setLoading] = useState(true)
@@ -10,9 +11,10 @@ export function IntegrationHealth({ google }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [whatsapp, meta] = await Promise.all([
+    const [whatsapp, meta, billing] = await Promise.all([
       supabase.from('whatsapp_numbers').select('id, label, active').order('created_at'),
       supabase.from('meta_connections').select('status, page_id, ad_account_id').maybeSingle(),
+      fetchBillingStatus().catch(error => ({ error })),
     ])
     const activeNumbers = (whatsapp.data || []).filter(item => item.active)
     setHealth([
@@ -20,6 +22,7 @@ export function IntegrationHealth({ google }) {
       { name:'Meta Ads', ok:['configurado','conectado'].includes(meta.data?.status) && !meta.error, detail:meta.data?.status === 'conectado' ? 'Conexão validada' : meta.data?.status === 'configurado' ? 'Credenciais salvas; validação pendente' : 'Não configurado', action:'meta' },
       { name:'Google Agenda', ok:Boolean(google?.status?.connected), detail:google?.status?.connected ? (google.status.email || 'Conectada') : google?.status?.configured ? 'Disponível para conectar' : 'Credenciais do servidor ausentes' },
       { name:'Banco / conciliação', ok:true, detail:'Importação local OFX/CSV; nenhum provedor externo' },
+      { name:'Cobranças', ok:billing.connection?.status === 'connected' && billing.connection?.webhookConfigured, detail:billing.connection?.status === 'connected' ? `${billing.connection.provider === 'asaas' ? 'Asaas' : billing.connection.provider === 'direct_bank' ? 'Banco direto' : 'Provedor'} · ${billing.connection.environment === 'production' ? 'Produção' : 'Sandbox'} · webhook ${billing.connection.webhookConfigured ? 'ativo' : 'pendente'}` : 'Nenhum provedor configurado' },
     ])
     setCheckedAt(new Date())
     setLoading(false)

@@ -5,6 +5,21 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-16 (117)
+### Added
+- **Base multiprovedor para bancos e gateways**: cobranças passam por um contrato único de capacidades para emissão Pix/boleto, consulta, cancelamento, webhook, estorno e tarifas. O Asaas permanece como conector homologado; banco direto aparece como indisponível até a instituição, contrato e credenciais reais serem definidos, evitando integrações fictícias. A consulta manual recupera o status no provedor e reaplica a mesma baixa transacional e idempotente do webhook. (`api/_lib/billingProvider.js`, `api/_lib/billing.js`, `src/components/BillingConnection.jsx`, `src/components/BillingChargeButton.jsx`.)
+- **Cobranças clínicas Asaas por boleto e Pix**: admin conecta a conta da própria clínica em Configurações, com chave criptografada somente no servidor e webhook provisionado automaticamente. Admin/gestão emitem a cobrança a partir da próxima parcela aberta do razão; valor e vencimento são resolvidos no backend e não podem ser adulterados pelo navegador. A integração reutiliza a função financeira existente para respeitar o limite da Vercel. (`api/_lib/billing.js`, `api/_lib/billingProvider.js`, `api/financial/analysis.js`, `src/components/BillingConnection.jsx`, `src/components/BillingChargeButton.jsx`.)
+- **Persistência e auditoria da cobrança**: a migração `supabase/billing_charges_schema.sql` adiciona conexões, clientes, cobranças, eventos idempotentes e liquidação transacional. Pagamentos confirmados atualizam a parcela, o título e a origem operacional; a receita permanece bruta e a tarifa Asaas vira despesa financeira própria. Estornos só removem a baixa pertencente à mesma cobrança e preservam outras parcelas/edições.
+
+### Changed
+- **Persistência de credenciais preparada para bancos**: a conexão aceita um pacote cifrado de credenciais e registra capacidades do provedor, preservando leitura das chaves Asaas legadas. A função transacional recebe o identificador do provedor e atribui tarifas e eventos à origem correta. (`supabase/billing_charges_schema.sql`.)
+- **Datas reais por parcela**: cirurgias, consultas e vendas passam a preservar `receipt_settlements`, separando vencimento de recebimento e mantendo compatibilidade com baixas legadas. Caixa, contas a receber e razão compartilham a mesma projeção. (`src/lib/paymentScheduleFlow.js`, `src/lib/financialLedger.js`, `src/lib/financeStore.js`, `src/financialMetrics.js`.)
+- **Cobrança automática no WhatsApp**: a régua usa somente cobranças Asaas pendentes/vencidas, injeta link de pagamento/Pix no template e deixa de enviar assim que o webhook confirma o recebimento. (`api/_lib/whatsappAutomations.js`, `src/components/WhatsAppAutomations.jsx`.)
+
+### Fixed
+- **Proteções contra duplicidade e perda financeira**: reenvio de emissão recupera a mesma tentativa, eventos repetidos não duplicam baixa/tarifa, eventos atrasados não rebaixam cobrança já recebida e divergência entre valor recebido e parcela bloqueia a liquidação para revisão. Testes unitários e de navegador cobrem payload, datas, migração legada, emissão bloqueada e conexão segura.
+- **Domínio HTTPS das integrações locais**: o proxy de desenvolvimento e os exemplos de `APP_URL` passam a usar `www.surgimetrics.com.br`, que é o host coberto pelo certificado atual. Isso permite testar APIs no navegador e evita cadastrar webhook Asaas apontando para o domínio sem certificado válido. (`vite.config.js`, `.env.example`.)
+
 ## [Unreleased] - 2026-10-15 (116)
 ### Changed
 - **Salvamento financeiro incremental**: cada sincronização passa a enviar somente registros novos ou realmente alterados em cada tabela e somente os títulos/parcelas impactados no razão canônico. O baseline da sessão continua sendo usado para soft-delete seguro, o read-back continua confirmando todas as linhas enviadas e uma tentativa sem baseline preserva a carga completa conservadora. Isso reduz drasticamente o volume de gravação após importações grandes, sem criar endpoint, tabela ou total paralelo. (`src/lib/financeSync.js`, `src/lib/financeStore.js`, `src/lib/ledgerPersistence.js`.)

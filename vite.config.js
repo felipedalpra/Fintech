@@ -9,7 +9,7 @@ export default defineConfig(() => {
     server: {
       proxy: {
         '/api': {
-          target: 'https://surgimetrics.com.br',
+          target: 'https://www.surgimetrics.com.br',
           changeOrigin: true,
           secure: true,
         },

@@ -174,6 +174,8 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       source:presentation.source,
       originLabel:source?.originLabel || '',
       sourceId:entry.source_id,
+      sourceType:entry.source_type,
+      sourceComponent:entry.source_component,
       category:presentation.category,
       costCenter:entry.cost_center || '',
       chartAccountId:entry.chart_account_id || null,
@@ -184,6 +186,12 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       dueDate:dueDates[0] || entry.issue_date,
       openInstallments:openRows.length,
       installmentsTotal:rows.length,
+      openInstallmentRows:openRows.map(row => ({
+        installmentNumber:row.installment_number,
+        amount:Math.max(0, Number(row.amount || 0) - Number(row.paid_amount || 0)),
+        dueDate:row.due_date,
+        paymentMethod:row.payment_method || '',
+      })),
       status:rawStatus && !['pago', 'recebido'].includes(rawStatus) ? rawStatus : 'pendente',
       description:presentation.accountDescription,
     }
