@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (115)
+### Changed
+- **Progresso real na importação financeira**: a confirmação de planilhas retroativas agora mostra indicador giratório, barra de progresso e contador “X de Y importados”, atualizado somente após cada bloco de até 50 lançamentos ser confirmado pelo servidor. Durante o processamento, o modal permanece protegido contra fechamento acidental. (`src/components/FinancialImport.jsx`.)
+
+### Fixed
+- **Importação longa sem retorno visual**: falhas intermediárias preservam os blocos já confirmados e exibem exatamente quantos lançamentos foram salvos, permitindo tentar novamente apenas os restantes sem duplicar nem apagar dados. A cobertura E2E valida a importação de 188 lançamentos em quatro blocos e a progressão confirmada até o total. (`src/components/FinancialImport.jsx`, `tests/e2e/financial-import.spec.js`.)
+
 ## [Unreleased] - 2026-10-15 (114)
 ### Added
 - **Importador financeiro retroativo independente**: “Financeiro → Importar lançamentos” recebe `.xlsx`/`.xls` sem exigir conta bancária, mostra integralmente todas as linhas interpretadas, permite editar data, valor, descrição, plano de contas, categoria, centro de custo e referência, e oferece aprovação/rejeição individual, selecionada ou em lote. A planilha só vira receita/despesa canônica depois da confirmação explícita; IDs determinísticos e comparação com o razão identificam lançamentos existentes e possíveis duplicidades antes de salvar. (`src/components/FinancialImport.jsx`, `src/lib/financialImport.js`.)

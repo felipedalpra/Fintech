@@ -2,15 +2,22 @@ import { expect, test } from '@playwright/test'
 import * as XLSX from 'xlsx'
 
 test('mostra todas as linhas, permite editar e só salva após aprovação', async ({ page }) => {
+  const importedBatchSizes = []
+  let importedRecordCount = 0
   await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
   await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{"connected":false}' }))
-  await page.route('**/rest/v1/**', route => {
+  await page.route('**/rest/v1/**', async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     let body = request.method() === 'GET' ? [] : (request.postDataJSON() || [])
     if (path.endsWith('/financial_entries') && request.method() === 'POST') {
       const rows = Array.isArray(body) ? body : [body]
-      body = rows.map((row, index) => ({ ...row, id:`00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}` }))
+      importedBatchSizes.push(rows.length)
+      await new Promise(resolve => setTimeout(resolve, 180))
+      body = rows.map(row => {
+        importedRecordCount += 1
+        return { ...row, id:`00000000-0000-4000-8000-${String(importedRecordCount).padStart(12, '0')}` }
+      })
     }
     return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/0' }, body:JSON.stringify(body) })
   })
@@ -46,8 +53,18 @@ test('mostra todas as linhas, permite editar e só salva após aprovação', asy
   await page.getByRole('button', { name:'Aplicar edição' }).click()
   await expect(firstLine).toContainText('Receita retroativa revisada')
 
-  await firstLine.getByRole('checkbox').check()
-  await page.getByRole('button', { name:/Aprovar selecionados \(1\)/ }).click()
+  await page.getByRole('button', { name:'Aprovar todas elegíveis (188)' }).click()
   await page.getByRole('button', { name:'Confirmar e salvar' }).click()
+
+  const progress = page.getByTestId('financial-import-progress')
+  await expect(progress).toContainText('Seus lançamentos estão sendo importados')
+  await expect(progress).toContainText('0 de 188 importados')
+  await expect(progress).toContainText('50 de 188 importados')
+  await expect(progress).toContainText('Todos os lançamentos foram importados')
+  await expect(progress).toContainText('188 de 188 importados')
+  expect(importedBatchSizes.map((total, index) => total - (importedBatchSizes[index - 1] || 0))).toEqual([50, 50, 50, 38])
+
+  await page.getByRole('button', { name:'Concluir' }).click()
   await expect(firstLine).toContainText('Importado')
+  await expect(page.locator('[aria-label="Lançamento linha 189"]')).toContainText('Importado')
 })

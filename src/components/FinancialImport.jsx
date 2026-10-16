@@ -9,6 +9,7 @@ import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinan
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
+const IMPORT_BATCH_SIZE = 50
 
 function metadataOf(line) {
   return line.sourceMetadata || line.source_metadata || {}
@@ -36,6 +37,7 @@ export function FinancialImport({ data, saveDataNow }) {
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(null)
   const [confirmItems, setConfirmItems] = useState([])
+  const [importProgress, setImportProgress] = useState(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
@@ -79,6 +81,7 @@ export function FinancialImport({ data, saveDataNow }) {
     setSelectedIds([])
     setRejectedIds([])
     setApprovedIds([])
+    setImportProgress(null)
     setEditingId('')
     setEditDraft(null)
   }
@@ -171,33 +174,54 @@ export function FinancialImport({ data, saveDataNow }) {
       setError('Selecione lançamentos novos. Duplicados e possíveis transferências precisam ser revisados ou rejeitados.')
       return
     }
+    setImportProgress(null)
     setConfirmItems(eligible)
   }
 
   async function approveConfirmed() {
     if (!confirmItems.length || !saveDataNow) return
+    const retrying = importProgress?.status === 'error'
+    const baseCompleted = retrying ? importProgress.completed : 0
+    const overallTotal = retrying ? importProgress.total : confirmItems.length
+    const creations = confirmItems.map(item => ({ ...item, reviewStatus:'new' }))
+    let completed = baseCompleted
     setBusy(true)
     setError('')
+    setImportProgress({ status:'running', completed, total:overallTotal })
     try {
-      const creations = confirmItems.map(item => ({ ...item, reviewStatus:'new' }))
-      const operations = creations.map(item => ({ collection:item.proposal.collection, record:item.proposal.record }))
-      await saveDataNow(current => mergeApprovedStatementRecords(current, creations), { operations })
-      const ids = creations.map(item => item.line.id)
-      setApprovedIds(current => [...new Set([...current, ...ids])])
-      setSelectedIds(current => current.filter(id => !ids.includes(id)))
-      setConfirmItems([])
-      toast(`${ids.length} lançamento(s) importados e confirmados no financeiro.`)
+      for (let offset = 0; offset < creations.length; offset += IMPORT_BATCH_SIZE) {
+        const batch = creations.slice(offset, offset + IMPORT_BATCH_SIZE)
+        const operations = batch.map(item => ({ collection:item.proposal.collection, record:item.proposal.record }))
+        await saveDataNow(current => mergeApprovedStatementRecords(current, batch), { operations })
+        const ids = batch.map(item => item.line.id)
+        completed += ids.length
+        setApprovedIds(current => [...new Set([...current, ...ids])])
+        setSelectedIds(current => current.filter(id => !ids.includes(id)))
+        setImportProgress({ status:'running', completed, total:overallTotal })
+      }
+      setImportProgress({ status:'complete', completed:overallTotal, total:overallTotal })
+      toast(`${overallTotal} lançamento(s) importados e confirmados no financeiro.`)
     } catch (caught) {
-      setError(caught.message || 'O banco não confirmou a importação. Nenhuma linha foi marcada como concluída.')
+      const remaining = creations.slice(completed - baseCompleted)
+      setConfirmItems(remaining)
+      setImportProgress({ status:'error', completed, total:overallTotal })
+      setError(`${completed} de ${overallTotal} lançamento(s) foram confirmados. A importação parou com segurança antes dos restantes. ${caught.message || 'O banco não confirmou o próximo bloco.'}`)
     } finally {
       setBusy(false)
     }
+  }
+
+  function closeImportModal() {
+    if (busy) return
+    setConfirmItems([])
+    setImportProgress(null)
   }
 
   const selectedItems = selectedIds.map(id => reviewById.get(id)).filter(Boolean)
 
   return (
     <div style={s.stack} data-testid="financial-import-page">
+      <style>{`@keyframes financialImportSpin { to { transform: rotate(360deg); } }`}</style>
       {error && <div role="alert" style={{ padding:'12px 14px', borderRadius:10, color:C.red, background:`${C.red}12`, border:`1px solid ${C.red}55`, fontSize:13 }}>{error}</div>}
 
       <Card>
@@ -299,12 +323,27 @@ export function FinancialImport({ data, saveDataNow }) {
         </div>}
       </Modal>
 
-      <Modal open={confirmItems.length > 0} onClose={() => setConfirmItems([])} title="Confirmar importação financeira" width={600} trackDirty={false}>
+      <Modal open={confirmItems.length > 0} onClose={closeImportModal} closeOnBackdrop={!busy} title={importProgress?.status === 'complete' ? 'Importação concluída' : importProgress ? 'Importando lançamentos' : 'Confirmar importação financeira'} width={600} trackDirty={false}>
         <div style={s.stack}>
-          <div style={s.muted}>Serão criados {confirmItems.length} lançamento(s) no razão canônico. Os que já existem, foram rejeitados ou parecem transferências não entram nesta confirmação.</div>
-          <Card style={{ padding:14 }}><strong style={{ color:C.text }}>Entradas {fmt(confirmItems.filter(item => item.line.amount > 0).reduce((sum, item) => sum + item.line.amount, 0))}</strong><div style={{ color:C.red, fontWeight:800, marginTop:5 }}>Saídas {fmt(confirmItems.filter(item => item.line.amount < 0).reduce((sum, item) => sum + Math.abs(item.line.amount), 0))}</div></Card>
-          <div style={{ color:C.yellow, fontSize:12 }}>Competência, vencimento e caixa usarão a data da planilha. Edite a linha antes de aprovar caso alguma dessas datas precise ser diferente.</div>
-          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setConfirmItems([])}>Cancelar</Btn><Btn variant="success" onClick={approveConfirmed} disabled={busy}>{busy ? 'Salvando…' : 'Confirmar e salvar'}</Btn></div>
+          {!importProgress && <>
+            <div style={s.muted}>Serão criados {confirmItems.length} lançamento(s) no razão canônico. Os que já existem, foram rejeitados ou parecem transferências não entram nesta confirmação.</div>
+            <Card style={{ padding:14 }}><strong style={{ color:C.text }}>Entradas {fmt(confirmItems.filter(item => item.line.amount > 0).reduce((sum, item) => sum + item.line.amount, 0))}</strong><div style={{ color:C.red, fontWeight:800, marginTop:5 }}>Saídas {fmt(confirmItems.filter(item => item.line.amount < 0).reduce((sum, item) => sum + Math.abs(item.line.amount), 0))}</div></Card>
+            <div style={{ color:C.yellow, fontSize:12 }}>Competência, vencimento e caixa usarão a data da planilha. Edite a linha antes de aprovar caso alguma dessas datas precise ser diferente.</div>
+            <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={closeImportModal}>Cancelar</Btn><Btn variant="success" onClick={approveConfirmed}>Confirmar e salvar</Btn></div>
+          </>}
+          {importProgress && <div aria-live="polite" data-testid="financial-import-progress" style={{ textAlign:'center', padding:'8px 0 2px' }}>
+            <div style={{ width:46, height:46, margin:'0 auto 16px', borderRadius:'50%', border:`4px solid ${C.border}`, borderTopColor:importProgress.status === 'error' ? C.red : C.green, animation:importProgress.status === 'running' ? 'financialImportSpin .8s linear infinite' : 'none', display:'flex', alignItems:'center', justifyContent:'center', color:importProgress.status === 'complete' ? C.green : C.text }}>
+              {importProgress.status === 'complete' ? '✓' : importProgress.status === 'error' ? '!' : ''}
+            </div>
+            <div style={{ color:C.text, fontSize:17, fontWeight:900 }}>{importProgress.status === 'complete' ? 'Todos os lançamentos foram importados' : importProgress.status === 'error' ? 'A importação foi interrompida' : 'Seus lançamentos estão sendo importados'}</div>
+            <div style={{ color:importProgress.status === 'error' ? C.red : C.textSub, fontSize:14, fontWeight:800, marginTop:8 }}>{importProgress.completed} de {importProgress.total} importados</div>
+            <div style={{ height:9, background:C.border, borderRadius:999, overflow:'hidden', marginTop:16 }}>
+              <div style={{ width:`${Math.min(100, Math.round((importProgress.completed / Math.max(1, importProgress.total)) * 100))}%`, height:'100%', borderRadius:999, background:importProgress.status === 'error' ? C.red : C.green, transition:'width .25s ease' }} />
+            </div>
+            {importProgress.status === 'running' && <div style={{ ...s.muted, marginTop:12 }}>Mantenha esta janela aberta. Cada número exibido já foi confirmado no servidor.</div>}
+            {importProgress.status === 'complete' && <div style={{ ...s.row, justifyContent:'center', marginTop:18 }}><Btn variant="success" onClick={closeImportModal}>Concluir</Btn></div>}
+            {importProgress.status === 'error' && <div style={{ ...s.row, justifyContent:'center', marginTop:18 }}><Btn variant="ghost" onClick={closeImportModal}>Fechar</Btn><Btn variant="success" onClick={approveConfirmed}>Tentar importar os restantes ({confirmItems.length})</Btn></div>}
+          </div>}
         </div>
       </Modal>
     </div>
