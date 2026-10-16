@@ -5,6 +5,14 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-15 (116)
+### Changed
+- **Salvamento financeiro incremental**: cada sincronização passa a enviar somente registros novos ou realmente alterados em cada tabela e somente os títulos/parcelas impactados no razão canônico. O baseline da sessão continua sendo usado para soft-delete seguro, o read-back continua confirmando todas as linhas enviadas e uma tentativa sem baseline preserva a carga completa conservadora. Isso reduz drasticamente o volume de gravação após importações grandes, sem criar endpoint, tabela ou total paralelo. (`src/lib/financeSync.js`, `src/lib/financeStore.js`, `src/lib/ledgerPersistence.js`.)
+
+### Fixed
+- **Dia atual adiantado durante a noite**: `today()` deixa de extrair o dia em UTC e passa a usar a data civil local do navegador, corrigindo o destaque da Agenda e os valores padrão de competência, vencimento e liquidação no fuso brasileiro. Nenhuma data já salva é alterada. (`src/utils.js`, `tests/unit/utilsDate.spec.js`.)
+- **Salvamentos degradados pelo crescimento do histórico**: uma pequena alteração deixa de reenviar todas as consultas, cirurgias, receitas, despesas e projeções do razão. Testes cobrem linhas inalteradas, registros novos/alterados, remoção reversível e fallback integral sem baseline. (`tests/unit/financeStoreDeletion.spec.js`, `tests/unit/ledgerPersistence.spec.js`.)
+
 ## [Unreleased] - 2026-10-15 (115)
 ### Changed
 - **Progresso real na importação financeira**: a confirmação de planilhas retroativas agora mostra indicador giratório, barra de progresso e contador “X de Y importados”, atualizado somente após cada bloco de até 50 lançamentos ser confirmado pelo servidor. Durante o processamento, o modal permanece protegido contra fechamento acidental. (`src/components/FinancialImport.jsx`.)

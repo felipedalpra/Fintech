@@ -24,6 +24,27 @@ export function missingRowIds(sentRows, savedRows) {
   return (sentRows || []).filter(r => r.id != null && !savedIds.has(norm(r.id))).map(r => r.id)
 }
 
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue)
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = stableValue(value[key])
+      return result
+    }, {})
+  }
+  return value
+}
+
+// Retorna somente linhas novas ou realmente alteradas. Sem baseline, mantém o comportamento
+// conservador anterior e envia tudo. Com baseline, evita regravar centenas de lançamentos
+// intactos a cada pequena edição, sem enfraquecer o read-back nem a proteção contra exclusões.
+export function computeRowsToUpsert(baselineRows, currentRows) {
+  if (!Array.isArray(baselineRows)) return currentRows || []
+  const signature = row => JSON.stringify(stableValue(row))
+  const baselineById = new Map(baselineRows.map(row => [String(row?.id || '').toLowerCase(), signature(row)]))
+  return (currentRows || []).filter(row => baselineById.get(String(row?.id || '').toLowerCase()) !== signature(row))
+}
+
 // MERGE por id (importar do navegador, Fase 2): mantém tudo do `current` (servidor) e acrescenta
 // só os itens de `incoming` cujo id ainda não existe. NUNCA remove nem sobrescreve o do servidor.
 export function mergeById(current, incoming) {

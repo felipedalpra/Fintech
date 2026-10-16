@@ -127,12 +127,34 @@ export async function persistLedgerProjection(client, userId, ledger, { archive 
   return { entries:entryRows.length, installments:installmentRows.length, archived:archive.length }
 }
 
-export async function syncFinancialLedger(client, userId, financeData, baselineData = null) {
+function ledgerItemSignature(entry, installments) {
+  return JSON.stringify([entry, installments || []])
+}
+
+export function buildLedgerPersistenceDelta(financeData, baselineData = null) {
   const ledger = buildLedger(financeData)
+  if (!baselineData) return { ledger, archive:[] }
+
+  const baselineLedger = buildLedger(baselineData)
+  const baselineIndexByKey = new Map(baselineLedger.entries.map((entry, index) => [entryKey(entry), index]))
   const currentKeys = new Set(ledger.entries.map(entryKey))
-  const archive = baselineData
-    ? buildLedger(baselineData).entries.filter(entry => !currentKeys.has(entryKey(entry)))
-    : []
+  const changedIndexes = ledger.entries.flatMap((entry, index) => {
+    const baselineIndex = baselineIndexByKey.get(entryKey(entry))
+    if (baselineIndex == null) return [index]
+    return ledgerItemSignature(entry, ledger.installments[index]) === ledgerItemSignature(baselineLedger.entries[baselineIndex], baselineLedger.installments[baselineIndex]) ? [] : [index]
+  })
+
+  return {
+    ledger:{
+      entries:changedIndexes.map(index => ledger.entries[index]),
+      installments:changedIndexes.map(index => ledger.installments[index]),
+    },
+    archive:baselineLedger.entries.filter(entry => !currentKeys.has(entryKey(entry))),
+  }
+}
+
+export async function syncFinancialLedger(client, userId, financeData, baselineData = null) {
+  const { ledger, archive } = buildLedgerPersistenceDelta(financeData, baselineData)
   return persistLedgerProjection(client, userId, ledger, { archive })
 }
 

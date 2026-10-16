@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { computeIdsToDelete, missingRowIds, mergeById } from '../../src/lib/financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById } from '../../src/lib/financeSync.js'
 
 // MERGE por id (importar do navegador): nunca remove/sobrescreve o do servidor.
 test('mergeById: adiciona só o que o servidor não tem', () => {
@@ -56,4 +56,22 @@ test('nada a apagar quando current contém todo o baseline', () => {
 
 test('baseline vazio → nunca apaga', () => {
   expect(computeIdsToDelete(new Set(), [{ id: 'a' }])).toEqual([])
+})
+
+test('salvamento incremental envia somente linhas novas ou alteradas', () => {
+  const baseline = [
+    { id:'a', name:'Sem mudança', details:{ b:2, a:1 } },
+    { id:'b', name:'Antes' },
+  ]
+  const current = [
+    { id:'a', name:'Sem mudança', details:{ a:1, b:2 } },
+    { id:'b', name:'Depois' },
+    { id:'c', name:'Novo' },
+  ]
+  expect(computeRowsToUpsert(baseline, current).map(row => row.id)).toEqual(['b', 'c'])
+})
+
+test('sem baseline, salvamento incremental mantém carga completa segura', () => {
+  const rows = [{ id:'a' }, { id:'b' }]
+  expect(computeRowsToUpsert(null, rows)).toEqual(rows)
 })

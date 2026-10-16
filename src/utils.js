@@ -1,6 +1,8 @@
 export const fmt = v => new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(v || 0)
 export const fmtN = v => new Intl.NumberFormat('pt-BR').format(v || 0)
-export const today = () => new Date().toISOString().split('T')[0]
+// Datas civis da clínica devem seguir o relógio local do navegador. Converter para ISO UTC
+// antes de extrair o dia adianta a data no Brasil durante a noite (ex.: 15/10 22h → 16/10).
+export const today = (date = new Date()) => formatDateInput(date)
 
 export function formatDateBR(value) {
   if (!value) return ''
