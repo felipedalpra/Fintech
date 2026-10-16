@@ -34,6 +34,7 @@ const LedgerCheck = lazyNamed(() => import('../components/LedgerCheck.jsx'), 'Le
 const Recurrences = lazyNamed(() => import('../components/Recurrences.jsx'), 'Recurrences')
 const ChartOfAccounts = lazyNamed(() => import('../components/ChartOfAccounts.jsx'), 'ChartOfAccounts')
 const BankReconciliation = lazyNamed(() => import('../components/BankReconciliation.jsx'), 'BankReconciliation')
+const FinancialImport = lazyNamed(() => import('../components/FinancialImport.jsx'), 'FinancialImport')
 const DataQualityCenter = lazyNamed(() => import('../components/DataQualityCenter.jsx'), 'DataQualityCenter')
 const Settings = lazyNamed(() => import('../components/Settings.jsx'), 'Settings')
 const BillingPage = lazyNamed(() => import('./BillingPage.jsx'), 'BillingPage')
@@ -90,6 +91,7 @@ const AREAS = [
     sections:[
       { title:'Movimento', items:[
         { id:'finance', label:'Financeiro', icon:'finance', hint:'Caixa, DRE e balanço' },
+        { id:'financial-import', label:'Importar lançamentos', icon:'reports', hint:'Revise e importe lançamentos retroativos do Excel' },
       ] },
       { title:'Operação', items:[
         { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
@@ -98,7 +100,7 @@ const AREAS = [
         { id:'chart-of-accounts', label:'Plano de contas', icon:'reports', hint:'Estrutura de grupos e categorias financeiras' },
       ] },
       { title:'Cobrança', items:[
-        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Importe OFX, CSV ou Excel e revise antes de lançar' },
+        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Cruze extratos OFX/CSV com lançamentos existentes' },
       ] },
       { title:'Análise', items:[
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
@@ -153,6 +155,7 @@ const TITLES = {
   'ledger-check':'Conferência do Razão',
   'chart-of-accounts':'Plano de Contas',
   'bank-reconciliation':'Conciliação Bancária',
+  'financial-import':'Importar Lançamentos',
   'data-quality':'Qualidade dos Dados',
   ai:'Central de IA',
   billing:'Assinatura',
@@ -183,7 +186,8 @@ const SUBTITLES = {
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
   'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
   'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
-  'bank-reconciliation':'Importe OFX, CSV ou Excel, detecte duplicidades e aprove somente os lançamentos revisados.',
+  'bank-reconciliation':'Importe um extrato OFX/CSV e cruze com lançamentos já existentes no financeiro.',
+  'financial-import':'Importe lançamentos retroativos do Excel, revise duplicidades e aprove antes de salvar.',
   'data-quality':'Revise pendências e inconsistências sem alterar automaticamente os lançamentos.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
@@ -214,6 +218,7 @@ const PAGES = {
   'ledger-check':LedgerCheck,
   'chart-of-accounts':ChartOfAccounts,
   'bank-reconciliation':BankReconciliation,
+  'financial-import':FinancialImport,
   'data-quality':DataQualityCenter,
   ai:AIAssistant,
   billing:BillingPage,
@@ -937,15 +942,23 @@ export function FinanceWorkspace() {
   }
   const setData = updater => { applyDataUpdate(updater) }
   const saveDataNow = (updater, pendingOperation = null) => {
-    const requiresDurableRecovery = Boolean(pendingOperation?.collection && pendingOperation?.record?.id)
+    const pendingOperations = Array.isArray(pendingOperation?.operations)
+      ? pendingOperation.operations.filter(operation => operation?.collection && operation?.record?.id)
+      : []
+    const requiresDurableRecovery = Boolean(
+      (pendingOperation?.collection && pendingOperation?.record?.id)
+      || pendingOperations.length,
+    )
     if (requiresDurableRecovery && (!ownerId || !user?.id)) {
       setSaveStatus('blocked')
       return Promise.reject(new Error('Clinica ou usuario nao identificado para proteger este lancamento.'))
     }
     const pendingSave = requiresDurableRecovery ? {
-      ...pendingOperation,
+      ...(pendingOperations.length ? { operations:pendingOperations } : pendingOperation),
       ownerId,
-      pendingId:`${pendingOperation.collection}:${pendingOperation.record.id}:${Date.now()}`,
+      pendingId:pendingOperations.length
+        ? `batch:${pendingOperations.map(operation => `${operation.collection}:${operation.record.id}`).join(',')}:${Date.now()}`
+        : `${pendingOperation.collection}:${pendingOperation.record.id}:${Date.now()}`,
       createdAt:new Date().toISOString(),
       revision:revisionRef.current + 1,
     } : null

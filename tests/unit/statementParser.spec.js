@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import * as XLSX from 'xlsx'
-import { decodeStatementBuffer, parseCsvStatement, parseOfxStatement, parseStatementAmount, parseXlsxStatement, sha256Hex, statementMovementFingerprint } from '../../src/lib/statementParser.js'
+import { decodeStatementBuffer, parseCsvStatement, parseOfxStatement, parseStatementAmount, parseXlsxStatement, sha256Hex, statementMovementFingerprint, statementTotals, updateStatementLine } from '../../src/lib/statementParser.js'
 
 test('parseia OFX SGML e XML preservando a data bancária declarada', () => {
   const ofx = `OFXHEADER:100\n<OFX><BANKTRANLIST>
@@ -120,4 +120,15 @@ test('lista as abas e permite selecionar a aba que contém os lançamentos', asy
   expect(movements).toMatchObject({ sheetName:'Movimentos', requiresMapping:false })
   expect(movements.lines).toHaveLength(1)
   expect(movements.lines[0]).toMatchObject({ amount:200, description:'Receita da segunda aba' })
+})
+
+test('edita uma linha normalizada e recalcula totais sem perder metadados', () => {
+  const original = {
+    sourceLineKey:'3:2026-09-01:100.00:receita', lineIndex:3, postedDate:'2026-09-01', amount:100,
+    description:'Receita', sourceMetadata:{ category:'Consultas', reference:'Maria', excelRow:3 },
+  }
+  const edited = updateStatementLine(original, { postedDate:'02/09/2026', amount:'-120,50', description:'Despesa corrigida', category:'Taxas', costCenter:'Clínica' })
+  expect(edited).toMatchObject({ postedDate:'2026-09-02', amount:-120.5, description:'Despesa corrigida', sourceMetadata:{ category:'Taxas', costCenter:'Clínica', reference:'Maria', excelRow:3 } })
+  expect(edited.sourceLineKey).not.toBe(original.sourceLineKey)
+  expect(statementTotals([edited])).toEqual({ receipts:0, expenses:120.5, net:-120.5 })
 })
