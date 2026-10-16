@@ -9,6 +9,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { parseStatementFile } from '../lib/statementParser.js'
 import { matchBankStatementLines, validateManualReconciliation } from '../lib/bankReconciliationMatch.js'
 import { missingPersistedLedgerInstallments } from '../lib/bankReconciliationLedger.js'
+import { evaluateStatementIntegrity, suggestStatementAccount, summarizeReconciliationCoverage } from '../lib/bankStatementIntegrity.js'
 import { buildStatementImportReview, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
 import {
   archiveBankStatementImport,
@@ -99,11 +100,12 @@ export function BankReconciliation({ data, saveDataNow }) {
   const [confirming, setConfirming] = useState(null)
   const [reversing, setReversing] = useState(null)
   const [reason, setReason] = useState('')
-  const [newAccountName, setNewAccountName] = useState('')
+  const [newAccount, setNewAccount] = useState({ name:'', accountType:'checking', institutionCode:'', institutionName:'', branchCode:'', accountNumberSuffix:'', holderName:'', holderDocumentSuffix:'' })
   const [showAccountForm, setShowAccountForm] = useState(false)
   const [createdContext, setCreatedContext] = useState(() => readReturnContext())
   const [selectedLineIds, setSelectedLineIds] = useState([])
   const [bulkConfirm, setBulkConfirm] = useState(null)
+  const [ignoreReason, setIgnoreReason] = useState('Transferência interna')
 
   const s = {
     stack:{ display:'flex', flexDirection:'column', gap:18 },
@@ -216,6 +218,9 @@ export function BankReconciliation({ data, saveDataNow }) {
     return `${item.line.description} ${item.line.amount} ${item.line.postedDate} ${metadata.category || ''} ${metadata.costCenter || ''} ${metadata.reference || ''}`.toLowerCase().includes(query)
   }), [reviewItems, filter, search])
   const summary = useMemo(() => summarizeStatementReview(reviewItems), [reviewItems])
+  const coverage = useMemo(() => summarizeReconciliationCoverage(lines, reconciliations), [lines, reconciliations])
+  const selectedAccount = accounts.find(account => account.id === accountId) || null
+  const integrity = useMemo(() => parsed ? evaluateStatementIntegrity(parsed, selectedAccount, imports) : null, [parsed, selectedAccount, imports])
   const selectedReviews = useMemo(() => reviewItems.filter(item => selectedLineIds.includes(item.line.id)), [reviewItems, selectedLineIds])
   const selectableVisibleIds = useMemo(() => visibleMatches.filter(item => item.safeForBulk).map(item => item.line.id), [visibleMatches])
 
@@ -242,6 +247,8 @@ export function BankReconciliation({ data, saveDataNow }) {
       if (result.lines.length > MAX_LINES) throw new Error('O arquivo excede o limite de 50.000 linhas.')
       setParsed(result)
       setMapping(result.mapping || {})
+      const suggestedAccount = suggestStatementAccount(accounts, result.statementMetadata)
+      if (suggestedAccount) setAccountId(suggestedAccount.id)
     } catch (caught) {
       setError(caught.message || 'Não foi possível interpretar o arquivo.')
     } finally {
@@ -256,6 +263,8 @@ export function BankReconciliation({ data, saveDataNow }) {
     try {
       const result = await parseStatementFile(sourceFile, { mapping, delimiter:parsed?.delimiter, sheetName:parsed?.sheetName, headerRow:parsed?.headerRow })
       setParsed(result)
+      const suggestedAccount = suggestStatementAccount(accounts, result.statementMetadata)
+      if (suggestedAccount) setAccountId(suggestedAccount.id)
     } catch (caught) {
       setError(caught.message || 'Não foi possível aplicar o mapeamento.')
     } finally {
@@ -281,11 +290,15 @@ export function BankReconciliation({ data, saveDataNow }) {
 
   async function persistImport() {
     if (!parsed || !accountId) return
+    if (!integrity?.canImport) {
+      setError(integrity?.errors.join(' ') || 'Confira a identidade do extrato antes de importar.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
       const saved = await importBankStatement({ ownerId, accountId, parsed })
-      toast(`${saved.line_count} linha(s) importadas e confirmadas no banco.`)
+      toast(`${saved.line_count} linha(s) importadas e confirmadas no sistema.`)
       setParsed(null)
       setSourceFile(null)
       if (fileRef.current) fileRef.current.value = ''
@@ -302,10 +315,10 @@ export function BankReconciliation({ data, saveDataNow }) {
     setBusy(true)
     setError('')
     try {
-      const account = await createFinancialAccount(ownerId, { name:newAccountName })
+      const account = await createFinancialAccount(ownerId, newAccount)
       setAccounts(current => [...current, account].sort((a, b) => a.name.localeCompare(b.name)))
       setAccountId(account.id)
-      setNewAccountName('')
+      setNewAccount({ name:'', accountType:'checking', institutionCode:'', institutionName:'', branchCode:'', accountNumberSuffix:'', holderName:'', holderDocumentSuffix:'' })
       setShowAccountForm(false)
       toast('Conta financeira criada.')
     } catch (caught) {
@@ -315,7 +328,25 @@ export function BankReconciliation({ data, saveDataNow }) {
     }
   }
 
+  function openAccountForm() {
+    const metadata = parsed?.statementMetadata || {}
+    setNewAccount(current => ({
+      ...current,
+      name:current.name || metadata.institutionName || '',
+      institutionCode:current.institutionCode || metadata.institutionCode || '',
+      institutionName:current.institutionName || metadata.institutionName || '',
+      branchCode:current.branchCode || metadata.agencyCode || '',
+      accountNumberSuffix:current.accountNumberSuffix || metadata.accountNumberSuffix || '',
+      accountType:String(metadata.accountType || '').toLowerCase().includes('saving') ? 'savings' : current.accountType,
+    }))
+    setShowAccountForm(true)
+  }
+
   function chooseForConfirmation(match, installmentId) {
+    if (selectedImport?.verification_status === 'mismatch') {
+      setError('Este extrato possui divergência de integridade e não pode ser conciliado.')
+      return
+    }
     if (reservedInstallmentIds.includes(installmentId)) {
       setSelections(current => ({ ...current, [match.line.id]:'' }))
       setError('Esta parcela acabou de ser conciliada em outra linha. Escolha outro lançamento.')
@@ -385,6 +416,10 @@ export function BankReconciliation({ data, saveDataNow }) {
   }
 
   function requestApprove(items) {
+    if (selectedImport?.verification_status === 'mismatch') {
+      setError('Resolva a divergência do extrato antes de aprovar vínculos ou lançamentos.')
+      return
+    }
     if (!ledgerReady) {
       setError('A aprovação está bloqueada até o razão confirmar todas as parcelas carregadas. Isso evita criar lançamentos duplicados.')
       return
@@ -403,6 +438,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       setError('Nenhuma linha pendente está visível para ignorar.')
       return
     }
+    setIgnoreReason('Transferência interna')
     setBulkConfirm({ type:'ignore', items:eligible })
   }
 
@@ -429,7 +465,7 @@ export function BankReconciliation({ data, saveDataNow }) {
               { collection:item.proposal.collection, record:item.proposal.record },
             )
             const persisted = result?.then ? await result : result
-            if (persisted === false) throw new Error('O lançamento financeiro não foi confirmado pelo banco.')
+            if (persisted === false) throw new Error('O lançamento financeiro não foi confirmado pelo sistema.')
             persistedCount += 1
           }
         } catch (persistenceError) {
@@ -490,7 +526,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       await setBankStatementLinesReview({
         lineIds:items.map(item => item.line.id),
         status:'ignored',
-        reason:'Ignorado pelo usuário na revisão da importação.',
+        reason:ignoreReason,
       })
       setBulkConfirm(null)
       setSelectedLineIds([])
@@ -521,6 +557,10 @@ export function BankReconciliation({ data, saveDataNow }) {
 
   async function createFromLine(item, allowOverlap = false) {
     const line = item.line
+    if (selectedImport?.verification_status === 'mismatch') {
+      setError('Resolva a divergência do extrato antes de criar lançamentos.')
+      return
+    }
     if (!ledgerReady) {
       setError('A criação está bloqueada até o razão confirmar os lançamentos carregados, evitando duplicidades.')
       return
@@ -593,7 +633,7 @@ export function BankReconciliation({ data, saveDataNow }) {
   if (schemaMissing) return (
     <Card style={{ border:`1px solid ${C.yellow}55` }}>
       <div style={{ color:C.yellow, fontWeight:800, marginBottom:8 }}>Migração necessária</div>
-      <div style={s.muted}>Execute <code>supabase/bank_reconciliation_schema.sql</code> em uma instalação nova ou <code>supabase/bank_reconciliation_xlsx_review_schema.sql</code> se a conciliação já existe. Nenhuma função serverless será criada.</div>
+      <div style={s.muted}>Execute os schemas base da conciliação e depois <code>supabase/bank_reconciliation_robustness_schema.sql</code>. Nenhuma função serverless será criada.</div>
     </Card>
   )
 
@@ -617,14 +657,30 @@ export function BankReconciliation({ data, saveDataNow }) {
             <label style={s.label}>Conta financeira</label>
             <select aria-label="Conta financeira" value={accountId} onChange={event => setAccountId(event.target.value)} style={s.input}>
               <option value="">Selecione…</option>
-              {accounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}
+              {accounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.account_number_suffix ? ` · ••••${account.account_number_suffix}` : ''}</option>)}
             </select>
+            {selectedAccount && <div style={{ ...s.muted, marginTop:6 }}>
+              {selectedAccount.institution_name || 'Instituição não informada'}{selectedAccount.branch_code ? ` · ag. ${selectedAccount.branch_code}` : ''}{selectedAccount.account_number_suffix ? ` · conta ••••${selectedAccount.account_number_suffix}` : ''}
+              {' · '}{selectedAccount.verification_status === 'verified' ? 'verificada' : 'aguardando verificação por extrato/conexão'}
+            </div>}
             {!showAccountForm ? (
-              <button type="button" onClick={() => setShowAccountForm(true)} style={{ border:0, background:'transparent', color:C.accentLight, padding:'7px 0', cursor:'pointer', fontSize:12 }}>+ Criar conta bancária</button>
+              <button type="button" onClick={openAccountForm} style={{ border:0, background:'transparent', color:C.accentLight, padding:'7px 0', cursor:'pointer', fontSize:12 }}>+ Criar conta bancária</button>
             ) : (
-              <div style={{ ...s.row, marginTop:8 }}>
-                <input aria-label="Nome da nova conta" value={newAccountName} onChange={event => setNewAccountName(event.target.value)} placeholder="Ex.: Itaú principal" style={{ ...s.input, flex:1 }} />
-                <Btn onClick={addAccount} disabled={busy || !newAccountName.trim()}>Salvar</Btn>
+              <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'repeat(2,minmax(0,1fr))', gap:8, marginTop:8, padding:12, border:`1px solid ${C.border}`, borderRadius:12 }}>
+                <input aria-label="Nome da nova conta" value={newAccount.name} onChange={event => setNewAccount(current => ({ ...current, name:event.target.value }))} placeholder="Nome interno (ex.: Itaú principal)" style={s.input} />
+                <input aria-label="Instituição financeira" value={newAccount.institutionName} onChange={event => setNewAccount(current => ({ ...current, institutionName:event.target.value }))} placeholder="Instituição (ex.: Itaú)" style={s.input} />
+                <input aria-label="Código da instituição" value={newAccount.institutionCode} onChange={event => setNewAccount(current => ({ ...current, institutionCode:event.target.value }))} placeholder="ISPB/COMPE (opcional)" style={s.input} />
+                <input aria-label="Agência bancária" value={newAccount.branchCode} onChange={event => setNewAccount(current => ({ ...current, branchCode:event.target.value }))} placeholder="Agência (opcional)" style={s.input} />
+                <input aria-label="Final da conta bancária" inputMode="numeric" maxLength={4} value={newAccount.accountNumberSuffix} onChange={event => setNewAccount(current => ({ ...current, accountNumberSuffix:event.target.value.replace(/\D/g, '').slice(0, 4) }))} placeholder="4 últimos dígitos da conta" style={s.input} />
+                <select aria-label="Tipo da nova conta" value={newAccount.accountType} onChange={event => setNewAccount(current => ({ ...current, accountType:event.target.value }))} style={s.input}>
+                  <option value="checking">Conta corrente</option><option value="savings">Poupança</option><option value="card">Cartão</option><option value="other">Outra</option>
+                </select>
+                <input aria-label="Titular da conta" value={newAccount.holderName} onChange={event => setNewAccount(current => ({ ...current, holderName:event.target.value }))} placeholder="Titular (opcional)" style={s.input} />
+                <input aria-label="Final do documento do titular" inputMode="numeric" maxLength={4} value={newAccount.holderDocumentSuffix} onChange={event => setNewAccount(current => ({ ...current, holderDocumentSuffix:event.target.value.replace(/\D/g, '').slice(0, 4) }))} placeholder="4 últimos do CPF/CNPJ (opcional)" style={s.input} />
+                <div style={{ ...s.row, gridColumn:'1 / -1', justifyContent:'flex-end' }}>
+                  <Btn variant="ghost" onClick={() => setShowAccountForm(false)}>Cancelar</Btn>
+                  <Btn onClick={addAccount} disabled={busy || !newAccount.name.trim() || !newAccount.institutionName.trim() || newAccount.accountNumberSuffix.length !== 4}>Salvar conta</Btn>
+                </div>
               </div>
             )}
           </div>
@@ -668,8 +724,18 @@ export function BankReconciliation({ data, saveDataNow }) {
                 <div style={s.muted}>{parsed.lines.length} linha(s) válida(s) · {parsed.format.toUpperCase()}{parsed.sheetName ? ` · aba ${parsed.sheetName}` : ''}</div>
                 {parsed.totals && <div style={{ ...s.muted, marginTop:4 }}>Entradas {fmt(parsed.totals.receipts)} · saídas {fmt(parsed.totals.expenses)} · líquido {fmt(parsed.totals.net)}</div>}
               </div>
-              <Btn onClick={persistImport} disabled={busy || !accountId || parsed.errors.length > 0 || parsed.lines.length === 0}>Confirmar importação</Btn>
+              <Btn onClick={persistImport} disabled={busy || !accountId || parsed.errors.length > 0 || parsed.lines.length === 0 || !integrity?.canImport}>Confirmar importação</Btn>
             </div>
+            {integrity && <div data-testid="statement-integrity" style={{ padding:12, borderRadius:10, border:`1px solid ${integrity.canImport ? C.green : C.red}55`, background:`${integrity.canImport ? C.green : C.red}0D` }}>
+              <div style={{ fontWeight:900, color:integrity.verificationStatus === 'verified' ? C.green : integrity.verificationStatus === 'mismatch' ? C.red : C.yellow }}>
+                {integrity.verificationStatus === 'verified' ? 'Extrato verificado' : integrity.verificationStatus === 'partially_verified' ? 'Extrato parcialmente verificado' : integrity.verificationStatus === 'mismatch' ? 'Extrato incompatível' : 'Origem ainda não verificada'}
+              </div>
+              {parsed.statementMetadata?.institutionCode && <div style={{ ...s.muted, marginTop:5 }}>Banco {parsed.statementMetadata.institutionName || parsed.statementMetadata.institutionCode} · conta {parsed.statementMetadata.accountNumberMasked || 'não identificada'} · {parsed.statementMetadata.currency || 'BRL'}</div>}
+              <div style={{ ...s.muted, marginTop:4 }}>Período {integrity.periodStart ? formatDateBR(integrity.periodStart) : 'não declarado'} a {integrity.periodEnd ? formatDateBR(integrity.periodEnd) : 'não declarado'} · movimento líquido {fmt(integrity.net)}</div>
+              {integrity.evidence.map(item => <div key={item} style={{ color:C.green, fontSize:12, marginTop:4 }}>✓ {item}</div>)}
+              {integrity.warnings.map(item => <div key={item} style={{ color:C.yellow, fontSize:12, marginTop:4 }}>⚠ {item}</div>)}
+              {integrity.errors.map(item => <div key={item} style={{ color:C.red, fontSize:12, marginTop:4 }}>✕ {item}</div>)}
+            </div>}
             {parsed.errors.length > 0 && (
               <div style={{ color:C.red, fontSize:12, lineHeight:1.6 }}>
                 <strong>{parsed.errors.length} erro(s) impedem a importação:</strong>
@@ -704,6 +770,20 @@ export function BankReconciliation({ data, saveDataNow }) {
 
         {selectedImportId && (
           <>
+            <div data-testid="reconciliation-coverage" style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(220px,1fr) repeat(3,minmax(110px,0.45fr))', gap:10, marginTop:16, padding:14, border:`1px solid ${selectedImport?.verification_status === 'mismatch' ? C.red : C.border}`, borderRadius:12, background:C.bg }}>
+              <div>
+                <div style={{ fontSize:11, fontWeight:900, color:selectedImport?.verification_status === 'verified' ? C.green : selectedImport?.verification_status === 'mismatch' ? C.red : C.yellow, textTransform:'uppercase' }}>
+                  {selectedImport?.verification_status === 'verified' ? 'Extrato verificado' : selectedImport?.verification_status === 'mismatch' ? 'Divergência no extrato' : selectedImport?.verification_status === 'partially_verified' ? 'Verificação parcial' : 'Origem não verificada'}
+                </div>
+                <div style={{ ...s.muted, marginTop:5 }}>{coverage.decidedPercent}% das linhas decididas · {coverage.pending} pendente(s)</div>
+                {selectedImport?.control_difference != null && <div style={{ ...s.muted, marginTop:3 }}>Diferença de controle: {fmt(selectedImport.control_difference)}</div>}
+                {(selectedImport?.verification_notes || []).map(note => <div key={note} style={{ color:C.yellow, fontSize:11.5, marginTop:3 }}>⚠ {note}</div>)}
+              </div>
+              {[['Entradas',coverage.credits,C.green], ['Saídas',coverage.debits,C.red], ['Líquido',coverage.net,coverage.net >= 0 ? C.green : C.red]].map(([label, value, color]) => <div key={label}>
+                <div style={{ fontSize:10.5, color:C.textDim, textTransform:'uppercase', fontWeight:800 }}>{label}</div><div style={{ color, fontSize:17, fontWeight:900, marginTop:4 }}>{fmt(value)}</div>
+              </div>)}
+            </div>
+            {selectedImport?.verification_status === 'mismatch' && <div role="alert" style={{ color:C.red, fontSize:12, marginTop:10 }}>Este extrato possui inconsistência de período ou saldo. Revise/arquive a importação antes de usar seus vínculos como comprovação financeira.</div>}
             <div style={{ display:'grid', gridTemplateColumns:isMobile ? 'repeat(2,minmax(0,1fr))' : 'repeat(6,minmax(110px,1fr))', gap:10, marginTop:16 }}>
               {[['reconciled','Conciliadas',summary.reconciled,C.green], ['existing','Sugestões',summary.existing,C.green], ['new','Novos',summary.new,C.accentLight], ['possible_duplicate','Duplicados',summary.possible_duplicate,C.yellow], ['review','Revisar',summary.review,C.yellow], ['ignored','Ignorados',summary.ignored,C.textDim]].map(([key, label, value, color]) => (
                 <button key={key} type="button" onClick={() => setFilter(filter === key ? 'all' : key)} style={{ border:`1px solid ${filter === key ? color : C.border}`, background:filter === key ? `${color}12` : 'transparent', borderRadius:12, padding:12, color:C.text, cursor:'pointer', textAlign:'left' }}>
@@ -735,7 +815,7 @@ export function BankReconciliation({ data, saveDataNow }) {
         )}
       </Card>
 
-      {busy && selectedImportId && <div style={s.muted}>Atualizando dados confirmados no banco…</div>}
+      {busy && selectedImportId && <div style={s.muted}>Atualizando dados confirmados no sistema…</div>}
 
       {selectedImportId && !busy && visibleMatches.length === 0 && <Card><div style={s.muted}>Nenhuma linha encontrada para este filtro.</div></Card>}
 
@@ -835,6 +915,11 @@ export function BankReconciliation({ data, saveDataNow }) {
           </Card>
           {bulkConfirm.type === 'approve' && bulkConfirm.items.some(item => item.reviewStatus === 'new') && <div style={{ color:C.yellow, fontSize:12 }}>Para novos lançamentos, competência e vencimento usarão a data bancária exibida. Você pode cancelar e usar “Editar e criar” para informar datas diferentes.</div>}
           {bulkConfirm.type === 'create_duplicate' && <div style={{ color:C.yellow, fontSize:12 }}>A confirmação permite criar somente esta linha e ficará registrada pela origem UUID. Nenhum valor existente será alterado.</div>}
+          {bulkConfirm.type === 'ignore' && <label style={{ color:C.textSub, fontSize:12 }}>Motivo para ignorar
+            <select aria-label="Motivo para ignorar" value={ignoreReason} onChange={event => setIgnoreReason(event.target.value)} style={{ ...s.input, marginTop:6 }}>
+              <option>Transferência interna</option><option>Movimento pessoal</option><option>Duplicidade confirmada</option><option>Tarifa já contabilizada</option><option>Artefato bancário</option><option>Outro motivo revisado</option>
+            </select>
+          </label>}
           <div style={{ ...s.row, justifyContent:'flex-end' }}>
             <Btn variant="ghost" onClick={() => setBulkConfirm(null)}>Cancelar</Btn>
             <Btn variant={bulkConfirm.type === 'approve' ? 'success' : bulkConfirm.type === 'create_duplicate' ? 'warn' : 'danger'} onClick={() => {

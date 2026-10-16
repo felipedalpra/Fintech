@@ -3,15 +3,16 @@ import * as XLSX from 'xlsx'
 import { decodeStatementBuffer, parseCsvStatement, parseOfxStatement, parseStatementAmount, parseXlsxStatement, sha256Hex, statementMovementFingerprint, statementTotals, updateStatementLine } from '../../src/lib/statementParser.js'
 
 test('parseia OFX SGML e XML preservando a data bancária declarada', () => {
-  const ofx = `OFXHEADER:100\n<OFX><BANKTRANLIST>
+  const ofx = `OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL<BANKACCTFROM><BANKID>341<BRANCHID>1234<ACCTID>00098765<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST><DTSTART>20261001000000<DTEND>20261031235959
     <STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013120000[-3:BRT]<TRNAMT>500.00<FITID>abc-1<MEMO>PIX MARIA</STMTTRN>
     <STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261014110000.000[-3:BRT]<TRNAMT>-18.90<FITID>abc-2<NAME>TARIFA</STMTTRN>
-  </BANKTRANLIST></OFX>`
+  </BANKTRANLIST><LEDGERBAL><BALAMT>1481.10<DTASOF>20261014235959</LEDGERBAL></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`
   const result = parseOfxStatement(ofx)
   expect(result.errors).toEqual([])
   expect(result.lines).toHaveLength(2)
   expect(result.lines[0]).toMatchObject({ externalId:'abc-1', postedDate:'2026-10-13', amount:500, description:'PIX MARIA' })
   expect(result.lines[1]).toMatchObject({ externalId:'abc-2', postedDate:'2026-10-14', amount:-18.9, description:'TARIFA' })
+  expect(result.statementMetadata).toMatchObject({ institutionCode:'341', agencyCode:'1234', accountNumberMasked:'••••8765', accountNumberSuffix:'8765', currency:'BRL', periodStart:'2026-10-01', periodEnd:'2026-10-31', closingBalance:1481.1, balanceDate:'2026-10-14' })
 })
 
 test('parseia CSV com aspas, ponto e vírgula e quebra de linha dentro da descrição', () => {
