@@ -14,6 +14,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ### Changed
 - **Envio, recebimento e automações independentes do provedor**: inbox, chat por paciente, régua automática, confirmações de entrega, grupos e reconciliação de `@lid` usam o mesmo contrato para Evolution ou Z-API. O webhook autentica o segredo por header na Evolution e por query string somente no legado.
 - **Cadastro preserva histórico**: a configuração permite ativar/desativar números, mas deixa de apagar o registro e perder a atribuição histórica das conversas.
+- **Pendências de ativação atribuídas**: o checklist do cliente agora separa os acessos, SQLs, número e decisões que precisam ser fornecidos das tarefas técnicas de VPS, segurança, Vercel, homologação e migração que serão executadas depois. (`docs/PENDENCIAS_CLIENTE.md`.)
 
 ### Fixed
 - **Fidelidade e isolamento das mensagens**: callbacks repetidos não duplicam conteúdo; eventos falhos ou interrompidos podem ser retomados; IDs iguais em números ou provedores diferentes não colidem; status atrasado não regride leitura/entrega; falha ao persistir retorna erro para provocar nova entrega; e um webhook de outra instância é rejeitado. Testes unitários e de navegador cobrem o contrato Evolution, QR sem segredo e normalização de texto, mídia, LID e status. (`tests/unit/evolutionWhatsApp.spec.js`, `tests/e2e/whatsapp-evolution-settings.spec.js`, `tests/e2e/whatsapp-chat.spec.js`.)

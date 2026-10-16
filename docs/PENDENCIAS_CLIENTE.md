@@ -1,7 +1,7 @@
 # Pendências da Clínica — SurgiMetrics
 
 > Itens que precisam ser fornecidos ou decididos pela Dra. Vitoria / Augusto antes ou durante cada fase de implementação.
-> Atualizado em: 2026-10-08
+> Atualizado em: 2026-10-16
 
 ---
 
@@ -44,9 +44,20 @@
 
 ### WhatsApp CRM e Automações (Fase 2)
 - [x] **Provedor de WhatsApp escolhido** — Evolution API self-hosted, com Z-API temporariamente disponível para rollback. ✅ 2026-10-16
-- [ ] **Acesso à VPS HostGator NVMe 4** com Ubuntu 22.04 sem cPanel e IP público
-- [ ] **DNS de `evolution.surgimetrics.com.br`** apontado para a VPS
-- [ ] **Número de homologação** disponível para ler o QR Code e executar envio/recebimento controlado
+
+#### O que Felipe / cliente precisa providenciar
+
+- [ ] **Contratar ou confirmar a VPS HostGator NVMe 4** na região Brasil, com Ubuntu 22.04 e sem cPanel
+- [ ] **Fornecer o acesso administrativo à VPS por canal seguro**: IP público, usuário SSH e cadastro de uma chave pública autorizada; nunca enviar chave privada nem registrá-la neste repositório
+- [ ] **Dar acesso ao DNS de `surgimetrics.com.br` ou criar o registro A** de `evolution.surgimetrics.com.br` apontando para o IP da VPS
+- [ ] **Confirmar acesso ao projeto correto da Vercel**, para que as variáveis server-side sejam configuradas sem compartilhar token no código ou na documentação
+- [ ] **Aplicar no Supabase o novo SQL** `supabase/whatsapp_evolution_provider_schema.sql`
+- [ ] **Confirmar que `supabase/whatsapp_media_storage.sql` já foi aplicado**; se não foi, executá-lo antes da homologação de anexos
+- [ ] **Separar o número de homologação** com WhatsApp Business ativo, celular disponível e responsável presente para ler o QR Code em “Dispositivos conectados”
+- [ ] **Definir contatos de teste autorizados** para validar texto, áudio, imagem, documento, grupos e mensagens enviadas diretamente pelo celular
+- [ ] **Informar qual será o número definitivo da clínica** depois da homologação
+- [ ] **Escolher uma janela de migração** em que a equipe possa acompanhar o primeiro acesso, reconexões e mensagens em tempo real
+- [ ] **Definir o período de rollback da Z-API**: recomendação inicial de manter o cadastro antigo inativo por 7 dias antes de encerrar o serviço
 - [ ] **Templates de mensagem** — textos das automações que a Dra. quer usar:
   - Lembrete de consulta (ex: "Olá {nome}, lembro sua consulta amanhã às {hora}…")
   - Lembrete de cirurgia
@@ -54,6 +65,25 @@
   - Link de anamnese pré-consulta
   - Follow-up pós-consulta
 - [ ] **Número de horas de antecedência** para cada lembrete (ex: 24h antes da consulta)
+
+#### O que será executado pela implementação após os acessos
+
+- [ ] Atualizar o sistema da VPS, criar usuário operacional, restringir SSH e configurar firewall
+- [ ] Instalar Docker e subir Evolution API com versão estável fixada, PostgreSQL e Redis persistentes
+- [ ] Configurar volumes, reinício automático, backup diário e procedimento de restauração
+- [ ] Publicar somente HTTPS por proxy reverso e emitir certificado válido para `evolution.surgimetrics.com.br`
+- [ ] Gerar uma chave global forte da Evolution e mantê-la exclusivamente no servidor/Vercel
+- [ ] Configurar na Vercel `EVOLUTION_API_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_REQUEST_TIMEOUT_MS` e `WHATSAPP_WEBHOOK_BASE_URL`
+- [ ] Conferir as colunas, índices, RLS e bucket de mídia depois da aplicação dos SQLs
+- [ ] Criar a instância de homologação pelo SurgiMetrics, configurar e reler o webhook e apresentar o QR Code
+- [ ] Validar envio e recebimento de texto, imagem, áudio, vídeo e documento nos dois sentidos
+- [ ] Validar mensagens enviadas pelo celular, grupos, endereços `@lid`, responsáveis e vínculo correto com paciente/contato
+- [ ] Validar estados `sent`, `delivered` e `read`, deduplicação, reprocessamento de falhas e reconexão após reinício
+- [ ] Validar persistência da sessão, PostgreSQL, Redis, eventos brutos e arquivos do Storage após reiniciar os contêineres
+- [ ] Manter automações desligadas durante a homologação e ativá-las apenas depois dos testes manuais
+- [ ] Migrar o número definitivo, monitorar a estabilização e somente depois encerrar a Z-API
+
+> Runbook técnico: `docs/EVOLUTION_API_DEPLOY.md`. Nenhuma credencial real deve ser adicionada a esse arquivo, ao Git ou ao chat do projeto.
 
 ---
 
