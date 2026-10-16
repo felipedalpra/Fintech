@@ -98,7 +98,7 @@ const AREAS = [
         { id:'chart-of-accounts', label:'Plano de contas', icon:'reports', hint:'Estrutura de grupos e categorias financeiras' },
       ] },
       { title:'Cobrança', items:[
-        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Cruze OFX/CSV com os lançamentos do razão' },
+        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Importe OFX, CSV ou Excel e revise antes de lançar' },
       ] },
       { title:'Análise', items:[
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
@@ -183,7 +183,7 @@ const SUBTITLES = {
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
   'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
   'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
-  'bank-reconciliation':'Importe OFX ou CSV e confirme os vínculos com o razão sem alterar os lançamentos.',
+  'bank-reconciliation':'Importe OFX, CSV ou Excel, detecte duplicidades e aprove somente os lançamentos revisados.',
   'data-quality':'Revise pendências e inconsistências sem alterar automaticamente os lançamentos.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
@@ -250,11 +250,12 @@ function readPendingSave(userId) {
 }
 
 function writePendingSave(userId, pendingSave) {
-  if (typeof window === 'undefined' || !userId) return
+  if (typeof window === 'undefined' || !userId) return false
   try {
     window.localStorage.setItem(getPendingSaveStorageKey(userId), JSON.stringify(pendingSave))
+    return true
   } catch {
-    // O beforeunload ainda protege a saida quando o armazenamento local estiver indisponivel.
+    return false
   }
 }
 
@@ -936,23 +937,39 @@ export function FinanceWorkspace() {
   }
   const setData = updater => { applyDataUpdate(updater) }
   const saveDataNow = (updater, pendingOperation = null) => {
-    const update = applyDataUpdate(updater)
+    const requiresDurableRecovery = Boolean(pendingOperation?.collection && pendingOperation?.record?.id)
+    if (requiresDurableRecovery && (!ownerId || !user?.id)) {
+      setSaveStatus('blocked')
+      return Promise.reject(new Error('Clinica ou usuario nao identificado para proteger este lancamento.'))
+    }
+    const pendingSave = requiresDurableRecovery ? {
+      ...pendingOperation,
+      ownerId,
+      pendingId:`${pendingOperation.collection}:${pendingOperation.record.id}:${Date.now()}`,
+      createdAt:new Date().toISOString(),
+      revision:revisionRef.current + 1,
+    } : null
+    // A recuperação é registrada ANTES de alterar a memória ou tocar o servidor. Se o
+    // navegador não puder persistir a operação, a criação é recusada sem efeito parcial.
+    if (pendingSave && !writePendingSave(user.id, pendingSave)) {
+      setSaveStatus('blocked')
+      return Promise.reject(new Error('O navegador nao conseguiu proteger este lancamento para recuperacao. Libere armazenamento local e tente novamente.'))
+    }
+    let update
+    try {
+      update = applyDataUpdate(updater)
+    } catch (error) {
+      if (pendingSave) clearPendingSave(user.id, pendingSave.pendingId)
+      throw error
+    }
     // BLINDAGEM: sem escopo resolvido, NÃO grava agora (grava rejeitaria em silêncio). Marca
     // "não salvo" e deixa o autosave assumir — ele grava assim que o ownerId resolver. Não marca
     // immediateSnapshotRef (senão o autosave pularia este data e nunca gravaria).
     if (!ownerId) { setSaveStatus('blocked'); return Promise.resolve(update.data) }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     immediateSnapshotRef.current = update.data
-    if (pendingOperation?.collection && pendingOperation?.record?.id && user?.id) {
-      const pendingSave = {
-        ...pendingOperation,
-        ownerId,
-        pendingId:`${pendingOperation.collection}:${pendingOperation.record.id}:${Date.now()}`,
-        createdAt:new Date().toISOString(),
-        revision:update.revision,
-      }
+    if (pendingSave) {
       durablePendingRef.current = pendingSave
-      writePendingSave(user.id, pendingSave)
       clearFinanceModalDraft()
     }
     return flushSave(ownerId, update.data, update.revision)

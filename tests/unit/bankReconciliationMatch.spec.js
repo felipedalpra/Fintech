@@ -46,7 +46,7 @@ test('uma parcela não é recomendada a duas linhas no mesmo lote', () => {
   expect(result.filter(item => item.conflict)).toHaveLength(1)
 })
 
-test('ignora parcela conciliada, cancelada ou arquivada', () => {
+test('preserva como conflito parcela conciliada e ignora cancelada ou arquivada', () => {
   const reconciliations = [{ id:'rec', statement_line_id:'done', financial_installment_id:'used', reversed_at:null }]
   const result = matchBankStatementLines(
     [line('done'), line('new')],
@@ -54,12 +54,20 @@ test('ignora parcela conciliada, cancelada ou arquivada', () => {
     reconciliations,
   )
   expect(result[0].status).toBe('reconciled')
-  expect(result[1].status).toBe('unmatched')
+  expect(result[1]).toMatchObject({ status:'reserved_match', conflict:true })
 })
 
-test('ignora parcelas reservadas por conciliações de outras importações', () => {
+test('mantém parcelas de outros extratos na detecção, mas bloqueia novo vínculo', () => {
   const result = matchBankStatementLines([line('new')], [installment('used')], [], { reservedInstallmentIds:['used'] })
-  expect(result[0]).toMatchObject({ status:'unmatched', candidates:[] })
+  expect(result[0]).toMatchObject({ status:'reserved_match', conflict:true, recommendedCandidate:null, reservedCandidate:{ installmentId:'used' } })
+})
+
+test('prefere candidato livre claramente melhor que uma parcela já reservada', () => {
+  const reserved = installment('used', { financial_entry:{ direction:'receivable', description:'Pagamento sem relação', status:'paid', archived_at:null } })
+  const available = installment('free', { financial_entry:{ direction:'receivable', description:'PIX MARIA', party_name_snapshot:'Maria', status:'paid', archived_at:null } })
+  const result = matchBankStatementLines([line('new')], [reserved, available], [], { reservedInstallmentIds:['used'] })
+  expect(result[0]).toMatchObject({ status:'suggestion', recommendedCandidate:{ installmentId:'free' } })
+  expect(result[0].candidates.map(candidate => candidate.installmentId)).toEqual(['free'])
 })
 
 test('não sugere nem permite vínculo manual com outra conta financeira', () => {

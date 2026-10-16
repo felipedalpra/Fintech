@@ -4,12 +4,15 @@ import { C } from '../theme.js'
 import { fmt, formatDateBR } from '../utils.js'
 import { Btn, Card, Modal } from './UI.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { parseStatementFile } from '../lib/statementParser.js'
 import { matchBankStatementLines, validateManualReconciliation } from '../lib/bankReconciliationMatch.js'
 import { missingPersistedLedgerInstallments } from '../lib/bankReconciliationLedger.js'
+import { buildStatementImportReview, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
 import {
   archiveBankStatementImport,
+  claimBankStatementLinesForCreation,
   confirmBankReconciliation,
   createFinancialAccount,
   fetchBankReconciliations,
@@ -18,13 +21,21 @@ import {
   fetchReconciliationInstallments,
   importBankStatement,
   isBankReconciliationSchemaMissing,
+  recoverBankStatementLineClaim,
+  releaseBankStatementLineClaims,
   reverseBankReconciliation,
+  setBankStatementLinesReview,
 } from '../lib/bankReconciliationStore.js'
 
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 export const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
+
+function newClaimToken() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  throw new Error('Este navegador não oferece geração segura de identificadores. Atualize-o para criar lançamentos pela conciliação.')
+}
 
 function entryOf(installment) {
   return installment?.financial_entries || installment?.financial_entry || installment?.entry || {}
@@ -39,6 +50,11 @@ function installmentLabel(installment) {
 
 function statusConfig(status) {
   if (status === 'reconciled') return { label:'Conciliado', color:C.green }
+  if (status === 'existing') return { label:'Já existe', color:C.green }
+  if (status === 'new') return { label:'Novo lançamento', color:C.blue || C.accentLight }
+  if (status === 'possible_duplicate') return { label:'Possível duplicado', color:C.yellow }
+  if (status === 'review') return { label:'Precisa revisar', color:C.yellow }
+  if (status === 'ignored') return { label:'Ignorado', color:C.textDim }
   if (status === 'suggestion') return { label:'Sugestão', color:C.yellow }
   return { label:'Sem correspondência', color:C.textDim }
 }
@@ -52,11 +68,12 @@ function readReturnContext() {
   }
 }
 
-export function BankReconciliation({ data }) {
+export function BankReconciliation({ data, saveDataNow }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 900
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { toast } = useToast()
+  const { user } = useAuth()
   const { ownerId } = useUserRole()
   const fileRef = useRef(null)
   const [accounts, setAccounts] = useState([])
@@ -73,6 +90,7 @@ export function BankReconciliation({ data }) {
   const [lines, setLines] = useState([])
   const [reconciliations, setReconciliations] = useState([])
   const [reservedInstallmentIds, setReservedInstallmentIds] = useState([])
+  const [overlappingFingerprints, setOverlappingFingerprints] = useState([])
   const [installments, setInstallments] = useState([])
   const [windowDays, setWindowDays] = useState(3)
   const [filter, setFilter] = useState('all')
@@ -84,6 +102,8 @@ export function BankReconciliation({ data }) {
   const [newAccountName, setNewAccountName] = useState('')
   const [showAccountForm, setShowAccountForm] = useState(false)
   const [createdContext, setCreatedContext] = useState(() => readReturnContext())
+  const [selectedLineIds, setSelectedLineIds] = useState([])
+  const [bulkConfirm, setBulkConfirm] = useState(null)
 
   const s = {
     stack:{ display:'flex', flexDirection:'column', gap:18 },
@@ -124,13 +144,14 @@ export function BankReconciliation({ data }) {
       setLines([])
       setReconciliations([])
       setReservedInstallmentIds([])
+      setOverlappingFingerprints([])
       setInstallments([])
       return
     }
     setBusy(true)
     setError('')
     try {
-      const [{ lines:nextLines, reconciliations:nextReconciliations, reservedInstallmentIds:nextReservedIds }, nextInstallments] = await Promise.all([
+      const [{ lines:nextLines, reconciliations:nextReconciliations, reservedInstallmentIds:nextReservedIds, overlappingFingerprints:nextOverlaps }, nextInstallments] = await Promise.all([
         fetchBankReconciliations(ownerId, importId),
         fetchReconciliationInstallments(ownerId),
       ])
@@ -141,6 +162,7 @@ export function BankReconciliation({ data }) {
       })))
       setReconciliations(nextReconciliations)
       setReservedInstallmentIds(nextReservedIds)
+      setOverlappingFingerprints(nextOverlaps)
       setInstallments(nextInstallments)
       const returned = readReturnContext()
       if (returned?.importId === importId) {
@@ -152,7 +174,8 @@ export function BankReconciliation({ data }) {
         }
       }
     } catch (caught) {
-      setError(caught.message || 'Não foi possível carregar as linhas da importação.')
+      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      else setError(caught.message || 'Não foi possível carregar as linhas da importação.')
     } finally {
       setBusy(false)
     }
@@ -171,6 +194,7 @@ export function BankReconciliation({ data }) {
       Object.entries(current).filter(([, installmentId]) => !reserved.has(installmentId)),
     ))
   }, [reservedInstallmentIds])
+  useEffect(() => { setSelectedLineIds([]) }, [selectedImportId])
 
   const activeReconciliations = useMemo(() => reconciliations.filter(item => !item.reversed_at), [reconciliations])
   const missingLedgerInstallments = useMemo(() => missingPersistedLedgerInstallments(data, installments), [data, installments])
@@ -179,17 +203,21 @@ export function BankReconciliation({ data }) {
     () => matchBankStatementLines(lines, ledgerReady ? installments : [], activeReconciliations, { windowDays, reservedInstallmentIds }),
     [lines, installments, activeReconciliations, windowDays, ledgerReady, reservedInstallmentIds],
   )
-  const visibleMatches = useMemo(() => matches.filter(item => {
-    if (filter !== 'all' && item.status !== filter) return false
+  const selectedImport = imports.find(item => item.id === selectedImportId)
+  const reviewItems = useMemo(
+    () => buildStatementImportReview(matches, data?.chartAccounts || [], { fileName:selectedImport?.file_name || '', matchingUnavailable:!ledgerReady, overlappingFingerprints:new Set(overlappingFingerprints) }),
+    [matches, data?.chartAccounts, selectedImport?.file_name, ledgerReady, overlappingFingerprints],
+  )
+  const visibleMatches = useMemo(() => reviewItems.filter(item => {
+    if (filter !== 'all' && item.reviewStatus !== filter) return false
     const query = search.trim().toLowerCase()
     if (!query) return true
-    return `${item.line.description} ${item.line.amount} ${item.line.postedDate}`.toLowerCase().includes(query)
-  }), [matches, filter, search])
-  const summary = useMemo(() => matches.reduce((acc, item) => {
-    acc[item.status] += 1
-    return acc
-  }, { reconciled:0, suggestion:0, unmatched:0 }), [matches])
-  const selectedImport = imports.find(item => item.id === selectedImportId)
+    const metadata = item.line.source_metadata || {}
+    return `${item.line.description} ${item.line.amount} ${item.line.postedDate} ${metadata.category || ''} ${metadata.costCenter || ''} ${metadata.reference || ''}`.toLowerCase().includes(query)
+  }), [reviewItems, filter, search])
+  const summary = useMemo(() => summarizeStatementReview(reviewItems), [reviewItems])
+  const selectedReviews = useMemo(() => reviewItems.filter(item => selectedLineIds.includes(item.line.id)), [reviewItems, selectedLineIds])
+  const selectableVisibleIds = useMemo(() => visibleMatches.filter(item => item.safeForBulk).map(item => item.line.id), [visibleMatches])
 
   async function onFileChange(event) {
     const file = event.target.files?.[0]
@@ -220,10 +248,26 @@ export function BankReconciliation({ data }) {
     setBusy(true)
     setError('')
     try {
-      const result = await parseStatementFile(sourceFile, { mapping, delimiter:parsed?.delimiter })
+      const result = await parseStatementFile(sourceFile, { mapping, delimiter:parsed?.delimiter, sheetName:parsed?.sheetName, headerRow:parsed?.headerRow })
       setParsed(result)
     } catch (caught) {
       setError(caught.message || 'Não foi possível aplicar o mapeamento.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function changeSheet(sheetName) {
+    if (!sourceFile || !sheetName) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await parseStatementFile(sourceFile, { sheetName })
+      if (result.lines.length > MAX_LINES) throw new Error('A aba excede o limite de 50.000 linhas.')
+      setParsed(result)
+      setMapping(result.mapping || {})
+    } catch (caught) {
+      setError(caught.message || 'Não foi possível interpretar a aba selecionada.')
     } finally {
       setBusy(false)
     }
@@ -292,13 +336,14 @@ export function BankReconciliation({ data }) {
     setBusy(true)
     setError('')
     try {
+      const createdFromLine = entryOf(confirming.candidate).source_id === confirming.match.line.id
       await confirmBankReconciliation({
         lineId:confirming.match.line.id,
         installmentId:confirming.candidate.id,
-        method:confirming.ranked ? 'suggested' : (createdContext?.lineId === confirming.match.line.id ? 'created_from_line' : 'manual'),
+        method:createdFromLine || createdContext?.lineId === confirming.match.line.id ? 'created_from_line' : (confirming.ranked ? 'suggested' : 'manual'),
         score:confirming.ranked?.score,
         reasons:confirming.ranked?.reasons || confirming.validation.warnings,
-        justification:reason,
+        justification:reason || (createdFromLine ? 'Retomada do vínculo do lançamento criado por esta linha.' : ''),
         windowDays,
       })
       toast('Conciliação confirmada. Nenhum valor ou status financeiro foi alterado.')
@@ -333,15 +378,192 @@ export function BankReconciliation({ data }) {
     }
   }
 
-  function createFromLine(line) {
-    const isRevenue = Number(line.amount) > 0
-    const value = Math.abs(Number(line.amount))
-    const form = isRevenue
-      ? { description:line.description || 'Receita do extrato', value, competenceDate:'', dueDate:line.postedDate, date:line.postedDate, receivedDate:line.postedDate, status:'recebido', launchType:'variavel', originLabel:'Extrato bancário' }
-      : { description:line.description || 'Despesa do extrato', value, competenceDate:'', dueDate:line.postedDate, paymentDate:line.postedDate, status:'pago', launchType:'variavel', originLabel:'Extrato bancário' }
-    const reconciliationReturn = { importId:selectedImportId, lineId:line.id }
-    window.localStorage.setItem(FINANCE_MODAL_DRAFT_KEY, JSON.stringify({ showModal:true, modalType:isRevenue ? 'extra' : 'expense', editing:null, form, reconciliationReturn }))
-    navigate('/app/finance')
+  function requestApprove(items) {
+    if (!ledgerReady) {
+      setError('A aprovação está bloqueada até o razão confirmar todas as parcelas carregadas. Isso evita criar lançamentos duplicados.')
+      return
+    }
+    const eligible = items.filter(item => item.safeForBulk)
+    if (!eligible.length) {
+      setError('Selecione sugestões seguras. Duplicidades, transferências e linhas sem classificação exigem revisão individual.')
+      return
+    }
+    setBulkConfirm({ type:'approve', items:eligible })
+  }
+
+  function requestIgnore(items) {
+    const eligible = items.filter(item => !item.processing && !['reconciled', 'ignored'].includes(item.reviewStatus))
+    if (!eligible.length) {
+      setError('Nenhuma linha pendente está visível para ignorar.')
+      return
+    }
+    setBulkConfirm({ type:'ignore', items:eligible })
+  }
+
+  async function approveReviewItems(items) {
+    if (!ledgerReady) {
+      setError('A aprovação está bloqueada até o razão terminar de persistir.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    let creationClaim = null
+    try {
+      const newItems = items.filter(item => item.reviewStatus === 'new')
+      if (newItems.length) {
+        const persist = saveDataNow
+        if (!persist) throw new Error('O salvamento confirmado não está disponível nesta tela.')
+        creationClaim = { lineIds:newItems.map(item => item.line.id), token:newClaimToken() }
+        await claimBankStatementLinesForCreation(creationClaim.lineIds, creationClaim.token)
+        let persistedCount = 0
+        try {
+          for (const item of newItems) {
+            const result = persist(
+              current => mergeApprovedStatementRecords(current, [item]),
+              { collection:item.proposal.collection, record:item.proposal.record },
+            )
+            const persisted = result?.then ? await result : result
+            if (persisted === false) throw new Error('O lançamento financeiro não foi confirmado pelo banco.')
+            persistedCount += 1
+          }
+        } catch (persistenceError) {
+          // A linha que falhou fica reservada: sua operação durável será retomada no próximo
+          // carregamento. Somente linhas ainda não iniciadas são liberadas para nova revisão.
+          const untouchedIds = newItems.slice(persistedCount + 1).map(item => item.line.id)
+          await Promise.allSettled(untouchedIds.map(lineId => releaseBankStatementLineClaims([lineId], creationClaim.token)))
+          throw persistenceError
+        }
+      }
+
+      const latestInstallments = newItems.length ? await fetchReconciliationInstallments(ownerId) : installments
+      const operations = items.map(item => {
+        if (item.reviewStatus === 'existing') {
+          const candidate = item.recommendedCandidate
+          return candidate ? confirmBankReconciliation({
+            lineId:item.line.id,
+            installmentId:candidate.installmentId,
+            method:item.createdCandidate ? 'created_from_line' : 'suggested',
+            score:candidate.score,
+            reasons:candidate.reasons,
+            justification:item.createdCandidate ? 'Retomada do vínculo do lançamento criado por esta linha.' : null,
+            windowDays,
+          }) : Promise.reject(new Error('Correspondência existente não encontrada.'))
+        }
+        const createdInstallment = latestInstallments.find(installment => {
+          const entry = entryOf(installment)
+          return entry.source_id === item.line.id && entry.source_type === (item.line.amount > 0 ? 'extra_revenue' : 'expense')
+        })
+        return createdInstallment ? confirmBankReconciliation({
+          lineId:item.line.id,
+          installmentId:createdInstallment.id,
+          method:'created_from_line',
+          reasons:['lançamento criado após aprovação da prévia XLSX'],
+          justification:'Lançamento criado e aprovado a partir da linha importada.',
+          windowDays,
+        }) : Promise.reject(new Error(`O lançamento da linha ${item.line.line_index} foi salvo, mas o razão ainda não confirmou a parcela.`))
+      })
+      const results = await Promise.allSettled(operations)
+      const failures = results.filter(result => result.status === 'rejected')
+      setBulkConfirm(null)
+      setSelectedLineIds([])
+      await refreshImport(selectedImportId)
+      if (failures.length) throw new Error(`${failures.length} de ${items.length} linha(s) não tiveram o vínculo confirmado. Os lançamentos já salvos foram preservados e podem ser conciliados novamente.`)
+      toast(`${items.length} linha(s) aprovadas e confirmadas.`)
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      else setError(caught.message || 'Não foi possível aprovar as linhas selecionadas.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function ignoreReviewItems(items) {
+    setBusy(true)
+    setError('')
+    try {
+      await setBankStatementLinesReview({
+        lineIds:items.map(item => item.line.id),
+        status:'ignored',
+        reason:'Ignorado pelo usuário na revisão da importação.',
+      })
+      setBulkConfirm(null)
+      setSelectedLineIds([])
+      await refreshImport(selectedImportId)
+      toast(`${items.length} linha(s) ignoradas sem alterar o financeiro.`, 'warning')
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      else setError(caught.message || 'Não foi possível ignorar as linhas selecionadas.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function reopenLine(item) {
+    setBusy(true)
+    setError('')
+    try {
+      await setBankStatementLinesReview({ lineIds:[item.line.id], status:'pending' })
+      await refreshImport(selectedImportId)
+      toast('Linha reaberta para revisão.')
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      else setError(caught.message || 'Não foi possível reabrir a linha.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function createFromLine(item, allowOverlap = false) {
+    const line = item.line
+    if (!ledgerReady) {
+      setError('A criação está bloqueada até o razão confirmar os lançamentos carregados, evitando duplicidades.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    let claimToken = null
+    try {
+      claimToken = newClaimToken()
+      await claimBankStatementLinesForCreation([line.id], claimToken, { allowOverlap })
+      const isRevenue = Number(line.amount) > 0
+      const proposal = proposalForStatementLine(line, data?.chartAccounts || [], selectedImport?.file_name || '')
+      const form = selectedImport?.source_format === 'xlsx'
+        ? { ...proposal.record, launchType:'variavel' }
+        : isRevenue
+          ? { description:line.description || 'Receita do extrato', value:Math.abs(Number(line.amount)), competenceDate:'', dueDate:line.postedDate, date:line.postedDate, receivedDate:line.postedDate, status:'recebido', launchType:'variavel', originLabel:'Extrato bancário' }
+          : { description:line.description || 'Despesa do extrato', value:Math.abs(Number(line.amount)), competenceDate:'', dueDate:line.postedDate, paymentDate:line.postedDate, status:'pago', launchType:'variavel', originLabel:'Extrato bancário' }
+      const reconciliationReturn = { importId:selectedImportId, lineId:line.id, sourceId:line.id, claimToken }
+      window.localStorage.setItem(FINANCE_MODAL_DRAFT_KEY, JSON.stringify({ showModal:true, modalType:isRevenue ? 'extra' : 'expense', editing:null, form, reconciliationReturn }))
+      navigate('/app/finance')
+    } catch (caught) {
+      if (claimToken) await releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
+      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      else setError(caught.message || 'Não foi possível reservar esta linha para criação.')
+      setBusy(false)
+    }
+  }
+
+  function requestCreateFromLine(item) {
+    if (item.reviewStatus === 'possible_duplicate') {
+      setBulkConfirm({ type:'create_duplicate', items:[item] })
+      return
+    }
+    createFromLine(item)
+  }
+
+  async function recoverProcessingLine(item) {
+    setBusy(true)
+    setError('')
+    try {
+      await recoverBankStatementLineClaim(item.line.id)
+      await refreshImport(selectedImportId)
+      toast('Reserva antiga liberada. Revise a linha antes de criar novamente.', 'warning')
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      else setError(caught.message || 'Esta reserva ainda não pode ser recuperada.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function archiveImport() {
@@ -365,7 +587,7 @@ export function BankReconciliation({ data }) {
   if (schemaMissing) return (
     <Card style={{ border:`1px solid ${C.yellow}55` }}>
       <div style={{ color:C.yellow, fontWeight:800, marginBottom:8 }}>Migração necessária</div>
-      <div style={s.muted}>Execute manualmente <code>supabase/bank_reconciliation_schema.sql</code> no Supabase antes de usar esta tela. Nenhuma função serverless será criada.</div>
+      <div style={s.muted}>Execute <code>supabase/bank_reconciliation_schema.sql</code> em uma instalação nova ou <code>supabase/bank_reconciliation_xlsx_review_schema.sql</code> se a conciliação já existe. Nenhuma função serverless será criada.</div>
     </Card>
   )
 
@@ -382,7 +604,7 @@ export function BankReconciliation({ data }) {
             <div style={{ fontSize:18, fontWeight:900, color:C.text }}>Importar extrato</div>
             <div style={{ ...s.muted, marginTop:5 }}>O arquivo é interpretado no navegador. Depois da sua confirmação, somente as linhas normalizadas são salvas.</div>
           </div>
-          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX / CSV · sem Open Finance</span>
+          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX / CSV / XLSX · sem Open Finance</span>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(220px,0.7fr) minmax(280px,1.3fr)', gap:14, marginTop:18 }}>
           <div>
@@ -402,16 +624,24 @@ export function BankReconciliation({ data }) {
           </div>
           <div>
             <label style={s.label}>Arquivo bancário</label>
-            <input ref={fileRef} aria-label="Arquivo OFX ou CSV" type="file" accept=".ofx,.csv,.txt,text/csv,application/x-ofx" onChange={onFileChange} style={{ ...s.input, cursor:'pointer' }} />
+            <input ref={fileRef} aria-label="Arquivo OFX, CSV ou XLSX" type="file" accept=".ofx,.csv,.txt,.xlsx,.xls,text/csv,application/x-ofx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={onFileChange} style={{ ...s.input, cursor:'pointer' }} />
             <div style={{ ...s.muted, marginTop:6 }}>Até 10 MB e 50.000 linhas. O arquivo bruto não é enviado nem guardado.</div>
           </div>
         </div>
 
+        {parsed?.format === 'xlsx' && parsed.sheetNames?.length > 1 && (
+          <label style={{ ...s.label, marginTop:14, maxWidth:320 }}>Aba da planilha
+            <select aria-label="Aba da planilha" value={parsed.sheetName || ''} onChange={event => changeSheet(event.target.value)} disabled={busy} style={{ ...s.input, marginTop:6, textTransform:'none', letterSpacing:'normal' }}>
+              {parsed.sheetNames.map(sheetName => <option key={sheetName} value={sheetName}>{sheetName}</option>)}
+            </select>
+          </label>
+        )}
+
         {parsed?.requiresMapping && (
           <div style={{ marginTop:18, padding:14, borderRadius:12, background:`${C.yellow}0D`, border:`1px solid ${C.yellow}44` }}>
-            <div style={{ fontWeight:800, color:C.yellow, marginBottom:10 }}>Mapeie as colunas do CSV</div>
+            <div style={{ fontWeight:800, color:C.yellow, marginBottom:10 }}>Mapeie as colunas do {parsed.format === 'xlsx' ? 'Excel' : 'CSV'}</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:10 }}>
-              {[['date','Data'], ['description','Descrição'], ['amount','Valor assinado'], ['credit','Crédito'], ['debit','Débito'], ['externalId','Identificador']].map(([key, label]) => (
+              {[['date','Data'], ['description','Descrição'], ['amount','Valor assinado'], ['credit','Receita/crédito'], ['debit','Despesa/débito'], ['externalId','Identificador'], ['category','Categoria'], ['costCenter','Centro de custo'], ['reference','Paciente/contrato'], ['observation','Observação/serviço']].map(([key, label]) => (
                 <label key={key} style={{ fontSize:12, color:C.textSub }}>{label}
                   <select value={mapping[key] ?? -1} onChange={event => setMapping(current => ({ ...current, [key]:Number(event.target.value) }))} style={{ ...s.input, marginTop:5 }}>
                     <option value={-1}>Não usar</option>
@@ -429,7 +659,8 @@ export function BankReconciliation({ data }) {
             <div style={{ ...s.row, justifyContent:'space-between' }}>
               <div>
                 <strong style={{ color:C.text }}>{parsed.fileName}</strong>
-                <div style={s.muted}>{parsed.lines.length} linha(s) válida(s) · {parsed.format.toUpperCase()}</div>
+                <div style={s.muted}>{parsed.lines.length} linha(s) válida(s) · {parsed.format.toUpperCase()}{parsed.sheetName ? ` · aba ${parsed.sheetName}` : ''}</div>
+                {parsed.totals && <div style={{ ...s.muted, marginTop:4 }}>Entradas {fmt(parsed.totals.receipts)} · saídas {fmt(parsed.totals.expenses)} · líquido {fmt(parsed.totals.net)}</div>}
               </div>
               <Btn onClick={persistImport} disabled={busy || !accountId || parsed.errors.length > 0 || parsed.lines.length === 0}>Confirmar importação</Btn>
             </div>
@@ -462,13 +693,13 @@ export function BankReconciliation({ data }) {
               ))}
             </select>
           </div>
-          {selectedImport && <Btn variant="danger" onClick={archiveImport} disabled={busy || summary.reconciled > 0}>Arquivar importação</Btn>}
+          {selectedImport && <Btn variant="danger" onClick={archiveImport} disabled={busy || summary.reconciled > 0 || reviewItems.some(item => item.processing)}>Arquivar importação</Btn>}
         </div>
 
         {selectedImportId && (
           <>
-            <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'repeat(3,minmax(130px,1fr))', gap:10, marginTop:16 }}>
-              {[['reconciled','Conciliadas',summary.reconciled,C.green], ['suggestion','Sugestões',summary.suggestion,C.yellow], ['unmatched','Sem correspondência',summary.unmatched,C.textDim]].map(([key, label, value, color]) => (
+            <div style={{ display:'grid', gridTemplateColumns:isMobile ? 'repeat(2,minmax(0,1fr))' : 'repeat(6,minmax(110px,1fr))', gap:10, marginTop:16 }}>
+              {[['reconciled','Conciliadas',summary.reconciled,C.green], ['existing','Sugestões',summary.existing,C.green], ['new','Novos',summary.new,C.accentLight], ['possible_duplicate','Duplicados',summary.possible_duplicate,C.yellow], ['review','Revisar',summary.review,C.yellow], ['ignored','Ignorados',summary.ignored,C.textDim]].map(([key, label, value, color]) => (
                 <button key={key} type="button" onClick={() => setFilter(filter === key ? 'all' : key)} style={{ border:`1px solid ${filter === key ? color : C.border}`, background:filter === key ? `${color}12` : 'transparent', borderRadius:12, padding:12, color:C.text, cursor:'pointer', textAlign:'left' }}>
                   <div style={{ fontSize:11, color, fontWeight:800, textTransform:'uppercase' }}>{label}</div>
                   <div style={{ fontSize:22, fontWeight:900, marginTop:4 }}>{value}</div>
@@ -483,6 +714,17 @@ export function BankReconciliation({ data }) {
                 </select>
               </label>
             </div>
+            <div style={{ ...s.row, marginTop:12, justifyContent:'space-between', paddingTop:12, borderTop:`1px solid ${C.border}` }}>
+              <label style={{ display:'flex', alignItems:'center', gap:8, color:C.textSub, fontSize:12, cursor:selectableVisibleIds.length ? 'pointer' : 'default' }}>
+                <input type="checkbox" aria-label="Selecionar todas as sugestões seguras visíveis" disabled={!selectableVisibleIds.length} checked={selectableVisibleIds.length > 0 && selectableVisibleIds.every(id => selectedLineIds.includes(id))} onChange={event => setSelectedLineIds(current => event.target.checked ? [...new Set([...current, ...selectableVisibleIds])] : current.filter(id => !selectableVisibleIds.includes(id)))} />
+                Selecionar sugestões seguras visíveis ({selectableVisibleIds.length})
+              </label>
+              <div style={s.row}>
+                <Btn variant="ghost" onClick={() => requestIgnore(visibleMatches)} disabled={busy || !visibleMatches.some(item => !item.processing && !['reconciled', 'ignored'].includes(item.reviewStatus))}>Ignorar visíveis</Btn>
+                <Btn variant="success" onClick={() => requestApprove(selectedReviews)} disabled={busy || !ledgerReady || selectedReviews.length === 0}>Aprovar selecionados ({selectedReviews.length})</Btn>
+              </div>
+            </div>
+            {summary.new > 0 && <div style={{ ...s.muted, marginTop:10 }}>Impacto dos novos sugeridos: entradas {fmt(summary.newReceipts)} · saídas {fmt(summary.newExpenses)}. Nada entra no financeiro antes da aprovação.</div>}
           </>
         )}
       </Card>
@@ -492,7 +734,7 @@ export function BankReconciliation({ data }) {
       {selectedImportId && !busy && visibleMatches.length === 0 && <Card><div style={s.muted}>Nenhuma linha encontrada para este filtro.</div></Card>}
 
       {visibleMatches.map(match => {
-        const config = statusConfig(match.status)
+        const config = statusConfig(match.reviewStatus)
         const reconciliation = match.reconciliation
         const linkedInstallment = reconciliation ? installments.find(item => item.id === reconciliation.financial_installment_id) : null
         const recommended = match.recommendedCandidate
@@ -501,24 +743,39 @@ export function BankReconciliation({ data }) {
           && !item.archived_at
           && !reservedInstallmentIds.includes(item.id)
           && (!match.line.financial_account_id || !item.financial_account_id || match.line.financial_account_id === item.financial_account_id))
+        const recoverableClaim = match.processing
+          && match.line.reviewed_by === user?.id
+          && Date.now() - new Date(match.line.reviewed_at || 0).getTime() >= 30 * 60 * 1000
         return (
-          <div key={match.line.id} style={s.lineCard} data-testid={`statement-line-${match.status}`}>
+          <div key={match.line.id} style={s.lineCard} data-testid={`statement-line-${match.status}`} data-review-status={match.reviewStatus}>
             <div>
               <div style={{ ...s.row, justifyContent:'space-between' }}>
-                <span style={s.badge(match.status)}>{config.label}</span>
+                <div style={s.row}>
+                  {match.safeForBulk && <input type="checkbox" aria-label={`Selecionar linha ${match.line.line_index || match.line.id}`} checked={selectedLineIds.includes(match.line.id)} onChange={event => setSelectedLineIds(current => event.target.checked ? [...new Set([...current, match.line.id])] : current.filter(id => id !== match.line.id))} />}
+                  <span style={s.badge(match.reviewStatus)}>{config.label}</span>
+                </div>
                 <span style={s.muted}>{formatDateBR(match.line.postedDate)}</span>
               </div>
               <div style={{ color:C.text, fontWeight:800, marginTop:12, overflowWrap:'anywhere' }}>{match.line.description || 'Sem descrição'}</div>
               <div style={{ ...s.amount(match.line.amount > 0), marginTop:7 }}>{fmt(match.line.amount)}</div>
               {match.line.external_id && <div style={{ ...s.muted, marginTop:5 }}>ID bancário: {match.line.external_id}</div>}
+              {(match.line.source_metadata?.category || match.line.source_metadata?.costCenter) && <div style={{ ...s.muted, marginTop:8 }}>{match.line.source_metadata?.category || 'Sem categoria'} · {match.line.source_metadata?.costCenter || 'Sem centro de custo'}</div>}
+              {match.line.source_metadata?.reference && <div style={{ ...s.muted, marginTop:4 }}>Referência: {match.line.source_metadata.reference}</div>}
             </div>
             <div style={isMobile ? { borderTop:`1px solid ${C.border}`, paddingTop:16 } : { borderLeft:`1px solid ${C.border}`, paddingLeft:18 }}>
-              {match.status === 'reconciled' ? (
+              {match.reviewStatus === 'reconciled' ? (
                 <>
                   <div style={{ color:C.green, fontWeight:900 }}>Vínculo confirmado</div>
                   <div style={{ color:C.text, marginTop:7 }}>{linkedInstallment ? installmentLabel(linkedInstallment) : 'A parcela vinculada foi alterada ou arquivada — revise a origem.'}</div>
                   {linkedInstallment?.status === 'pending' && <div style={{ color:C.yellow, fontSize:12, marginTop:7 }}>Conciliação confirmada; baixa financeira ainda pendente.</div>}
                   <div style={{ ...s.row, marginTop:12 }}><Btn variant="ghost" onClick={() => { setReason(''); setReversing(reconciliation) }}>Desconciliar</Btn></div>
+                </>
+              ) : match.reviewStatus === 'ignored' ? (
+                <>
+                  <div style={{ color:C.textSub, fontWeight:900 }}>Linha ignorada</div>
+                  <div style={{ ...s.muted, marginTop:7 }}>Ela permanece no histórico e não altera DRE, caixa ou contas.</div>
+                  {match.line.review_reason && <div style={{ ...s.muted, marginTop:5 }}>Motivo: {match.line.review_reason}</div>}
+                  <div style={{ ...s.row, marginTop:12 }}><Btn variant="ghost" onClick={() => reopenLine(match)} disabled={busy}>Reabrir revisão</Btn></div>
                 </>
               ) : (
                 <>
@@ -528,17 +785,29 @@ export function BankReconciliation({ data }) {
                       <div style={{ ...s.muted, marginTop:6 }}>{recommended.reasons.join(' · ')} · score {recommended.score}</div>
                     </>
                   ) : (
-                    <div style={{ color:match.status === 'suggestion' ? C.yellow : C.textSub, fontWeight:800 }}>
-                      {match.status === 'suggestion' ? 'Há candidatos, mas a sugestão é ambígua.' : 'Nenhum candidato exato na janela selecionada.'}
+                    <div style={{ color:match.reviewStatus === 'possible_duplicate' || match.reviewStatus === 'review' ? C.yellow : C.textSub, fontWeight:800 }}>
+                      {match.status === 'reserved_match' ? 'Este valor já corresponde a uma parcela conciliada em outro extrato. Revise para não duplicar.' : match.processing ? 'Esta linha foi reservada para criação. Verifique o lançamento salvo antes de reabri-la.' : match.reviewStatus === 'possible_duplicate' ? 'Há repetição ou mais de uma correspondência possível.' : match.reviewStatus === 'review' ? 'Esta linha precisa de classificação antes de criar.' : 'Nenhum lançamento existente foi encontrado.'}
                     </div>
                   )}
+                  {['new', 'review'].includes(match.reviewStatus) && <div style={{ marginTop:10, padding:12, border:`1px solid ${C.border}`, borderRadius:10, background:C.bg }}>
+                    <div style={{ color:C.text, fontWeight:800 }}>Modelo sugerido na plataforma</div>
+                    <div style={{ ...s.muted, marginTop:6 }}>{match.line.amount > 0 ? 'Receita recebida' : 'Despesa paga'} · {match.proposal.accountName}</div>
+                    <div style={{ ...s.muted, marginTop:3 }}>Competência, vencimento e caixa: {formatDateBR(match.line.postedDate)} <span style={{ color:C.yellow }}>(data bancária assumida)</span></div>
+                    <div style={{ ...s.muted, marginTop:3 }}>{match.proposal.category} · {match.proposal.costCenter}</div>
+                    {match.proposal.reasons.map(item => <div key={item} style={{ color:C.yellow, fontSize:11.5, marginTop:4 }}>⚠ {item}</div>)}
+                  </div>}
                   <select aria-label={`Lançamento para ${match.line.description || match.line.id}`} value={selectedId} onChange={event => setSelections(current => ({ ...current, [match.line.id]:event.target.value }))} style={{ ...s.input, marginTop:10 }}>
                     <option value="">Procurar outro lançamento…</option>
                     {directionInstallments.map(item => <option key={item.id} value={item.id}>{installmentLabel(item)}</option>)}
                   </select>
                   <div style={{ ...s.row, marginTop:12 }}>
                     <Btn variant="success" disabled={!selectedId || busy || !ledgerReady} onClick={() => chooseForConfirmation(match, selectedId)}>Conferir e vincular</Btn>
-                    <Btn variant="ghost" onClick={() => createFromLine(match.line)}>Criar {match.line.amount > 0 ? 'receita' : 'despesa'}</Btn>
+                    {match.safeForBulk && <Btn variant="success" onClick={() => requestApprove([match])} disabled={busy || !ledgerReady}>{match.reviewStatus === 'existing' ? 'Aprovar vínculo' : 'Aprovar lançamento'}</Btn>}
+                    {match.reviewStatus !== 'existing' && !match.processing && match.status !== 'reserved_match' && <Btn variant="ghost" onClick={() => requestCreateFromLine(match)} disabled={!ledgerReady}>Criar {match.line.amount > 0 ? 'receita' : 'despesa'}</Btn>}
+                    {match.processing ? <>
+                      <span style={s.muted}>Criação reservada. Conclua ou cancele pelo formulário financeiro aberto nesta sessão.</span>
+                      {recoverableClaim && <Btn variant="ghost" onClick={() => recoverProcessingLine(match)} disabled={busy}>Liberar reserva antiga</Btn>}
+                    </> : <Btn variant="ghost" onClick={() => requestIgnore([match])} disabled={busy}>Ignorar</Btn>}
                   </div>
                 </>
               )}
@@ -546,6 +815,30 @@ export function BankReconciliation({ data }) {
           </div>
         )
       })}
+
+      <Modal open={Boolean(bulkConfirm)} onClose={() => setBulkConfirm(null)} title={bulkConfirm?.type === 'approve' ? 'Aprovar sugestões' : bulkConfirm?.type === 'create_duplicate' ? 'Confirmar possível duplicidade' : 'Ignorar linhas'} width={620} trackDirty={false}>
+        {bulkConfirm && <div style={s.stack}>
+          <div style={s.muted}>{bulkConfirm.type === 'approve'
+            ? 'Correspondências existentes serão apenas vinculadas. Novas sugestões criarão lançamentos canônicos e depois serão conciliadas.'
+            : bulkConfirm.type === 'create_duplicate'
+              ? 'Existe outra linha com a mesma data, valor e descrição nesta conta. Só continue se forem movimentações realmente distintas.'
+            : 'As linhas continuarão no histórico e poderão ser reabertas. Nenhum lançamento será apagado.'}</div>
+          <Card style={{ padding:14 }}>
+            <div style={{ color:C.text, fontWeight:900 }}>{bulkConfirm.items.length} linha(s)</div>
+            <div style={{ ...s.muted, marginTop:5 }}>Entradas {fmt(bulkConfirm.items.filter(item => item.line.amount > 0).reduce((total, item) => total + Number(item.line.amount), 0))} · saídas {fmt(bulkConfirm.items.filter(item => item.line.amount < 0).reduce((total, item) => total + Math.abs(Number(item.line.amount)), 0))}</div>
+          </Card>
+          {bulkConfirm.type === 'approve' && bulkConfirm.items.some(item => item.reviewStatus === 'new') && <div style={{ color:C.yellow, fontSize:12 }}>Para novos lançamentos, competência e vencimento usarão a data bancária exibida. Você pode cancelar e usar “Editar e criar” para informar datas diferentes.</div>}
+          {bulkConfirm.type === 'create_duplicate' && <div style={{ color:C.yellow, fontSize:12 }}>A confirmação permite criar somente esta linha e ficará registrada pela origem UUID. Nenhum valor existente será alterado.</div>}
+          <div style={{ ...s.row, justifyContent:'flex-end' }}>
+            <Btn variant="ghost" onClick={() => setBulkConfirm(null)}>Cancelar</Btn>
+            <Btn variant={bulkConfirm.type === 'approve' ? 'success' : bulkConfirm.type === 'create_duplicate' ? 'warn' : 'danger'} onClick={() => {
+              if (bulkConfirm.type === 'approve') approveReviewItems(bulkConfirm.items)
+              else if (bulkConfirm.type === 'create_duplicate') { const item = bulkConfirm.items[0]; setBulkConfirm(null); createFromLine(item, true) }
+              else ignoreReviewItems(bulkConfirm.items)
+            }} disabled={busy}>{bulkConfirm.type === 'approve' ? 'Confirmar aprovação' : bulkConfirm.type === 'create_duplicate' ? 'Criar mesmo assim' : 'Confirmar que deseja ignorar'}</Btn>
+          </div>
+        </div>}
+      </Modal>
 
       <Modal open={Boolean(confirming)} onClose={() => { setConfirming(null); setReason('') }} title="Confirmar vínculo" width={580} trackDirty={false}>
         {confirming && <div style={s.stack}>

@@ -34,7 +34,7 @@ create table if not exists public.bank_statement_imports (
   financial_account_id uuid not null references public.financial_accounts(id) on delete restrict,
   file_name           text not null,
   file_hash           text not null check (file_hash ~ '^[0-9a-f]{64}$'),
-  source_format       text not null check (source_format in ('ofx', 'csv')),
+  source_format       text not null check (source_format in ('ofx', 'csv', 'xlsx')),
   expected_line_count integer not null check (expected_line_count between 1 and 50000),
   line_count          integer not null default 0 check (line_count >= 0),
   status              text not null default 'importing' check (status in ('importing', 'ready', 'archived')),
@@ -58,12 +58,32 @@ create table if not exists public.bank_statement_lines (
   currency               text not null default 'BRL' check (currency = 'BRL'),
   description            text not null default '',
   normalized_description text not null default '',
+  movement_fingerprint   text not null,
   source_metadata        jsonb not null default '{}'::jsonb,
   line_index             integer not null check (line_index > 0),
+  review_status          text not null default 'pending' check (review_status in ('pending', 'processing', 'ignored')),
+  review_reason          text,
+  reviewed_by            uuid references auth.users(id) on delete restrict,
+  reviewed_at            timestamptz,
+  review_claim_token     uuid,
   created_at             timestamptz not null default timezone('utc', now()),
   archived_at            timestamptz,
   unique (import_id, source_line_key)
 );
+
+alter table public.bank_statement_lines
+  add column if not exists review_claim_token uuid,
+  add column if not exists movement_fingerprint text;
+
+update public.bank_statement_lines
+set movement_fingerprint = posted_date::text || '|'
+  || case when amount > 0 then 'receivable' else 'payable' end || '|'
+  || to_char(abs(amount), 'FM999999999999990.00') || '|'
+  || normalized_description
+where movement_fingerprint is null;
+
+alter table public.bank_statement_lines
+  alter column movement_fingerprint set not null;
 
 create table if not exists public.bank_reconciliations (
   id                       uuid primary key default gen_random_uuid(),
@@ -95,6 +115,9 @@ create index if not exists idx_bank_lines_import
   where archived_at is null;
 create index if not exists idx_bank_lines_owner_date
   on public.bank_statement_lines(user_id, posted_date)
+  where archived_at is null;
+create index if not exists idx_bank_lines_owner_account_fingerprint
+  on public.bank_statement_lines(user_id, financial_account_id, movement_fingerprint)
   where archived_at is null;
 create unique index if not exists uq_bank_line_external_active
   on public.bank_statement_lines(user_id, financial_account_id, external_id)
@@ -171,7 +194,7 @@ begin
   if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
     raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
   end if;
-  if p_format not in ('ofx', 'csv') then
+  if p_format not in ('ofx', 'csv', 'xlsx') then
     raise exception 'Formato de extrato inválido.' using errcode = '22023';
   end if;
   if p_expected_count is null or p_expected_count < 1 or p_expected_count > 50000 then
@@ -256,6 +279,18 @@ begin
   if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
     raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
   end if;
+  select * into target
+  from public.bank_statement_imports
+  where id = p_import_id and user_id = owner_now and archived_at is null
+  for update;
+  if not found then raise exception 'Importação não encontrada.' using errcode = 'P0002'; end if;
+  if exists (
+    select 1 from public.bank_statement_lines l
+    where l.import_id = target.id and l.user_id = owner_now and l.archived_at is null
+      and l.review_status = 'processing'
+  ) then
+    raise exception 'Conclua ou cancele as criações em andamento antes de arquivar esta importação.' using errcode = '23514';
+  end if;
   if exists (
     select 1 from public.bank_reconciliations r
     join public.bank_statement_lines l on l.id = r.statement_line_id
@@ -267,7 +302,6 @@ begin
   set status = 'archived', archived_at = archived_time
   where id = p_import_id and user_id = owner_now and archived_at is null
   returning * into target;
-  if not found then raise exception 'Importação não encontrada.' using errcode = 'P0002'; end if;
   update public.bank_statement_lines
   set archived_at = archived_time
   where import_id = p_import_id and user_id = owner_now and archived_at is null;
@@ -311,6 +345,13 @@ begin
     raise exception 'Janela de datas inválida.' using errcode = '22023';
   end if;
 
+  perform i.id
+  from public.bank_statement_imports i
+  join public.bank_statement_lines l on l.import_id = i.id
+  where l.id = p_line_id and l.user_id = owner_now
+    and i.user_id = owner_now and i.status = 'ready' and i.archived_at is null
+  for update of i;
+
   select l.* into bank_line
   from public.bank_statement_lines l
   join public.bank_statement_imports i on i.id = l.import_id
@@ -331,6 +372,15 @@ begin
   where id = installment.financial_entry_id and user_id = owner_now and archived_at is null
     and status not in ('canceled', 'refunded');
   if not found then raise exception 'Título financeiro inválido, cancelado ou arquivado.' using errcode = 'P0002'; end if;
+
+  if bank_line.review_status = 'ignored' then
+    raise exception 'Reabra a linha ignorada antes de conciliá-la.' using errcode = '23514';
+  end if;
+
+  if bank_line.review_status = 'processing'
+     and not (p_method = 'created_from_line' and entry.source_id = bank_line.id) then
+    raise exception 'Esta linha está reservada para a criação de outro lançamento.' using errcode = '23514';
+  end if;
 
   if (bank_line.amount > 0 and entry.direction <> 'receivable')
      or (bank_line.amount < 0 and entry.direction <> 'payable') then
@@ -361,6 +411,9 @@ begin
     p_score, coalesce(p_reasons, '[]'::jsonb), amount_difference, day_difference,
     nullif(trim(coalesce(p_justification, '')), ''), actor_now
   ) returning * into created;
+  update public.bank_statement_lines
+  set review_status = 'pending', review_claim_token = null
+  where id = bank_line.id and user_id = owner_now;
   return created;
 exception
   when unique_violation then
@@ -393,16 +446,290 @@ begin
 end
 $$;
 
+create or replace function public.set_bank_statement_lines_review(
+  p_line_ids uuid[],
+  p_status text,
+  p_reason text default null
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_now uuid := public.data_owner_id();
+  changed_count integer := 0;
+  expected_count integer := 0;
+begin
+  if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
+    raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
+  end if;
+  if p_status not in ('pending', 'ignored') then
+    raise exception 'Decisão de revisão inválida.' using errcode = '22023';
+  end if;
+  if coalesce(array_length(p_line_ids, 1), 0) = 0 then
+    raise exception 'Nenhuma linha selecionada.' using errcode = '22023';
+  end if;
+
+  select count(distinct value)::integer into expected_count
+  from unnest(p_line_ids) as selected(value);
+
+  update public.bank_statement_lines
+  set review_status = p_status,
+      review_reason = case when p_status = 'ignored' then nullif(trim(coalesce(p_reason, '')), '') else null end,
+      reviewed_by = auth.uid(),
+      reviewed_at = timezone('utc', now()),
+      review_claim_token = null
+  where user_id = owner_now and id = any(p_line_ids) and archived_at is null
+    and ((p_status = 'ignored' and review_status = 'pending')
+      or (p_status = 'pending' and review_status = 'ignored'))
+    and not exists (
+      select 1 from public.bank_reconciliations r
+      where r.statement_line_id = bank_statement_lines.id and r.user_id = owner_now and r.reversed_at is null
+    );
+  get diagnostics changed_count = row_count;
+  if changed_count <> expected_count then
+    raise exception 'Uma ou mais linhas foram alteradas por outra sessão. Atualize a conciliação.' using errcode = '40001';
+  end if;
+  return changed_count;
+end
+$$;
+
+drop function if exists public.claim_bank_statement_lines_for_creation(uuid[]);
+drop function if exists public.claim_bank_statement_lines_for_creation(uuid[], uuid);
+
+create or replace function public.claim_bank_statement_lines_for_creation(
+  p_line_ids uuid[],
+  p_claim_token uuid,
+  p_allow_overlap boolean default false
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_now uuid := public.data_owner_id();
+  expected_count integer := 0;
+  changed_count integer := 0;
+  import_count integer := 0;
+  lock_key text;
+begin
+  if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
+    raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
+  end if;
+  if coalesce(array_length(p_line_ids, 1), 0) = 0 then
+    raise exception 'Nenhuma linha selecionada.' using errcode = '22023';
+  end if;
+  if p_claim_token is null then
+    raise exception 'Token da reserva inválido.' using errcode = '22023';
+  end if;
+
+  select count(distinct value)::integer into expected_count
+  from unnest(p_line_ids) as selected(value);
+
+  select count(distinct l.import_id)::integer into import_count
+  from public.bank_statement_lines l
+  join public.bank_statement_imports i on i.id = l.import_id
+  where l.id = any(p_line_ids) and l.user_id = owner_now and l.archived_at is null
+    and i.user_id = owner_now and i.status = 'ready' and i.archived_at is null;
+  if import_count <> 1 then
+    raise exception 'As linhas devem pertencer à mesma importação ativa.' using errcode = '22023';
+  end if;
+
+  perform i.id
+  from public.bank_statement_imports i
+  where i.id = (
+    select l.import_id from public.bank_statement_lines l
+    where l.id = any(p_line_ids) and l.user_id = owner_now limit 1
+  ) and i.user_id = owner_now and i.status = 'ready' and i.archived_at is null
+  for update;
+
+  -- Serializa a decisão por clínica/conta/movimentação. Assim duas sessões não conseguem
+  -- criar o mesmo lançamento ao mesmo tempo, mesmo quando vêm de arquivos diferentes.
+  for lock_key in
+    select distinct owner_now::text || ':' || l.financial_account_id::text || ':' || l.movement_fingerprint
+    from public.bank_statement_lines l
+    where l.id = any(p_line_ids) and l.user_id = owner_now and l.archived_at is null
+    order by 1
+  loop
+    perform pg_advisory_xact_lock(hashtextextended(lock_key, 0));
+  end loop;
+
+  if not coalesce(p_allow_overlap, false) then
+    if exists (
+      select 1
+      from public.bank_statement_lines l
+      where l.id = any(p_line_ids) and l.user_id = owner_now and l.archived_at is null
+      group by l.financial_account_id, l.movement_fingerprint
+      having count(*) > 1
+    ) or exists (
+      select 1
+      from public.bank_statement_lines selected
+      join public.bank_statement_lines other
+        on other.user_id = selected.user_id
+       and other.financial_account_id = selected.financial_account_id
+       and other.movement_fingerprint = selected.movement_fingerprint
+       and other.id <> selected.id
+       and other.archived_at is null
+       and other.review_status <> 'ignored'
+      where selected.id = any(p_line_ids)
+        and selected.user_id = owner_now
+        and selected.archived_at is null
+    ) then
+      raise exception 'Existe outra movimentação com a mesma data, valor e descrição. Revise a duplicidade antes de criar.' using errcode = '23505';
+    end if;
+  end if;
+
+  update public.bank_statement_lines
+  set review_status = 'processing', review_reason = null,
+      reviewed_by = auth.uid(), reviewed_at = timezone('utc', now()),
+      review_claim_token = p_claim_token
+  where user_id = owner_now and id = any(p_line_ids) and archived_at is null
+    and review_status = 'pending'
+    and not exists (
+      select 1 from public.bank_reconciliations r
+      where r.statement_line_id = bank_statement_lines.id and r.user_id = owner_now and r.reversed_at is null
+    );
+  get diagnostics changed_count = row_count;
+  if changed_count <> expected_count then
+    raise exception 'Uma ou mais linhas já foram reservadas ou conciliadas. Atualize a conciliação.' using errcode = '40001';
+  end if;
+  return changed_count;
+end
+$$;
+
+create or replace function public.release_bank_statement_line_claims(p_line_ids uuid[], p_claim_token uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_now uuid := public.data_owner_id();
+  expected_count integer := 0;
+  changed_count integer := 0;
+begin
+  if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
+    raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
+  end if;
+  if coalesce(array_length(p_line_ids, 1), 0) = 0 or p_claim_token is null then
+    raise exception 'Reserva de criação inválida.' using errcode = '22023';
+  end if;
+  select count(distinct value)::integer into expected_count
+  from unnest(p_line_ids) as selected(value);
+
+  perform i.id
+  from public.bank_statement_imports i
+  where i.id = (
+    select l.import_id from public.bank_statement_lines l
+    where l.id = any(p_line_ids) and l.user_id = owner_now limit 1
+  ) and i.user_id = owner_now and i.archived_at is null
+  for update;
+
+  update public.bank_statement_lines l
+  set review_status = 'pending', review_reason = null, review_claim_token = null,
+      reviewed_by = auth.uid(), reviewed_at = timezone('utc', now())
+  where l.user_id = owner_now and l.id = any(p_line_ids) and l.archived_at is null
+    and l.review_status = 'processing' and l.review_claim_token = p_claim_token
+    and l.reviewed_by = auth.uid()
+    and not exists (
+      select 1 from public.bank_reconciliations r
+      where r.statement_line_id = l.id and r.user_id = owner_now and r.reversed_at is null
+    )
+    and not exists (
+      select 1 from public.financial_entries e
+      where e.user_id = owner_now and e.source_id = l.id and e.archived_at is null
+    )
+    and not exists (
+      select 1 from public.extra_revenues er
+      where er.user_id = owner_now and er.id = l.id
+        and coalesce(to_jsonb(er)->>'archived_at', '') = ''
+    )
+    and not exists (
+      select 1 from public.expenses ex
+      where ex.user_id = owner_now and ex.id = l.id
+        and coalesce(to_jsonb(ex)->>'archived_at', '') = ''
+    );
+  get diagnostics changed_count = row_count;
+  if changed_count <> expected_count then
+    raise exception 'A reserva mudou ou a linha já originou um lançamento. Atualize a conciliação.' using errcode = '40001';
+  end if;
+  return changed_count;
+end
+$$;
+
+create or replace function public.recover_bank_statement_line_claim(p_line_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_now uuid := public.data_owner_id();
+  changed_count integer := 0;
+begin
+  if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
+    raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
+  end if;
+
+  perform i.id
+  from public.bank_statement_imports i
+  join public.bank_statement_lines l on l.import_id = i.id
+  where l.id = p_line_id and l.user_id = owner_now
+    and i.user_id = owner_now and i.status = 'ready' and i.archived_at is null
+  for update of i;
+
+  update public.bank_statement_lines l
+  set review_status = 'pending', review_reason = null, review_claim_token = null,
+      reviewed_by = auth.uid(), reviewed_at = timezone('utc', now())
+  where l.id = p_line_id and l.user_id = owner_now and l.archived_at is null
+    and l.review_status = 'processing' and l.reviewed_by = auth.uid()
+    and l.reviewed_at <= timezone('utc', now()) - interval '30 minutes'
+    and not exists (
+      select 1 from public.bank_reconciliations r
+      where r.statement_line_id = l.id and r.user_id = owner_now and r.reversed_at is null
+    )
+    and not exists (
+      select 1 from public.financial_entries e
+      where e.user_id = owner_now and e.source_id = l.id and e.archived_at is null
+    )
+    and not exists (
+      select 1 from public.extra_revenues er
+      where er.user_id = owner_now and er.id = l.id
+        and coalesce(to_jsonb(er)->>'archived_at', '') = ''
+    )
+    and not exists (
+      select 1 from public.expenses ex
+      where ex.user_id = owner_now and ex.id = l.id
+        and coalesce(to_jsonb(ex)->>'archived_at', '') = ''
+    );
+  get diagnostics changed_count = row_count;
+  if changed_count <> 1 then
+    raise exception 'A reserva ainda é recente, pertence a outra pessoa ou já originou um lançamento.' using errcode = '40001';
+  end if;
+  return changed_count;
+end
+$$;
+
 revoke all on function public.start_bank_statement_import(uuid, text, text, text, integer) from public, anon;
 revoke all on function public.finalize_bank_statement_import(uuid) from public, anon;
 revoke all on function public.archive_bank_statement_import(uuid) from public, anon;
 revoke all on function public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text, integer) from public, anon;
 revoke all on function public.reverse_bank_reconciliation(uuid, text) from public, anon;
+revoke all on function public.set_bank_statement_lines_review(uuid[], text, text) from public, anon;
+revoke all on function public.claim_bank_statement_lines_for_creation(uuid[], uuid, boolean) from public, anon;
+revoke all on function public.release_bank_statement_line_claims(uuid[], uuid) from public, anon;
+revoke all on function public.recover_bank_statement_line_claim(uuid) from public, anon;
 grant execute on function public.start_bank_statement_import(uuid, text, text, text, integer) to authenticated;
 grant execute on function public.finalize_bank_statement_import(uuid) to authenticated;
 grant execute on function public.archive_bank_statement_import(uuid) to authenticated;
 grant execute on function public.confirm_bank_reconciliation(uuid, uuid, text, numeric, jsonb, text, integer) to authenticated;
 grant execute on function public.reverse_bank_reconciliation(uuid, text) to authenticated;
+grant execute on function public.set_bank_statement_lines_review(uuid[], text, text) to authenticated;
+grant execute on function public.claim_bank_statement_lines_for_creation(uuid[], uuid, boolean) to authenticated;
+grant execute on function public.release_bank_statement_line_claims(uuid[], uuid) to authenticated;
+grant execute on function public.recover_bank_statement_line_claim(uuid) to authenticated;
 
 -- Integra o histórico global quando a função de auditoria já tiver sido aplicada.
 do $$

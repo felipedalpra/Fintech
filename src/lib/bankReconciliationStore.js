@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js'
+import { statementMovementFingerprint } from './statementParser.js'
 
 const PAGE_SIZE = 500
 
@@ -7,6 +8,13 @@ export function isBankReconciliationSchemaMissing(error) {
   const message = String(error?.message || '').toLowerCase()
   return code === '42P01' || code === 'PGRST202' || code === 'PGRST205'
     || message.includes('bank_statement_') && message.includes('schema cache')
+    || message.includes('review_status')
+    || message.includes('review_claim_token')
+    || message.includes('movement_fingerprint')
+    || message.includes('set_bank_statement_lines_review')
+    || message.includes('claim_bank_statement_lines_for_creation')
+    || message.includes('release_bank_statement_line_claims')
+    || message.includes('recover_bank_statement_line_claim')
 }
 
 async function fetchAll(makeQuery) {
@@ -67,6 +75,7 @@ function toLineRow(ownerId, accountId, importId, line) {
     currency:'BRL',
     description:String(line.description || ''),
     normalized_description:String(line.normalizedDescription || ''),
+    movement_fingerprint:statementMovementFingerprint(line),
     source_metadata:line.sourceMetadata || {},
     line_index:Number(line.lineIndex),
   }
@@ -118,16 +127,64 @@ export async function importBankStatement({ ownerId, accountId, parsed }) {
 export async function fetchStatementLines(ownerId, importId) {
   return fetchAll(() => supabase
     .from('bank_statement_lines')
-    .select('id,user_id,import_id,financial_account_id,source_line_key,external_id,posted_date,amount,currency,description,normalized_description,source_metadata,line_index,created_at,archived_at')
+    .select('id,user_id,import_id,financial_account_id,source_line_key,external_id,posted_date,amount,currency,description,normalized_description,movement_fingerprint,source_metadata,line_index,review_status,review_reason,reviewed_by,reviewed_at,created_at,archived_at')
     .eq('user_id', ownerId)
     .eq('import_id', importId)
     .is('archived_at', null)
     .order('line_index', { ascending:true }))
 }
 
+export async function setBankStatementLinesReview({ lineIds, status, reason = null }) {
+  const ids = [...new Set((lineIds || []).filter(Boolean))]
+  if (!ids.length) throw new Error('Selecione ao menos uma linha para revisar.')
+  if (!['pending', 'ignored'].includes(status)) throw new Error('Decisão de revisão inválida.')
+  const { data, error } = await supabase.rpc('set_bank_statement_lines_review', {
+    p_line_ids:ids,
+    p_status:status,
+    p_reason:reason ? String(reason).trim() : null,
+  })
+  if (error) throw error
+  if (Number(data) !== ids.length) throw new Error('Nem todas as linhas tiveram a revisão confirmada pelo banco.')
+  return Number(data)
+}
+
+export async function claimBankStatementLinesForCreation(lineIds, claimToken, { allowOverlap = false } = {}) {
+  const ids = [...new Set((lineIds || []).filter(Boolean))]
+  if (!ids.length) throw new Error('Selecione ao menos uma linha nova para aprovar.')
+  if (!claimToken) throw new Error('Não foi possível identificar esta tentativa de criação.')
+  const { data, error } = await supabase.rpc('claim_bank_statement_lines_for_creation', {
+    p_line_ids:ids,
+    p_claim_token:claimToken,
+    p_allow_overlap:Boolean(allowOverlap),
+  })
+  if (error) throw error
+  if (Number(data) !== ids.length) throw new Error('As linhas não foram reservadas integralmente. Atualize a conciliação antes de tentar novamente.')
+  return Number(data)
+}
+
+export async function recoverBankStatementLineClaim(lineId) {
+  if (!lineId) throw new Error('Linha de extrato inválida.')
+  const { data, error } = await supabase.rpc('recover_bank_statement_line_claim', { p_line_id:lineId })
+  if (error) throw error
+  if (Number(data) !== 1) throw new Error('A reserva ainda não pode ser recuperada.')
+  return Number(data)
+}
+
+export async function releaseBankStatementLineClaims(lineIds, claimToken) {
+  const ids = [...new Set((lineIds || []).filter(Boolean))]
+  if (!ids.length || !claimToken) throw new Error('Reserva de criação inválida.')
+  const { data, error } = await supabase.rpc('release_bank_statement_line_claims', {
+    p_line_ids:ids,
+    p_claim_token:claimToken,
+  })
+  if (error) throw error
+  if (Number(data) !== ids.length) throw new Error('A reserva não pôde ser liberada porque a linha mudou ou já originou um lançamento.')
+  return Number(data)
+}
+
 export async function fetchBankReconciliations(ownerId, importId) {
   const lines = await fetchStatementLines(ownerId, importId)
-  if (!lines.length) return { lines:[], reconciliations:[], reservedInstallmentIds:[] }
+  if (!lines.length) return { lines:[], reconciliations:[], reservedInstallmentIds:[], overlappingFingerprints:[] }
   const lineIds = lines.map(line => line.id)
   const reconciliations = []
   for (let index = 0; index < lineIds.length; index += PAGE_SIZE) {
@@ -146,10 +203,21 @@ export async function fetchBankReconciliations(ownerId, importId) {
     .select('financial_installment_id')
     .eq('user_id', ownerId)
     .is('reversed_at', null))
+  const accountId = lines[0]?.financial_account_id
+  const currentFingerprints = new Set(lines.map(line => line.movement_fingerprint).filter(Boolean))
+  const overlappingLines = accountId ? await fetchAll(() => supabase
+    .from('bank_statement_lines')
+    .select('movement_fingerprint')
+    .eq('user_id', ownerId)
+    .eq('financial_account_id', accountId)
+    .neq('import_id', importId)
+    .neq('review_status', 'ignored')
+    .is('archived_at', null)) : []
   return {
     lines,
     reconciliations,
     reservedInstallmentIds:[...new Set(activeReconciliations.map(item => item.financial_installment_id).filter(Boolean))],
+    overlappingFingerprints:[...new Set(overlappingLines.map(item => item.movement_fingerprint).filter(value => value && currentFingerprints.has(value)))],
   }
 }
 

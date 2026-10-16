@@ -96,9 +96,11 @@ export function matchBankStatementLines(lines = [], installments = [], activeRec
   const minimumScore = Number(options.minimumScore ?? 70)
   const minimumMargin = Number(options.minimumMargin ?? 8)
   const reconciliationByLine = new Map()
-  const usedInstallments = new Set(options.reservedInstallmentIds || [])
+  const globallyReservedInstallments = new Set(options.reservedInstallmentIds || [])
+  const usedInstallments = new Set(globallyReservedInstallments)
   activeReconciliations.filter(item => !item.reversed_at).forEach(item => {
     reconciliationByLine.set(item.statement_line_id, item)
+    globallyReservedInstallments.add(item.financial_installment_id)
     usedInstallments.add(item.financial_installment_id)
   })
 
@@ -112,7 +114,6 @@ export function matchBankStatementLines(lines = [], installments = [], activeRec
       return
     }
     const candidates = installments
-      .filter(installment => !usedInstallments.has(installment.id))
       .map(installment => rankCandidate(line, installment, windowDays))
       .filter(Boolean)
       .sort((a, b) => b.score - a.score || a.differenceDays - b.differenceDays || String(a.installmentId).localeCompare(String(b.installmentId)))
@@ -120,8 +121,24 @@ export function matchBankStatementLines(lines = [], installments = [], activeRec
       resultByLine.set(lineId, { line, status:'unmatched', candidates:[] })
       return
     }
-    const margin = candidates[0].score - (candidates[1]?.score ?? 0)
-    pending.push({ line, lineId, candidates, margin, eligible:candidates[0].score >= minimumScore && margin >= minimumMargin })
+    const reservedCandidates = candidates.filter(candidate => globallyReservedInstallments.has(candidate.installmentId))
+    const availableCandidates = candidates.filter(candidate => !globallyReservedInstallments.has(candidate.installmentId))
+    const bestReserved = reservedCandidates[0]
+    const bestAvailable = availableCandidates[0]
+    if (bestReserved && (!bestAvailable || bestReserved.score >= bestAvailable.score - minimumMargin)) {
+      resultByLine.set(lineId, {
+        line,
+        status:'reserved_match',
+        candidates,
+        reservedCandidate:bestReserved,
+        recommendedCandidate:null,
+        ambiguous:true,
+        conflict:true,
+      })
+      return
+    }
+    const margin = availableCandidates[0].score - (availableCandidates[1]?.score ?? 0)
+    pending.push({ line, lineId, candidates:availableCandidates, margin, eligible:availableCandidates[0].score >= minimumScore && margin >= minimumMargin })
   })
 
   pending.sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.candidates[0].score - a.candidates[0].score || b.margin - a.margin || a.lineId.localeCompare(b.lineId))

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { fmt, formatDateBR, getPeriodRange, inRange, isIsoDateString, today, uid } from '../utils.js'
@@ -19,6 +19,7 @@ import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrill
 import { findChartAccount, nextChildAccountCode, nextSiblingOrder, postingAccountOptions, postingGroupOptions } from '../lib/chartOfAccounts.js'
 import { createChartAccount, ensureDefaultChartAccounts, fetchChartAccounts, isChartSchemaMissing } from '../lib/chartOfAccountsStore.js'
 import { buildDrePresentation, flattenVisibleDreRows } from '../lib/drePresentation.js'
+import { releaseBankStatementLineClaims } from '../lib/bankReconciliationStore.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -203,6 +204,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
   const [formError, setFormError] = useState('')
   const [savingLaunch, setSavingLaunch] = useState(false)
+  const savingLaunchRef = useRef(false)
   const [quickCategory, setQuickCategory] = useState(QUICK_CATEGORY_EMPTY)
   const range = getPeriodRange(period, customRange)
   const indicatorPeriodKey = useMemo(() => buildIndicatorPeriodKey(range), [range.start, range.end])
@@ -220,7 +222,8 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
   const canManageChartAccounts = role === 'admin' || role === 'gestao'
 
   const persistLaunch = async (updater, pendingOperation) => {
-    if (savingLaunch) return false
+    if (savingLaunchRef.current) return false
+    savingLaunchRef.current = true
     setSavingLaunch(true)
     try {
       if (saveDataNow) await saveDataNow(updater, pendingOperation)
@@ -232,8 +235,32 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       toast(message, 'warning')
       return false
     } finally {
+      savingLaunchRef.current = false
       setSavingLaunch(false)
     }
+  }
+
+  const cancelLaunchModal = async () => {
+    if (savingLaunchRef.current) return
+    if (reconciliationReturn && !editing) {
+      savingLaunchRef.current = true
+      setSavingLaunch(true)
+      try {
+        await releaseBankStatementLineClaims([reconciliationReturn.lineId], reconciliationReturn.claimToken)
+      } catch (error) {
+        const message = error.message || 'Não foi possível cancelar a criação com segurança.'
+        setFormError(message)
+        toast(message, 'warning')
+        savingLaunchRef.current = false
+        setSavingLaunch(false)
+        return
+      }
+      setReconciliationReturn(null)
+      savingLaunchRef.current = false
+      setSavingLaunch(false)
+    }
+    setShowModal(false)
+    setFormError('')
   }
 
   useEffect(() => {
@@ -516,6 +543,10 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         return
       }
       setFormError('')
+      if (reconciliationReturn && form.launchType === 'fixa') {
+        setFormError('Linhas importadas devem gerar um lançamento único. Cancele e cadastre a recorrência separadamente.')
+        return
+      }
       if (!editing && form.launchType === 'fixa') {
         try {
           await saveFixedRecurrence('receita')
@@ -540,7 +571,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         date:receiptDate,
         receivedDate:received ? receiptDate : null,
       }
-      const revenueRecord = { ...normalizedRevenue, id:editing || uid() }
+      const revenueRecord = { ...normalizedRevenue, id:editing || reconciliationReturn?.sourceId || uid() }
       const saved = await persistLaunch(
         current => ({ ...current, extraRevenues:editing ? current.extraRevenues.map(item => item.id === editing ? revenueRecord : item) : [...current.extraRevenues, revenueRecord] }),
         { collection:'extraRevenues', record:revenueRecord },
@@ -557,6 +588,10 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         return
       }
       setFormError('')
+      if (reconciliationReturn && form.launchType === 'fixa') {
+        setFormError('Linhas importadas devem gerar um lançamento único. Cancele e cadastre a recorrência separadamente.')
+        return
+      }
       if (!editing && form.launchType === 'fixa') {
         try {
           await saveFixedRecurrence('despesa')
@@ -576,7 +611,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         status: isOpenExpense ? 'aberto' : 'pago',
       }
       if (isOpenExpense) {
-        const expenseRecord = { ...normalizedExpense, id:editing || uid() }
+        const expenseRecord = { ...normalizedExpense, id:editing || reconciliationReturn?.sourceId || uid() }
         const saved = await persistLaunch(current => ({
           ...current,
           expenses: editing
@@ -595,7 +630,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         message:`Confirma lançar ${money(Number(normalizedExpense.value || 0))} em "${normalizedExpense.description || 'despesa'}"?`,
         confirmLabel:editing ? 'Confirmar e atualizar' : 'Confirmar e lançar',
         confirmVariant:'success',
-        payload:{ expense:{ ...normalizedExpense, id:editing || uid() }, editing },
+        payload:{ expense:{ ...normalizedExpense, id:editing || reconciliationReturn?.sourceId || uid() }, editing },
       })
       return
     }
@@ -1625,10 +1660,10 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
 
       {tab === 'indicadores' && <IndicadoresTab m={m} data={data} money={money} setData={setData} indicatorPeriodKey={indicatorPeriodKey} />}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={(() => { const t = { surgery:'Editar cirurgia', consultation:'Editar consulta', 'product-sale':'Editar venda', 'product-purchase':'Editar compra' }; return t[modalType] || (editing ? 'Editar registro' : 'Novo registro') })()}>
+      <Modal open={showModal} onClose={cancelLaunchModal} title={(() => { const t = { surgery:'Editar cirurgia', consultation:'Editar consulta', 'product-sale':'Editar venda', 'product-purchase':'Editar compra' }; return t[modalType] || (editing ? 'Editar registro' : 'Novo registro') })()}>
         {modalType === 'extra' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            {!editing && (
+            {!editing && !reconciliationReturn && (
               <FInput
                 label="Como é esse lançamento?"
                 value={form.launchType || 'variavel'}
@@ -1693,12 +1728,12 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
               </>
             )}
 
-            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={savingLaunch || isSaveDisabled(modalType, form, editing)} saving={savingLaunch} />
+            <FormActions onCancel={cancelLaunchModal} onSave={save} disabled={savingLaunch || isSaveDisabled(modalType, form, editing)} saving={savingLaunch} />
           </div>
         )}
         {modalType === 'expense' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            {!editing && (
+            {!editing && !reconciliationReturn && (
               <FInput
                 label="Como é essa despesa?"
                 value={form.launchType || 'variavel'}
@@ -1763,7 +1798,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
               </>
             )}
 
-            <FormActions onCancel={() => { setShowModal(false); setFormError('') }} onSave={save} disabled={savingLaunch || isSaveDisabled(modalType, form, editing)} saving={savingLaunch} />
+            <FormActions onCancel={cancelLaunchModal} onSave={save} disabled={savingLaunch || isSaveDisabled(modalType, form, editing)} saving={savingLaunch} />
           </div>
         )}
         {(modalType === 'asset' || modalType === 'liability') && <div style={{ display:'flex', flexDirection:'column', gap:16 }}><FInput label="Nome" required value={form.name} onChange={value => setForm(current => ({ ...current, name:value }))} placeholder="Banco / empréstimo" /><FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="banco" /><FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" /><FInput label="Observações" value={form.notes} onChange={value => setForm(current => ({ ...current, notes:value }))} /><FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={!form.name} /></div>}

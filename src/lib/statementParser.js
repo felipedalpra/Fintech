@@ -1,9 +1,15 @@
 const DATE_HEADERS = ['data', 'date', 'dtposted', 'data lancamento', 'data do lancamento']
 const DESCRIPTION_HEADERS = ['descricao', 'descrição', 'historico', 'histórico', 'memo', 'detalhes', 'lancamento', 'lançamento']
 const AMOUNT_HEADERS = ['valor', 'amount', 'value', 'valor lancamento', 'valor do lancamento']
-const CREDIT_HEADERS = ['credito', 'crédito', 'credit', 'entrada']
-const DEBIT_HEADERS = ['debito', 'débito', 'debit', 'saida', 'saída']
-const ID_HEADERS = ['fitid', 'id', 'identificador', 'documento']
+const CREDIT_HEADERS = ['credito', 'crédito', 'credit', 'entrada', 'receita']
+const DEBIT_HEADERS = ['debito', 'débito', 'debit', 'saida', 'saída', 'despesa']
+const ID_HEADERS = ['fitid', 'id', 'transaction id', 'id transacao', 'id transação', 'identificador', 'documento']
+const CATEGORY_HEADERS = ['categoria', 'plano de contas', 'conta contabil', 'conta contábil']
+const COST_CENTER_HEADERS = ['centro de custo', 'centro custo']
+const REFERENCE_HEADERS = ['paciente contrato', 'paciente', 'contrato', 'referencia', 'referência']
+const OBSERVATION_HEADERS = ['observacao servico', 'observação serviço', 'observacao', 'observação', 'servico', 'serviço']
+const CASH_PAYMENT_HEADERS = ['pagamento a vista', 'pagamento à vista', 'a vista', 'à vista']
+const INSTALLMENT_HEADERS = ['parcelado se parcelado qual parcela', 'parcelado', 'parcela']
 
 function stripBom(value) {
   return String(value || '').replace(/^\uFEFF/, '')
@@ -29,7 +35,7 @@ function findHeader(headers, aliases) {
   const normalizedAliases = aliases.map(normalizeHeader)
   return headers.findIndex(header => {
     const normalized = normalizeHeader(header)
-    return normalizedAliases.some(alias => normalized === alias || normalized.includes(alias))
+    return normalizedAliases.some(alias => normalized === alias || (alias.length > 2 && normalized.includes(alias)))
   })
 }
 
@@ -163,13 +169,30 @@ function detectDelimiter(content) {
 }
 
 function autoMapping(headers) {
+  const credit = findHeader(headers, CREDIT_HEADERS)
+  const debit = findHeader(headers, DEBIT_HEADERS)
   const mapping = {
     date:findHeader(headers, DATE_HEADERS),
     description:findHeader(headers, DESCRIPTION_HEADERS),
-    amount:findHeader(headers, AMOUNT_HEADERS),
-    credit:findHeader(headers, CREDIT_HEADERS),
-    debit:findHeader(headers, DEBIT_HEADERS),
+    // Quando crédito e débito existem em colunas separadas, eles têm precedência. Isso evita
+    // interpretar “Valor crédito” como um valor assinado e perder silenciosamente os débitos.
+    amount:credit >= 0 && debit >= 0 ? -1 : findHeader(headers, AMOUNT_HEADERS),
+    credit,
+    debit,
     externalId:findHeader(headers, ID_HEADERS),
+    category:findHeader(headers, CATEGORY_HEADERS),
+    costCenter:findHeader(headers, COST_CENTER_HEADERS),
+    reference:findHeader(headers, REFERENCE_HEADERS),
+    observation:findHeader(headers, OBSERVATION_HEADERS),
+    cashPayment:findHeader(headers, CASH_PAYMENT_HEADERS),
+    installmentInfo:findHeader(headers, INSTALLMENT_HEADERS),
+  }
+  // O modelo mensal usado pela clínica deixa sem título a coluna de paciente/contrato,
+  // posicionada entre Centro de custo e Observação/serviço. Preserva esse dado sem depender
+  // de nome de pessoa ou conteúdo da linha.
+  if (mapping.reference < 0 && mapping.costCenter >= 0 && mapping.observation === mapping.costCenter + 2
+    && !String(headers[mapping.costCenter + 1] || '').trim()) {
+    mapping.reference = mapping.costCenter + 1
   }
   const hasAmount = mapping.amount >= 0 || (mapping.credit >= 0 && mapping.debit >= 0)
   return { mapping, complete:mapping.date >= 0 && hasAmount }
@@ -177,11 +200,105 @@ function autoMapping(headers) {
 
 function normalizeMapping(mapping = {}) {
   const result = {}
-  for (const key of ['date', 'description', 'amount', 'credit', 'debit', 'externalId']) {
+  for (const key of ['date', 'description', 'amount', 'credit', 'debit', 'externalId', 'category', 'costCenter', 'reference', 'observation', 'cashPayment', 'installmentInfo']) {
     const value = Number(mapping[key])
     result[key] = Number.isInteger(value) && value >= 0 ? value : -1
   }
   return result
+}
+
+function mappedText(row, mapping, key) {
+  return mapping[key] >= 0 ? String(row[mapping[key]] ?? '').trim() : ''
+}
+
+function spreadsheetDate(value, XLSX) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return validDate(value.getFullYear(), value.getMonth() + 1, value.getDate())
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value)
+    return parsed ? validDate(parsed.y, parsed.m, parsed.d) : null
+  }
+  return parseIsoOrBrDate(value)
+}
+
+function spreadsheetHeader(rows) {
+  const candidates = rows.slice(0, 20).map((row, index) => {
+    const headers = row.map(cell => String(cell ?? '').trim())
+    const detected = autoMapping(headers)
+    const metadataFields = ['category', 'costCenter', 'reference', 'observation'].filter(key => detected.mapping[key] >= 0).length
+    return { index, headers, ...detected, score:Number(detected.complete) * 100 + metadataFields * 10 + headers.filter(Boolean).length }
+  })
+  return candidates.sort((a, b) => b.score - a.score || a.index - b.index)[0] || { index:0, headers:[], mapping:{}, complete:false }
+}
+
+export async function parseXlsxStatement(buffer, options = {}) {
+  const imported = await import('xlsx')
+  const XLSX = imported.default || imported
+  const workbook = XLSX.read(buffer, { type:'array', cellDates:false })
+  const sheetNames = [...workbook.SheetNames]
+  const sheetName = options.sheetName && workbook.Sheets[options.sheetName] ? options.sheetName : workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  if (!sheet) return { format:'xlsx', sheetNames, headers:[], lines:[], errors:[{ line:1, reason:'A planilha não possui uma aba legível.' }], requiresMapping:false, mapping:null }
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1')
+  const rows = XLSX.utils.sheet_to_json(sheet, { header:1, raw:true, defval:'', blankrows:true })
+  const detected = spreadsheetHeader(rows)
+  const headerIndex = Number.isInteger(options.headerRow) ? options.headerRow : detected.index
+  const headers = (rows[headerIndex] || []).map(cell => String(cell ?? '').trim())
+  const mapping = options.mapping ? normalizeMapping(options.mapping) : autoMapping(headers).mapping
+  const hasAmount = mapping.amount >= 0 || (mapping.credit >= 0 && mapping.debit >= 0)
+  if (mapping.date < 0 || !hasAmount) {
+    return { format:'xlsx', sheetNames, sheetName, headerRow:headerIndex, headers, lines:[], errors:[], requiresMapping:true, mapping }
+  }
+
+  const lines = []
+  const errors = []
+  const seenIds = new Set()
+  rows.slice(headerIndex + 1).forEach((row, offset) => {
+    const rowIndex = headerIndex + 1 + offset
+    const displayLine = range.s.r + rowIndex + 1
+    const rawDate = row[mapping.date]
+    const description = mappedText(row, mapping, 'description')
+    const category = mappedText(row, mapping, 'category')
+    const costCenter = mappedText(row, mapping, 'costCenter')
+    const reference = mappedText(row, mapping, 'reference')
+    const observation = mappedText(row, mapping, 'observation')
+    const cashPayment = mappedText(row, mapping, 'cashPayment')
+    const installmentInfo = mappedText(row, mapping, 'installmentInfo')
+    const hasSupportingData = Boolean(description || category || costCenter || reference || observation || cashPayment || installmentInfo)
+    const amount = csvLineAmount(row, mapping)
+    const rowHasAnyValue = row.some(cell => String(cell ?? '').trim())
+    if (!rowHasAnyValue) return
+    // Totais/rodapés do Excel normalmente têm apenas fórmula/valor e nenhuma identificação.
+    if (!rawDate && !hasSupportingData) return
+    if (!rawDate && /^(total|saldo)$/i.test(description) && !category && !costCenter && !reference && !observation) return
+    const postedDate = spreadsheetDate(rawDate, XLSX)
+    const externalId = mappedText(row, mapping, 'externalId') || null
+    if (!postedDate) errors.push({ line:displayLine, reason:'Data inválida ou ausente.' })
+    if (amount == null || amount === 0) errors.push({ line:displayLine, reason:'Receita/despesa inválida, ausente ou igual a zero.' })
+    if (externalId && seenIds.has(externalId)) errors.push({ line:displayLine, reason:`Identificador duplicado no arquivo: ${externalId}.` })
+    if (!postedDate || amount == null || amount === 0 || (externalId && seenIds.has(externalId))) return
+    if (externalId) seenIds.add(externalId)
+    lines.push({
+      sourceLineKey:lineKey({ externalId, lineIndex:displayLine, postedDate, amount, description }),
+      externalId,
+      postedDate,
+      amount:Math.round(amount * 100) / 100,
+      description,
+      normalizedDescription:normalizeStatementDescription([description, reference, observation].filter(Boolean).join(' ')),
+      lineIndex:displayLine,
+      sourceMetadata:{ sheetName, excelRow:displayLine, category, costCenter, reference, observation, cashPayment, installmentInfo },
+    })
+  })
+  const totals = lines.reduce((acc, line) => {
+    if (line.amount > 0) acc.receipts += line.amount
+    else acc.expenses += Math.abs(line.amount)
+    return acc
+  }, { receipts:0, expenses:0 })
+  totals.receipts = Math.round(totals.receipts * 100) / 100
+  totals.expenses = Math.round(totals.expenses * 100) / 100
+  totals.net = Math.round((totals.receipts - totals.expenses) * 100) / 100
+  return { format:'xlsx', sheetNames, sheetName, headerRow:headerIndex, headers, lines, errors, requiresMapping:false, mapping, totals }
 }
 
 function csvLineAmount(row, mapping) {
@@ -196,6 +313,17 @@ function csvLineAmount(row, mapping) {
 
 function lineKey({ externalId, lineIndex, postedDate, amount, description }) {
   return externalId || `${lineIndex}:${postedDate}:${Number(amount).toFixed(2)}:${normalizeStatementDescription(description)}`
+}
+
+export function statementMovementFingerprint(line) {
+  const amount = Number(line?.amount || 0)
+  const description = line?.normalizedDescription || line?.normalized_description || line?.description || ''
+  return [
+    line?.postedDate || line?.posted_date || '',
+    amount > 0 ? 'receivable' : 'payable',
+    Math.abs(amount).toFixed(2),
+    normalizeStatementDescription(description),
+  ].join('|')
 }
 
 export function parseCsvStatement(content, options = {}) {
@@ -324,7 +452,9 @@ export async function sha256Hex(value) {
 
 export async function parseStatementFile(file, options = {}) {
   const buffer = await file.arrayBuffer()
-  const text = decodeStatementBuffer(buffer)
-  const parsed = parseStatementText(text, { ...options, fileName:file.name })
+  const lowerName = String(file.name || '').toLowerCase()
+  const parsed = lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')
+    ? await parseXlsxStatement(buffer, options)
+    : parseStatementText(decodeStatementBuffer(buffer), { ...options, fileName:file.name })
   return { ...parsed, fileName:file.name, fileHash:await sha256Hex(buffer), fileSize:file.size }
 }
