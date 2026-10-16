@@ -17,6 +17,14 @@ test.beforeEach(async ({ page }) => {
     }
     return route.continue()
   })
+  // A tela carrega o perfil clínico protegido separadamente; vazio é um estado
+  // válido e evita que o teste dependa do Supabase real.
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+    return route.continue()
+  })
   // Histórico de WhatsApp do paciente.
   await page.route('**/rest/v1/whatsapp_messages*', route => {
     if (route.request().method() === 'GET') {

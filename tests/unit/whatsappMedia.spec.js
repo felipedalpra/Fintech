@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { buildMediaSendRequest, configureZApiReceiveWebhook, enableZApiSentByMe, listZApiChats, normalizeZApiInstanceUrl, resolveZApiPhoneLids, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
+import { mediaTypeFromMime } from '../../src/lib/whatsappMediaTypes.js'
+import { buildMediaSendRequest, configureZApiReceiveWebhook, downloadZApiMedia, enableZApiSentByMe, listZApiChats, normalizeZApiInstanceUrl, resolveZApiPhoneLids, sendWhatsAppText, testWhatsAppConnection } from '../../api/_lib/whatsappClient.js'
 
 const realFetch = globalThis.fetch
 test.afterEach(() => { globalThis.fetch = realFetch })
@@ -103,6 +104,28 @@ test('configureZApiReceiveWebhook rejeita confirmação divergente da Z-API', as
   )).rejects.toThrow(/não manteve ativa/i)
 })
 
+test('downloadZApiMedia preserva bytes do host oficial e rejeita SSRF', async () => {
+  globalThis.fetch = async () => new Response(new Uint8Array([1, 2, 3]), {
+    status:200,
+    headers:{ 'content-type':'image/jpeg', 'content-length':'3' },
+  })
+  await expect(downloadZApiMedia('https://storage.z-api.io/media/foto.jpg')).resolves.toMatchObject({
+    base64:'AQID', mimetype:'image/jpeg', fileName:'foto.jpg',
+  })
+  await expect(downloadZApiMedia('https://127.0.0.1/private')).rejects.toThrow(/host não autorizado/i)
+  await expect(downloadZApiMedia('https://evil.example/private')).rejects.toThrow(/host não autorizado/i)
+})
+
+test('downloadZApiMedia valida redirect e tamanho antes de persistir', async () => {
+  globalThis.fetch = async () => new Response(null, { status:302, headers:{ location:'https://evil.example/file' } })
+  await expect(downloadZApiMedia('https://storage.z-api.io/media/foto.jpg')).rejects.toThrow(/host não autorizado/i)
+  globalThis.fetch = async () => new Response(new Uint8Array([1]), {
+    status:200,
+    headers:{ 'content-type':'image/jpeg', 'content-length':String(17 * 1024 * 1024) },
+  })
+  await expect(downloadZApiMedia('https://storage.z-api.io/media/foto.jpg')).rejects.toThrow(/excede 16 MB/i)
+})
+
 test('listZApiChats pagina metadados sem expor credenciais', async () => {
   const urls = []
   globalThis.fetch = async url => {
@@ -141,6 +164,10 @@ test('buildMediaSendRequest: imagem → send-image com caption', () => {
   expect(buildMediaSendRequest('image', { to: '5511999', mediaUrl: 'https://s/i.jpg', caption: 'oi' }))
     .toEqual({ path: 'send-image', body: { phone: '5511999', image: 'https://s/i.jpg', caption: 'oi' } })
 })
+test('buildMediaSendRequest: vídeo → send-video com caption', () => {
+  expect(buildMediaSendRequest('video', { to:'5511', mediaUrl:'https://s/video.mp4', caption:'Vídeo' }))
+    .toEqual({ path:'send-video', body:{ phone:'5511', video:'https://s/video.mp4', caption:'Vídeo' } })
+})
 
 test('buildMediaSendRequest: documento → send-document/<ext> com fileName', () => {
   expect(buildMediaSendRequest('document', { to: '5511999', mediaUrl: 'https://s/exames.pdf', fileName: 'exames.pdf' }))
@@ -159,4 +186,10 @@ test('buildMediaSendRequest: tipo inválido lança erro', () => {
 test('buildMediaSendRequest: documento sem extensão no nome cai para "bin"', () => {
   const r = buildMediaSendRequest('document', { to: '1', mediaUrl: 'https://s/arquivo', fileName: 'arquivo' })
   expect(r.path).toBe('send-document/bin')
+})
+test('classifica imagem, áudio, vídeo e documento para o endpoint correto', () => {
+  expect(mediaTypeFromMime('image/jpeg')).toBe('image')
+  expect(mediaTypeFromMime('audio/ogg')).toBe('audio')
+  expect(mediaTypeFromMime('video/mp4')).toBe('video')
+  expect(mediaTypeFromMime('application/pdf')).toBe('document')
 })

@@ -27,6 +27,20 @@ test('inbox renderiza imagem, áudio e documento recebidos', async ({ page }) =>
   await expect(page.getByText('Oi, tudo bem?')).toBeVisible()
 })
 
+test('mídia clínica privada só é aberta por URL assinada autenticada', async ({ page }) => {
+  const privateMessage = [{ ...MESSAGES[2], id:'private-1', media_url:'storage://wa-media-inbound/owner/incoming/N1/foto.jpg' }]
+  let requestedMessageId = null
+  await page.route('**/rest/v1/whatsapp_messages*', route => route.fulfill(json(privateMessage)))
+  await page.route('**/api/whatsapp?action=media-url', async route => {
+    requestedMessageId = route.request().postDataJSON()?.messageId
+    await route.fulfill(json({ url:'https://signed.example/foto.jpg', expiresIn:300 }))
+  })
+  await page.goto('/app/inbox')
+  await page.getByText('Ana Paula').first().click()
+  await expect(page.locator('img[src="https://signed.example/foto.jpg"]')).toBeVisible()
+  expect(requestedMessageId).toBe('private-1')
+})
+
 test('lista mostra rótulo de mídia no preview da conversa', async ({ page }) => {
   await page.goto('/app/inbox')
   // última mensagem é o documento → preview mostra o rótulo de mídia
@@ -46,4 +60,20 @@ test('composer oferece anexo e gravação de áudio', async ({ page }) => {
   await page.getByText('Ana Paula').first().click()
   await expect(page.getByRole('button', { name: 'Anexar arquivo' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Gravar áudio' })).toBeVisible()
+})
+
+test('upload de vídeo envia somente referência privada ao backend', async ({ page }) => {
+  let payload = null
+  await page.route('**/storage/v1/object/wa-media/**', route => route.fulfill(json({ Key:'owner/video.mp4' })))
+  await page.route('**/api/whatsapp?action=message', async route => {
+    payload = route.request().postDataJSON()
+    await route.fulfill(json({ ok:true, messageId:'sent-video' }))
+  })
+  await page.goto('/app/inbox')
+  await page.getByText('Ana Paula').first().click()
+  await page.locator('input[type="file"]').setInputFiles({ name:'video.mp4', mimeType:'video/mp4', buffer:Buffer.from('video') })
+  await expect.poll(() => payload).not.toBeNull()
+  expect(payload.type).toBe('video')
+  expect(payload.mediaUrl).toMatch(/^storage:\/\/wa-media\//)
+  expect(payload.mediaUrl).not.toContain('https://')
 })

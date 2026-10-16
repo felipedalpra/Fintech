@@ -3,7 +3,7 @@
 // Parte PURA (testável): addDays, formatBR, renderTemplate, planReminders, planFollowups.
 // Parte orquestração: runWhatsAppAutomations(admin, { todayISO }) — lê fontes, agenda, envia.
 // Idempotente: guard-log (índice único) antes de enviar. Fail-safe: nunca lança pra cima.
-import { sendWhatsAppText } from './whatsappClient.js'
+import { providerReady, sendProviderText, whatsappProvider } from './whatsappProvider.js'
 
 // ---------- Puro ----------
 
@@ -120,6 +120,19 @@ export function planPayments({ items, template, targetDueDate }) {
 // ---------- Orquestração ----------
 
 const EVENT_SELECT = 'id, date, start_time, patient_id, patients(full_name, phone)'
+const AUTOMATION_RETRY_BASE_MS = 5 * 60 * 1000
+
+export function automationRetryAction(log, now = Date.now()) {
+  if (!log) return 'send'
+  if (log.status === 'sent') return 'skip'
+  // O provider já aceitou: falta apenas garantir o histórico local, nunca reenviar.
+  if (log.provider_message_id) return 'persist'
+  if (log.status !== 'failed') return 'skip'
+  const attempts = Math.max(1, Number(log.attempts || 1))
+  const delay = Math.min(24 * 60 * 60 * 1000, AUTOMATION_RETRY_BASE_MS * (2 ** Math.min(attempts - 1, 12)))
+  const lastAttempt = Date.parse(log.last_attempt_at || log.created_at || 0)
+  return Number.isFinite(lastAttempt) && now - lastAttempt >= delay ? 'send' : 'skip'
+}
 
 async function fetchEvents(admin, userId, targetDate, { consultations = true, surgeries = true } = {}) {
   const jobs = []
@@ -151,46 +164,146 @@ async function fetchReceivables(admin, userId) {
   }))
 }
 
-// Guard-log + envio de uma mensagem. Idempotente (índice único (user_id, type, ref_id, target_date)).
+// Guard-log + envio de uma mensagem. Falhas conhecidas de provider voltam para
+// a fila com backoff; provider_message_id significa “aceito externamente” e
+// permite reparar só o histórico sem risco de reenvio.
 async function dispatchOne(admin, { userId, number, item, automationType, targetDate }, summary) {
   const match = { user_id: userId, automation_type: automationType, ref_id: item.ref_id, target_date: targetDate }
+  const now = new Date().toISOString()
 
-  // 1) Guarda o log ANTES de enviar. Se já existe (23505) → já tratado, pula.
+  // 1) Guarda o log ANTES de enviar.
   const { error: logErr } = await admin.from('whatsapp_automation_log').insert({
-    ...match, ref_type: item.ref_type, phone: item.phone, status: 'pending',
+    ...match,
+    ref_type: item.ref_type,
+    phone: item.phone,
+    patient_id: item.patient_id,
+    whatsapp_number_id: number.id,
+    provider: whatsappProvider(number),
+    message_body: item.message,
+    status: 'pending',
+    attempts: 1,
+    last_attempt_at: now,
   })
+  let existing = null
   if (logErr) {
-    if (logErr.code === '23505') { summary.skipped += 1; return }
-    throw logErr
+    if (logErr.code !== '23505') throw logErr
+    const result = await admin.from('whatsapp_automation_log')
+      .select('id,status,attempts,last_attempt_at,created_at,provider_message_id,whatsapp_number_id,provider')
+      .match(match)
+      .maybeSingle()
+    if (result.error) throw result.error
+    existing = result.data
+    const action = automationRetryAction(existing)
+    if (action === 'skip') { summary.skipped += 1; return }
+    if (action === 'send') {
+      const claimed = await admin.from('whatsapp_automation_log').update({
+        status:'pending',
+        attempts:Number(existing.attempts || 1) + 1,
+        last_attempt_at:now,
+        error_message:null,
+        whatsapp_number_id:number.id,
+        provider:whatsappProvider(number),
+      }).eq('id', existing.id).eq('status', 'failed').eq('attempts', Number(existing.attempts || 1)).select('id').maybeSingle()
+      if (claimed.error) throw claimed.error
+      if (!claimed.data) { summary.skipped += 1; return }
+    }
   }
 
-  // 2) Envia.
-  try {
-    const providerId = await sendWhatsAppText(number.instance_url, number.api_token, item.phone, item.message)
-    const { error: messageError } = await admin.from('whatsapp_messages').insert({
-      user_id: userId, patient_id: item.patient_id, phone: item.phone, direction: 'outbound',
-      body: item.message, status: 'sent', provider_message_id: providerId, whatsapp_number_id: number.id,
-    })
-    // Com notifySentByMe ativo, o webhook pode persistir a mesma mensagem antes
-    // desta resposta de envio. A restrição única confirma que ela já está salva.
-    if (messageError && messageError.code !== '23505') throw messageError
-    await admin.from('whatsapp_automation_log').update({ status: 'sent' }).match(match)
-    summary.sent += 1
-  } catch (err) {
-    await admin.from('whatsapp_automation_log').update({ status: 'failed' }).match(match)
+  let providerId = existing?.provider_message_id || null
+  if (!providerId) {
+    try {
+      providerId = await sendProviderText(number, item.phone, item.message)
+    } catch (err) {
+      await admin.from('whatsapp_automation_log').update({
+        status:'failed', error_message:String(err?.message || 'Falha no provider').slice(0, 1000),
+      }).match(match)
+      summary.failed += 1
+      return
+    }
+    // Este checkpoint separa “provider aceitou” de “histórico persistiu”.
+    // Mesmo se ele falhar, ainda tentamos gravar a mensagem e o update final.
+    await admin.from('whatsapp_automation_log').update({
+      status:'accepted', provider_message_id:providerId, provider_accepted_at:new Date().toISOString(), error_message:null,
+    }).match(match)
+  }
+
+  const { error: messageError } = await admin.from('whatsapp_messages').insert({
+    user_id: userId, patient_id: item.patient_id, phone: item.phone, direction: 'outbound',
+    body: item.message, status: 'sent', provider_message_id: providerId,
+    whatsapp_number_id: existing?.provider_message_id
+      ? (existing.whatsapp_number_id || item.whatsapp_number_id || number.id)
+      : number.id,
+    provider: existing?.provider_message_id
+      ? (existing.provider || item.provider || whatsappProvider(number))
+      : whatsappProvider(number),
+  })
+  // Com notifySentByMe ativo, o webhook pode persistir a mesma mensagem antes
+  // desta resposta de envio. A restrição única confirma que ela já está salva.
+  if (messageError && messageError.code !== '23505') {
+    await admin.from('whatsapp_automation_log').update({
+      status:'accepted', provider_message_id:providerId, error_message:String(messageError.message || 'Falha no histórico').slice(0, 1000),
+    }).match(match)
     summary.failed += 1
+    return
+  }
+  const sent = await admin.from('whatsapp_automation_log').update({
+    status:'sent', provider_message_id:providerId, error_message:null,
+  }).match(match)
+  if (sent.error) {
+    summary.failed += 1
+    throw sent.error
+  }
+  summary.sent += 1
+}
+
+async function retryAutomationBacklog(admin, userId, number, summary) {
+  const result = await admin.from('whatsapp_automation_log')
+    .select('ref_type,ref_id,target_date,automation_type,patient_id,phone,message_body,whatsapp_number_id,provider,status,attempts,last_attempt_at,created_at,provider_message_id')
+    .eq('user_id', userId)
+    .in('status', ['failed', 'accepted'])
+    .not('message_body', 'is', null)
+    .order('created_at', { ascending:true })
+    .limit(50)
+  // Compatibilidade enquanto a migração aditiva ainda não chegou ao banco.
+  if (['PGRST204', 'PGRST205', '42703', '42P01'].includes(result.error?.code)) return
+  if (result.error) throw result.error
+  for (const log of result.data || []) {
+    await dispatchOne(admin, {
+      userId,
+      number,
+      automationType:log.automation_type,
+      targetDate:log.target_date,
+      item:{
+        ref_type:log.ref_type,
+        ref_id:log.ref_id,
+        patient_id:log.patient_id,
+        phone:log.phone,
+        message:log.message_body,
+        whatsapp_number_id:log.whatsapp_number_id,
+        provider:log.provider,
+      },
+    }, summary)
   }
 }
 
 async function runForOwner(admin, auto, todayISO, summary) {
   // Sem número de envio configurado → pronto-pra-credencial: não envia nada (skip silencioso).
   if (!auto.whatsapp_number_id) return
-  const { data: number } = await admin
+  let numberResult = await admin
     .from('whatsapp_numbers')
-    .select('id, instance_url, api_token')
+    .select('id, active, instance_url, api_token, provider, provider_instance_name')
     .eq('id', auto.whatsapp_number_id)
     .maybeSingle()
-  if (!number || !number.instance_url || !number.api_token) return
+  if (['PGRST204', '42703'].includes(numberResult.error?.code)) {
+    numberResult = await admin.from('whatsapp_numbers')
+      .select('id, active, instance_url, api_token')
+      .eq('id', auto.whatsapp_number_id)
+      .maybeSingle()
+  }
+  const number = numberResult.data ? { provider: 'zapi', ...numberResult.data } : null
+  if (!number || !number.active || !providerReady(number)) return
+
+  await retryAutomationBacklog(admin, auto.user_id, number, summary)
 
   // LEMBRETE: eventos de (hoje + days_before).
   if (auto.reminder_enabled) {

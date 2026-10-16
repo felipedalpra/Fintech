@@ -11,7 +11,7 @@ create table if not exists public.whatsapp_numbers (
   -- SECRETOS (lidos só pelo servidor via service role; revogados de authenticated abaixo):
   instance_url   text,                           -- Z-API: https://api.z-api.io/instances/{id}/token/{token}
   api_token      text,                           -- Z-API Client-Token
-  webhook_secret text,                           -- token do webhook deste número
+  webhook_secret text not null default encode(gen_random_bytes(32), 'hex'), -- token do webhook deste número
   created_at     timestamptz not null default timezone('utc', now())
 );
 
@@ -33,9 +33,10 @@ end $$;
 -- Defesa em profundidade: o frontend (authenticated/anon) NÃO lê as colunas que ENVIAM
 -- (instance_url contém o token Z-API; api_token é o Client-Token), mesmo tentando selecioná-las.
 -- O endpoint usa service role (ignora isto) para enviar. INSERT/UPDATE pela UI continua (write-only).
--- webhook_secret fica legível (só autentica o webhook de entrada) para o admin ver a URL do webhook.
-revoke select (instance_url, api_token) on public.whatsapp_numbers from authenticated;
-revoke select (instance_url, api_token) on public.whatsapp_numbers from anon;
+-- webhook_secret também fica restrito; a tela administrativa o recebe apenas
+-- pelo endpoint server-side, depois de confirmar que o usuário é admin da clínica.
+revoke select (instance_url, api_token, webhook_secret) on public.whatsapp_numbers from authenticated;
+revoke select (instance_url, api_token, webhook_secret) on public.whatsapp_numbers from anon;
 
 create index if not exists idx_whatsapp_numbers_user on public.whatsapp_numbers(user_id, active);
 create index if not exists idx_whatsapp_messages_number on public.whatsapp_messages(whatsapp_number_id, created_at desc);

@@ -65,9 +65,28 @@ create table if not exists public.whatsapp_automation_log (
   ref_id          uuid not null,
   target_date     date not null,                 -- data-alvo (evento) que gerou o envio
   phone           text,
-  status          text not null default 'pending', -- 'pending' | 'sent' | 'failed'
+  patient_id      uuid references public.patients(id) on delete set null,
+  whatsapp_number_id uuid references public.whatsapp_numbers(id) on delete set null,
+  provider        text,
+  message_body    text,
+  status          text not null default 'pending', -- 'pending' | 'accepted' | 'sent' | 'failed'
+  attempts        integer not null default 1,
+  last_attempt_at timestamptz not null default timezone('utc', now()),
+  provider_message_id text,
+  provider_accepted_at timestamptz,
+  error_message   text,
   created_at      timestamptz not null default timezone('utc', now())
 );
+
+alter table public.whatsapp_automation_log add column if not exists patient_id uuid references public.patients(id) on delete set null;
+alter table public.whatsapp_automation_log add column if not exists whatsapp_number_id uuid references public.whatsapp_numbers(id) on delete set null;
+alter table public.whatsapp_automation_log add column if not exists provider text;
+alter table public.whatsapp_automation_log add column if not exists message_body text;
+alter table public.whatsapp_automation_log add column if not exists attempts integer not null default 1;
+alter table public.whatsapp_automation_log add column if not exists last_attempt_at timestamptz not null default timezone('utc', now());
+alter table public.whatsapp_automation_log add column if not exists provider_message_id text;
+alter table public.whatsapp_automation_log add column if not exists provider_accepted_at timestamptz;
+alter table public.whatsapp_automation_log add column if not exists error_message text;
 
 alter table public.whatsapp_automation_log enable row level security;
 do $$ begin
@@ -82,6 +101,9 @@ end $$;
 -- Garante envio ÚNICO por evento/tipo/dia mesmo com re-execução do cron (guard-log antes de enviar).
 create unique index if not exists idx_wa_automation_log_dedup
   on public.whatsapp_automation_log(user_id, automation_type, ref_id, target_date);
+create index if not exists idx_wa_automation_log_retry
+  on public.whatsapp_automation_log(user_id, status, last_attempt_at)
+  where status in ('failed', 'accepted');
 
 -- Verificação (rodar separado): depois de um disparo,
 -- select automation_type, ref_type, target_date, status from public.whatsapp_automation_log order by created_at desc;
