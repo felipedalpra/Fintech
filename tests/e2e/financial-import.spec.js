@@ -62,7 +62,7 @@ test('mostra todas as linhas, permite editar e só salva após aprovação', asy
   await expect(progress).toContainText('50 de 188 importados')
   await expect(progress).toContainText('Todos os lançamentos foram importados')
   await expect(progress).toContainText('188 de 188 importados')
-  expect(importedBatchSizes.map((total, index) => total - (importedBatchSizes[index - 1] || 0))).toEqual([50, 50, 50, 38])
+  expect(importedBatchSizes).toEqual([50, 50, 50, 38])
 
   await page.getByRole('button', { name:'Concluir' }).click()
   await expect(firstLine).toContainText('Importado')

@@ -55,6 +55,7 @@ test('alterna visualizações, cria atendimento e mantém após recarregar', asy
   await page.goto('/app/calendar')
 
   await expect(page.getByTestId('calendar-month-view')).toBeVisible()
+  await expect(page.locator('.cal-month__cell.is-today .cal-month__number')).toHaveText(String(new Date().getDate()))
   await expect(page.getByText('Ana Costa', { exact:true }).first()).toBeVisible()
   await expect(page.getByText(/atendimentos com conflito/)).toBeVisible()
 

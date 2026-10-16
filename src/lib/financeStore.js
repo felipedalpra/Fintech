@@ -1,5 +1,5 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
-import { computeIdsToDelete, missingRowIds, mergeById } from './financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById } from './financeSync.js'
 import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
@@ -431,8 +431,10 @@ function mapGoalsRows(userId, data) {
 
 // computeIdsToDelete vem de ./financeSync.js (puro, testável). Apaga SOMENTE o que o cliente
 // conhecia (baseline) e removeu — nunca por diferença contra o banco (concorrência/estado defasado).
-async function syncTable(table, userId, rows, baselineIds) {
+async function syncTable(table, userId, rows, baselineRows) {
+  const baselineIds = Array.isArray(baselineRows) ? new Set(baselineRows.map(row => row.id)) : null
   const idsToDelete = computeIdsToDelete(baselineIds, rows)
+  const rowsToUpsert = computeRowsToUpsert(baselineRows, rows)
 
   if (idsToDelete.length > 0) {
     // SOFT-DELETE: nunca apaga fisicamente — marca archived_at. Exclusão fica reversível
@@ -445,15 +447,15 @@ async function syncTable(table, userId, rows, baselineIds) {
     if (error) throw error
   }
 
-  if (rows.length > 0) {
+  if (rowsToUpsert.length > 0) {
     // READ-BACK (blindagem Fase 2): o upsert devolve os ids gravados; confirmamos que CADA linha
     // enviada voltou. Se alguma não voltar (ex.: rejeitada por RLS/escopo), erramos ALTO em vez de
     // dar a gravação como sucesso — o banner de erro aparece e o dado fica pendente para retry.
     // EM LOTES de 500: o PostgREST corta o retorno em ~1000 linhas; sem lotes, uma tabela grande
     // (>1000) devolveria ids truncados e o read-back acusaria perda FALSA, travando todo save.
     const CHUNK = 500
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      const batch = rows.slice(i, i + CHUNK)
+    for (let i = 0; i < rowsToUpsert.length; i += CHUNK) {
+      const batch = rowsToUpsert.slice(i, i + CHUNK)
       const { data: saved, error } = await supabase.from(table).upsert(batch).select('id')
       if (error) throw error
       const missing = missingRowIds(batch, saved)
@@ -530,8 +532,8 @@ export async function saveFinanceData(userId, financeData, baselineData = null) 
 
   try {
     await Promise.all(tables.map(([table, mapRows]) => {
-      const baselineIds = base ? new Set(mapRows(base).map(r => r.id)) : null
-      return syncTable(table, userId, mapRows(payload), baselineIds)
+      const baselineRows = base ? mapRows(base) : null
+      return syncTable(table, userId, mapRows(payload), baselineRows)
     }))
     // Write-through idempotente depois das origens operacionais. Títulos e parcelas removidos da
     // origem são apenas arquivados, nunca apagados fisicamente.
