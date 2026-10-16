@@ -198,7 +198,7 @@ export function WhatsAppAutomations() {
               <label style={s.label}>Mensagem</label>
               <textarea rows={3} style={s.textarea} value={cfg.payment_template}
                 onChange={e => set('payment_template', e.target.value)} />
-              <div style={{ color:C.textDim, fontSize:11, lineHeight:1.5 }}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'}, {'{payment_link}'}, {'{pix_code}'}, {'{payment_type}'}. Só cobranças Asaas pendentes ou vencidas são enviadas; a régua para após a confirmação do pagamento.</div>
+              <div style={{ color:C.textDim, fontSize:11, lineHeight:1.5 }}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'}, {'{payment_link}'}, {'{pix_code}'}, {'{payment_type}'}. Só cobranças do provedor ativo pendentes ou vencidas são enviadas; a régua para após a confirmação do pagamento.</div>
               <div style={s.vars}>Variáveis: {'{patient_name}'}, {'{value}'}, {'{date}'} (vencimento)</div>
             </div>
           </div>

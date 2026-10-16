@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { C } from '../theme.js'
 import { Btn, FInput, Modal } from './UI.jsx'
-import { cancelBillingCharge, createBillingCharge } from '../lib/billingClient.js'
+import { cancelBillingCharge, createBillingCharge, syncBillingCharge } from '../lib/billingClient.js'
 import { formatDateBR, uid } from '../utils.js'
 
 function money(value) { return Number(value || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' }) }
@@ -41,6 +41,12 @@ export function BillingChargeButton({ item }) {
     catch (nextError) { setError(nextError.message) }
     finally { setLoading(false) }
   }
+  const sync = async () => {
+    setLoading(true); setError('')
+    try { const result = await syncBillingCharge(charge.id); setCharge(result.charge) }
+    catch (nextError) { setError(nextError.message) }
+    finally { setLoading(false) }
+  }
   const copy = async value => { if (value) await navigator.clipboard.writeText(value) }
   const paymentLink = charge?.bankSlipUrl || charge?.invoiceUrl
 
@@ -55,13 +61,14 @@ export function BillingChargeButton({ item }) {
         </div>
         {!charge && <FInput label="Forma de cobrança" value={billingType} onChange={setBillingType} options={[{ v:'PIX', l:'Pix' }, { v:'BOLETO', l:'Boleto bancário' }]} />}
         {charge && <div style={{ display:'grid', gap:10, padding:14, border:`1px solid ${C.green}55`, borderRadius:12 }}>
-          <strong style={{ color:C.green }}>Cobrança {charge.status === 'overdue' ? 'vencida' : charge.status === 'canceled' ? 'cancelada' : 'emitida'}</strong>
+          <strong style={{ color:C.green }}>Cobrança {charge.status === 'received' ? 'recebida' : charge.status === 'confirmed' ? 'confirmada' : charge.status === 'overdue' ? 'vencida' : charge.status === 'canceled' ? 'cancelada' : 'emitida'}</strong>
           {paymentLink && <a href={paymentLink} target="_blank" rel="noreferrer" style={{ color:C.accent }}>Abrir link de pagamento</a>}
           {charge.pixPayload && <div><div style={{ color:C.textSub, fontSize:12, marginBottom:5 }}>Pix copia e cola</div><div style={{ display:'flex', gap:8 }}><input readOnly value={charge.pixPayload} style={{ flex:1, minWidth:0, padding:9, borderRadius:8, border:`1px solid ${C.border}`, background:C.bg, color:C.text }} /><Btn variant="ghost" onClick={() => copy(charge.pixPayload)}>Copiar</Btn></div></div>}
           {charge.boletoBarcode && <div><div style={{ color:C.textSub, fontSize:12, marginBottom:5 }}>Linha digitável</div><div style={{ display:'flex', gap:8 }}><input readOnly value={charge.boletoBarcode} style={{ flex:1, minWidth:0, padding:9, borderRadius:8, border:`1px solid ${C.border}`, background:C.bg, color:C.text }} /><Btn variant="ghost" onClick={() => copy(charge.boletoBarcode)}>Copiar</Btn></div></div>}
         </div>}
         {error && <div style={{ color:C.red, fontSize:13, fontWeight:600 }}>{error}</div>}
         <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
+          {charge && ['pending','overdue','creating','confirmed'].includes(charge.status) && <Btn variant="ghost" onClick={sync} disabled={loading}>{loading ? 'Consultando…' : 'Consultar status'}</Btn>}
           {charge && ['pending','overdue','creating'].includes(charge.status) && <Btn variant="danger" onClick={cancel} disabled={loading}>Cancelar cobrança</Btn>}
           {!charge && <Btn onClick={emit} disabled={loading}>{loading ? 'Emitindo…' : `Emitir ${billingType === 'PIX' ? 'Pix' : 'boleto'}`}</Btn>}
           <Btn variant="ghost" onClick={() => setOpen(false)}>Fechar</Btn>

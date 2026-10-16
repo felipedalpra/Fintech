@@ -1,5 +1,5 @@
 -- billing_charges_schema.sql
--- Fase 3: cobranças Asaas (boleto/Pix), webhook idempotente e liquidação fiel ao razão.
+-- Fase 3: cobranças multiprovedor (boleto/Pix), webhook idempotente e liquidação fiel ao razão.
 -- Executar DEPOIS de: access_control_schema.sql, patients_schema.sql,
 -- financial_ledger_schema.sql, chart_of_accounts_schema.sql, finance_soft_delete.sql,
 -- finance_role_access_schema.sql e whatsapp_automations_schema.sql.
@@ -24,10 +24,12 @@ where payment_template = 'Olá {patient_name}! Consta um pagamento de {value} co
 
 create table if not exists public.billing_provider_connections (
   user_id                 uuid primary key references auth.users(id) on delete cascade,
-  provider                text not null default 'asaas' check (provider in ('asaas')),
+  provider                text not null default 'asaas' check (provider ~ '^[a-z0-9_]{2,40}$'),
   environment             text not null default 'sandbox' check (environment in ('sandbox','production')),
-  encrypted_api_key       text not null,
+  encrypted_api_key       text,
+  encrypted_credentials   text,
   api_key_last4           text,
+  capabilities            jsonb not null default '{}'::jsonb,
   webhook_token_hash      text not null unique,
   provider_webhook_id     text,
   status                  text not null default 'connected' check (status in ('connected','error','disabled')),
@@ -36,6 +38,21 @@ create table if not exists public.billing_provider_connections (
   created_at              timestamptz not null default timezone('utc', now()),
   updated_at              timestamptz not null default timezone('utc', now())
 );
+
+-- Compatibilidade para quem já aplicou a primeira versão restrita ao Asaas.
+alter table public.billing_provider_connections
+  alter column encrypted_api_key drop not null,
+  add column if not exists encrypted_credentials text,
+  add column if not exists capabilities jsonb not null default '{}'::jsonb;
+alter table public.billing_provider_connections
+  drop constraint if exists billing_provider_connections_provider_check;
+alter table public.billing_provider_connections
+  add constraint billing_provider_connections_provider_check check (provider ~ '^[a-z0-9_]{2,40}$');
+alter table public.billing_provider_connections
+  drop constraint if exists billing_provider_connections_credentials_check;
+alter table public.billing_provider_connections
+  add constraint billing_provider_connections_credentials_check
+  check (encrypted_credentials is not null or encrypted_api_key is not null);
 
 -- Segredos são write-only pelo endpoint server-side. Nem admin lê esta tabela via browser.
 alter table public.billing_provider_connections enable row level security;
@@ -61,7 +78,7 @@ create table if not exists public.billing_charges (
   patient_id               uuid not null references public.patients(id) on delete restrict,
   financial_entry_id       uuid not null references public.financial_entries(id) on delete restrict,
   financial_installment_id uuid not null references public.financial_installments(id) on delete restrict,
-  provider                 text not null default 'asaas' check (provider in ('asaas')),
+  provider                 text not null default 'asaas' check (provider ~ '^[a-z0-9_]{2,40}$'),
   environment              text not null check (environment in ('sandbox','production')),
   billing_type             text not null check (billing_type in ('BOLETO','PIX')),
   provider_charge_id       text,
@@ -90,6 +107,11 @@ create table if not exists public.billing_charges (
   unique (user_id, external_reference)
 );
 
+alter table public.billing_charges
+  drop constraint if exists billing_charges_provider_check;
+alter table public.billing_charges
+  add constraint billing_charges_provider_check check (provider ~ '^[a-z0-9_]{2,40}$');
+
 -- Uma parcela só pode ter uma cobrança ainda válida. Cancelar/reembolsar libera reemissão.
 create unique index if not exists uq_billing_charge_active_installment
   on public.billing_charges(financial_installment_id)
@@ -103,6 +125,7 @@ create table if not exists public.billing_webhook_events (
   id                  uuid primary key default gen_random_uuid(),
   user_id             uuid not null references auth.users(id) on delete cascade,
   provider            text not null default 'asaas',
+  environment         text not null default 'sandbox' check (environment in ('sandbox','production')),
   provider_event_id   text not null,
   event_type          text not null,
   provider_charge_id  text,
@@ -111,8 +134,24 @@ create table if not exists public.billing_webhook_events (
   error_message       text,
   created_at          timestamptz not null default timezone('utc', now()),
   processed_at        timestamptz,
-  unique (provider, provider_event_id)
+  constraint uq_billing_webhook_event_provider_env unique (provider, environment, provider_event_id)
 );
+
+alter table public.billing_webhook_events
+  add column if not exists environment text not null default 'sandbox';
+alter table public.billing_webhook_events
+  drop constraint if exists billing_webhook_events_provider_provider_event_id_key;
+alter table public.billing_webhook_events
+  drop constraint if exists billing_webhook_events_provider_environment_provider_event_id_k;
+alter table public.billing_webhook_events
+  drop constraint if exists uq_billing_webhook_event_provider_env;
+alter table public.billing_webhook_events
+  add constraint uq_billing_webhook_event_provider_env
+  unique (provider, environment, provider_event_id);
+alter table public.billing_webhook_events
+  drop constraint if exists billing_webhook_events_environment_check;
+alter table public.billing_webhook_events
+  add constraint billing_webhook_events_environment_check check (environment in ('sandbox','production'));
 
 alter table public.billing_provider_customers enable row level security;
 alter table public.billing_charges enable row level security;
@@ -136,8 +175,13 @@ grant select on public.billing_provider_customers, public.billing_charges to aut
 grant all on public.billing_provider_connections, public.billing_provider_customers,
   public.billing_charges, public.billing_webhook_events to service_role;
 
--- Aplica um webhook em uma única transação. O evento duplicado retorna sem repetir a baixa.
+-- Remove a assinatura legada, restrita ao Asaas, quando esta migração atualiza um banco existente.
+drop function if exists public.apply_billing_webhook_event(uuid,text,text,text,text,text,timestamptz,numeric,numeric,text);
+
+-- Aplica um evento do provedor em uma única transação. O evento duplicado retorna sem repetir a baixa.
 create or replace function public.apply_billing_webhook_event(
+  p_provider text,
+  p_environment text,
   p_user_id uuid,
   p_provider_event_id text,
   p_event_type text,
@@ -171,15 +215,16 @@ declare
   effective_status text;
   inserted_event boolean := false;
 begin
-  if p_user_id is null or coalesce(trim(p_provider_event_id), '') = '' then
+  if p_user_id is null or coalesce(p_provider, '') !~ '^[a-z0-9_]{2,40}$'
+     or p_environment not in ('sandbox','production') or coalesce(trim(p_provider_event_id), '') = '' then
     raise exception 'Evento de cobrança inválido.';
   end if;
 
   insert into public.billing_webhook_events (
-    user_id, provider, provider_event_id, event_type, provider_charge_id, payload_hash
+    user_id, provider, environment, provider_event_id, event_type, provider_charge_id, payload_hash
   ) values (
-    p_user_id, 'asaas', p_provider_event_id, p_event_type, p_provider_charge_id, p_payload_hash
-  ) on conflict (provider, provider_event_id) do update
+    p_user_id, p_provider, p_environment, p_provider_event_id, p_event_type, p_provider_charge_id, p_payload_hash
+  ) on conflict (provider, environment, provider_event_id) do update
       set status = 'processing',
           error_message = null,
           processed_at = null
@@ -189,7 +234,8 @@ begin
   select * into charge_now
   from public.billing_charges
   where user_id = p_user_id
-    and provider = 'asaas'
+    and provider = p_provider
+    and environment = p_environment
     and provider_charge_id = p_provider_charge_id
   for update;
 
@@ -197,7 +243,7 @@ begin
     if inserted_event then
       update public.billing_webhook_events
       set status = 'ignored', processed_at = timezone('utc', now())
-      where provider = 'asaas' and provider_event_id = p_provider_event_id;
+      where provider = p_provider and environment = p_environment and provider_event_id = p_provider_event_id;
     end if;
     return null;
   end if;
@@ -332,9 +378,9 @@ begin
         id, user_id, description, category, value, due_date, competence_date,
         payment_date, status, cost_center, origin_label, chart_account_id
       ) values (
-        charge_now.id, p_user_id, 'Tarifa de cobrança Asaas - ' || charge_now.description,
+        charge_now.id, p_user_id, 'Tarifa de cobrança ' || charge_now.provider || ' - ' || charge_now.description,
         'taxas_meios_pagamento', fee_now, v_received_date, v_received_date,
-        v_received_date, 'pago', 'Financeiro', 'Asaas', fee_account_id
+        v_received_date, 'pago', 'Financeiro', charge_now.provider, fee_account_id
       ) on conflict (id) do update set
         value = excluded.value,
         due_date = excluded.due_date,
@@ -404,15 +450,15 @@ begin
 
   update public.billing_webhook_events
   set status = 'processed', processed_at = timezone('utc', now())
-  where provider = 'asaas' and provider_event_id = p_provider_event_id;
+  where provider = p_provider and environment = p_environment and provider_event_id = p_provider_event_id;
 
   select * into charge_now from public.billing_charges where id = charge_now.id;
   return charge_now;
 end;
 $$;
 
-revoke all on function public.apply_billing_webhook_event(uuid,text,text,text,text,text,timestamptz,numeric,numeric,text) from public, anon, authenticated;
-grant execute on function public.apply_billing_webhook_event(uuid,text,text,text,text,text,timestamptz,numeric,numeric,text) to service_role;
+revoke all on function public.apply_billing_webhook_event(text,text,uuid,text,text,text,text,text,timestamptz,numeric,numeric,text) from public, anon, authenticated;
+grant execute on function public.apply_billing_webhook_event(text,text,uuid,text,text,text,text,text,timestamptz,numeric,numeric,text) to service_role;
 
 commit;
 

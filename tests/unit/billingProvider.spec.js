@@ -3,7 +3,10 @@ import {
   asaasBaseUrl,
   asaasRequest,
   buildAsaasPaymentPayload,
+  billingProviderCatalog,
   canonicalChargeStatus,
+  getBillingProvider,
+  normalizeAsaasPayment,
   normalizeAsaasWebhook,
 } from '../../api/_lib/billingProvider.js'
 import { decryptBillingSecret, encryptBillingSecret } from '../../api/_lib/billing.js'
@@ -37,6 +40,15 @@ test('webhook normaliza recebimento e ignora estorno parcial', () => {
   expect(canonicalChargeStatus('PAYMENT_REFUNDED', 'REFUNDED')).toBe('refunded')
 })
 
+test('consulta do provedor usa a mesma normalização financeira do webhook', () => {
+  expect(normalizeAsaasPayment({
+    id:'pay_sync', status:'RECEIVED', paymentDate:'2026-10-16', value:150, netValue:148.25, billingType:'BOLETO',
+  })).toMatchObject({
+    eventType:'PAYMENT_STATUS_SYNCED', providerChargeId:'pay_sync', status:'received',
+    grossAmount:150, netAmount:148.25, paymentMethod:'boleto',
+  })
+})
+
 test('credencial do provedor fica cifrada e recupera somente com a chave do servidor', () => {
   const previous = process.env.BILLING_DATA_ENCRYPTION_KEY
   process.env.BILLING_DATA_ENCRYPTION_KEY = 'billing-test-key-with-more-than-24-characters'
@@ -48,4 +60,11 @@ test('credencial do provedor fica cifrada e recupera somente com a chave do serv
     if (previous == null) delete process.env.BILLING_DATA_ENCRYPTION_KEY
     else process.env.BILLING_DATA_ENCRYPTION_KEY = previous
   }
+})
+
+test('catálogo expõe capacidades sem fingir que um banco ainda está homologado', () => {
+  const catalog = billingProviderCatalog()
+  expect(catalog.find(item => item.id === 'asaas')).toMatchObject({ available:true, capabilities:{ create:true, statusQuery:true, webhook:true } })
+  expect(catalog.find(item => item.id === 'direct_bank')).toMatchObject({ available:false, capabilities:{ statementSync:true } })
+  expect(() => getBillingProvider('direct_bank')).toThrow(/Selecione o banco/)
 })

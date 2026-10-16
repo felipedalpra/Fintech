@@ -10,12 +10,12 @@ insert into public.billing_charges (
   'Cirurgia Ana', 100, '2026-10-20', 'pending'
 );
 
-select public.apply_billing_webhook_event(
+select public.apply_billing_webhook_event('asaas', 'sandbox',
   '11111111-1111-4111-8111-111111111111', 'evt_received', 'PAYMENT_RECEIVED', 'pay_1', 'hash1',
   'received', '2026-10-16T15:00:00Z', 100, 97.50, 'pix'
 );
 -- Repetição do mesmo evento não pode duplicar baixa nem tarifa.
-select public.apply_billing_webhook_event(
+select public.apply_billing_webhook_event('asaas', 'sandbox',
   '11111111-1111-4111-8111-111111111111', 'evt_received', 'PAYMENT_RECEIVED', 'pay_1', 'hash1',
   'received', '2026-10-16T15:00:00Z', 100, 97.50, 'pix'
 );
@@ -41,12 +41,12 @@ begin
   end if;
 end $$;
 
-select public.apply_billing_webhook_event(
+select public.apply_billing_webhook_event('asaas', 'sandbox',
   '11111111-1111-4111-8111-111111111111', 'evt_refund', 'PAYMENT_REFUNDED', 'pay_1', 'hash2',
   'refunded', null, 100, 97.50, 'pix'
 );
 -- Evento atrasado não pode ressuscitar uma cobrança estornada.
-select public.apply_billing_webhook_event(
+select public.apply_billing_webhook_event('asaas', 'sandbox',
   '11111111-1111-4111-8111-111111111111', 'evt_late', 'PAYMENT_UPDATED', 'pay_1', 'hash3',
   'pending', null, 100, 97.50, 'pix'
 );

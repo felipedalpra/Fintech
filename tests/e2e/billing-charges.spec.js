@@ -20,7 +20,18 @@ test('emite Pix da parcela exata sem permitir editar valor ou vencimento', async
   }, [DRAFT_KEY, JSON.stringify(draft)])
 
   let requestBody
-  await page.route('**/api/financial/analysis?action=billing-create', async route => {
+  let syncBody
+  await page.route('**/api/financial/analysis?action=billing-*', async route => {
+    const action = new URL(route.request().url()).searchParams.get('action')
+    if (action === 'billing-sync') {
+      syncBody = route.request().postDataJSON()
+      await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ synced:true, charge:{
+        id:'33333333-3333-4333-8333-333333333333', provider:'asaas', billingType:'PIX', amount:350,
+        dueDate:'2026-10-30', status:'received', paidAt:'2026-10-16T12:00:00-03:00',
+        invoiceUrl:'https://pay.example/charge', pixPayload:'00020126580014br.gov.bcb.pix', feeAmount:1.5,
+      } }) })
+      return
+    }
     requestBody = route.request().postDataJSON()
     await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ charge:{
       id:'33333333-3333-4333-8333-333333333333', billingType:'PIX', amount:350,
@@ -53,6 +64,11 @@ test('emite Pix da parcela exata sem permitir editar valor ou vencimento', async
   })
   expect(requestBody).not.toHaveProperty('amount')
   expect(requestBody).not.toHaveProperty('dueDate')
+
+  await dialog.getByRole('button', { name:'Consultar status' }).click()
+  await expect(dialog.getByText('Cobrança recebida')).toBeVisible()
+  await expect(dialog.getByRole('button', { name:'Cancelar cobrança' })).toHaveCount(0)
+  expect(syncBody).toEqual({ chargeId:'33333333-3333-4333-8333-333333333333' })
 })
 
 test('admin conecta o Asaas e recebe confirmação do webhook sem expor a chave', async ({ page }) => {
@@ -76,7 +92,8 @@ test('admin conecta o Asaas e recebe confirmação do webhook sem expor a chave'
 
   await page.goto('/app/settings')
   await page.getByRole('button', { name:'Cobranças', exact:true }).click()
-  await expect(page.getByRole('heading', { name:'Cobranças Asaas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name:'Cobranças e banco' })).toBeVisible()
+  await expect(page.getByText('Banco direto', { exact:true })).toBeVisible()
   const keyInput = page.locator('input[type="password"]')
   await expect(keyInput).toHaveAttribute('type', 'password')
   await keyInput.fill('$aact_test_1234567890')
@@ -84,5 +101,5 @@ test('admin conecta o Asaas e recebe confirmação do webhook sem expor a chave'
   await expect(page.getByText('Conta validada e webhook configurado automaticamente.')).toBeVisible()
   await expect(page.getByText(/Asaas conectado/)).toBeVisible()
   await expect(keyInput).toHaveValue('')
-  expect(connectPayload).toEqual({ environment:'sandbox', apiKey:'$aact_test_1234567890' })
+  expect(connectPayload).toEqual({ provider:'asaas', environment:'sandbox', apiKey:'$aact_test_1234567890' })
 })

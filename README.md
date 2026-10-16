@@ -55,7 +55,7 @@ META_GRAPH_VERSION=vXX.X
 
 8. Se a base já existir de uma versão anterior, aplique os scripts incrementais e valide as tabelas `billing_accounts` e `secure_profiles`.
 
-9. Para cobranças clínicas por boleto/Pix, aplique `supabase/billing_charges_schema.sql`, mantenha `APP_URL` no domínio HTTPS público (`https://www.surgimetrics.com.br`) e conecte a chave da conta Asaas da clínica em **Configurações → Cobranças**. A chave não é variável do frontend: ela é validada e armazenada cifrada pelo backend. `BILLING_DATA_ENCRYPTION_KEY` é recomendada; na ausência dela, o sistema usa `APP_DATA_ENCRYPTION_KEY`.
+9. Para cobranças clínicas por boleto/Pix, aplique `supabase/billing_charges_schema.sql`, mantenha `APP_URL` no domínio HTTPS público (`https://www.surgimetrics.com.br`) e conecte o provedor da clínica em **Configurações → Cobranças**. O Asaas é o primeiro adaptador homologado; bancos diretos reutilizam o mesmo contrato após definição da instituição e homologação. Credenciais nunca vão ao frontend: são validadas e armazenadas cifradas pelo backend. `BILLING_DATA_ENCRYPTION_KEY` é recomendada; na ausência dela, o sistema usa `APP_DATA_ENCRYPTION_KEY`.
 
 ## Rodar localmente
 
@@ -82,7 +82,7 @@ A saída fica em `dist`.
 - `VITE_APP_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_DATA_ENCRYPTION_KEY`
-- `BILLING_DATA_ENCRYPTION_KEY` (recomendada para a credencial Asaas; fallback seguro para `APP_DATA_ENCRYPTION_KEY`)
+- `BILLING_DATA_ENCRYPTION_KEY` (recomendada para credenciais de cobrança; fallback seguro para `APP_DATA_ENCRYPTION_KEY`)
 - `APP_URL`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`

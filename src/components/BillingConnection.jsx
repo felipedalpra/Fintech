@@ -11,6 +11,8 @@ export function BillingConnection() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const providers = status?.providers || []
+  const directBank = providers.find(item => item.id === 'direct_bank')
 
   const load = async () => {
     setLoading(true); setError('')
@@ -27,7 +29,7 @@ export function BillingConnection() {
     if (!apiKey.trim()) { setError('Informe a chave da API Asaas.'); return }
     setSaving(true); setError(''); setMessage('')
     try {
-      await connectBillingProvider({ environment, apiKey:apiKey.trim() })
+      await connectBillingProvider({ provider:'asaas', environment, apiKey:apiKey.trim() })
       setApiKey('')
       setMessage('Conta validada e webhook configurado automaticamente.')
       await load()
@@ -37,8 +39,8 @@ export function BillingConnection() {
 
   return <div style={{ display:'grid', gap:18 }}>
     <div>
-      <h3 style={{ margin:0, color:C.text, fontSize:21 }}>Cobranças Asaas</h3>
-      <p style={{ margin:'7px 0 0', color:C.textSub, fontSize:13, lineHeight:1.6 }}>Emita boleto e Pix com valor e vencimento vindos do razão. A chave fica criptografada no servidor e o webhook dá baixa automática.</p>
+      <h3 style={{ margin:0, color:C.text, fontSize:21 }}>Cobranças e banco</h3>
+      <p style={{ margin:'7px 0 0', color:C.textSub, fontSize:13, lineHeight:1.6 }}>Emita boleto e Pix com valor e vencimento vindos do razão. A conexão ativa pode ser trocada por um banco homologado sem criar um financeiro paralelo.</p>
     </div>
     <Card style={{ padding:18, background:C.surface }}>
       {loading ? <div style={{ color:C.textSub }}>Verificando conexão…</div> : <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
@@ -46,6 +48,11 @@ export function BillingConnection() {
         <strong style={{ color:C.text }}>{status?.configured ? 'Asaas conectado' : 'Asaas não configurado'}</strong>
         {status?.connection && <span style={{ color:C.textSub, fontSize:12 }}>{status.connection.environment === 'production' ? 'Produção' : 'Sandbox'} · chave final {status.connection.apiKeyLast4 || '—'} · webhook {status.connection.webhookConfigured ? 'ativo' : 'pendente'}</span>}
       </div>}
+    </Card>
+    <Card style={{ padding:18, background:C.surface }}>
+      <strong style={{ color:C.text }}>Banco direto</strong>
+      <div style={{ marginTop:7, color:C.textSub, fontSize:13, lineHeight:1.55 }}>{directBank?.unavailableReason || 'Aguardando a definição do banco e a homologação da API.'}</div>
+      <div style={{ marginTop:9, color:C.textDim, fontSize:12 }}>Base preparada para Pix, boleto, consulta, cancelamento, webhook, estorno, tarifas e sincronização de extrato. Nenhuma conexão bancária será simulada antes das credenciais reais.</div>
     </Card>
     <div style={{ display:'grid', gridTemplateColumns:'minmax(180px,240px) minmax(260px,1fr)', gap:14 }}>
       <FInput label="Ambiente" value={environment} onChange={setEnvironment} options={[{ v:'sandbox', l:'Sandbox (testes)' }, { v:'production', l:'Produção' }]} />

@@ -41,7 +41,8 @@ export const fetchBillingStatus = () => billingFetch('billing-status', { method:
 export const connectBillingProvider = payload => billingFetch('billing-connect', { body:payload })
 export const createBillingCharge = payload => billingFetch('billing-create', { body:payload })
 export const cancelBillingCharge = chargeId => billingFetch('billing-cancel', { body:{ chargeId } })
+export const syncBillingCharge = chargeId => billingFetch('billing-sync', { body:{ chargeId } })
 
-// Assinatura SaaS da plataforma (Stripe) permanece separada das cobranças clínicas (Asaas).
+// Assinatura SaaS da plataforma (Stripe) permanece separada das cobranças clínicas.
 export const createStripeCheckoutSession = planId => stripeAuthFetch('/api/stripe/create-checkout-session', { planId })
 export const createStripePortalSession = () => stripeAuthFetch('/api/stripe/create-portal-session')

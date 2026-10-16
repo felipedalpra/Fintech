@@ -1,15 +1,8 @@
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import {
-  cancelAsaasPayment,
-  configureAsaasWebhook,
-  createAsaasCustomer,
-  createAsaasPayment,
-  fetchAsaasPaymentInstructions,
-  findAsaasCustomer,
-  findAsaasPayment,
-  normalizeAsaasWebhook,
-  validateAsaasConnection,
+  billingProviderCatalog,
+  getBillingProvider,
 } from './billingProvider.js'
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
@@ -85,10 +78,18 @@ async function authContext(req, { requireFinance = true, requireAdmin = false } 
 async function loadConnection(admin, ownerId) {
   const { data, error } = await admin.from('billing_provider_connections').select('*').eq('user_id', ownerId).maybeSingle()
   if (error) throw error
-  if (!data || data.status !== 'connected') throw Object.assign(new Error('Conecte e valide a conta Asaas em Configurações → Cobranças.'), { statusCode:409 })
+  if (!data || data.status !== 'connected') throw Object.assign(new Error('Conecte e valide um provedor em Configurações → Cobranças.'), { statusCode:409 })
+  const adapter = getBillingProvider(data.provider)
+  let credentials
+  if (data.encrypted_credentials) {
+    try { credentials = JSON.parse(decryptBillingSecret(data.encrypted_credentials)) } catch { throw new Error('Credenciais do provedor estão inválidas.') }
+  } else {
+    credentials = { apiKey:decryptBillingSecret(data.encrypted_api_key) }
+  }
   return {
     row:data,
-    config:{ environment:data.environment, apiKey:decryptBillingSecret(data.encrypted_api_key) },
+    adapter,
+    config:adapter.connectionConfig(credentials, data.environment),
   }
 }
 
@@ -96,6 +97,7 @@ function publicCharge(row) {
   if (!row) return null
   return {
     id:row.id,
+    provider:row.provider,
     billingType:row.billing_type,
     amount:Number(row.amount || 0),
     netAmount:row.net_amount == null ? null : Number(row.net_amount),
@@ -119,6 +121,7 @@ async function handleStatus(req, res) {
     .eq('user_id', ownerId).maybeSingle()
   if (error) throw error
   return res.status(200).json({
+    providers:billingProviderCatalog(),
     configured:Boolean(data),
     connection:data ? {
       provider:data.provider,
@@ -135,39 +138,44 @@ async function handleStatus(req, res) {
 async function handleConnect(req, res) {
   const { admin, ownerId, user } = await authContext(req, { requireAdmin:true })
   const body = readBody(req)
+  const provider = String(body.provider || 'asaas')
+  const adapter = getBillingProvider(provider)
   const apiKey = String(body.apiKey || '').trim()
   const environment = body.environment === 'production' ? 'production' : 'sandbox'
   if (!apiKey) return res.status(400).json({ error:'Informe a chave da API Asaas.' })
   if (!appUrl.startsWith('https://')) return res.status(500).json({ error:'APP_URL HTTPS é obrigatória para configurar o webhook.' })
 
-  const config = { environment, apiKey }
-  await validateAsaasConnection(config)
-  const { data:previous } = await admin.from('billing_provider_connections').select('environment,provider_webhook_id').eq('user_id', ownerId).maybeSingle()
+  const credentials = { apiKey }
+  const config = adapter.connectionConfig(credentials, environment)
+  await adapter.validateConnection(config)
+  const { data:previous } = await admin.from('billing_provider_connections').select('provider,environment,provider_webhook_id').eq('user_id', ownerId).maybeSingle()
   const authToken = crypto.randomBytes(36).toString('base64url')
   const webhookInput = {
-    url:`${appUrl}/api/financial/analysis?action=billing-webhook`,
+    url:`${appUrl}/api/financial/analysis?action=billing-webhook&provider=${encodeURIComponent(provider)}`,
     email:user.email,
     authToken,
   }
   let webhook
   try {
-    webhook = await configureAsaasWebhook(config, {
+    webhook = await adapter.configureWebhook(config, {
       ...webhookInput,
-      webhookId:previous?.environment === environment ? previous.provider_webhook_id : '',
+      webhookId:previous?.provider === provider && previous?.environment === environment ? previous.provider_webhook_id : '',
     })
   } catch (error) {
     if (!previous?.provider_webhook_id) throw error
-    webhook = await configureAsaasWebhook(config, webhookInput)
+    webhook = await adapter.configureWebhook(config, webhookInput)
   }
   if (!webhook?.id) throw new Error('O Asaas não confirmou a configuração do webhook.')
 
   const now = new Date().toISOString()
   const { error } = await admin.from('billing_provider_connections').upsert({
     user_id:ownerId,
-    provider:'asaas',
+    provider,
     environment,
-    encrypted_api_key:encryptBillingSecret(apiKey),
-    api_key_last4:apiKey.slice(-4),
+    encrypted_api_key:null,
+    encrypted_credentials:encryptBillingSecret(JSON.stringify(credentials)),
+    api_key_last4:adapter.credentialLabel(credentials),
+    capabilities:adapter.capabilities,
     webhook_token_hash:sha256(authToken),
     provider_webhook_id:webhook.id,
     status:'connected',
@@ -176,22 +184,24 @@ async function handleConnect(req, res) {
     updated_at:now,
   }, { onConflict:'user_id' })
   if (error) throw error
-  return res.status(200).json({ ok:true, environment, webhookConfigured:true, apiKeyLast4:apiKey.slice(-4) })
+  return res.status(200).json({ ok:true, provider, environment, webhookConfigured:true, apiKeyLast4:adapter.credentialLabel(credentials) })
 }
 
 async function ensureProviderCustomer(admin, connection, ownerId, patient) {
+  if (connection.adapter.capabilities.customerRegistration === false) return null
+  const provider = connection.adapter.id
   const { data:mapping, error:mappingError } = await admin.from('billing_provider_customers').select('provider_customer_id')
-    .eq('user_id', ownerId).eq('patient_id', patient.id).eq('provider', 'asaas').eq('environment', connection.row.environment).maybeSingle()
+    .eq('user_id', ownerId).eq('patient_id', patient.id).eq('provider', provider).eq('environment', connection.row.environment).maybeSingle()
   if (mappingError) throw mappingError
   if (mapping?.provider_customer_id) return mapping.provider_customer_id
 
-  let providerCustomer = await findAsaasCustomer(connection.config, patient.id)
-  if (!providerCustomer) providerCustomer = await createAsaasCustomer(connection.config, patient)
-  if (!providerCustomer?.id) throw new Error('O Asaas não confirmou o cadastro do paciente.')
+  let providerCustomer = await connection.adapter.findCustomer(connection.config, patient.id)
+  if (!providerCustomer) providerCustomer = await connection.adapter.createCustomer(connection.config, patient)
+  if (!providerCustomer?.id) throw new Error(`${connection.adapter.name} não confirmou o cadastro do paciente.`)
   const { error } = await admin.from('billing_provider_customers').upsert({
     user_id:ownerId,
     patient_id:patient.id,
-    provider:'asaas',
+    provider,
     environment:connection.row.environment,
     provider_customer_id:providerCustomer.id,
     updated_at:new Date().toISOString(),
@@ -250,10 +260,8 @@ async function handleCreate(req, res) {
     .select('id,full_name,cpf,email,phone').eq('id', entry.party_id).eq('user_id', ownerId).maybeSingle()
   if (patientError) throw patientError
   if (!patient) return res.status(400).json({ error:'Paciente vinculado não encontrado.' })
-  const cpf = String(patient.cpf || '').replace(/\D/g, '')
-  if (cpf.length !== 11) return res.status(400).json({ error:'Cadastre um CPF válido no paciente antes de emitir pelo Asaas.' })
-
   const connection = await loadConnection(admin, ownerId)
+  connection.adapter.validatePatient(patient)
   const chargeId = idempotent?.id || crypto.randomUUID()
   const externalReference = idempotent?.external_reference || `surgimetrics:${ownerId}:${installment.id}:${chargeId}`
   const description = String(entry.description || entry.party_name_snapshot || 'Cobrança SurgiMetrics').slice(0, 500)
@@ -275,7 +283,7 @@ async function handleCreate(req, res) {
       patient_id:patient.id,
       financial_entry_id:entry.id,
       financial_installment_id:installment.id,
-      provider:'asaas',
+      provider:connection.adapter.id,
       environment:connection.row.environment,
       billing_type:billingType,
       idempotency_key:idempotencyKey,
@@ -298,8 +306,8 @@ async function handleCreate(req, res) {
 
   try {
     const customerId = await ensureProviderCustomer(admin, connection, ownerId, patient)
-    let payment = await findAsaasPayment(connection.config, externalReference)
-    if (!payment) payment = await createAsaasPayment(connection.config, {
+    let payment = await connection.adapter.findCharge(connection.config, externalReference)
+    if (!payment) payment = await connection.adapter.createCharge(connection.config, {
       customerId,
       billingType,
       amount,
@@ -307,9 +315,9 @@ async function handleCreate(req, res) {
       description,
       externalReference,
     })
-    if (!payment?.id) throw new Error('O Asaas não confirmou a criação da cobrança.')
+    if (!payment?.id) throw new Error(`${connection.adapter.name} não confirmou a criação da cobrança.`)
     let instructions = {}
-    try { instructions = await fetchAsaasPaymentInstructions(connection.config, payment) } catch { /* cobrança existe; instrução pode ser consultada depois */ }
+    try { instructions = await connection.adapter.fetchInstructions(connection.config, payment) } catch { /* cobrança existe; instrução pode ser consultada depois */ }
     const { data:updated, error:updateError } = await admin.from('billing_charges').update({
       provider_charge_id:payment.id,
       status:'pending',
@@ -336,7 +344,8 @@ async function handleCancel(req, res) {
   if (!charge) return res.status(404).json({ error:'Cobrança não encontrada.' })
   if (['confirmed','received'].includes(charge.status)) return res.status(409).json({ error:'Cobrança já recebida não pode ser cancelada por esta ação.' })
   const connection = await loadConnection(admin, ownerId)
-  if (charge.provider_charge_id) await cancelAsaasPayment(connection.config, charge.provider_charge_id)
+  if (charge.provider !== connection.adapter.id) return res.status(409).json({ error:'A cobrança pertence a outro provedor conectado.' })
+  if (charge.provider_charge_id) await connection.adapter.cancelCharge(connection.config, charge.provider_charge_id)
   const { data:updated, error:updateError } = await admin.from('billing_charges').update({
     status:'canceled', canceled_at:new Date().toISOString(), updated_at:new Date().toISOString(),
   }).eq('id', charge.id).select('*').single()
@@ -345,16 +354,18 @@ async function handleCancel(req, res) {
 }
 
 async function handleWebhook(req, res) {
-  const token = String(req.headers['asaas-access-token'] || '')
+  const provider = String(req.query?.provider || 'asaas')
+  const adapter = getBillingProvider(provider)
+  const token = adapter.webhookToken(req)
   if (token.length < 32) return res.status(401).json({ error:'Webhook não autenticado.' })
   const { admin } = clients()
   const { data:connection, error:connectionError } = await admin.from('billing_provider_connections')
-    .select('user_id').eq('provider', 'asaas').eq('webhook_token_hash', sha256(token)).eq('status', 'connected').maybeSingle()
+    .select('user_id,environment').eq('provider', provider).eq('webhook_token_hash', sha256(token)).eq('status', 'connected').maybeSingle()
   if (connectionError) throw connectionError
   if (!connection) return res.status(401).json({ error:'Webhook não autenticado.' })
 
   const body = readBody(req)
-  const normalized = normalizeAsaasWebhook(body)
+  const normalized = adapter.normalizeWebhook(body)
   if (!normalized.providerChargeId || !normalized.eventType) return res.status(200).json({ ok:true, ignored:true })
   const payloadHash = sha256(JSON.stringify(body))
   const eventId = normalized.eventId || sha256(`${normalized.eventType}|${normalized.providerChargeId}|${payloadHash}`)
@@ -368,10 +379,12 @@ async function handleWebhook(req, res) {
       updatedAt:new Date().toISOString(),
     },
     updated_at:new Date().toISOString(),
-  }).eq('user_id', connection.user_id).eq('provider_charge_id', normalized.providerChargeId)
+  }).eq('user_id', connection.user_id).eq('provider', provider).eq('environment', connection.environment).eq('provider_charge_id', normalized.providerChargeId)
   if (payloadError) throw payloadError
 
   const { data, error } = await admin.rpc('apply_billing_webhook_event', {
+    p_provider:provider,
+    p_environment:connection.environment,
     p_user_id:connection.user_id,
     p_provider_event_id:eventId,
     p_event_type:normalized.eventType,
@@ -387,7 +400,8 @@ async function handleWebhook(req, res) {
     const errorMessage = String(error.message || 'Falha transacional na baixa.').slice(0, 1000)
     await admin.from('billing_webhook_events').upsert({
       user_id:connection.user_id,
-      provider:'asaas',
+      provider,
+      environment:connection.environment,
       provider_event_id:eventId,
       event_type:normalized.eventType,
       provider_charge_id:normalized.providerChargeId,
@@ -395,12 +409,71 @@ async function handleWebhook(req, res) {
       status:'failed',
       error_message:errorMessage,
       processed_at:new Date().toISOString(),
-    }, { onConflict:'provider,provider_event_id' })
+    }, { onConflict:'provider,environment,provider_event_id' })
     await admin.from('billing_charges').update({ last_error:errorMessage, updated_at:new Date().toISOString() })
       .eq('user_id', connection.user_id).eq('provider_charge_id', normalized.providerChargeId)
     throw error
   }
   return res.status(200).json({ ok:true, processed:Boolean(data) })
+}
+
+async function handleSync(req, res) {
+  const { admin, ownerId } = await authContext(req)
+  const chargeId = String(readBody(req).chargeId || '')
+  const { data:charge, error } = await admin.from('billing_charges').select('*').eq('id', chargeId).eq('user_id', ownerId).maybeSingle()
+  if (error) throw error
+  if (!charge) return res.status(404).json({ error:'Cobrança não encontrada.' })
+  if (!charge.provider_charge_id) return res.status(409).json({ error:'Cobrança ainda não possui identificação externa.' })
+  const connection = await loadConnection(admin, ownerId)
+  if (charge.provider !== connection.adapter.id) return res.status(409).json({ error:'A cobrança pertence a outro provedor conectado.' })
+  const payment = await connection.adapter.findCharge(connection.config, charge.external_reference)
+  if (!payment?.id || payment.id !== charge.provider_charge_id) return res.status(409).json({ error:'O provedor não retornou a cobrança esperada.' })
+  const normalized = connection.adapter.normalizeCharge(payment)
+  if (!normalized.status) return res.status(200).json({ charge:publicCharge(charge), ignored:true })
+  const payloadHash = sha256(JSON.stringify(payment))
+  const eventId = `sync:${charge.provider_charge_id}:${normalized.status}:${payloadHash}`
+  const { error:payloadError } = await admin.from('billing_charges').update({
+    provider_payload:{
+      id:payment.id,
+      status:payment.status || null,
+      billingType:payment.billingType || null,
+      synchronizedAt:new Date().toISOString(),
+    },
+    updated_at:new Date().toISOString(),
+  }).eq('id', charge.id).eq('provider', charge.provider)
+  if (payloadError) throw payloadError
+  const { data:updated, error:applyError } = await admin.rpc('apply_billing_webhook_event', {
+    p_provider:charge.provider,
+    p_environment:charge.environment,
+    p_user_id:ownerId,
+    p_provider_event_id:eventId,
+    p_event_type:normalized.eventType,
+    p_provider_charge_id:charge.provider_charge_id,
+    p_payload_hash:payloadHash,
+    p_status:normalized.status,
+    p_paid_at:normalized.paidAt,
+    p_gross_amount:normalized.grossAmount,
+    p_net_amount:normalized.netAmount,
+    p_payment_method:normalized.paymentMethod,
+  })
+  if (applyError) {
+    const errorMessage = String(applyError.message || 'Falha transacional na consulta.').slice(0, 1000)
+    await admin.from('billing_webhook_events').upsert({
+      user_id:ownerId,
+      provider:charge.provider,
+      environment:charge.environment,
+      provider_event_id:eventId,
+      event_type:normalized.eventType,
+      provider_charge_id:charge.provider_charge_id,
+      payload_hash:payloadHash,
+      status:'failed',
+      error_message:errorMessage,
+      processed_at:new Date().toISOString(),
+    }, { onConflict:'provider,environment,provider_event_id' })
+    await admin.from('billing_charges').update({ last_error:errorMessage, updated_at:new Date().toISOString() }).eq('id', charge.id)
+    throw applyError
+  }
+  return res.status(200).json({ charge:publicCharge(updated || charge), synced:true })
 }
 
 export async function handleBillingRequest(req, res, action) {
@@ -409,6 +482,7 @@ export async function handleBillingRequest(req, res, action) {
     if (action === 'billing-connect' && req.method === 'POST') return handleConnect(req, res)
     if (action === 'billing-create' && req.method === 'POST') return handleCreate(req, res)
     if (action === 'billing-cancel' && req.method === 'POST') return handleCancel(req, res)
+    if (action === 'billing-sync' && req.method === 'POST') return handleSync(req, res)
     if (action === 'billing-webhook' && req.method === 'POST') return handleWebhook(req, res)
     res.setHeader('Allow', action === 'billing-status' ? 'GET' : 'POST')
     return res.status(405).json({ error:'Método não permitido.' })

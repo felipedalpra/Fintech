@@ -3,6 +3,24 @@ const ASAAS_URLS = {
   production:'https://api.asaas.com/v3',
 }
 
+const PROVIDER_CATALOG = [
+  {
+    id:'asaas',
+    name:'Asaas',
+    available:true,
+    connectionMode:'api_key',
+    capabilities:{ chargeTypes:['PIX','BOLETO'], create:true, cancel:true, statusQuery:true, webhook:true, refunds:true, feeReporting:true, statementSync:false, customerRegistration:true },
+  },
+  {
+    id:'direct_bank',
+    name:'Banco direto',
+    available:false,
+    connectionMode:'bank_contract',
+    capabilities:{ chargeTypes:['PIX','BOLETO'], create:true, cancel:true, statusQuery:true, webhook:true, refunds:true, feeReporting:true, statementSync:true, customerRegistration:false },
+    unavailableReason:'Selecione o banco e conclua a contratação/homologação da API para ativar o conector correspondente.',
+  },
+]
+
 export function asaasBaseUrl(environment) {
   const url = ASAAS_URLS[environment]
   if (!url) throw new Error('Ambiente Asaas inválido.')
@@ -183,4 +201,55 @@ export function normalizeAsaasWebhook(body = {}) {
     netAmount:Number(payment?.netValue || 0) || null,
     paymentMethod:String(payment?.billingType || '').toLowerCase() || null,
   }
+}
+
+export function normalizeAsaasPayment(payment = {}, eventType = 'PAYMENT_STATUS_SYNCED') {
+  const normalized = normalizeAsaasWebhook({ event:eventType, payment })
+  return {
+    ...normalized,
+    eventId:'',
+    eventType,
+  }
+}
+
+const asaasAdapter = {
+  id:'asaas',
+  name:'Asaas',
+  capabilities:PROVIDER_CATALOG[0].capabilities,
+  credentialLabel(credentials = {}) {
+    return String(credentials.apiKey || '').slice(-4)
+  },
+  connectionConfig(credentials = {}, environment) {
+    return { environment, apiKey:String(credentials.apiKey || '').trim() }
+  },
+  validateConnection:validateAsaasConnection,
+  configureWebhook:configureAsaasWebhook,
+  findCustomer:findAsaasCustomer,
+  createCustomer:createAsaasCustomer,
+  findCharge:findAsaasPayment,
+  createCharge:createAsaasPayment,
+  fetchInstructions:fetchAsaasPaymentInstructions,
+  cancelCharge:cancelAsaasPayment,
+  normalizeWebhook:normalizeAsaasWebhook,
+  normalizeCharge:normalizeAsaasPayment,
+  webhookToken(req) {
+    return String(req.headers['asaas-access-token'] || '')
+  },
+  validatePatient(patient = {}) {
+    const cpf = String(patient.cpf || '').replace(/\D/g, '')
+    if (cpf.length !== 11) throw Object.assign(new Error('Cadastre um CPF válido no paciente antes de emitir pelo Asaas.'), { statusCode:400 })
+  },
+}
+
+export function billingProviderCatalog() {
+  return PROVIDER_CATALOG.map(item => ({ ...item, capabilities:{ ...item.capabilities, chargeTypes:[...item.capabilities.chargeTypes] } }))
+}
+
+export function getBillingProvider(providerId = 'asaas') {
+  if (providerId === 'asaas') return asaasAdapter
+  const catalogItem = PROVIDER_CATALOG.find(item => item.id === providerId)
+  if (catalogItem) {
+    throw Object.assign(new Error(catalogItem.unavailableReason || `O provedor ${catalogItem.name} ainda não está disponível.`), { statusCode:409 })
+  }
+  throw Object.assign(new Error('Provedor de cobrança inválido.'), { statusCode:400 })
 }
