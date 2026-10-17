@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   buildClinicalDaySchedule,
+  millisecondsUntilNextLocalDay,
   patientAge,
   patientInitials,
   resolveSchedulePatient,
@@ -23,7 +24,7 @@ test('monta a agenda clínica do dia em ordem e ignora cancelamentos', () => {
   expect(schedule[1]).toMatchObject({ patientName:'Beatriz', label:'Retorno' })
 })
 
-test('resolve o paciente por id e usa nome somente quando não há ambiguidade', () => {
+test('resolve o paciente somente pelo vínculo explícito da agenda', () => {
   const patients = [
     { id:'p1', full_name:'Ana Vitória' },
     { id:'p2', full_name:'Maria Silva' },
@@ -31,8 +32,14 @@ test('resolve o paciente por id e usa nome somente quando não há ambiguidade',
   ]
 
   expect(resolveSchedulePatient({ patientId:'p1', patientName:'Nome antigo' }, patients)?.id).toBe('p1')
-  expect(resolveSchedulePatient({ patientName:'ana vitoria' }, patients)?.id).toBe('p1')
+  expect(resolveSchedulePatient({ patientId:'inativo', patientName:'Ana Vitória' }, patients)).toBeNull()
+  expect(resolveSchedulePatient({ patientName:'ana vitoria' }, patients)).toBeNull()
   expect(resolveSchedulePatient({ patientName:'Maria Silva' }, patients)).toBeNull()
+})
+
+test('calcula a atualização da agenda na próxima virada do dia local', () => {
+  expect(millisecondsUntilNextLocalDay(new Date(2026, 9, 17, 23, 59, 59, 500))).toBe(550)
+  expect(millisecondsUntilNextLocalDay(new Date(2026, 9, 17, 12, 0, 0, 0))).toBe(43_200_050)
 })
 
 test('calcula identificação compacta do paciente', () => {

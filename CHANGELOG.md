@@ -15,6 +15,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 - **Plural de evoluções no prontuário**: o contador passa a exibir corretamente “0 evoluções registradas”, “1 evolução registrada” e o plural para quantidades maiores, sem formar “evoluçãoões”. (`src/components/MedicalRecord.jsx`.)
+- **Guardrails da ficha clínica após revisão**: a Agenda deixa de abrir prontuários por coincidência de nome e exige o vínculo exato do paciente; a ficha só libera dados depois de uma única auditoria de visualização; falhas da anamnese passam a mostrar alertas indisponíveis em vez de uma confirmação verde incorreta; e a agenda atualiza a data automaticamente na virada do dia. A cobertura inclui vínculo ausente, falha de perfil, contagem da auditoria e viewport mobile. (`src/components/ClinicalRecords.jsx`, `src/components/MedicalRecord.jsx`, `src/lib/clinicalWorkspace.js`, `tests/unit/clinicalWorkspace.spec.js`, `tests/e2e/clinical-records.spec.js`.)
 
 ## [Unreleased] - 2026-10-16 (119)
 ### Added

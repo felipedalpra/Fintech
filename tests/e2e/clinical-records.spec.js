@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async ({ page }) => {
+  await page.setViewportSize({ width:390, height:844 })
   await page.addInitScript(() => {
     const local = new Date()
     const date = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
@@ -102,6 +103,7 @@ test('assina evolução imutável e corrige somente por adendo', async ({ page }
   await page.getByRole('button', { name:/Ana Prontuário/ }).click()
   await expect(page.getByText('0 evoluções registradas')).toBeVisible()
   await expect(page.getByText('Nenhuma evolução registrada.')).toBeVisible()
+  expect(auditActions.filter(action => action === 'view_record')).toHaveLength(1)
 
   await page.getByRole('button', { name:'+ Nova evolução' }).click()
   await page.getByPlaceholder('Anamnese do atendimento, exame, hipóteses, conduta e evolução…').fill('Paciente estável, sem intercorrências.')
@@ -118,5 +120,63 @@ test('assina evolução imutável e corrige somente por adendo', async ({ page }
 
   await expect(page.getByRole('heading', { name:'Adicionar adendo' })).toHaveCount(0)
   await expect(page.getByText('Complemento sem alterar a evolução original.')).toBeVisible()
-  expect(auditActions).toEqual(expect.arrayContaining(['view_record', 'create_record', 'create_addendum']))
+  expect(auditActions).toEqual(['view_record', 'create_record', 'create_addendum'])
+})
+
+test('mantém o prontuário disponível e não informa ausência de alertas quando a anamnese falha', async ({ page }) => {
+  const auditActions = []
+  await page.route('**/rest/v1/patients*', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify([{ id:'patient-profile-error', full_name:'Ana Perfil', active:true }]),
+  }))
+  await page.route('**/rest/v1/rpc/log_clinical_record_access*', async route => {
+    auditActions.push((await route.request().postDataJSON()).p_action)
+    await route.fulfill({ status:200, contentType:'application/json', body:'true' })
+  })
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({
+    status:500,
+    contentType:'application/json',
+    body:JSON.stringify({ message:'Falha simulada no perfil clínico' }),
+  }))
+  await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+
+  await page.goto('/app/clinical-records')
+  await page.getByRole('button', { name:/Ana Perfil/ }).click()
+
+  await expect(page.getByText('Alertas indisponíveis')).toBeVisible()
+  await expect(page.getByText('Sem alertas registrados')).toHaveCount(0)
+  await expect(page.getByText('Nenhuma evolução registrada.')).toBeVisible()
+  expect(auditActions).toEqual(['view_record'])
+})
+
+test('não libera dados clínicos quando a auditoria da abertura falha', async ({ page }) => {
+  let medicalRecordRequests = 0
+  let profileRequests = 0
+  await page.route('**/rest/v1/patients*', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify([{ id:'patient-audit-error', full_name:'Ana Auditoria', active:true }]),
+  }))
+  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({
+    status:500,
+    contentType:'application/json',
+    body:JSON.stringify({ message:'Falha simulada na auditoria' }),
+  }))
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => {
+    profileRequests += 1
+    return route.fulfill({ status:200, contentType:'application/json', body:'null' })
+  })
+  await page.route('**/rest/v1/medical_records*', route => {
+    medicalRecordRequests += 1
+    return route.fulfill({ status:200, contentType:'application/json', body:'[]' })
+  })
+
+  await page.goto('/app/clinical-records')
+  await page.getByRole('button', { name:/Ana Auditoria/ }).click()
+
+  await expect(page.getByText('Os dados clínicos não foram abertos porque a auditoria não pôde ser confirmada.')).toBeVisible()
+  await expect(page.getByRole('navigation', { name:'Ficha clínica do paciente' })).toHaveCount(0)
+  expect(profileRequests).toBe(0)
+  expect(medicalRecordRequests).toBe(0)
 })

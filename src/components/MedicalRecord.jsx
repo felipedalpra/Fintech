@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { C, base } from '../theme.js'
 import { formatDateBR, today } from '../utils.js'
 import { Btn, FInput, Modal, Badge } from './UI.jsx'
@@ -27,36 +27,17 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
   const [saving, setSaving] = useState(false)
   const [addendumTarget, setAddendumTarget] = useState(null)
   const [addendumText, setAddendumText] = useState('')
-  const auditedPatientRef = useRef(null)
-
   const hasVerifiedAuthor = Boolean(author?.name?.trim() && author?.registration?.trim())
 
   useEffect(() => {
-    if (!patientId || !userId || !actorId) return
-    load({ auditView:auditedPatientRef.current !== patientId })
-  }, [patientId, userId, actorId])
+    if (!patientId || !userId) return
+    load()
+  }, [patientId, userId])
 
-  async function audit(action) {
-    const { error: auditError } = await supabase.rpc('log_clinical_record_access', {
-      p_patient_id:patientId,
-      p_action:action,
-    })
-    if (auditError) throw new Error('Não foi possível auditar o acesso ao prontuário. Os dados clínicos não foram abertos.')
-  }
-
-  async function load({ auditView = false } = {}) {
+  async function load() {
     setLoading(true)
     setError('')
     try {
-      if (auditView) {
-        auditedPatientRef.current = patientId
-        try {
-          await audit('view_record')
-        } catch (auditError) {
-          auditedPatientRef.current = null
-          throw auditError
-        }
-      }
       const { data:recordRows, error:recordsError } = await supabase
         .from('medical_records')
         .select('*')
@@ -137,8 +118,8 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
     }
   }
 
-  if (loading) return <div style={{ color:C.textDim, fontSize:13, padding:16 }}>Abrindo prontuário com auditoria…</div>
-  if (error && records.length === 0) return <ClinicalError message={error} onRetry={() => load({ auditView:true })} />
+  if (loading) return <div style={{ color:C.textDim, fontSize:13, padding:16 }}>Carregando prontuário…</div>
+  if (error && records.length === 0) return <ClinicalError message={error} onRetry={load} />
 
   return (
     <div data-testid="medical-record" style={{ display:'flex', flexDirection:'column', gap:16 }}>

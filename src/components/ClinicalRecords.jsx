@@ -9,6 +9,7 @@ import { fetchSecureProfile } from '../lib/secureProfileClient.js'
 import { formatDateBR, today } from '../utils.js'
 import {
   buildClinicalDaySchedule,
+  millisecondsUntilNextLocalDay,
   patientAge,
   patientInitials,
   resolveSchedulePatient,
@@ -34,10 +35,13 @@ export function ClinicalRecords({ data }) {
   const [error, setError] = useState('')
   const [tab, setTab] = useState('record')
   const [clinicalProfile, setClinicalProfile] = useState(null)
-  const [profileLoading, setProfileLoading] = useState(false)
+  const [clinicalAccessStatus, setClinicalAccessStatus] = useState('idle')
+  const [profileStatus, setProfileStatus] = useState('idle')
+  const [openAttempt, setOpenAttempt] = useState(0)
+  const [currentDate, setCurrentDate] = useState(today)
   const [author, setAuthor] = useState({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
   const searchWrapRef = useRef(null)
-  const daySchedule = useMemo(() => buildClinicalDaySchedule(data, today()), [data])
+  const daySchedule = useMemo(() => buildClinicalDaySchedule(data, currentDate), [data, currentDate])
 
   useEffect(() => {
     if (!ownerId) return
@@ -85,9 +89,29 @@ export function ClinicalRecords({ data }) {
   }, [])
 
   useEffect(() => {
+    let timeoutId
+    const scheduleNextDay = () => {
+      timeoutId = window.setTimeout(() => {
+        setCurrentDate(today())
+        scheduleNextDay()
+      }, millisecondsUntilNextLocalDay())
+    }
+    const syncVisibleDate = () => {
+      if (!document.hidden) setCurrentDate(today())
+    }
+    scheduleNextDay()
+    document.addEventListener('visibilitychange', syncVisibleDate)
+    return () => {
+      window.clearTimeout(timeoutId)
+      document.removeEventListener('visibilitychange', syncVisibleDate)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!selected?.id || !ownerId) return
     let active = true
-    setProfileLoading(true)
+    setClinicalAccessStatus('auditing')
+    setProfileStatus('loading')
     setClinicalProfile(null)
     setError('')
     Promise.resolve()
@@ -97,23 +121,35 @@ export function ClinicalRecords({ data }) {
           p_action:'view_record',
         })
         if (auditError) throw new Error('Não foi possível auditar a abertura da ficha clínica.')
+        if (!active) return
+        setClinicalAccessStatus('ready')
         const { data:profile, error:profileError } = await supabase
           .from('patient_clinical_profiles')
           .select('*')
           .eq('patient_id', selected.id)
           .eq('user_id', ownerId)
           .maybeSingle()
-        if (profileError) throw profileError
-        if (active) setClinicalProfile(profile || null)
+        if (profileError) {
+          if (active) {
+            setProfileStatus('error')
+            setError('Não foi possível carregar os alertas e a anamnese do paciente.')
+          }
+          return
+        }
+        if (active) {
+          setClinicalProfile(profile || null)
+          setProfileStatus('ready')
+        }
       })
       .catch(nextError => {
-        if (active) setError(nextError.message || 'Não foi possível abrir a ficha clínica.')
-      })
-      .finally(() => {
-        if (active) setProfileLoading(false)
+        if (active) {
+          setClinicalAccessStatus('error')
+          setProfileStatus('error')
+          setError(nextError.message || 'Não foi possível abrir a ficha clínica.')
+        }
       })
     return () => { active = false }
-  }, [selected?.id, ownerId])
+  }, [selected?.id, ownerId, openAttempt])
 
   async function loadPatients() {
     setLoading(true)
@@ -130,6 +166,10 @@ export function ClinicalRecords({ data }) {
   }
 
   function selectPatient(patient) {
+    setClinicalAccessStatus('auditing')
+    setProfileStatus('loading')
+    setClinicalProfile(null)
+    setOpenAttempt(value => value + 1)
     setSelected(patient)
     setTab('record')
     setSearch('')
@@ -142,7 +182,7 @@ export function ClinicalRecords({ data }) {
     if (!patient) {
       setSearch(item.patientName === 'Paciente não identificado' ? '' : item.patientName)
       setSearchOpen(true)
-      setError('Este atendimento ainda não está vinculado de forma única a um cadastro. Localize o paciente para abrir a ficha clínica.')
+      setError('Este atendimento não está vinculado a um paciente ativo. Selecione o cadastro correto pela busca; a agenda não abrirá prontuários automaticamente pelo nome.')
       return
     }
     selectPatient(patient)
@@ -151,6 +191,8 @@ export function ClinicalRecords({ data }) {
   function returnToAgenda() {
     setSelected(null)
     setClinicalProfile(null)
+    setClinicalAccessStatus('idle')
+    setProfileStatus('idle')
     setTab('record')
     setError('')
   }
@@ -165,8 +207,7 @@ export function ClinicalRecords({ data }) {
 
   const selectedAppointments = useMemo(() => {
     if (!selected) return []
-    const normalizedName = selected.full_name.trim().toLocaleLowerCase('pt-BR')
-    return daySchedule.filter(item => item.patientId === selected.id || (!item.patientId && item.patientName.trim().toLocaleLowerCase('pt-BR') === normalizedName))
+    return daySchedule.filter(item => item.patientId === selected.id)
   }, [daySchedule, selected])
 
   const themeVars = {
@@ -223,33 +264,41 @@ export function ClinicalRecords({ data }) {
       {error && <div className="clinical-alert" role="alert">{error}</div>}
 
       {!selected ? (
-        <DayAgenda schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={selectPatient} />
+        <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={selectPatient} />
       ) : (
         <div className="clinical-patient-workspace">
-          <PatientHeader patient={selected} profile={clinicalProfile} loading={profileLoading} appointments={selectedAppointments} />
-          <nav className="clinical-tabs" aria-label="Ficha clínica do paciente">
-            {CLINICAL_TABS.map(item => (
-              <button key={item.id} type="button" className={tab === item.id ? 'is-active' : ''} onClick={() => setTab(item.id)}>
-                {item.label}
-                {item.planned && <small>próxima etapa</small>}
-              </button>
-            ))}
-          </nav>
-          <div className="clinical-tab-content">
-            {tab === 'record' && <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />}
-            {tab === 'summary' && (profileLoading ? <div className="clinical-loading">Carregando anamnese com auditoria…</div> : <ClinicalSummary profile={clinicalProfile} />)}
-            {tab === 'prescriptions' && <PlannedModule title="Exames e receitas" description="Pedidos de exames e receituários em PDF serão criados, consultados e reimpressos aqui, sem sair da ficha do paciente." />}
-            {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
-            {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
-          </div>
+          <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} />
+          {clinicalAccessStatus === 'auditing' && <div className="clinical-loading">Abrindo ficha com auditoria…</div>}
+          {clinicalAccessStatus === 'error' && <ClinicalOpenError onRetry={() => setOpenAttempt(value => value + 1)} />}
+          {clinicalAccessStatus === 'ready' && (
+            <>
+              <nav className="clinical-tabs" aria-label="Ficha clínica do paciente">
+                {CLINICAL_TABS.map(item => (
+                  <button key={item.id} type="button" className={tab === item.id ? 'is-active' : ''} onClick={() => setTab(item.id)}>
+                    {item.label}
+                    {item.planned && <small>próxima etapa</small>}
+                  </button>
+                ))}
+              </nav>
+              <div className="clinical-tab-content">
+                {tab === 'record' && <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />}
+                {tab === 'summary' && profileStatus === 'loading' && <div className="clinical-loading">Carregando anamnese…</div>}
+                {tab === 'summary' && profileStatus === 'error' && <div className="clinical-empty-panel">Anamnese indisponível no momento.</div>}
+                {tab === 'summary' && profileStatus === 'ready' && <ClinicalSummary profile={clinicalProfile} />}
+                {tab === 'prescriptions' && <PlannedModule title="Exames e receitas" description="Pedidos de exames e receituários em PDF serão criados, consultados e reimpressos aqui, sem sair da ficha do paciente." />}
+                {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
+                {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function DayAgenda({ schedule, patients, loading, onAppointment, onPatient }) {
-  const dateLabel = new Date(`${today()}T12:00:00`).toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' })
+function DayAgenda({ date, schedule, patients, loading, onAppointment, onPatient }) {
+  const dateLabel = new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' })
   return (
     <section className="clinical-day" data-testid="clinical-day-agenda">
       <header className="clinical-day__header">
@@ -297,7 +346,7 @@ function PatientAvatar({ patient, small = false }) {
   return <span className={`clinical-avatar${small ? ' is-small' : ''}`} aria-hidden="true">{patientInitials(patient?.full_name)}</span>
 }
 
-function PatientHeader({ patient, profile, loading, appointments }) {
+function PatientHeader({ patient, profile, profileStatus, appointments }) {
   const age = patientAge(patient.date_of_birth)
   const alertItems = [
     profile?.allergies ? { label:`Alergias: ${profile.allergies}`, tone:'danger' } : null,
@@ -311,12 +360,22 @@ function PatientHeader({ patient, profile, loading, appointments }) {
         <p>{patient.date_of_birth ? `${formatDateBR(patient.date_of_birth)}${age !== null ? ` · ${age} anos` : ''}` : 'Nascimento não informado'}{patient.phone ? ` · ${patient.phone}` : ''}{patient.email ? ` · ${patient.email}` : ''}</p>
       </div>
       <div className="clinical-patient-header__alerts">
-        {loading && <span className="is-muted">Verificando alertas…</span>}
-        {!loading && alertItems.length === 0 && <span className="is-ok">Sem alertas registrados</span>}
-        {alertItems.map(item => <span key={item.label} className={`is-${item.tone}`} title={item.label}>{item.label}</span>)}
+        {profileStatus === 'loading' && <span className="is-muted">Verificando alertas…</span>}
+        {profileStatus === 'error' && <span className="is-warn">Alertas indisponíveis</span>}
+        {profileStatus === 'ready' && alertItems.length === 0 && <span className="is-ok">Sem alertas registrados</span>}
+        {profileStatus === 'ready' && alertItems.map(item => <span key={item.label} className={`is-${item.tone}`} title={item.label}>{item.label}</span>)}
       </div>
       <div className="clinical-patient-header__today"><span>Hoje</span><strong>{appointments[0]?.time || 'Sem horário'}</strong><small>{appointments[0]?.label || 'Ficha avulsa'}</small></div>
     </header>
+  )
+}
+
+function ClinicalOpenError({ onRetry }) {
+  return (
+    <div className="clinical-empty-panel">
+      <p>Os dados clínicos não foram abertos porque a auditoria não pôde ser confirmada.</p>
+      <Btn variant="ghost" onClick={onRetry}>Tentar novamente</Btn>
+    </div>
   )
 }
 

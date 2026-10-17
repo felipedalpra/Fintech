@@ -5,15 +5,6 @@ const CONSULTATION_LABELS = {
   procedimento_estetico:'Procedimento estético',
 }
 
-function normalizedName(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLocaleLowerCase('pt-BR')
-}
-
 export function buildClinicalDaySchedule(data, date) {
   const consultations = (data?.consultations || [])
     .filter(item => item.date === date && item.paymentStatus !== 'cancelado')
@@ -51,15 +42,14 @@ export function buildClinicalDaySchedule(data, date) {
 }
 
 export function resolveSchedulePatient(item, patients) {
-  if (!item) return null
-  if (item.patientId) {
-    const exact = (patients || []).find(patient => patient.id === item.patientId)
-    if (exact) return exact
-  }
-  const targetName = normalizedName(item.patientName)
-  if (!targetName) return null
-  const matches = (patients || []).filter(patient => normalizedName(patient.full_name) === targetName)
-  return matches.length === 1 ? matches[0] : null
+  if (!item?.patientId) return null
+  return (patients || []).find(patient => patient.id === item.patientId) || null
+}
+
+export function millisecondsUntilNextLocalDay(now = new Date()) {
+  const nextDay = new Date(now)
+  nextDay.setHours(24, 0, 0, 0)
+  return Math.max(1, nextDay.getTime() - now.getTime() + 50)
 }
 
 export function patientInitials(name) {
