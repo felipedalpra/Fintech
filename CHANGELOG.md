@@ -6,8 +6,12 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-10-17 (120)
+### Added
+- **Entrada clínica pela Agenda do dia**: a área Clínico consolida consultas e cirurgias do dia em ordem cronológica, abre o mesmo cadastro de paciente vinculado ao atendimento e oferece busca compacta por nome, telefone ou e-mail. A ficha mantém identificação, alertas de alergias/medicamentos e o prontuário auditado no mesmo workspace; as posições futuras de exames/receitas, fotos/documentos e plano/retorno ficam explicitamente dentro dela. (`src/components/ClinicalRecords.jsx`, `src/components/ClinicalRecords.css`, `src/lib/clinicalWorkspace.js`.)
+
 ### Changed
 - **Direção do “Amigo essencial” e pendências clínicas consolidadas**: Clínico passa a ser definido como um workspace compacto, com Agenda do dia como entrada e ficha central reunindo prontuário, anamnese, histórico, exames/receitas em PDF, fotos/documentos e plano/retorno. O checklist detalha o que a Dra. Vitoria / Augusto precisam fornecer para reproduzir o fluxo usado no Amigo. Transcrição de consulta, teleconsulta e resultados automáticos de laboratório ficam explicitamente adiados e não bloqueiam a fase atual. (`docs/PENDENCIAS_CLIENTE.md`, `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`, `docs/superpowers/specs/2026-10-16-clinical-foundation-record-design.md`.)
+- **Clínico sem ruído administrativo**: aviso de operação financeira vazia, resumo de caixa, atalhos gerais, FAB e copiloto deixam de disputar espaço com o atendimento enquanto a área clínica está aberta. A navegação passa a chamar a tela de Atendimento, refletindo Agenda do dia + ficha central em vez de uma página isolada de prontuário. (`src/pages/FinanceWorkspace.jsx`.)
 
 ## [Unreleased] - 2026-10-16 (119)
 ### Added

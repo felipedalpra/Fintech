@@ -1,5 +1,42 @@
 import { expect, test } from '@playwright/test'
 
+test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async ({ page }) => {
+  await page.addInitScript(() => {
+    const local = new Date()
+    const date = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
+    window.sessionStorage.setItem('surgimetrics_workspace_draft_e2e-user-id', JSON.stringify({
+      consultations:[{
+        id:'consultation-agenda',
+        patient:'Ana Agenda',
+        patientId:'patient-agenda',
+        date,
+        startTime:'09:30',
+        durationMinutes:45,
+        consultationType:'avaliacao',
+        paymentStatus:'pendente',
+      }],
+    }))
+    window.localStorage.setItem('surgimetrics_onboarded', 'true')
+  })
+  await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Clínica E2E', registrationId:'CRM-E2E 0001' } } }) }))
+  await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'patient-agenda', full_name:'Ana Agenda', date_of_birth:'1990-04-10', phone:'11999990000', active:true }]) }))
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ patient_id:'patient-agenda', user_id:'e2e-user-id', allergies:'Dipirona', consent_signed:false }) }))
+  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
+  await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+
+  await page.goto('/app/clinical-records')
+  await expect(page.getByTestId('clinical-day-agenda')).toBeVisible()
+  await expect(page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ })).toBeVisible()
+  await page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ }).click()
+
+  await expect(page.getByRole('heading', { name:'Ana Agenda' })).toBeVisible()
+  await expect(page.getByText('Alergias: Dipirona')).toBeVisible()
+  await expect(page.getByRole('navigation', { name:'Ficha clínica do paciente' })).toContainText('Exames e receitas')
+  await page.getByRole('button', { name:/Exames e receitas/ }).click()
+  await expect(page.getByRole('heading', { name:'Exames e receitas' })).toBeVisible()
+})
+
 test('assina evolução imutável e corrige somente por adendo', async ({ page }) => {
   const records = []
   const addenda = []
@@ -10,6 +47,7 @@ test('assina evolução imutável e corrige somente por adendo', async ({ page }
     contentType:'application/json',
     body:JSON.stringify([{ id:'patient-1', full_name:'Ana Prontuário', date_of_birth:'1991-02-03', active:true, start_date:'2026-01-10' }]),
   }))
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', async route => {
     auditActions.push((await route.request().postDataJSON()).p_action)
     await route.fulfill({ status:200, contentType:'application/json', body:'true' })

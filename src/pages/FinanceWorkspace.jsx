@@ -91,7 +91,7 @@ const AREAS = [
     id:'clinico', label:'Clínico', icon:'clinico', roles:ALL_ROLES,
     sections:[
       { title:'Cuidado clínico', items:[
-        { id:'clinical-records', label:'Prontuário', icon:'clinico', hint:'Evoluções imutáveis, adendos e auditoria' },
+        { id:'clinical-records', label:'Atendimento', icon:'clinico', hint:'Agenda do dia e ficha central do paciente' },
       ] },
     ],
   },
@@ -175,7 +175,7 @@ const TITLES = {
   inbox:'WhatsApp',
   ads:'Anúncios — Meta Ads',
   tarefas:'Tarefas',
-  'clinical-records':'Prontuário Clínico',
+  'clinical-records':'Clínico',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -208,7 +208,7 @@ const SUBTITLES = {
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
   tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, agrupadas por vencimento.',
-  'clinical-records':'Evoluções clínicas imutáveis, correções por adendo e acesso auditado.',
+  'clinical-records':'Agenda do dia e ficha central do paciente em um workspace clínico compacto.',
 }
 
 const PAGES = {
@@ -1193,7 +1193,7 @@ export function FinanceWorkspace() {
           {isMobile && <div style={{ fontSize:10, color:C.textDim, marginTop:1 }}>{user.email}</div>}
         </div>
 
-        {canAccess('finance') && <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
+        {canAccess('finance') && activeAreaId !== 'clinico' && <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
           <div style={{ display:'flex', flexDirection:'column', gap:ultraCompactDesktop ? 2 : 4 }}>
             <div>
@@ -1329,7 +1329,7 @@ export function FinanceWorkspace() {
                 <span>Busca</span>
                 {!isMobile && <kbd style={getKbdSmall()}>⌘K</kbd>}
               </button>
-              {!isMobile && quickLinks.map(item => {
+              {!isMobile && page !== 'clinical-records' && quickLinks.map(item => {
                 const active = item.id === page
                 return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...getChipButton(), border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
               })}
@@ -1347,7 +1347,7 @@ export function FinanceWorkspace() {
           </div>
         )}
 
-        {isMobile && !isInboxPage && (
+        {isMobile && !isInboxPage && page !== 'clinical-records' && (
           <Card style={{ marginBottom:16, padding:14 }}>
             <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10, fontWeight:700 }}>
               Acesso rapido
@@ -1378,12 +1378,12 @@ export function FinanceWorkspace() {
         )}
 
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
-        {!hasData && !isInboxPage && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Operação vazia</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>{canAccess('finance') ? 'Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O restante alimenta os indicadores automaticamente.' : 'Cadastre pacientes e registre os atendimentos disponíveis para o seu perfil.'}</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:{canAccess('plans') && <div>1. Procedimentos</div>}{canAccess('sales') && <div>2. Cirurgias</div>}<div>{canAccess('sales') ? '3' : '1'}. Consultas e produtos</div>{canAccess('finance') && <div>4. Despesas e metas</div>}</div></div></Card>}
+        {!hasData && !isInboxPage && page !== 'clinical-records' && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Operação vazia</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>{canAccess('finance') ? 'Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O restante alimenta os indicadores automaticamente.' : 'Cadastre pacientes e registre os atendimentos disponíveis para o seu perfil.'}</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:{canAccess('plans') && <div>1. Procedimentos</div>}{canAccess('sales') && <div>2. Cirurgias</div>}<div>{canAccess('sales') ? '3' : '1'}. Consultas e produtos</div>{canAccess('finance') && <div>4. Despesas e metas</div>}</div></div></Card>}
         <Suspense fallback={<div style={{ display:'grid', gap:12 }}><SkeletonBlock w="36%" h={26} /><SkeletonBlock w="100%" h={180} /><SkeletonBlock w="100%" h={220} /></div>}>
           <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
         </Suspense>
-        {page !== 'inbox' && canAccess('ai') && <CopilotWidget data={safeData} />}
-        {page !== 'inbox' && <FAB currentPage={page} />}
+        {page !== 'inbox' && page !== 'clinical-records' && canAccess('ai') && <CopilotWidget data={safeData} />}
+        {page !== 'inbox' && page !== 'clinical-records' && <FAB currentPage={page} />}
       </main>
       </div>
 

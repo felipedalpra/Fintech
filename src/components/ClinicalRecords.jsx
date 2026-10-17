@@ -1,33 +1,43 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
-import { Card, Btn } from './UI.jsx'
+import { Btn } from './UI.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { fetchSecureProfile } from '../lib/secureProfileClient.js'
-import { formatDateBR } from '../utils.js'
+import { formatDateBR, today } from '../utils.js'
+import {
+  buildClinicalDaySchedule,
+  patientAge,
+  patientInitials,
+  resolveSchedulePatient,
+} from '../lib/clinicalWorkspace.js'
+import './ClinicalRecords.css'
 
-export function ClinicalRecords() {
-  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
+const CLINICAL_TABS = [
+  { id:'record', label:'Prontuário' },
+  { id:'summary', label:'Anamnese' },
+  { id:'prescriptions', label:'Exames e receitas', planned:true },
+  { id:'files', label:'Fotos e documentos', planned:true },
+  { id:'treatment', label:'Plano e retorno', planned:true },
+]
+
+export function ClinicalRecords({ data }) {
   const { user } = useAuth()
-  const {
-    ownerId,
-    clinicId,
-    isOwner,
-    professionalName,
-    professionalRegistration,
-    professionalCouncil,
-  } = useUserRole()
+  const { ownerId, clinicId, isOwner, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
   const [selected, setSelected] = useState(null)
   const [search, setSearch] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('record')
   const [clinicalProfile, setClinicalProfile] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [author, setAuthor] = useState({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
+  const searchWrapRef = useRef(null)
+  const daySchedule = useMemo(() => buildClinicalDaySchedule(data, today()), [data])
 
   useEffect(() => {
     if (!ownerId) return
@@ -66,110 +76,252 @@ export function ClinicalRecords() {
     return () => { active = false }
   }, [isOwner, clinicId])
 
+  useEffect(() => {
+    const close = event => {
+      if (!searchWrapRef.current?.contains(event.target)) setSearchOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  useEffect(() => {
+    if (!selected?.id || !ownerId) return
+    let active = true
+    setProfileLoading(true)
+    setClinicalProfile(null)
+    setError('')
+    Promise.resolve()
+      .then(async () => {
+        const { error:auditError } = await supabase.rpc('log_clinical_record_access', {
+          p_patient_id:selected.id,
+          p_action:'view_record',
+        })
+        if (auditError) throw new Error('Não foi possível auditar a abertura da ficha clínica.')
+        const { data:profile, error:profileError } = await supabase
+          .from('patient_clinical_profiles')
+          .select('*')
+          .eq('patient_id', selected.id)
+          .eq('user_id', ownerId)
+          .maybeSingle()
+        if (profileError) throw profileError
+        if (active) setClinicalProfile(profile || null)
+      })
+      .catch(nextError => {
+        if (active) setError(nextError.message || 'Não foi possível abrir a ficha clínica.')
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false)
+      })
+    return () => { active = false }
+  }, [selected?.id, ownerId])
+
   async function loadPatients() {
     setLoading(true)
     setError('')
-    const { data, error:loadError } = await supabase
+    const { data:rows, error:loadError } = await supabase
       .from('patients')
-      .select('id, full_name, date_of_birth, sex, phone, start_date, active')
+      .select('id, full_name, date_of_birth, sex, phone, email, start_date, active')
       .eq('user_id', ownerId)
       .eq('active', true)
       .order('full_name')
     if (loadError) setError(loadError.message || 'Não foi possível carregar os pacientes.')
-    setPatients(data || [])
+    setPatients(rows || [])
     setLoading(false)
   }
 
   function selectPatient(patient) {
     setSelected(patient)
     setTab('record')
-    setClinicalProfile(null)
+    setSearch('')
+    setSearchOpen(false)
     setError('')
   }
 
-  async function openClinicalSummary() {
-    if (!selected || tab === 'summary') return
-    setTab('summary')
-    setProfileLoading(true)
-    setError('')
-    const { error:auditError } = await supabase.rpc('log_clinical_record_access', {
-      p_patient_id:selected.id,
-      p_action:'view_record',
-    })
-    if (auditError) {
-      setError('Não foi possível auditar o acesso. O resumo clínico não foi aberto.')
-      setProfileLoading(false)
+  function openAppointment(item) {
+    const patient = resolveSchedulePatient(item, patients)
+    if (!patient) {
+      setSearch(item.patientName === 'Paciente não identificado' ? '' : item.patientName)
+      setSearchOpen(true)
+      setError('Este atendimento ainda não está vinculado de forma única a um cadastro. Localize o paciente para abrir a ficha clínica.')
       return
     }
-    const { data, error:profileError } = await supabase
-      .from('patient_clinical_profiles')
-      .select('*')
-      .eq('patient_id', selected.id)
-      .eq('user_id', ownerId)
-      .maybeSingle()
-    if (profileError) setError(profileError.message || 'Não foi possível carregar o resumo clínico.')
-    setClinicalProfile(data || null)
-    setProfileLoading(false)
+    selectPatient(patient)
+  }
+
+  function returnToAgenda() {
+    setSelected(null)
+    setClinicalProfile(null)
+    setTab('record')
+    setError('')
   }
 
   const filteredPatients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('pt-BR')
-    if (!query) return patients
-    return patients.filter(patient => [patient.full_name, patient.phone].some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)))
+    if (!query) return patients.slice(0, 8)
+    return patients.filter(patient => [patient.full_name, patient.phone, patient.email]
+      .some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query)))
+      .slice(0, 12)
   }, [patients, search])
 
+  const selectedAppointments = useMemo(() => {
+    if (!selected) return []
+    const normalizedName = selected.full_name.trim().toLocaleLowerCase('pt-BR')
+    return daySchedule.filter(item => item.patientId === selected.id || (!item.patientId && item.patientName.trim().toLocaleLowerCase('pt-BR') === normalizedName))
+  }, [daySchedule, selected])
+
+  const themeVars = {
+    '--clinical-bg':C.bg,
+    '--clinical-surface':C.surface,
+    '--clinical-card':C.card,
+    '--clinical-hover':C.cardHover,
+    '--clinical-border':C.border,
+    '--clinical-border-bright':C.borderBright,
+    '--clinical-text':C.text,
+    '--clinical-sub':C.textSub,
+    '--clinical-dim':C.textDim,
+    '--clinical-accent':C.accent,
+    '--clinical-green':C.green,
+    '--clinical-yellow':C.yellow,
+    '--clinical-red':C.red,
+    '--clinical-purple':C.purple,
+  }
+
   return (
-    <div data-testid="clinical-records-page" style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(240px, 320px) minmax(0, 1fr)', gap:18, alignItems:'start' }}>
-      <Card style={{ padding:0, overflow:'hidden' }}>
-        <div style={{ padding:16, borderBottom:`1px solid ${C.border}` }}>
-          <div style={{ color:C.text, fontWeight:800, fontSize:16 }}>Pacientes</div>
-          <div style={{ color:C.textDim, fontSize:11, marginTop:3 }}>Somente pacientes ativos desta clínica</div>
-          <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar nome ou telefone" style={{ width:'100%', boxSizing:'border-box', marginTop:12, padding:'9px 11px', borderRadius:9, border:`1px solid ${C.border}`, background:C.bg, color:C.text }} />
-        </div>
-        <div style={{ maxHeight:isMobile ? 260 : 'calc(100vh - 280px)', overflowY:'auto' }}>
-          {loading && <div style={{ padding:18, color:C.textDim, fontSize:12 }}>Carregando…</div>}
-          {!loading && filteredPatients.length === 0 && <div style={{ padding:18, color:C.textDim, fontSize:12 }}>Nenhum paciente encontrado.</div>}
-          {filteredPatients.map(patient => (
-            <button key={patient.id} type="button" onClick={() => selectPatient(patient)} style={{ width:'100%', textAlign:'left', padding:'12px 16px', border:'none', borderBottom:`1px solid ${C.border}`, background:selected?.id === patient.id ? C.accent + '18' : 'transparent', color:C.text, cursor:'pointer', fontFamily:'inherit' }}>
-              <div style={{ fontSize:13, fontWeight:700 }}>{patient.full_name}</div>
-              <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>{patient.date_of_birth ? formatDateBR(patient.date_of_birth) : 'Nascimento não informado'}{patient.phone ? ` · ${patient.phone}` : ''}</div>
-            </button>
-          ))}
-        </div>
-      </Card>
+    <div className="clinical-workspace" data-testid="clinical-records-page" style={themeVars}>
+      <div className="clinical-toolbar">
+        <button type="button" className={`clinical-home-button${selected ? '' : ' is-active'}`} onClick={returnToAgenda}>
+          <span className="clinical-home-button__icon">▦</span>
+          <span><strong>Agenda do dia</strong><small>{daySchedule.length} atendimento{daySchedule.length === 1 ? '' : 's'}</small></span>
+        </button>
 
-      <Card style={{ minHeight:420 }}>
-        {!selected ? (
-          <div style={{ display:'grid', placeItems:'center', minHeight:360, textAlign:'center', color:C.textDim, fontSize:13 }}>Selecione um paciente para abrir o prontuário.</div>
-        ) : (
-          <div style={{ display:'grid', gap:18 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', gap:14, alignItems:'flex-start', flexWrap:'wrap', paddingBottom:14, borderBottom:`1px solid ${C.border}` }}>
-              <div>
-                <h2 style={{ margin:0, color:C.text, fontSize:20 }}>{selected.full_name}</h2>
-                <div style={{ color:C.textDim, fontSize:11, marginTop:5 }}>{selected.date_of_birth ? `Nascimento: ${formatDateBR(selected.date_of_birth)}` : 'Nascimento não informado'}{selected.start_date ? ` · Em acompanhamento desde ${formatDateBR(selected.start_date)}` : ''}</div>
-              </div>
-              <div style={{ display:'flex', gap:7 }}>
-                <Btn variant={tab === 'record' ? undefined : 'ghost'} onClick={() => setTab('record')}>Prontuário</Btn>
-                <Btn variant={tab === 'summary' ? undefined : 'ghost'} onClick={openClinicalSummary}>Resumo clínico</Btn>
-              </div>
+        <div className="clinical-patient-search" ref={searchWrapRef}>
+          <span aria-hidden="true" className="clinical-search-icon">⌕</span>
+          <input
+            value={search}
+            onChange={event => { setSearch(event.target.value); setSearchOpen(true) }}
+            onFocus={() => setSearchOpen(true)}
+            placeholder="Buscar paciente por nome, telefone ou e-mail"
+            aria-label="Buscar paciente"
+          />
+          {searchOpen && (
+            <div className="clinical-search-results" role="listbox" aria-label="Pacientes encontrados">
+              {loading && <div className="clinical-search-empty">Carregando pacientes…</div>}
+              {!loading && filteredPatients.length === 0 && <div className="clinical-search-empty">Nenhum paciente encontrado.</div>}
+              {filteredPatients.map(patient => (
+                <button key={patient.id} type="button" role="option" aria-selected={selected?.id === patient.id} onClick={() => selectPatient(patient)}>
+                  <PatientAvatar patient={patient} small />
+                  <span><strong>{patient.full_name}</strong><small>{patient.phone || patient.email || 'Contato não informado'}</small></span>
+                </button>
+              ))}
             </div>
+          )}
+        </div>
 
-            {error && <div role="alert" style={{ color:C.red, fontSize:12 }}>{error}</div>}
-            {tab === 'record' && (
-              <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />
-            )}
-            {tab === 'summary' && (
-              profileLoading ? <div style={{ color:C.textDim, fontSize:12 }}>Carregando resumo com auditoria…</div> : <ClinicalSummary profile={clinicalProfile} />
-            )}
+        {selected && <div className="clinical-toolbar-context"><span>Ficha aberta</span><strong>{selected.full_name}</strong></div>}
+      </div>
+
+      {error && <div className="clinical-alert" role="alert">{error}</div>}
+
+      {!selected ? (
+        <DayAgenda schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={selectPatient} />
+      ) : (
+        <div className="clinical-patient-workspace">
+          <PatientHeader patient={selected} profile={clinicalProfile} loading={profileLoading} appointments={selectedAppointments} />
+          <nav className="clinical-tabs" aria-label="Ficha clínica do paciente">
+            {CLINICAL_TABS.map(item => (
+              <button key={item.id} type="button" className={tab === item.id ? 'is-active' : ''} onClick={() => setTab(item.id)}>
+                {item.label}
+                {item.planned && <small>próxima etapa</small>}
+              </button>
+            ))}
+          </nav>
+          <div className="clinical-tab-content">
+            {tab === 'record' && <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />}
+            {tab === 'summary' && (profileLoading ? <div className="clinical-loading">Carregando anamnese com auditoria…</div> : <ClinicalSummary profile={clinicalProfile} />)}
+            {tab === 'prescriptions' && <PlannedModule title="Exames e receitas" description="Pedidos de exames e receituários em PDF serão criados, consultados e reimpressos aqui, sem sair da ficha do paciente." />}
+            {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
+            {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
           </div>
-        )}
-      </Card>
+        </div>
+      )}
     </div>
   )
 }
 
+function DayAgenda({ schedule, patients, loading, onAppointment, onPatient }) {
+  const dateLabel = new Date(`${today()}T12:00:00`).toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' })
+  return (
+    <section className="clinical-day" data-testid="clinical-day-agenda">
+      <header className="clinical-day__header">
+        <div><span>Atendimentos de hoje</span><h2>{dateLabel}</h2></div>
+        <div className="clinical-day__summary"><strong>{schedule.length}</strong><span>na agenda</span></div>
+      </header>
+
+      {schedule.length > 0 ? (
+        <div className="clinical-agenda-list">
+          {schedule.map((item, index) => (
+            <button key={item.id} type="button" onClick={() => onAppointment(item)} className="clinical-agenda-row">
+              <span className="clinical-agenda-row__time">{item.time || '—'}</span>
+              <span className={`clinical-agenda-row__marker is-${item.kind}`} />
+              <span className="clinical-agenda-row__body"><strong>{item.patientName}</strong><small>{item.label} · {item.durationMinutes} min</small></span>
+              <span className="clinical-agenda-row__position">{String(index + 1).padStart(2, '0')}</span>
+              <span className="clinical-agenda-row__action">Abrir ficha →</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="clinical-agenda-empty">
+          <div className="clinical-agenda-empty__icon">✓</div>
+          <div><strong>Nenhum atendimento na agenda de hoje</strong><span>Use a busca acima ou abra um dos pacientes recentes.</span></div>
+        </div>
+      )}
+
+      {schedule.length === 0 && !loading && patients.length > 0 && (
+        <div className="clinical-recent-patients">
+          <div className="clinical-section-label">Pacientes disponíveis</div>
+          <div>
+            {patients.slice(0, 6).map(patient => (
+              <button key={patient.id} type="button" onClick={() => onPatient(patient)}>
+                <PatientAvatar patient={patient} small />
+                <span><strong>{patient.full_name}</strong><small>{patient.phone || 'Sem telefone'}</small></span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function PatientAvatar({ patient, small = false }) {
+  return <span className={`clinical-avatar${small ? ' is-small' : ''}`} aria-hidden="true">{patientInitials(patient?.full_name)}</span>
+}
+
+function PatientHeader({ patient, profile, loading, appointments }) {
+  const age = patientAge(patient.date_of_birth)
+  const alertItems = [
+    profile?.allergies ? { label:`Alergias: ${profile.allergies}`, tone:'danger' } : null,
+    profile?.current_medications ? { label:`Em uso: ${profile.current_medications}`, tone:'warn' } : null,
+  ].filter(Boolean)
+  return (
+    <header className="clinical-patient-header">
+      <PatientAvatar patient={patient} />
+      <div className="clinical-patient-header__identity">
+        <div><h2>{patient.full_name}</h2><span>Paciente ativo</span></div>
+        <p>{patient.date_of_birth ? `${formatDateBR(patient.date_of_birth)}${age !== null ? ` · ${age} anos` : ''}` : 'Nascimento não informado'}{patient.phone ? ` · ${patient.phone}` : ''}{patient.email ? ` · ${patient.email}` : ''}</p>
+      </div>
+      <div className="clinical-patient-header__alerts">
+        {loading && <span className="is-muted">Verificando alertas…</span>}
+        {!loading && alertItems.length === 0 && <span className="is-ok">Sem alertas registrados</span>}
+        {alertItems.map(item => <span key={item.label} className={`is-${item.tone}`} title={item.label}>{item.label}</span>)}
+      </div>
+      <div className="clinical-patient-header__today"><span>Hoje</span><strong>{appointments[0]?.time || 'Sem horário'}</strong><small>{appointments[0]?.label || 'Ficha avulsa'}</small></div>
+    </header>
+  )
+}
+
 function ClinicalSummary({ profile }) {
-  if (!profile) return <div style={{ color:C.textDim, fontSize:13, padding:'24px 0', textAlign:'center' }}>Anamnese clínica ainda não registrada.</div>
+  if (!profile) return <div className="clinical-empty-panel">Anamnese clínica ainda não registrada.</div>
   const fields = [
     ['Queixa principal', profile.chief_complaint],
     ['História da doença atual', profile.hda],
@@ -186,15 +338,21 @@ function ClinicalSummary({ profile }) {
     ['Observações', profile.clinical_notes],
   ].filter(([, value]) => value)
   return (
-    <div style={{ display:'grid', gap:10 }}>
-      {fields.length === 0 && <div style={{ color:C.textDim, fontSize:13 }}>Anamnese sem informações preenchidas.</div>}
-      {fields.map(([label, value]) => (
-        <div key={label} style={{ padding:'11px 13px', borderRadius:10, border:`1px solid ${C.border}`, background:C.surface }}>
-          <div style={{ color:C.textDim, fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.07em' }}>{label}</div>
-          <div style={{ color:C.textSub, fontSize:13, lineHeight:1.6, whiteSpace:'pre-wrap', marginTop:5 }}>{value}</div>
-        </div>
-      ))}
-      <div style={{ color:profile.consent_signed ? C.green : C.yellow, fontSize:12, fontWeight:700 }}>TCLE: {profile.consent_signed ? `assinado${profile.consent_date ? ` em ${formatDateBR(profile.consent_date)}` : ''}` : 'pendente'}</div>
+    <div className="clinical-summary-grid">
+      {fields.length === 0 && <div className="clinical-empty-panel">Anamnese sem informações preenchidas.</div>}
+      {fields.map(([label, value]) => <div key={label} className="clinical-summary-field"><span>{label}</span><p>{value}</p></div>)}
+      <div className={`clinical-consent${profile.consent_signed ? ' is-signed' : ''}`}>TCLE: {profile.consent_signed ? `assinado${profile.consent_date ? ` em ${formatDateBR(profile.consent_date)}` : ''}` : 'pendente'}</div>
+    </div>
+  )
+}
+
+function PlannedModule({ title, description }) {
+  return (
+    <div className="clinical-planned-module">
+      <span>Próxima etapa do Amigo essencial</span>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <Btn variant="ghost" disabled>Em implementação</Btn>
     </div>
   )
 }

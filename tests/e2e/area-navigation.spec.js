@@ -39,6 +39,7 @@ test('trocar de área troca a sub-navegação e navega', async ({ page }) => {
 test('área Clínica abre o prontuário ativo', async ({ page }) => {
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Vitória', registrationId:'CRM-SP 123' } } }) }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'p1', full_name:'Ana Clínica', date_of_birth:'1990-04-10', active:true, start_date:'2026-01-10' }]) }))
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
