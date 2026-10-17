@@ -54,6 +54,10 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 
 ## 🟡 Necessários antes do deploy / go-live de cada feature
 
+### Anamnese clínica SOAP
+- [ ] **Aplicar no Supabase** a migration aditiva `supabase/clinical_anamnesis_cfm_schema.sql` depois de `supabase/clinical_record_foundation_schema.sql`
+- [ ] Homologar com a Dra. Vitoria os campos obrigatórios e os modelos específicos por procedimento; até essa validação, a tela usa o núcleo clínico geral baseado em CFM/SBIS
+
 ### Timbre para documentos (Pedido de Exames + Receituário + Prontuário)
 - [ ] **Logo da clínica** — arquivo PNG ou SVG, fundo transparente
 - [ ] **Nome completo** da Dra. Vitoria como aparece nos documentos clínicos

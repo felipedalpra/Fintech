@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { Btn } from './UI.jsx'
+import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -284,7 +285,14 @@ export function ClinicalRecords({ data }) {
                 {tab === 'record' && <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />}
                 {tab === 'summary' && profileStatus === 'loading' && <div className="clinical-loading">Carregando anamnese…</div>}
                 {tab === 'summary' && profileStatus === 'error' && <div className="clinical-empty-panel">Anamnese indisponível no momento.</div>}
-                {tab === 'summary' && profileStatus === 'ready' && <ClinicalSummary profile={clinicalProfile} />}
+                {tab === 'summary' && profileStatus === 'ready' && (
+                  <ClinicalAnamnesis
+                    patientId={selected.id}
+                    ownerId={ownerId}
+                    author={author}
+                    legacyProfile={clinicalProfile}
+                  />
+                )}
                 {tab === 'prescriptions' && <PlannedModule title="Exames e receitas" description="Pedidos de exames e receituários em PDF serão criados, consultados e reimpressos aqui, sem sair da ficha do paciente." />}
                 {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
                 {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
@@ -375,32 +383,6 @@ function ClinicalOpenError({ onRetry }) {
     <div className="clinical-empty-panel">
       <p>Os dados clínicos não foram abertos porque a auditoria não pôde ser confirmada.</p>
       <Btn variant="ghost" onClick={onRetry}>Tentar novamente</Btn>
-    </div>
-  )
-}
-
-function ClinicalSummary({ profile }) {
-  if (!profile) return <div className="clinical-empty-panel">Anamnese clínica ainda não registrada.</div>
-  const fields = [
-    ['Queixa principal', profile.chief_complaint],
-    ['História da doença atual', profile.hda],
-    ['Alergias', profile.allergies],
-    ['Doenças crônicas', profile.chronic_diseases],
-    ['Medicamentos em uso', profile.current_medications],
-    ['Cirurgias anteriores', profile.previous_surgeries],
-    ['Internações', profile.hospitalizations],
-    ['Tabagismo', profile.smoking],
-    ['Etilismo', profile.alcohol],
-    ['Atividade física', profile.physical_activity],
-    ['Antecedentes familiares', profile.family_history],
-    ['Antecedentes ginecológicos', profile.gynecological_history],
-    ['Observações', profile.clinical_notes],
-  ].filter(([, value]) => value)
-  return (
-    <div className="clinical-summary-grid">
-      {fields.length === 0 && <div className="clinical-empty-panel">Anamnese sem informações preenchidas.</div>}
-      {fields.map(([label, value]) => <div key={label} className="clinical-summary-field"><span>{label}</span><p>{value}</p></div>)}
-      <div className={`clinical-consent${profile.consent_signed ? ' is-signed' : ''}`}>TCLE: {profile.consent_signed ? `assinado${profile.consent_date ? ` em ${formatDateBR(profile.consent_date)}` : ''}` : 'pendente'}</div>
     </div>
   )
 }
