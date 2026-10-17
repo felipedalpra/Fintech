@@ -13,6 +13,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - **Direção do “Amigo essencial” e pendências clínicas consolidadas**: Clínico passa a ser definido como um workspace compacto, com Agenda do dia como entrada e ficha central reunindo prontuário, anamnese, histórico, exames/receitas em PDF, fotos/documentos e plano/retorno. O checklist detalha o que a Dra. Vitoria / Augusto precisam fornecer para reproduzir o fluxo usado no Amigo. Transcrição de consulta, teleconsulta e resultados automáticos de laboratório ficam explicitamente adiados e não bloqueiam a fase atual. (`docs/PENDENCIAS_CLIENTE.md`, `docs/superpowers/specs/2026-10-10-platform-architecture-design.md`, `docs/superpowers/specs/2026-10-16-clinical-foundation-record-design.md`.)
 - **Clínico sem ruído administrativo**: aviso de operação financeira vazia, resumo de caixa, atalhos gerais, FAB e copiloto deixam de disputar espaço com o atendimento enquanto a área clínica está aberta. A navegação passa a chamar a tela de Atendimento, refletindo Agenda do dia + ficha central em vez de uma página isolada de prontuário. (`src/pages/FinanceWorkspace.jsx`.)
 
+### Fixed
+- **Plural de evoluções no prontuário**: o contador passa a exibir corretamente “0 evoluções registradas”, “1 evolução registrada” e o plural para quantidades maiores, sem formar “evoluçãoões”. (`src/components/MedicalRecord.jsx`.)
+
 ## [Unreleased] - 2026-10-16 (119)
 ### Added
 - **Evolution API self-hosted no WhatsApp**: o admin cria uma instância Baileys pelo SurgiMetrics e recebe o QR Code sem que URL ou chave global cheguem ao navegador. O adaptador multiprovedor cobre texto, imagem, áudio, documento, conversas, LID, estado da conexão e verificação do webhook, mantendo números Z-API existentes como rollback. (`api/_lib/evolutionClient.js`, `api/_lib/whatsappProvider.js`, `api/whatsapp.js`, `src/components/WhatsAppNumbers.jsx`.)

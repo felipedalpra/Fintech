@@ -144,7 +144,7 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
     <div data-testid="medical-record" style={{ display:'flex', flexDirection:'column', gap:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap' }}>
         <div>
-          <div style={{ fontSize:13, color:C.textSub }}>{records.length} evolução{records.length !== 1 ? 'ões' : ''} registrada{records.length !== 1 ? 's' : ''}</div>
+          <div style={{ fontSize:13, color:C.textSub }}>{records.length} {records.length === 1 ? 'evolução registrada' : 'evoluções registradas'}</div>
           <div style={{ fontSize:11, color:C.textDim, marginTop:4 }}>Abertura registrada na trilha de auditoria.</div>
         </div>
         <Btn onClick={openNew} disabled={!hasVerifiedAuthor} style={{ padding:'7px 14px', fontSize:12 }}>+ Nova evolução</Btn>
