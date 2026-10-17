@@ -1,7 +1,43 @@
 # Pendências da Clínica — SurgiMetrics
 
 > Itens que precisam ser fornecidos ou decididos pela Dra. Vitoria / Augusto antes ou durante cada fase de implementação.
-> Atualizado em: 2026-10-16
+> Atualizado em: 2026-10-17
+
+---
+
+## Checklist para levar à clínica — fase clínica atual
+
+Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para que o módulo clínico seja desenhado conforme o fluxo que a equipe realmente usava no Amigo. Prints, vídeos, fichas e documentos devem estar **sem dados identificáveis de pacientes**.
+
+### Prioridade 1 — enviar agora
+
+| Tema | O que a clínica precisa enviar ou confirmar | Formato sugerido |
+|------|----------------------------------------------|------------------|
+| **Referência do Amigo** | Gravação curta ou sequência de prints mostrando os fluxos que a equipe usava: agenda, busca/cadastro do paciente, abertura do prontuário, nova evolução, anamnese, pedido de exames, receituário, documentos e anexos/fotos. Informar também o que funcionava bem e o que incomodava no Amigo. | Vídeo de tela ou prints, sempre com paciente fictício ou dados ocultos |
+| **Ficha de anamnese** | Ficha completa usada hoje, com todas as perguntas, opções de resposta e indicação dos campos obrigatórios. Informar se existem fichas diferentes por procedimento e se ela é preenchida pelo paciente, pela equipe ou pelo médico. | PDF, prints ou formulário exportado do Amigo |
+| **Termos e consentimentos** | TCLE, consentimento para tratamento de dados, autorização de uso de imagem, termos cirúrgicos e outros termos que precisam ser aceitos ou assinados durante a jornada. Informar em qual etapa cada termo é usado e quem assina. | Modelos em PDF/DOCX, sem assinatura real de paciente |
+| **Timbre e identificação profissional** | Logo em boa qualidade; nome legal da clínica; CNPJ, endereço, telefone e e-mail; e, para cada profissional que emitirá ou assinará documentos, nome completo, conselho, número/UF, especialidade e RQE quando aplicável. | Logo em SVG ou PNG transparente + dados em texto |
+| **Pedidos de exames** | Relação dos exames mais pedidos, kits prontos (pré-operatório, cardiológico etc.), observações/instruções padrão e um exemplo anonimizado de pedido atual. | Planilha/lista + PDF de exemplo |
+| **Receituário** | Medicamentos mais prescritos, apresentação/concentração, posologia e orientações padrão, modelos usados pela clínica e um exemplo anonimizado. Confirmar que receitas de controle especial continuam fora do escopo. | Planilha/lista + PDF de exemplo |
+| **Documentos clínicos** | Modelos de atestado, relatório, declaração, encaminhamento e qualquer outro documento recorrente. Indicar quais dados devem ser preenchidos automaticamente e quais exigem assinatura. | Modelos em PDF/DOCX |
+| **Fotos clínicas** | Procedimentos que usam antes/depois, regiões do corpo, ângulos/posições padronizados, nomenclatura desejada e quem pode visualizar. Confirmar o termo de autorização de imagem e as regras de retenção/remoção. | Guia, exemplos sem identificação e termos correspondentes |
+
+### Prioridade 2 — confirmar antes da ativação de integrações
+
+| Tema | O que a clínica precisa enviar ou confirmar | Observação de segurança |
+|------|----------------------------------------------|-------------------------|
+| **Migração do Amigo** | Exportação dos cadastros de pacientes, descrição das colunas e uma amostra anonimizada para validação. Confirmar quais cadastros estão ativos e quais devem ser descartados/mesclados. | O histórico clínico antigo continua fora do escopo; o arquivo real será transferido por canal seguro |
+| **Assinatura digital** | Informar se cada profissional já possui certificado ICP-Brasil, qual o tipo/provedor, validade e em quais documentos a assinatura é obrigatória. Indicar uma pessoa para acompanhar a homologação. | Não enviar arquivo do certificado, senha, token ou chave privada por e-mail, WhatsApp, Git ou por este documento |
+| **Google Agenda** | Conta Google responsável, calendários que devem sincronizar, tipos de atendimento, duração padrão, cores e regras de bloqueio/disponibilidade. | A autorização será feita pelo titular via OAuth; não enviar senha da conta |
+| **WhatsApp** | Número de homologação, futuro número definitivo, responsáveis pelos testes e textos aprovados para anamnese, consulta, cirurgia, cobrança e pós-consulta. | A conexão será homologada por QR Code; não enviar credenciais pessoais |
+
+### Funcionalidades adiadas — não bloqueiam a fase atual
+
+- [ ] **Transcrição de consulta** — decidir provedor, consentimento, retenção de áudio e revisão médica em uma fase futura
+- [ ] **Teleconsulta** — definir plataforma, agenda, sala de vídeo, consentimentos e requisitos operacionais em uma fase futura
+- [ ] **Resultados automáticos de laboratório** — mapear laboratórios, disponibilidade de API/padrão de integração e autorização de acesso em uma fase futura
+
+> Não é necessário pedir acessos, credenciais, contratos ou materiais dessas três funcionalidades agora. Quando entrarem no roadmap, cada uma terá uma descoberta e uma integração próprias.
 
 ---
 

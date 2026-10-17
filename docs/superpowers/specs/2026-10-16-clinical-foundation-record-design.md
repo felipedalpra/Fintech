@@ -1,7 +1,7 @@
 # Spec — Fundação clínica e prontuário imutável (Fase 4.0–4.1)
 
-Data: 2026-10-16
-Status: implementado na branch `feat/fase4-fundacao-prontuario`
+Data: 2026-10-16 · direção de produto atualizada em 2026-10-17
+Status: fundação implementada; workspace “Amigo essencial” aprovado para as próximas etapas
 
 ## Goal
 
@@ -9,7 +9,32 @@ Abrir a área Clínica com prontuário cronológico, autoria profissional, corre
 
 ## Contexto e navegação
 
-A Fase 4 começa pela fundação porque pedidos, receitas, documentos e assinatura dependem da mesma identidade profissional e do mesmo isolamento de dados. A navegação passa a conter **Clínico → Prontuário**. O cadastro administrativo permanece em Relacionamento → Pacientes.
+A Fase 4 começa pela fundação porque pedidos, receitas, documentos e assinatura dependem da mesma identidade profissional e do mesmo isolamento de dados. A navegação passa a conter a área **Clínico**, que será um workspace único para o profissional. O cadastro administrativo permanece em Relacionamento → Pacientes.
+
+## Direção aprovada — “Amigo essencial”
+
+Toda a experiência assistencial abaixo pertence à área **Clínico**. Ela não deve ser repartida entre Relacionamento, Atendimentos, Financeiro ou Configurações, embora essas áreas possam oferecer atalhos para o mesmo paciente ou atendimento sem duplicar dados.
+
+1. **Interface clínica compacta:** alta densidade de informação, sem cards executivos grandes e sem ocupar a tela com indicadores administrativos.
+2. **Agenda do dia como entrada:** ao entrar em Clínico, o profissional vê a fila do dia e abre o paciente diretamente pelo atendimento.
+3. **Ficha central do paciente:** identificação e alertas clínicos permanecem visíveis enquanto o profissional alterna entre os módulos do paciente.
+4. **Prontuário, anamnese e histórico:** evoluções imutáveis, adendos, anamnese e linha do tempo ficam na mesma ficha.
+5. **Pedidos de exames e receitas em PDF:** criação, consulta e reimpressão pertencem à ficha clínica; a primeira versão gera o documento sem depender de integração externa.
+6. **Fotos e documentos:** anexos clínicos, termos e comparação antes/depois ficam no paciente, protegidos pelo acesso clínico.
+7. **Plano de tratamento e retorno:** conduta, etapas, sessões e próxima revisão ficam junto do histórico clínico e podem alimentar a agenda sem criar um cadastro paralelo.
+
+### Organização da tela
+
+- **Entrada:** Agenda do dia.
+- **Busca auxiliar:** localizar outro paciente sem sair de Clínico.
+- **Contexto persistente:** cabeçalho compacto do paciente com identificação, alergias/alertas e próximo retorno.
+- **Módulos da ficha:** Resumo, Prontuário, Anamnese, Exames e receitas, Fotos e documentos, Plano e retorno.
+- **Regra de navegação:** abrir um atendimento seleciona o paciente e mantém o usuário no mesmo workspace clínico.
+- **Regra de dados:** agenda geral, cadastro administrativo e ficha clínica podem mostrar o mesmo paciente/atendimento, mas sempre referenciam o mesmo registro-fonte.
+
+### Fora da primeira versão
+
+Transcrição de consulta, teleconsulta e resultados automáticos de laboratório ficam adiados. Não são dependências nem bloqueadores do “Amigo essencial”.
 
 ## Regras de integridade
 
@@ -58,6 +83,8 @@ A Fase 4 começa pela fundação porque pedidos, receitas, documentos e assinatu
 - Teste de navegador assina evolução, comprova ausência de editar/excluir e registra adendo preservando o original.
 - Teste de perfil operacional comprova que equipe sem permissão não recebe a área Clínica.
 
-## Próxima etapa
+## Próximas etapas
 
-Fase 4.2: anamnese versionada e link público de uso único. O plano antigo de 2026-10-08 não deve ser executado literalmente: ele expunha nome e conteúdo clínico no link público e não consumia o token de forma atômica.
+1. Transformar a entrada de Clínico no workspace compacto com Agenda do dia e ficha central.
+2. Entregar anamnese versionada e link público de uso único. O plano antigo de 2026-10-08 não deve ser executado literalmente: ele expunha nome e conteúdo clínico no link público e não consumia o token de forma atômica.
+3. Adicionar pedidos/receitas em PDF, fotos/documentos e plano de tratamento/retorno dentro da mesma ficha.

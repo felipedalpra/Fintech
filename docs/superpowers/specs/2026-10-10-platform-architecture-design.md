@@ -39,7 +39,7 @@ O **paciente é a espinha**: tudo pendura em três mundos — relacionamento, cl
 |---|------|---------------|----------|
 | 1 | **Início** | Dashboard por perfil, alertas, "ações de hoje" | Todos (visão filtrada) |
 | 2 | **Pacientes (CRM & Jornada)** | Funil (kanban) · Pacientes (lista+cadastro) · WhatsApp (inbox) · Agenda · Orçamentos/valores | Todos |
-| 3 | **Clínico (Prontuário)** | Prontuário · Anamnese · Pedido de exames · Receituário · Documentos & assinatura | Perfis clínicos |
+| 3 | **Clínico** | Agenda do dia · Ficha central · Prontuário e anamnese · Exames e receitas · Fotos e documentos · Plano e retorno | Perfis clínicos |
 | 4 | **Financeiro** | *Movimento* (Lançamentos·Fluxo·DRE·Balanço) · *Operação* (Cirurgias·Consultas·Produtos·Recorrências) · *Cobrança* (Boletos·Conciliação) · *Análise* (Impostos·Metas·Relatórios) | Admin / Gestão |
 | 5 | **Automações & Integrações** | Automações (régua WhatsApp, funil, cobrança) · WhatsApp (monitoramento+config) · Google Agenda · Banco/boletos | Admin |
 | 6 | **Configurações** | Clínica · Equipe & acessos · Assinatura · Perfil | Admin |
@@ -117,6 +117,7 @@ Referências para tornar cada área mais fácil de usar e para acelerar as integ
 - **Repos:** [DeskcommCRM](https://github.com/melgarafael/DeskcommCRM) (open alternative to Kommo, WhatsApp+kanban+LGPD, multi-tenant) · [wacrm](https://github.com/ArnasDon/wacrm) (MIT, inbox+pipelines+automações no-code) · [Frappe CRM](https://github.com/frappe/crm) (kanban drag-and-drop) · [Chatwoot](https://github.com/chatwoot/chatwoot) (inbox omnichannel) · engine WhatsApp: [Evolution API](https://github.com/EvolutionAPI/evolution-api) (Baileys, não-oficial) · kanban UI: dnd-kit.
 
 ### Clínico → espelhar no Amigo + melhores práticas de estética
+- **Direção aprovada:** a versão “Amigo essencial” é um workspace compacto dentro de Clínico. A Agenda do dia é a entrada e abre uma ficha central que reúne prontuário, anamnese, histórico, pedidos/receitas em PDF, fotos/documentos e plano de tratamento/retorno. Outras áreas podem apontar para esses registros, mas não hospedam fluxos clínicos paralelos.
 - **O que copiar:** fotos antes/depois padronizadas por região e data com comparação lado a lado (slider) e marcação de pontos; anamnese personalizável por procedimento com assinatura; histórico de anamnese/prescrição na mesma tela do atendimento; planos de tratamento e sessões; termo de uso de imagem (LGPD). Fontes: [GestãoDS](https://www.gestaods.com.br/qual-o-melhor-prontuario-para-cirurgiao-plastico/), [SinapSYS](https://www.sinapsysapp.com.br/estetica).
 - **Repos (padrões, não adoção — já há prontuário):** [Medplum](https://github.com/medplum/medplum) (FHIR, modelagem clínica) · [OpenEMR](https://github.com/openemr/openemr) (padrões de evolução/adendo).
 
