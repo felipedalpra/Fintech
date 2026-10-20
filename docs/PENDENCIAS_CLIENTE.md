@@ -56,7 +56,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 
 ### Anamnese clínica SOAP
 - [x] **Aplicar no Supabase** a migration aditiva `supabase/clinical_anamnesis_cfm_schema.sql` depois de `supabase/clinical_record_foundation_schema.sql` — aplicada em 2026-10-20
-- [ ] **Aplicar no Supabase** a correção `supabase/clinical_anamnesis_review_fixes.sql`, que adiciona idempotência às assinaturas — executar depois da migration acima
+- [x] **Aplicar no Supabase** a correção `supabase/clinical_anamnesis_review_fixes.sql`, que adiciona idempotência às assinaturas — aplicada em 2026-10-20
 - [ ] Homologar com a Dra. Vitoria os campos obrigatórios e os modelos específicos por procedimento; até essa validação, a tela usa o núcleo clínico geral baseado em CFM/SBIS
 
 ### Timbre para documentos (Pedido de Exames + Receituário + Prontuário)
