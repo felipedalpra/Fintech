@@ -60,7 +60,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [ ] Homologar com a Dra. Vitoria os campos obrigatórios e os modelos específicos por procedimento; até essa validação, a tela usa o núcleo clínico geral baseado em CFM/SBIS
 
 ### Timbre para documentos (Pedido de Exames + Receituário + Prontuário)
-- [ ] **Aplicar no Supabase** a migration aditiva `supabase/clinical_documents_schema.sql` depois das migrations da fundação clínica
+- [x] **Aplicar no Supabase** a migration aditiva `supabase/clinical_documents_schema.sql` depois das migrations da fundação clínica — aplicada em 2026-10-20
 - [ ] **Logo da clínica** — arquivo PNG ou SVG, fundo transparente
 - [ ] **Nome completo** da Dra. Vitoria como aparece nos documentos clínicos
 - [ ] **CRM** da Dra. Vitoria (número + UF, ex: CRM-SP 123456)
