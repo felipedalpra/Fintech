@@ -4,6 +4,7 @@ import {
   calculateClinicalBmi,
   clinicalAnamnesisFromLegacy,
   emptyClinicalAnamnesis,
+  hasLegacyClinicalAnamnesis,
   validateClinicalAnamnesis,
 } from '../../src/lib/clinicalAnamnesis.js'
 
@@ -28,6 +29,15 @@ test('converte a anamnese legada sem perder antecedentes', () => {
   })
   expect(form.personal_history).toContain('Doenças crônicas: Hipertensão')
   expect(form.personal_history).toContain('Cirurgias anteriores: Apendicectomia')
+})
+
+test('preserva perfil legado que contém somente alertas clínicos ou TCLE', () => {
+  expect(hasLegacyClinicalAnamnesis({ allergies:'Dipirona' })).toBe(true)
+  expect(hasLegacyClinicalAnamnesis({ current_medications:'Losartana' })).toBe(true)
+  expect(hasLegacyClinicalAnamnesis({ consent_signed:true })).toBe(true)
+  expect(hasLegacyClinicalAnamnesis({ consent_date:'2026-10-17' })).toBe(true)
+  expect(hasLegacyClinicalAnamnesis({ consent_signed:false })).toBe(true)
+  expect(hasLegacyClinicalAnamnesis(null)).toBe(false)
 })
 
 test('exige o conteúdo clínico mínimo e a identidade profissional', () => {
@@ -58,11 +68,12 @@ test('monta payload SOAP sem confiar na autoria enviada pelo navegador', () => {
     weight_kg:'60,5',
     height_cm:'165',
   }
-  const args = buildClinicalAnamnesisRpcArgs({ patientId:'patient-1', form, author })
+  const args = buildClinicalAnamnesisRpcArgs({ patientId:'patient-1', requestId:'request-1', form, author })
 
   expect(args).toEqual({
     p_patient_id:'patient-1',
     p_session_date:'2026-10-17',
+    p_request_id:'request-1',
     p_anamnesis:expect.objectContaining({
       chief_complaint:'Avaliação',
       systolic_bp:120,
@@ -73,6 +84,19 @@ test('monta payload SOAP sem confiar na autoria enviada pelo navegador', () => {
   })
   expect(args).not.toHaveProperty('p_author_name')
   expect(args.p_anamnesis).not.toHaveProperty('author_name')
+})
+
+test('exige identificador idempotente antes da assinatura', () => {
+  const form = {
+    ...emptyClinicalAnamnesis('2026-10-17'),
+    chief_complaint:'Avaliação',
+    history_present_illness:'História atual',
+    physical_exam:'Exame normal',
+    diagnostic_hypotheses:'Sem alterações',
+    therapeutic_plan:'Retorno anual',
+  }
+  expect(() => buildClinicalAnamnesisRpcArgs({ patientId:'patient-1', requestId:'', form, author }))
+    .toThrow('tentativa de assinatura')
 })
 
 test('calcula IMC somente quando peso e altura são válidos', () => {

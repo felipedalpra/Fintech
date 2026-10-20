@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { today } from '../utils.js'
+import { today, uid } from '../utils.js'
 import {
   buildClinicalAnamnesisRpcArgs,
   calculateClinicalBmi,
@@ -69,8 +69,21 @@ function signature(record) {
   return `${record.author_name} · ${record.author_council || 'CRM'} ${record.author_registration || 'não informado'}`
 }
 
+async function fetchClinicalAnamneses(patientId, ownerId) {
+  const { data, error } = await supabase
+    .from('clinical_anamneses')
+    .select('*')
+    .eq('patient_id', patientId)
+    .eq('user_id', ownerId)
+    .order('recorded_at', { ascending:false })
+  if (error) throw error
+  return data || []
+}
+
 export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile }) {
-  const [record, setRecord] = useState(null)
+  const [records, setRecords] = useState([])
+  const [selectedRecordId, setSelectedRecordId] = useState('')
+  const [requestId, setRequestId] = useState('')
   const [status, setStatus] = useState('loading')
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -81,35 +94,34 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile })
     let active = true
     setStatus('loading')
     setError('')
-    supabase
-      .from('clinical_anamneses')
-      .select('*')
-      .eq('patient_id', patientId)
-      .eq('user_id', ownerId)
-      .order('recorded_at', { ascending:false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data, error:loadError }) => {
+    setRecords([])
+    setSelectedRecordId('')
+    fetchClinicalAnamneses(patientId, ownerId)
+      .then(rows => {
         if (!active) return
-        if (loadError) {
-          setStatus('error')
-          setError('Não foi possível carregar a anamnese versionada.')
-          return
-        }
-        setRecord(data || null)
+        setRecords(rows)
+        setSelectedRecordId(rows[0]?.id || '')
         setStatus('ready')
+      })
+      .catch(() => {
+        if (!active) return
+        setStatus('error')
+        setError('Não foi possível carregar a anamnese versionada.')
       })
     return () => { active = false }
   }, [patientId, ownerId])
 
+  const record = records.find(item => item.id === selectedRecordId) || records[0] || null
+  const latestRecord = records[0] || null
   const legacyAvailable = hasLegacyClinicalAnamnesis(legacyProfile)
   const visibleRecord = record || (legacyAvailable ? clinicalAnamnesisFromLegacy(legacyProfile) : null)
   const bmi = useMemo(() => calculateClinicalBmi(visibleRecord?.weight_kg, visibleRecord?.height_cm), [visibleRecord])
   const formBmi = useMemo(() => calculateClinicalBmi(form.weight_kg, form.height_cm), [form.weight_kg, form.height_cm])
 
   function beginEditing() {
-    const source = record || clinicalAnamnesisFromLegacy(legacyProfile, today())
+    const source = latestRecord || clinicalAnamnesisFromLegacy(legacyProfile, today())
     setForm({ ...emptyClinicalAnamnesis(today()), ...source, session_date:today() })
+    setRequestId(uid())
     setError('')
     setEditing(true)
   }
@@ -119,32 +131,52 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile })
   }
 
   async function save() {
+    if (saving) return
     setSaving(true)
     setError('')
+    let signatureCompleted = false
     try {
-      const args = buildClinicalAnamnesisRpcArgs({ patientId, form, author })
-      const { error:saveError } = await supabase.rpc('create_clinical_anamnesis', args)
+      const args = buildClinicalAnamnesisRpcArgs({ patientId, requestId, form, author })
+      const { data:createdId, error:saveError } = await supabase.rpc('create_clinical_anamnesis', args)
       if (saveError) throw saveError
-      const { data:fresh, error:reloadError } = await supabase
-        .from('clinical_anamneses')
-        .select('*')
-        .eq('patient_id', patientId)
-        .eq('user_id', ownerId)
-        .order('recorded_at', { ascending:false })
-        .limit(1)
-        .maybeSingle()
-      if (reloadError || !fresh) throw reloadError || new Error('Anamnese salva, mas a confirmação não foi carregada.')
-      setRecord(fresh)
+      signatureCompleted = true
       setEditing(false)
+      setSelectedRecordId(createdId || '')
+      setStatus('loading')
+      const freshRecords = await fetchClinicalAnamneses(patientId, ownerId)
+      setRecords(freshRecords)
+      setSelectedRecordId(freshRecords.some(item => item.id === createdId) ? createdId : freshRecords[0]?.id || '')
+      setStatus('ready')
     } catch (nextError) {
-      setError(nextError.message || 'Não foi possível assinar a anamnese.')
+      if (signatureCompleted) {
+        setStatus('error')
+        setError('A anamnese foi assinada, mas a lista de versões não pôde ser atualizada. Recarregue antes de registrar outra versão.')
+      } else {
+        setError(nextError.message || 'Não foi possível assinar a anamnese.')
+      }
     } finally {
       setSaving(false)
     }
   }
 
+  async function retryLoad() {
+    setStatus('loading')
+    setError('')
+    try {
+      const freshRecords = await fetchClinicalAnamneses(patientId, ownerId)
+      setRecords(freshRecords)
+      setSelectedRecordId(current => freshRecords.some(item => item.id === current) ? current : freshRecords[0]?.id || '')
+      setStatus('ready')
+    } catch {
+      setStatus('error')
+      setError('Não foi possível carregar a anamnese versionada.')
+    }
+  }
+
   if (status === 'loading') return <div className="clinical-loading">Carregando anamnese clínica…</div>
-  if (status === 'error') return <div className="clinical-empty-panel" role="alert">{error}</div>
+  if (status === 'error') {
+    return <div className="clinical-empty-panel clinical-anamnesis-empty" role="alert"><strong>{error}</strong><Btn variant="ghost" onClick={retryLoad}>Tentar carregar novamente</Btn></div>
+  }
 
   if (editing) {
     return (
@@ -201,10 +233,20 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile })
     <div className="clinical-anamnesis-view">
       <header className="clinical-anamnesis-toolbar">
         <div>
-          <span>{record ? 'Última versão assinada' : 'Dados legados — ainda não assinados neste formato'}</span>
+          <span>{record ? (record.id === latestRecord?.id ? 'Última versão assinada' : 'Versão anterior assinada') : 'Dados legados — ainda não assinados neste formato'}</span>
           <strong>{record ? `${displayDate(record.session_date)} · ${signature(record)}` : 'Complete os campos obrigatórios para criar a primeira versão'}</strong>
         </div>
-        <Btn variant="ghost" onClick={beginEditing}>{record ? '+ Nova versão' : 'Completar anamnese'}</Btn>
+        <div className="clinical-anamnesis-toolbar__actions">
+          {records.length > 1 && (
+            <label className="clinical-version-select">
+              <span>{records.length} versões</span>
+              <select aria-label="Versão da anamnese" value={record?.id || ''} onChange={event => setSelectedRecordId(event.target.value)}>
+                {records.map((item, index) => <option key={item.id} value={item.id}>{index === 0 ? 'Atual' : `Anterior ${index}`} · {displayDate(item.session_date)} · {item.author_name}</option>)}
+              </select>
+            </label>
+          )}
+          <Btn variant="ghost" onClick={beginEditing}>{record ? '+ Nova versão' : 'Completar anamnese'}</Btn>
+        </div>
       </header>
 
       {vitalValues.length > 0 && (

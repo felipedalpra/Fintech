@@ -67,7 +67,11 @@ export function clinicalAnamnesisFromLegacy(profile, sessionDate = '') {
 }
 
 export function hasLegacyClinicalAnamnesis(profile) {
-  return Object.values(clinicalAnamnesisFromLegacy(profile)).some(value => String(value || '').trim())
+  if (!profile) return false
+  const anamnesisValues = Object.values(clinicalAnamnesisFromLegacy(profile))
+  const protectedDetails = [profile.allergies, profile.current_medications, profile.consent_date]
+  return Object.hasOwn(profile, 'consent_signed')
+    || [...anamnesisValues, ...protectedDetails].some(value => String(value || '').trim())
 }
 
 function nullableNumber(value) {
@@ -98,8 +102,9 @@ export function validateClinicalAnamnesis(form, author) {
   return ''
 }
 
-export function buildClinicalAnamnesisRpcArgs({ patientId, form, author }) {
+export function buildClinicalAnamnesisRpcArgs({ patientId, requestId, form, author }) {
   if (!patientId) throw new Error('Paciente não identificado.')
+  if (!requestId) throw new Error('Não foi possível identificar esta tentativa de assinatura.')
   const validationError = validateClinicalAnamnesis(form, author)
   if (validationError) throw new Error(validationError)
 
@@ -119,5 +124,6 @@ export function buildClinicalAnamnesisRpcArgs({ patientId, form, author }) {
     p_patient_id:patientId,
     p_session_date:form.session_date,
     p_anamnesis:payload,
+    p_request_id:requestId,
   }
 }

@@ -124,8 +124,9 @@ test('assina evolução imutável e corrige somente por adendo', async ({ page }
 })
 
 test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor', async ({ page }) => {
-  let latestAnamnesis = null
-  let rpcPayload = null
+  const anamneses = []
+  const rpcPayloads = []
+  let failNextList = false
 
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({
     status:200,
@@ -145,32 +146,41 @@ test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor'
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
-  await page.route('**/rest/v1/clinical_anamneses*', route => route.fulfill({
-    status:200,
-    contentType:'application/json',
-    body:JSON.stringify(latestAnamnesis),
-  }))
+  await page.route('**/rest/v1/clinical_anamneses*', route => {
+    if (failNextList) {
+      failNextList = false
+      return route.fulfill({ status:503, contentType:'application/json', body:JSON.stringify({ message:'Falha simulada após assinatura' }) })
+    }
+    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(anamneses) })
+  })
   await page.route('**/rest/v1/rpc/create_clinical_anamnesis*', async route => {
-    rpcPayload = await route.request().postDataJSON()
-    latestAnamnesis = {
-      id:'anamnesis-1',
+    const rpcPayload = await route.request().postDataJSON()
+    rpcPayloads.push(rpcPayload)
+    const existing = anamneses.find(item => item.request_id === rpcPayload.p_request_id)
+    if (existing) return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(existing.id) })
+    const id = `anamnesis-${anamneses.length + 1}`
+    anamneses.unshift({
+      id,
       user_id:'e2e-user-id',
       patient_id:rpcPayload.p_patient_id,
+      request_id:rpcPayload.p_request_id,
       session_date:rpcPayload.p_session_date,
       ...rpcPayload.p_anamnesis,
       author_name:'Dra. Clínica E2E',
       author_registration:'0001',
       author_council:'CRM',
-      recorded_at:'2026-10-17T12:00:00Z',
-    }
-    await route.fulfill({ status:200, contentType:'application/json', body:'"anamnesis-1"' })
+      recorded_at:`2026-10-17T12:0${anamneses.length}:00Z`,
+    })
+    if (anamneses.length === 1) failNextList = true
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(id) })
   })
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana SOAP/ }).click()
   await page.getByRole('button', { name:'Anamnese' }).click()
-  await expect(page.getByText('Anamnese clínica ainda não registrada')).toBeVisible()
-  await page.getByRole('button', { name:'+ Registrar anamnese' }).click()
+  await expect(page.getByText('Dados legados — ainda não assinados neste formato')).toBeVisible()
+  await expect(page.locator('.clinical-legacy-alerts').getByText('Alergias:', { exact:true })).toBeVisible()
+  await page.getByRole('button', { name:'Completar anamnese' }).click()
 
   await page.getByLabel('Queixa principal *').fill('Avaliação pré-operatória')
   await page.getByLabel('História da doença atual *').fill('Sem sintomas atuais.')
@@ -183,15 +193,31 @@ test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor'
   await page.getByLabel('Plano terapêutico *').fill('Solicitar exames pré-operatórios.')
   await page.getByRole('button', { name:'Assinar anamnese' }).click()
 
+  await expect(page.getByText('A anamnese foi assinada, mas a lista de versões não pôde ser atualizada. Recarregue antes de registrar outra versão.')).toBeVisible()
+  expect(rpcPayloads).toHaveLength(1)
+  await page.getByRole('button', { name:'Tentar carregar novamente' }).click()
   await expect(page.getByText('Última versão assinada')).toBeVisible()
   await expect(page.getByText('Avaliação pré-operatória')).toBeVisible()
   await expect(page.getByText('22.2')).toBeVisible()
   await expect(page.getByRole('button', { name:'+ Nova versão' })).toBeVisible()
-  expect(rpcPayload).toMatchObject({
+  expect(rpcPayloads[0]).toMatchObject({
     p_patient_id:'patient-soap',
     p_anamnesis:{ systolic_bp:120, diastolic_bp:80, weight_kg:60.5, height_cm:165 },
   })
-  expect(rpcPayload).not.toHaveProperty('p_author_name')
+  expect(rpcPayloads[0].p_request_id).toMatch(/^[0-9a-f-]{36}$/)
+  expect(rpcPayloads[0]).not.toHaveProperty('p_author_name')
+
+  await page.getByRole('button', { name:'+ Nova versão' }).click()
+  await page.getByLabel('Queixa principal *').fill('Retorno pós-operatório')
+  await page.getByRole('button', { name:'Assinar anamnese' }).click()
+  await expect(page.getByText('Retorno pós-operatório')).toBeVisible()
+  await expect(page.getByLabel('Versão da anamnese')).toBeVisible()
+  expect(rpcPayloads).toHaveLength(2)
+  expect(rpcPayloads[1].p_request_id).not.toBe(rpcPayloads[0].p_request_id)
+
+  await page.getByLabel('Versão da anamnese').selectOption('anamnesis-1')
+  await expect(page.getByText('Versão anterior assinada')).toBeVisible()
+  await expect(page.getByText('Avaliação pré-operatória')).toBeVisible()
 })
 
 test('mantém o prontuário disponível e não informa ausência de alertas quando a anamnese falha', async ({ page }) => {
