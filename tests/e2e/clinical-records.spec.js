@@ -25,9 +25,10 @@ test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
 
   await page.goto('/app/clinical-records')
-  await expect(page.getByTestId('clinical-day-agenda')).toBeVisible()
+  await expect(page.getByTestId('clinical-day-agenda')).toBeVisible({ timeout:10000 })
   await expect(page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ })).toBeVisible()
   await page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ }).click()
 
@@ -35,7 +36,100 @@ test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async
   await expect(page.getByText('Alergias: Dipirona')).toBeVisible()
   await expect(page.getByRole('navigation', { name:'Ficha clínica do paciente' })).toContainText('Exames e receitas')
   await page.getByRole('button', { name:/Exames e receitas/ }).click()
-  await expect(page.getByRole('heading', { name:'Exames e receitas' })).toBeVisible()
+  await expect(page.getByText('Nenhum documento emitido')).toBeVisible()
+})
+
+test('emite pedido de exames e receita simples no histórico clínico', async ({ page }) => {
+  const documents = []
+  const rpcPayloads = []
+
+  await page.setViewportSize({ width:390, height:844 })
+
+  await page.route('**/api/secure-profile?action=get', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({ profile:{
+      doctor:{ fullName:'Dra. Clínica E2E', registrationId:'CRM-RS 0001', phone:'51999990000', email:'medica@clinica.test' },
+      clinic:{ tradeName:'Clínica E2E', addressLine:'Av. Clínica, 100', city:'Porto Alegre', state:'RS', logoDataUrl:'data:image/png;base64,logo-e2e' },
+    } }),
+  }))
+  await page.route('**/rest/v1/patients*', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify([{
+      id:'patient-documents',
+      full_name:'Ana Documentos',
+      cpf:'123.456.789-00',
+      date_of_birth:'1990-04-10',
+      address_street:'Rua Paciente',
+      address_number:'25',
+      address_city:'Porto Alegre',
+      address_state:'RS',
+      address_zip:'90000-000',
+      active:true,
+    }]),
+  }))
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'null' }))
+  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
+  await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(documents) }))
+  await page.route('**/rest/v1/rpc/create_clinical_document*', async route => {
+    const payload = await route.request().postDataJSON()
+    rpcPayloads.push(payload)
+    const id = `document-${documents.length + 1}`
+    documents.unshift({
+      id,
+      user_id:'e2e-user-id',
+      patient_id:'patient-documents',
+      document_type:payload.p_document_type,
+      issue_date:payload.p_issue_date,
+      document_data:payload.p_document_data,
+      patient_name:'Ana Documentos',
+      patient_cpf:'123.456.789-00',
+      patient_address:'Rua Paciente, 25 · Porto Alegre / RS · CEP 90000-000',
+      author_name:'Dra. Clínica E2E',
+      author_registration:'CRM-RS 0001',
+      author_council:'CRM',
+      issuer_contact:payload.p_issuer_contact,
+      issuer_address:payload.p_issuer_address,
+      clinic_name:payload.p_clinic_name,
+      clinic_logo_data_url:payload.p_clinic_logo_data_url,
+      request_id:payload.p_request_id,
+      created_at:'2026-10-20T12:00:00Z',
+    })
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(id) })
+  })
+
+  await page.goto('/app/clinical-records')
+  await page.getByRole('button', { name:/Ana Documentos/ }).click()
+  await page.getByRole('button', { name:'Exames e receitas' }).click()
+
+  await page.getByRole('button', { name:'+ Pedido de exames' }).click()
+  await page.getByLabel('Exames solicitados *').fill('Hemograma completo\nCoagulograma')
+  await page.getByLabel('Indicação clínica').fill('Avaliação pré-operatória')
+  await page.getByLabel('Telefone ou e-mail profissional *').fill('medica@clinica.test')
+  await page.getByLabel('Endereço profissional *').fill('Av. Clínica, 100 — Porto Alegre/RS')
+  await page.getByRole('button', { name:'Emitir documento' }).click()
+
+  await expect(page.getByText('Hemograma completo, Coagulograma')).toBeVisible()
+  expect(rpcPayloads[0]).not.toHaveProperty('p_author_name')
+  expect(rpcPayloads[0]).not.toHaveProperty('p_patient_name')
+  expect(rpcPayloads[0].p_clinic_logo_data_url).toBe('data:image/png;base64,logo-e2e')
+
+  await page.getByRole('button', { name:'+ Receita simples' }).click()
+  await page.getByLabel('Medicamento 1 *').fill('Dipirona')
+  await page.getByLabel('Apresentação 1').fill('500 mg')
+  await page.getByLabel('Quantidade 1').fill('1 caixa')
+  await page.getByLabel('Modo de usar 1 *').fill('Tomar um comprimido por via oral a cada oito horas por três dias.')
+  await page.getByText('Confirmo que esta receita não contém medicamento controlado nem sujeito à retenção.').click()
+  await page.getByLabel('Telefone ou e-mail profissional *').fill('medica@clinica.test')
+  await page.getByLabel('Endereço profissional *').fill('Av. Clínica, 100 — Porto Alegre/RS')
+  await page.getByRole('button', { name:'Emitir documento' }).click()
+
+  await expect(page.getByText(/Dipirona — 500 mg — Tomar um comprimido/)).toBeVisible()
+  await expect(page.getByText('2 no histórico')).toBeVisible()
+  expect(rpcPayloads[1].p_document_data).toMatchObject({ simple_prescription_confirmed:true })
 })
 
 test('assina evolução imutável e corrige somente por adendo', async ({ page }) => {

@@ -69,7 +69,7 @@ alter table public.clinical_record_access_logs
   drop constraint if exists clinical_record_access_logs_action_check;
 alter table public.clinical_record_access_logs
   add constraint clinical_record_access_logs_action_check
-  check (action in ('view_record', 'create_record', 'create_addendum', 'create_anamnesis'));
+  check (action in ('view_record', 'create_record', 'create_addendum', 'create_anamnesis', 'create_document'));
 
 create or replace function public.create_clinical_anamnesis(
   p_patient_id uuid,

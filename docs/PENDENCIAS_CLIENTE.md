@@ -1,7 +1,7 @@
 # Pendências da Clínica — SurgiMetrics
 
 > Itens que precisam ser fornecidos ou decididos pela Dra. Vitoria / Augusto antes ou durante cada fase de implementação.
-> Atualizado em: 2026-10-17
+> Atualizado em: 2026-10-20
 
 ---
 
@@ -60,13 +60,15 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [ ] Homologar com a Dra. Vitoria os campos obrigatórios e os modelos específicos por procedimento; até essa validação, a tela usa o núcleo clínico geral baseado em CFM/SBIS
 
 ### Timbre para documentos (Pedido de Exames + Receituário + Prontuário)
+- [x] **Aplicar no Supabase** a migration aditiva `supabase/clinical_documents_schema.sql` depois das migrations da fundação clínica — aplicada em 2026-10-20
+- [x] **Aplicar no Supabase** a correção aditiva `supabase/clinical_documents_review_fixes.sql` depois de `clinical_documents_schema.sql` — aplicada em 2026-10-20; restringe receitas a admin e corrige idempotência, auditoria clínica, timbre e validações
 - [ ] **Logo da clínica** — arquivo PNG ou SVG, fundo transparente
 - [ ] **Nome completo** da Dra. Vitoria como aparece nos documentos clínicos
 - [ ] **CRM** da Dra. Vitoria (número + UF, ex: CRM-SP 123456)
 - [ ] **Endereço completo** da clínica (rua, número, bairro, cidade, CEP)
 - [ ] **Telefone/contato** para constar no rodapé dos documentos
 
-> Esses dados são configurados em Settings → Timbre e aparecem em todos os PDFs gerados.
+> Esses dados são configurados em Configurações → Perfil e aparecem nos documentos gerados. Nesta primeira versão, o PDF é preparado para impressão e assinatura manual; assinatura eletrônica qualificada será uma integração posterior.
 
 ---
 
@@ -80,6 +82,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [ ] **Lista de medicamentos** mais prescritos (nome comercial ou princípio ativo)
 - [ ] **Posologia padrão** de cada medicamento (ex: Dipirona 500mg — 1 comprimido de 8/8h por 3 dias)
 - [ ] Confirmar que **receitas de controle especial (azul/amarela) estão fora do escopo** ← já acordado, confirmar se permanece assim
+- [ ] Confirmar que **antimicrobianos, GLP-1 e outros medicamentos sujeitos à retenção** também permanecem fora desta primeira versão
 
 ---
 

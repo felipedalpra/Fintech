@@ -1,8 +1,11 @@
 import { supabase } from './supabase.js'
 
+const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
+
 async function authFetch(path, payload = {}) {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
+  const token = E2E_BYPASS_AUTH
+    ? 'e2e-token'
+    : (await supabase.auth.getSession()).data.session?.access_token
   if (!token) throw new Error('Sessao invalida. Entre novamente.')
 
   const response = await fetch(path, {

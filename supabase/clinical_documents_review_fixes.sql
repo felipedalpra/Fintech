@@ -1,0 +1,284 @@
+-- Correcoes pos-revisao para documentos clinicos.
+-- Executar uma vez depois de clinical_documents_schema.sql quando a migration original ja foi aplicada.
+
+begin;
+
+alter table public.clinical_documents
+  add column if not exists clinic_logo_data_url text,
+  add column if not exists request_fingerprint text;
+
+create or replace function public.can_issue_clinical_prescription()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public.has_clinical_access()
+    and (
+      auth.uid() = public.data_owner_id()
+      or exists (
+        select 1
+        from public.clinic_members cm
+        join public.clinics c on c.id = cm.clinic_id
+        where cm.user_id = auth.uid()
+          and cm.role = 'admin'
+          and cm.clinical_access is true
+          and c.owner_id = public.data_owner_id()
+      )
+    )
+$$;
+
+revoke all on function public.can_issue_clinical_prescription() from public;
+grant execute on function public.can_issue_clinical_prescription() to authenticated;
+
+create or replace function public.clinical_document_request_fingerprint(
+  p_document_type text,
+  p_issue_date date,
+  p_document_data jsonb,
+  p_issuer_contact text,
+  p_issuer_address text,
+  p_clinic_name text,
+  p_clinic_logo_data_url text
+)
+returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select md5(concat_ws(chr(31),
+    coalesce(p_document_type, ''),
+    coalesce(p_issue_date::text, ''),
+    coalesce(p_document_data::text, ''),
+    coalesce(btrim(p_issuer_contact), ''),
+    coalesce(btrim(p_issuer_address), ''),
+    coalesce(btrim(p_clinic_name), ''),
+    coalesce(btrim(p_clinic_logo_data_url), '')
+  ))
+$$;
+
+revoke all on function public.clinical_document_request_fingerprint(text, date, jsonb, text, text, text, text) from public;
+
+drop trigger if exists trg_clinical_documents_immutable on public.clinical_documents;
+drop trigger if exists trg_record_audit on public.clinical_documents;
+
+update public.clinical_documents
+set request_fingerprint = public.clinical_document_request_fingerprint(
+  document_type, issue_date, document_data, issuer_contact, issuer_address,
+  clinic_name, clinic_logo_data_url
+)
+where request_fingerprint is null;
+
+alter table public.clinical_documents
+  alter column request_fingerprint set not null;
+
+create trigger trg_clinical_documents_immutable
+before update or delete on public.clinical_documents
+for each row execute function public.prevent_clinical_record_mutation();
+
+drop function if exists public.create_clinical_document(uuid, text, date, jsonb, uuid, text, text, text);
+
+create or replace function public.create_clinical_document(
+  p_patient_id uuid,
+  p_document_type text,
+  p_issue_date date,
+  p_document_data jsonb,
+  p_request_id uuid,
+  p_issuer_contact text,
+  p_issuer_address text,
+  p_clinic_name text default null,
+  p_clinic_logo_data_url text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  owner_id uuid;
+  document_id uuid;
+  resolved_author_name text;
+  resolved_author_registration text;
+  resolved_author_council text;
+  resolved_patient record;
+  resolved_patient_address text;
+  calculated_fingerprint text;
+  existing_fingerprint text;
+begin
+  if auth.uid() is null or not public.has_clinical_access() then
+    raise exception 'Acesso clinico nao autorizado.' using errcode = '42501';
+  end if;
+  if p_patient_id is null or p_issue_date is null or p_request_id is null then
+    raise exception 'Paciente, data e identificador da emissao sao obrigatorios.' using errcode = '22023';
+  end if;
+  if p_document_type not in ('exam_request', 'simple_prescription') then
+    raise exception 'Tipo de documento clinico invalido.' using errcode = '22023';
+  end if;
+  owner_id := public.data_owner_id();
+  calculated_fingerprint := public.clinical_document_request_fingerprint(
+    p_document_type, p_issue_date, p_document_data, p_issuer_contact,
+    p_issuer_address, p_clinic_name, p_clinic_logo_data_url
+  );
+
+  select cd.id, cd.request_fingerprint into document_id, existing_fingerprint
+  from public.clinical_documents cd
+  where cd.user_id = owner_id
+    and cd.patient_id = p_patient_id
+    and cd.request_id = p_request_id;
+  if document_id is not null then
+    if existing_fingerprint is distinct from calculated_fingerprint then
+      raise exception 'Esta emissao ja foi registrada com dados diferentes. Recarregue o historico antes de tentar novamente.' using errcode = '22023';
+    end if;
+    return document_id;
+  end if;
+  if p_issue_date <> (timezone('America/Sao_Paulo', now()))::date then
+    raise exception 'A data de emissao deve ser a data atual.' using errcode = '22023';
+  end if;
+  if p_document_data is null or jsonb_typeof(p_document_data) <> 'object' or length(p_document_data::text) > 30000 then
+    raise exception 'Conteudo do documento invalido ou acima do limite.' using errcode = '22023';
+  end if;
+  if nullif(btrim(p_issuer_contact), '') is null or length(btrim(p_issuer_contact)) > 500
+     or nullif(btrim(p_issuer_address), '') is null or length(btrim(p_issuer_address)) > 1000 then
+    raise exception 'Contato e endereco profissional sao obrigatorios.' using errcode = '22023';
+  end if;
+  if p_clinic_name is not null and length(btrim(p_clinic_name)) > 500 then
+    raise exception 'Nome da clinica excede o limite permitido.' using errcode = '22001';
+  end if;
+  if p_clinic_logo_data_url is not null and (
+    length(p_clinic_logo_data_url) > 2000000
+    or p_clinic_logo_data_url !~* '^data:image/(png|jpeg|jpg|webp|svg\+xml);base64,'
+  ) then
+    raise exception 'Logo da clinica invalido ou acima do limite.' using errcode = '22023';
+  end if;
+  if p_document_type = 'exam_request' then
+    if jsonb_typeof(p_document_data->'exams') <> 'array' then
+      raise exception 'A lista de exames e obrigatoria.' using errcode = '22023';
+    end if;
+    if jsonb_array_length(p_document_data->'exams') not between 1 and 30 or exists (
+      select 1
+      from jsonb_array_elements(p_document_data->'exams') exam(value)
+      where jsonb_typeof(exam.value) <> 'string'
+         or length(btrim(exam.value #>> '{}')) not between 1 and 200
+    ) then
+      raise exception 'Informe entre 1 e 30 exames validos.' using errcode = '22023';
+    end if;
+  end if;
+  if p_document_type = 'simple_prescription' then
+    if not public.can_issue_clinical_prescription() then
+      raise exception 'Somente o perfil administrador pode emitir receitas.' using errcode = '42501';
+    end if;
+    if jsonb_typeof(p_document_data->'items') <> 'array' then
+      raise exception 'A lista de medicamentos e obrigatoria.' using errcode = '22023';
+    end if;
+    if jsonb_array_length(p_document_data->'items') not between 1 and 20
+       or p_document_data->>'simple_prescription_confirmed' is distinct from 'true'
+       or exists (
+      select 1
+      from jsonb_array_elements(p_document_data->'items') item(value)
+      where jsonb_typeof(item.value) <> 'object'
+         or nullif(btrim(item.value->>'medication'), '') is null
+         or length(btrim(item.value->>'medication')) > 300
+         or nullif(btrim(item.value->>'directions'), '') is null
+         or length(btrim(item.value->>'directions')) > 2000
+         or length(coalesce(item.value->>'presentation', '')) > 500
+         or length(coalesce(item.value->>'quantity', '')) > 300
+    ) then
+      raise exception 'Receituario simples invalido ou sem confirmacao sanitaria.' using errcode = '22023';
+    end if;
+  end if;
+
+  select p.full_name, p.cpf, p.address_street, p.address_number, p.address_complement,
+         p.address_district, p.address_city, p.address_state, p.address_zip
+    into resolved_patient
+  from public.patients p
+  where p.id = p_patient_id and p.user_id = owner_id and p.active is true;
+  if resolved_patient.full_name is null then
+    raise exception 'Paciente fora do escopo da clinica.' using errcode = '42501';
+  end if;
+
+  resolved_patient_address := nullif(concat_ws(' · ',
+    nullif(concat_ws(', ', nullif(btrim(resolved_patient.address_street), ''), nullif(btrim(resolved_patient.address_number), '')), ''),
+    nullif(btrim(resolved_patient.address_complement), ''),
+    nullif(btrim(resolved_patient.address_district), ''),
+    nullif(concat_ws(' / ', nullif(btrim(resolved_patient.address_city), ''), nullif(btrim(resolved_patient.address_state), '')), ''),
+    case when nullif(btrim(resolved_patient.address_zip), '') is not null then 'CEP ' || btrim(resolved_patient.address_zip) end
+  ), '');
+  if p_document_type = 'simple_prescription' and (
+    nullif(btrim(resolved_patient.address_street), '') is null
+    or nullif(btrim(resolved_patient.address_number), '') is null
+    or nullif(btrim(resolved_patient.address_city), '') is null
+    or nullif(btrim(resolved_patient.address_state), '') is null
+  ) then
+    raise exception 'Endereco residencial completo do paciente e obrigatorio para receita.' using errcode = '22023';
+  end if;
+
+  select identity.author_name, identity.author_registration, identity.author_council
+    into resolved_author_name, resolved_author_registration, resolved_author_council
+  from public.clinical_author_identity() identity;
+  if resolved_author_name is null or resolved_author_registration is null then
+    raise exception 'Identidade profissional nao configurada.' using errcode = '22023';
+  end if;
+
+  insert into public.clinical_documents (
+    user_id, patient_id, created_by, document_type, issue_date, document_data,
+    patient_name, patient_cpf, patient_address,
+    author_name, author_registration, author_council,
+    issuer_contact, issuer_address, clinic_name, clinic_logo_data_url, request_id, request_fingerprint
+  ) values (
+    owner_id, p_patient_id, auth.uid(), p_document_type, p_issue_date, p_document_data,
+    btrim(resolved_patient.full_name), nullif(btrim(resolved_patient.cpf), ''), resolved_patient_address,
+    btrim(resolved_author_name), btrim(resolved_author_registration), coalesce(nullif(btrim(resolved_author_council), ''), 'CRM'),
+    btrim(p_issuer_contact), btrim(p_issuer_address), nullif(btrim(p_clinic_name), ''),
+    nullif(btrim(p_clinic_logo_data_url), ''), p_request_id, calculated_fingerprint
+  )
+  on conflict (user_id, patient_id, request_id) do nothing
+  returning id into document_id;
+
+  if document_id is null then
+    select cd.id, cd.request_fingerprint into document_id, existing_fingerprint
+    from public.clinical_documents cd
+    where cd.user_id = owner_id and cd.patient_id = p_patient_id and cd.request_id = p_request_id;
+    if existing_fingerprint is distinct from calculated_fingerprint then
+      raise exception 'Esta emissao ja foi registrada com dados diferentes. Recarregue o historico antes de tentar novamente.' using errcode = '22023';
+    end if;
+    return document_id;
+  end if;
+
+  insert into public.clinical_record_access_logs(user_id, patient_id, actor_id, action)
+  values (owner_id, p_patient_id, auth.uid(), 'create_document');
+  return document_id;
+end;
+$$;
+
+revoke all on function public.create_clinical_document(uuid, text, date, jsonb, uuid, text, text, text, text) from public;
+grant execute on function public.create_clinical_document(uuid, text, date, jsonb, uuid, text, text, text, text) to authenticated;
+
+alter table public.clinical_record_access_logs
+  drop constraint if exists clinical_record_access_logs_action_check;
+alter table public.clinical_record_access_logs
+  add constraint clinical_record_access_logs_action_check
+  check (action in ('view_record', 'create_record', 'create_addendum', 'create_anamnesis', 'create_document'));
+
+do $$
+begin
+  if to_regclass('public.record_audit') is not null then
+    drop trigger if exists trg_record_audit on public.clinical_documents;
+    execute 'drop policy if exists "Record audit clinic read" on public.record_audit';
+    execute $policy$
+      create policy "Record audit clinic read" on public.record_audit
+      for select to authenticated
+      using (
+        owner_id = public.data_owner_id()
+        and (
+          table_name not in ('patient_clinical_profiles', 'medical_records', 'medical_record_addenda', 'clinical_anamneses', 'clinical_documents')
+          or public.has_clinical_access()
+        )
+      )
+    $policy$;
+  end if;
+end $$;
+
+comment on function public.can_issue_clinical_prescription() is
+  'Autoriza receituario somente ao owner ou membro admin que tambem tenha acesso clinico.';
+
+commit;

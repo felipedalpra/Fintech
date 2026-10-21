@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { Btn } from './UI.jsx'
 import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
+import { ClinicalDocuments } from './ClinicalDocuments.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { canIssueClinicalPrescription } from '../lib/roleAccess.js'
 import { fetchSecureProfile } from '../lib/secureProfileClient.js'
 import { formatDateBR, today } from '../utils.js'
 import {
@@ -20,14 +22,14 @@ import './ClinicalRecords.css'
 const CLINICAL_TABS = [
   { id:'record', label:'Prontuário' },
   { id:'summary', label:'Anamnese' },
-  { id:'prescriptions', label:'Exames e receitas', planned:true },
+  { id:'prescriptions', label:'Exames e receitas' },
   { id:'files', label:'Fotos e documentos', planned:true },
   { id:'treatment', label:'Plano e retorno', planned:true },
 ]
 
 export function ClinicalRecords({ data }) {
   const { user } = useAuth()
-  const { ownerId, clinicId, isOwner, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
+  const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
   const [selected, setSelected] = useState(null)
   const [search, setSearch] = useState('')
@@ -41,6 +43,8 @@ export function ClinicalRecords({ data }) {
   const [openAttempt, setOpenAttempt] = useState(0)
   const [currentDate, setCurrentDate] = useState(today)
   const [author, setAuthor] = useState({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
+  const [secureProfile, setSecureProfile] = useState(null)
+  const [secureProfileStatus, setSecureProfileStatus] = useState('loading')
   const searchWrapRef = useRef(null)
   const daySchedule = useMemo(() => buildClinicalDaySchedule(data, currentDate), [data, currentDate])
 
@@ -54,17 +58,19 @@ export function ClinicalRecords({ data }) {
   }, [professionalName, professionalRegistration, professionalCouncil])
 
   useEffect(() => {
-    if (!isOwner) return
     let active = true
+    setSecureProfileStatus('loading')
     fetchSecureProfile()
       .then(async payload => {
         if (!active) return
+        setSecureProfile(payload?.profile || null)
+        setSecureProfileStatus('ready')
         const nextAuthor = {
           name:payload?.profile?.doctor?.fullName || '',
           registration:payload?.profile?.doctor?.registrationId || '',
           council:'CRM',
         }
-        if (nextAuthor.name && nextAuthor.registration && clinicId) {
+        if (isOwner && nextAuthor.name && nextAuthor.registration && clinicId) {
           const { error:syncError } = await supabase
             .from('clinics')
             .update({
@@ -73,11 +79,15 @@ export function ClinicalRecords({ data }) {
               clinical_professional_council:nextAuthor.council,
             })
             .eq('id', clinicId)
-          if (syncError) throw syncError
+          if (syncError) return
           if (active) setAuthor(nextAuthor)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!active) return
+        setSecureProfile(null)
+        setSecureProfileStatus('error')
+      })
     return () => { active = false }
   }, [isOwner, clinicId])
 
@@ -157,7 +167,7 @@ export function ClinicalRecords({ data }) {
     setError('')
     const { data:rows, error:loadError } = await supabase
       .from('patients')
-      .select('id, full_name, date_of_birth, sex, phone, email, start_date, active')
+      .select('id, full_name, cpf, date_of_birth, sex, phone, email, address_street, address_number, address_complement, address_district, address_city, address_state, address_zip, start_date, active')
       .eq('user_id', ownerId)
       .eq('active', true)
       .order('full_name')
@@ -293,7 +303,17 @@ export function ClinicalRecords({ data }) {
                     legacyProfile={clinicalProfile}
                   />
                 )}
-                {tab === 'prescriptions' && <PlannedModule title="Exames e receitas" description="Pedidos de exames e receituários em PDF serão criados, consultados e reimpressos aqui, sem sair da ficha do paciente." />}
+                {tab === 'prescriptions' && (
+                  <ClinicalDocuments
+                    patient={selected}
+                    ownerId={ownerId}
+                    author={author}
+                    profile={secureProfile}
+                    profileLoading={secureProfileStatus === 'loading'}
+                    clinicName={clinicName}
+                    canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
+                  />
+                )}
                 {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
                 {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
               </div>

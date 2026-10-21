@@ -23,3 +23,7 @@ export function canRoleAccess(role, sectionId, { clinicalAccess = false } = {}) 
   }
   return Boolean(role && (ROLE_ACCESS[role] || []).includes(sectionId))
 }
+
+export function canIssueClinicalPrescription(role, { clinicalAccess = false } = {}) {
+  return role === 'admin' && clinicalAccess === true
+}
