@@ -293,11 +293,13 @@ async function runForOwner(admin, auto, todayISO, summary) {
     .from('whatsapp_numbers')
     .select('id, active, instance_url, api_token, provider, provider_instance_name')
     .eq('id', auto.whatsapp_number_id)
+    .eq('user_id', auto.user_id)
     .maybeSingle()
   if (['PGRST204', '42703'].includes(numberResult.error?.code)) {
     numberResult = await admin.from('whatsapp_numbers')
       .select('id, active, instance_url, api_token')
       .eq('id', auto.whatsapp_number_id)
+      .eq('user_id', auto.user_id)
       .maybeSingle()
   }
   const number = numberResult.data ? { provider: 'zapi', ...numberResult.data } : null

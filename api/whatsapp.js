@@ -32,6 +32,7 @@ import {
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
+import { existingSendRequestAction, normalizeWhatsAppRequestId, payloadCollisionAction, providerFailureIsDefinitive, whatsappSendRequestFingerprint } from './_lib/whatsappSendRequest.js'
 import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
 import { syncMetaInsights } from './_lib/metaInsights.js'
 
@@ -382,6 +383,7 @@ export default async function handler(req, res) {
   const action = req.query.action
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
+  if (action === 'resolve-send-request') return handleResolveSendRequest(req, res)
   if (action === 'test-connection') return handleTestConnection(req, res)
   if (action === 'provision-number') return handleProvisionNumber(req, res)
   if (action === 'connect-instance') return handleConnectInstance(req, res)
@@ -394,6 +396,57 @@ export default async function handler(req, res) {
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
   if (action === 'meta-sync') return handleMetaSync(req, res)
   return res.status(400).json({ error: 'Ação inválida.' })
+}
+
+async function canSendFromNumber(supabase, user, ownerId, number) {
+  if (!number || number.user_id !== ownerId) return false
+  if (user.id === ownerId || await resolveClinicAdmin(supabase, user, ownerId)) return true
+  return number.assigned_user_id === user.id
+}
+
+async function handleResolveSendRequest(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedUser(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+
+  let requestId
+  try { requestId = normalizeWhatsAppRequestId(req.body?.requestId) } catch (error) {
+    return res.status(400).json({ error:error.message })
+  }
+  const whatsappNumberId = String(req.body?.whatsappNumberId || '')
+  if (!whatsappNumberId || req.body?.resolution !== 'not_sent') {
+    return res.status(400).json({ error:'Confirme explicitamente que a mensagem não foi enviada.' })
+  }
+
+  const numberResult = await getWhatsAppNumber(auth.supabase, whatsappNumberId)
+  if (!await canSendFromNumber(auth.supabase, auth.user, auth.ownerId, numberResult.data)) {
+    return res.status(403).json({ error:'Número indisponível para este perfil.' })
+  }
+
+  const recovered = await auth.supabase.from('whatsapp_messages')
+    .select('id')
+    .eq('user_id', auth.ownerId)
+    .eq('client_request_id', requestId)
+    .maybeSingle()
+  if (recovered.data?.id) {
+    await auth.supabase.from('whatsapp_send_requests').update({
+      status:'persisted', whatsapp_message_id:recovered.data.id, error_message:null, updated_at:new Date().toISOString(),
+    }).eq('user_id', auth.ownerId).eq('request_id', requestId)
+    return res.status(409).json({ error:'A mensagem já consta no histórico e não será reenviada.', messageId:recovered.data.id })
+  }
+
+  const released = await auth.supabase.from('whatsapp_send_requests').update({
+    status:'failed', error_message:'Usuário confirmou que a mensagem não foi enviada.', updated_at:new Date().toISOString(),
+  })
+    .eq('user_id', auth.ownerId)
+    .eq('whatsapp_number_id', whatsappNumberId)
+    .eq('request_id', requestId)
+    .in('status', ['pending', 'unknown'])
+    .select('id')
+    .maybeSingle()
+  if (released.error) return res.status(500).json({ error:'Não foi possível liberar a tentativa.' })
+  if (!released.data) return res.status(409).json({ error:'Este envio já foi aceito, concluído ou liberado.' })
+  return res.status(200).json({ ok:true, retryable:true })
 }
 
 // ---- Provisionar número na Evolution sem expor a chave global ao navegador ----
@@ -592,7 +645,10 @@ async function handleListNumbers(req, res) {
     label: number.label,
     phone: number.phone,
     active: number.active,
-    webhook_secret: number.webhook_secret,
+    // Evolution autentica por header configurado no backend; o navegador não
+    // precisa nem deve receber esse segredo. Z-API legado ainda usa o token na
+    // URL exibida ao administrador.
+    webhook_secret: whatsappProvider(number) === 'zapi' ? number.webhook_secret : null,
     assigned_user_id: number.assigned_user_id,
     provider: whatsappProvider(number),
     provider_instance_name: number.provider_instance_name,
@@ -1020,6 +1076,10 @@ async function handleSend(req, res) {
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
 
   const { patientId, phone: rawPhone, contactPhone: rawContactPhone, chatLid: rawChatLid, isGroup: groupHint, text, whatsappNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
+  let requestId
+  try { requestId = normalizeWhatsAppRequestId(req.body?.requestId) } catch (error) {
+    return res.status(400).json({ error:error.message })
+  }
   const isGroup = groupHint === true || /(?:-group|@g\.us)$/i.test(String(rawPhone || ''))
   const phone = normalizeWhatsAppAddress(rawPhone, isGroup)
   const chatLid = isGroup ? null : (normalizeWhatsAppLid(rawChatLid) || normalizeWhatsAppLid(phone) || null)
@@ -1091,19 +1151,123 @@ async function handleSend(req, res) {
   })
   const insertBase = {
     user_id: ownerId, patient_id: verifiedPatientId, contact_id: contactId, phone, direction: 'outbound', body: bodyText,
+    client_request_id: requestId,
     chat_lid: chatLid, contact_phone: contactPhone,
     is_group: isGroup,
     whatsapp_number_id: num.id, provider: whatsappProvider(num), msg_type: msgType, media_url: mediaUrl ?? null, media_mime: mediaMime ?? null,
   }
 
-  let providerId = null
-  try {
-    providerId = isMedia
-      ? await sendProviderMedia(num, type, { to: phone, mediaUrl: providerMediaUrl, caption: caption || '', fileName: fileName || '', mediaMime: mediaMime || '' })
-      : await sendProviderText(num, phone, text)
-  } catch (err) {
-    await insertWhatsAppMessage(supabase, { ...insertBase, status: 'failed' })
-    return res.status(502).json({ error: err.message })
+  const payloadHash = whatsappSendRequestFingerprint({
+    ownerId,
+    whatsappNumberId:num.id,
+    patientId:verifiedPatientId,
+    phone,
+    chatLid,
+    contactPhone,
+    isGroup,
+    msgType,
+    bodyText,
+    mediaUrl,
+    mediaMime,
+    fileName,
+  })
+  const requestFields = 'id, whatsapp_number_id, payload_hash, status, provider_message_id, whatsapp_message_id'
+  let { data:sendRequest, error:requestError } = await supabase.from('whatsapp_send_requests').insert({
+    user_id:ownerId,
+    whatsapp_number_id:num.id,
+    request_id:requestId,
+    payload_hash:payloadHash,
+    provider:whatsappProvider(num),
+    status:'pending',
+  }).select(requestFields).single()
+
+  if (requestError?.code === '23505') {
+    let existingResult = await supabase.from('whatsapp_send_requests')
+      .select(requestFields)
+      .eq('user_id', ownerId)
+      .eq('request_id', requestId)
+      .maybeSingle()
+    let matchedByPayload = false
+    if (!existingResult.data && !existingResult.error) {
+      // Nenhuma linha com este request_id: a colisão veio do índice parcial de
+      // payload_hash, ou seja, outra aba/clique já está enviando o MESMO
+      // conteúdo com um request_id diferente. Nunca chamamos o provedor aqui.
+      existingResult = await supabase.from('whatsapp_send_requests')
+        .select(requestFields)
+        .eq('user_id', ownerId)
+        .eq('payload_hash', payloadHash)
+        .in('status', ['pending', 'accepted'])
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      matchedByPayload = true
+    }
+    if (existingResult.error || !existingResult.data) return res.status(500).json({ error:'Não foi possível confirmar a tentativa anterior.' })
+    sendRequest = existingResult.data
+    if (matchedByPayload) {
+      if (payloadCollisionAction(sendRequest, num.id) === 'conflict') {
+        return res.status(409).json({ error:'Este identificador de envio já foi usado com outro conteúdo.' })
+      }
+      return res.status(202).json({ ok:true, pending:true, resolutionRequired:true })
+    }
+    const action = existingSendRequestAction(sendRequest, payloadHash)
+    if (action === 'conflict' || sendRequest.whatsapp_number_id !== num.id) {
+      return res.status(409).json({ error:'Este identificador de envio já foi usado com outro conteúdo.' })
+    }
+    if (action === 'reuse') return res.status(200).json({ ok:true, reused:true, messageId:sendRequest.whatsapp_message_id })
+    if (action === 'wait') {
+      const recovered = await supabase.from('whatsapp_messages')
+        .select('id')
+        .eq('user_id', ownerId)
+        .eq('client_request_id', requestId)
+        .maybeSingle()
+      if (recovered.data?.id) {
+        await supabase.from('whatsapp_send_requests').update({
+          status:'persisted', whatsapp_message_id:recovered.data.id, error_message:null, updated_at:new Date().toISOString(),
+        }).eq('id', sendRequest.id)
+        return res.status(200).json({ ok:true, reused:true, messageId:recovered.data.id })
+      }
+      return res.status(202).json({ ok:true, pending:true, resolutionRequired:true })
+    }
+    if (action === 'retry') {
+      const claimed = await supabase.from('whatsapp_send_requests').update({
+        status:'pending', error_message:null, updated_at:new Date().toISOString(),
+      }).eq('id', sendRequest.id).eq('status', 'failed').select(requestFields).maybeSingle()
+      if (claimed.error) return res.status(500).json({ error:'Não foi possível retomar o envio.' })
+      if (!claimed.data) return res.status(202).json({ ok:true, pending:true })
+      sendRequest = claimed.data
+    }
+  } else if (requestError) {
+    if (['42P01', 'PGRST204', 'PGRST205'].includes(requestError.code)) {
+      return res.status(409).json({ error:'Aplique whatsapp_three_number_safety.sql antes de enviar mensagens.' })
+    }
+    return res.status(500).json({ error:'Não foi possível reservar o envio com segurança.' })
+  }
+
+  let providerId = sendRequest?.provider_message_id || null
+  if (!providerId) {
+    try {
+      providerId = isMedia
+        ? await sendProviderMedia(num, type, { to: phone, mediaUrl: providerMediaUrl, caption: caption || '', fileName: fileName || '', mediaMime: mediaMime || '' })
+        : await sendProviderText(num, phone, text)
+    } catch (err) {
+      const definitiveFailure = providerFailureIsDefinitive(err?.statusCode)
+      await supabase.from('whatsapp_send_requests').update({
+        status:definitiveFailure ? 'failed' : 'unknown',
+        error_message:String(err?.message || 'Falha no provedor').slice(0, 1000),
+        updated_at:new Date().toISOString(),
+      }).eq('id', sendRequest.id).eq('status', 'pending')
+      if (!definitiveFailure) return res.status(202).json({ ok:true, pending:true, resolutionRequired:true })
+      return res.status(502).json({ error:err.message })
+    }
+    const accepted = await supabase.from('whatsapp_send_requests').update({
+      status:'accepted', provider_message_id:providerId, error_message:null, updated_at:new Date().toISOString(),
+    }).eq('id', sendRequest.id).eq('status', 'pending')
+    if (accepted.error) {
+      // O provedor já devolveu um ID inequívoco. Persistimos o histórico mesmo
+      // que este checkpoint falhe; o client_request_id recupera a tentativa.
+      console.error('whatsapp send checkpoint error:', accepted.error.message)
+    }
   }
 
   const { data: msg, error: insertError } = await insertWhatsAppMessage(
@@ -1113,17 +1277,35 @@ async function handleSend(req, res) {
   )
 
   if (insertError?.code === '23505') {
-    const { data: existing, error: existingError } = await supabase.from('whatsapp_messages')
+    let existingResult = await supabase.from('whatsapp_messages')
+      .select('id')
+      .eq('user_id', ownerId)
+      .eq('client_request_id', requestId)
+      .maybeSingle()
+    if (!existingResult.data && !existingResult.error) existingResult = await supabase.from('whatsapp_messages')
       .select('id')
       .eq('user_id', ownerId)
       .eq('whatsapp_number_id', num.id)
       .eq('provider', whatsappProvider(num))
       .eq('provider_message_id', providerId)
       .maybeSingle()
+    const { data:existing, error:existingError } = existingResult
     if (existingError || !existing) return res.status(500).json({ error: 'Mensagem enviada, mas o histórico não pôde ser confirmado.' })
-    return res.status(200).json({ ok: true, messageId: existing.id })
+    await supabase.from('whatsapp_send_requests').update({
+      status:'persisted', whatsapp_message_id:existing.id, error_message:null, updated_at:new Date().toISOString(),
+    }).eq('id', sendRequest.id)
+    return res.status(200).json({ ok: true, reused:true, messageId: existing.id })
   }
-  if (insertError) return res.status(500).json({ error: 'Mensagem enviada, mas não foi possível salvá-la no histórico.' })
+  if (insertError) {
+    await supabase.from('whatsapp_send_requests').update({
+      status:'accepted', error_message:String(insertError.message || 'Falha no histórico').slice(0, 1000), updated_at:new Date().toISOString(),
+    }).eq('id', sendRequest.id)
+    return res.status(500).json({ error: 'Mensagem enviada, mas não foi possível salvá-la no histórico.' })
+  }
+
+  await supabase.from('whatsapp_send_requests').update({
+    status:'persisted', whatsapp_message_id:msg?.id || null, error_message:null, updated_at:new Date().toISOString(),
+  }).eq('id', sendRequest.id)
 
   return res.status(200).json({ ok: true, messageId: msg?.id })
 }

@@ -99,6 +99,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [x] **Confirmar acesso ao projeto correto da Vercel e cadastrar as variáveis server-side** sem registrar valores no código ou na documentação ✅ 2026-10-21
 - [x] **Aplicar no Supabase o novo SQL** `supabase/whatsapp_evolution_provider_schema.sql` ✅ aplicado em 2026-10-16
 - [x] **Confirmar/aplicar `supabase/whatsapp_media_storage.sql`** antes da homologação de anexos ✅ aplicado em 2026-10-16
+- [ ] **Aplicar `supabase/whatsapp_three_number_safety.sql`** antes da conexão dos três números; ele adiciona isolamento composto por clínica+número e idempotência do envio interativo
 - [ ] **Separar o número de homologação** com WhatsApp Business ativo, celular disponível e responsável presente para ler o QR Code em “Dispositivos conectados”
 - [ ] **Definir contatos de teste autorizados** para validar texto, áudio, imagem, documento, grupos e mensagens enviadas diretamente pelo celular
 - [ ] **Informar qual será o número definitivo da clínica** depois da homologação

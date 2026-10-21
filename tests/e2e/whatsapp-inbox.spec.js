@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const NUMBERS = [{ id: 'n1', label: 'Concierge', phone: '5511999990000' }]
+const NUMBERS = [{ id: 'n1', label: 'Concierge', phone: '5511999990000', active:true }]
 const PROFILE_PHOTO = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32"%3E%3Crect width="32" height="32" fill="%2300a884"/%3E%3C/svg%3E'
 const MESSAGES = [
   { id: 'm5', phone: '120363019502650977-group', direction: 'inbound', body: 'Confirmado para amanhã', status: 'read', created_at: '2026-10-10T14:05:00Z', patient_id: null, whatsapp_number_id: 'n1', is_group: true, chat_name: 'Equipe Cirúrgica', chat_photo: PROFILE_PHOTO, sender_name: 'João Instrumentador', sender_phone: '5511966665555', sender_photo: PROFILE_PHOTO, patients: null },
@@ -233,7 +233,7 @@ test('reúne telefone e LID no chat correto sem misturar números da clínica', 
   await page.unroute('**/rest/v1/whatsapp_numbers*')
   await page.route('**/rest/v1/whatsapp_numbers*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([
     ...NUMBERS,
-    { id:'n2', label:'Pessoal', phone:'555188888888' },
+    { id:'n2', label:'Pessoal', phone:'555188888888', active:true },
   ]) }))
 
   await page.goto('/app/inbox')
@@ -243,6 +243,65 @@ test('reúne telefone e LID no chat correto sem misturar números da clínica', 
   await expect(page.locator('.wa-messages')).not.toContainText('Conversa da outra instância')
   const outgoing = page.locator('.wa-message-row').filter({ hasText:'Enviada pelo celular' })
   await expect(outgoing).toHaveClass(/outbound/)
+})
+
+test('responde pela instância da conversa quando a clínica possui três números', async ({ page }) => {
+  const threeNumbers = [
+    { id:'n1', label:'Recepção', phone:'5511999990001', active:true },
+    { id:'n2', label:'Comercial', phone:'5511999990002', active:true },
+    { id:'n3', label:'Pós-operatório', phone:'5511999990003', active:true },
+  ]
+  const routedMessages = threeNumbers.map((number, index) => ({
+    id:`message-${number.id}`,
+    phone:'5511988887777',
+    direction:'inbound',
+    body:`Mensagem pela ${number.label}`,
+    status:'read',
+    created_at:new Date(Date.UTC(2026, 9, 14, 20, index)).toISOString(),
+    patient_id:'p1',
+    whatsapp_number_id:number.id,
+    patients:{ full_name:'Ana Silva' },
+  }))
+  let sentPayload = null
+  const messageScopes = []
+  await page.unroute('**/rest/v1/whatsapp_messages*')
+  await page.route('**/rest/v1/whatsapp_messages*', route => {
+    messageScopes.push(new URL(route.request().url()).searchParams.get('whatsapp_number_id'))
+    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(routedMessages) })
+  })
+  await page.unroute('**/rest/v1/whatsapp_numbers*')
+  await page.route('**/rest/v1/whatsapp_numbers*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(threeNumbers) }))
+  await page.route('**/api/whatsapp?action=message', async route => {
+    sentPayload = route.request().postDataJSON()
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, messageId:'sent-1' }) })
+  })
+
+  await page.goto('/app/inbox')
+  await expect.poll(() => new Set(messageScopes.filter(Boolean)).size).toBe(4)
+  await page.locator('.wa-conversation').filter({ hasText:'Pós-operatório' }).click()
+  await expect(page.locator('.wa-reply-number select')).toHaveValue('n3')
+  await page.getByPlaceholder('Responder...').fill('Retorno seguro')
+  await page.getByRole('button', { name:'Enviar mensagem' }).click()
+
+  await expect.poll(() => sentPayload?.whatsappNumberId).toBe('n3')
+  expect(sentPayload.requestId).toMatch(/^[0-9a-f-]{36}$/i)
+  expect(sentPayload.text).toBe('Retorno seguro')
+})
+
+test('preserva o histórico de número inativo sem usá-lo silenciosamente para enviar', async ({ page }) => {
+  await page.unroute('**/rest/v1/whatsapp_numbers*')
+  await page.route('**/rest/v1/whatsapp_numbers*', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify([{ ...NUMBERS[0], active:false }, { id:'n2', label:'Atendimento ativo', phone:'5511999990002', active:true }]),
+  }))
+
+  await page.goto('/app/inbox')
+  await expect(page.locator('.wa-conversation').filter({ hasText:'Ana Silva' })).toBeVisible()
+  await page.locator('.wa-conversation').filter({ hasText:'Ana Silva' }).click()
+  await expect(page.locator('.wa-messages')).toContainText('Oi, doutora')
+  await expect(page.locator('.wa-reply-number select')).toHaveValue('')
+  await expect(page.locator('.wa-filters select').first()).toContainText('Concierge (inativo)')
 })
 
 test('grupo mostra identidade coletiva e identifica cada participante', async ({ page }) => {
