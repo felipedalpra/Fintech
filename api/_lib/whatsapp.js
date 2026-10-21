@@ -284,8 +284,15 @@ export function parseEvolutionIncomingMessage(body) {
   const participantAlt = String(key.participantAlt || data.participantAlt || '')
   const participantPhoneJid = [participant, participantAlt].find(value => /@s\.whatsapp\.net$/i.test(value)) || ''
   const participantLid = [participant, participantAlt].find(value => /@lid$/i.test(value)) || ''
-  const chatName = String(data.chatName || data.pushName || data.pushname || '')
-  const senderName = String(data.pushName || data.pushname || data.senderName || (!isGroup ? chatName : ''))
+  // No webhook da Evolution (Baileys), pushName é sempre o nome de perfil de
+  // quem MANDOU a mensagem. Em fromMe=true (enviada direto pelo celular
+  // conectado), quem mandou é a própria clínica — usar isso como nome da
+  // conversa rotularia o contato com o nome do dono do número. Em grupo o
+  // valor continua correto (identifica o integrante da equipe que enviou).
+  const chatName = direction === 'outbound' ? '' : String(data.chatName || data.pushName || data.pushname || '')
+  const senderName = isGroup
+    ? String(data.pushName || data.pushname || data.senderName || '')
+    : (direction === 'outbound' ? '' : String(data.pushName || data.pushname || data.senderName || chatName))
   const rawStatus = data.status ?? data.update?.status ?? data.messageStatus
 
   return {
