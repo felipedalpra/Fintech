@@ -69,3 +69,57 @@ test('admin cria instância Evolution por QR sem receber credenciais da infraest
   expect(provisionPayload).not.toHaveProperty('apiKey')
   expect(provisionPayload).not.toHaveProperty('instanceUrl')
 })
+
+test('admin conecta três instâncias distintas e a quarta é recusada', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
+  let numbers = []
+
+  await page.route('**/rest/v1/**', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:'{"profile":{}}' }))
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{}' }))
+  await page.route('**/api/whatsapp?action=list-numbers', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({ numbers, pendingEvents:[] }),
+  }))
+  await page.route('**/api/whatsapp?action=provision-number', async route => {
+    const payload = route.request().postDataJSON()
+    if (numbers.length >= 3) {
+      await route.fulfill({ status:409, contentType:'application/json', body:JSON.stringify({ error:'A clínica já possui o limite de 3 números.' }) })
+      return
+    }
+    const index = numbers.length + 1
+    const number = {
+      id:`number-${index}`,
+      label:payload.label,
+      phone:payload.phone,
+      active:true,
+      assigned_user_id:null,
+      provider:'evolution',
+      provider_instance_name:`surgimetrics_clinic_${index}`,
+      connection_state:'connecting',
+    }
+    numbers = [...numbers, number]
+    await route.fulfill({
+      status:201,
+      contentType:'application/json',
+      body:JSON.stringify({ ok:true, number, qrcode:{ pairingCode:`PAIR-${index}` } }),
+    })
+  })
+
+  await page.goto('/app/settings')
+  await page.getByRole('button', { name:'WhatsApp', exact:true }).click()
+
+  for (const [label, phone] of [['Recepção','5511999990001'], ['Comercial','5511999990002'], ['Pós-operatório','5511999990003']]) {
+    await page.getByPlaceholder('Ex: Concierge').fill(label)
+    await page.getByPlaceholder('Ex: 5511999990000').fill(phone)
+    await page.getByRole('button', { name:'Criar e mostrar QR Code' }).click()
+    await expect(page.getByText(label, { exact:true })).toBeVisible()
+  }
+
+  expect(new Set(numbers.map(number => number.provider_instance_name)).size).toBe(3)
+  await page.getByPlaceholder('Ex: Concierge').fill('Quarto número')
+  await page.getByRole('button', { name:'Criar e mostrar QR Code' }).click()
+  await expect(page.getByText('A clínica já possui o limite de 3 números.')).toBeVisible()
+  expect(numbers).toHaveLength(3)
+})

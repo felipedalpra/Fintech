@@ -28,14 +28,20 @@ async function readZApiResponse(res) {
   const providerError = data?.error || data?.message
   if (!res.ok || data?.error) {
     const detail = typeof providerError === 'string' ? providerError : (raw || `HTTP ${res.status}`)
-    throw new Error(`Z-API: ${detail}`)
+    const error = new Error(`Z-API: ${detail}`)
+    error.statusCode = res.status
+    throw error
   }
   return data
 }
 
-function confirmedMessageId(data) {
+function confirmedMessageId(data, res) {
   const id = data?.messageId ?? data?.id ?? data?.zaapId
-  if (!id) throw new Error('A Z-API não confirmou o envio da mensagem. Verifique a URL e o Client-Token.')
+  if (!id) {
+    const error = new Error('A Z-API não confirmou o envio da mensagem. Verifique a URL e o Client-Token.')
+    error.statusCode = res?.status
+    throw error
+  }
   return String(id)
 }
 
@@ -228,7 +234,7 @@ export async function sendWhatsAppMedia(instanceUrl, apiToken, type, args) {
     body: JSON.stringify(body),
   })
   const data = await readZApiResponse(res)
-  return confirmedMessageId(data)
+  return confirmedMessageId(data, res)
 }
 
 export async function sendWhatsAppText(instanceUrl, apiToken, to, text) {
@@ -247,5 +253,5 @@ export async function sendWhatsAppText(instanceUrl, apiToken, to, text) {
   })
 
   const data = await readZApiResponse(res)
-  return confirmedMessageId(data)
+  return confirmedMessageId(data, res)
 }

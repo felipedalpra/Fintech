@@ -1,7 +1,7 @@
 # Pendências da Clínica — SurgiMetrics
 
 > Itens que precisam ser fornecidos ou decididos pela Dra. Vitoria / Augusto antes ou durante cada fase de implementação.
-> Atualizado em: 2026-10-20
+> Atualizado em: 2026-10-21
 
 ---
 
@@ -67,6 +67,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [ ] **CRM** da Dra. Vitoria (número + UF, ex: CRM-SP 123456)
 - [ ] **Endereço completo** da clínica (rua, número, bairro, cidade, CEP)
 - [ ] **Telefone/contato** para constar no rodapé dos documentos
+- [ ] **Homologar em produção com dados reais da clínica** a emissão, a impressão e o salvamento em PDF de um pedido de exames e uma receita simples, conferindo timbre, identificação profissional, endereço do paciente e histórico após recarregar a página
 
 > Esses dados são configurados em Configurações → Perfil e aparecem nos documentos gerados. Nesta primeira versão, o PDF é preparado para impressão e assinatura manual; assinatura eletrônica qualificada será uma integração posterior.
 
@@ -89,16 +90,16 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 ### WhatsApp CRM e Automações (Fase 2)
 - [x] **Provedor de WhatsApp escolhido** — Evolution API self-hosted, com Z-API temporariamente disponível para rollback. ✅ 2026-10-16
 
-> **Status em 2026-10-16:** implementação revisada, testada, publicada e integrada à `main`; SQLs de mídia e Evolution aplicados no Supabase. A ativação externa foi **adiada a pedido do responsável** e não será executada hoje. Ao retomar, começar pela contratação/acesso da VPS e DNS, depois configurar as variáveis na Vercel e somente então homologar com um número de teste. Não migrar o número definitivo antes dessa homologação.
+> **Status verificado em 2026-10-21:** implementação e SQLs estão publicados. A Evolution API v2.3.7 foi ativada em URL HTTPS pública no Railway, substituindo a VPS e o DNS próprio planejados; as quatro variáveis server-side foram cadastradas na Vercel Production e o app foi redeployado. Um smoke test real confirmou autenticação, criação de instância/QR, webhook com segredo, consulta de conexão e limpeza. Falta conectar o número de homologação pela interface e testar mensagens, mídias, status e persistência após reinício. Não migrar o número definitivo antes dessa homologação.
 
 #### O que Felipe / cliente precisa providenciar
 
-- [ ] **Contratar ou confirmar a VPS HostGator NVMe 4** na região Brasil, com Ubuntu 22.04 e sem cPanel
-- [ ] **Fornecer o acesso administrativo à VPS por canal seguro**: IP público, usuário SSH e cadastro de uma chave pública autorizada; nunca enviar chave privada nem registrá-la neste repositório
-- [ ] **Dar acesso ao DNS de `surgimetrics.com.br` ou criar o registro A** de `evolution.surgimetrics.com.br` apontando para o IP da VPS
-- [ ] **Confirmar acesso ao projeto correto da Vercel**, para que as variáveis server-side sejam configuradas sem compartilhar token no código ou na documentação
+- [x] **Publicar a Evolution API em infraestrutura persistente** — Railway com Evolution API v2.3.7 e HTTPS público, substituindo a VPS HostGator planejada ✅ 2026-10-21
+- [x] **Definir o endereço público da Evolution** — domínio gerenciado pelo Railway; o subdomínio próprio `evolution.surgimetrics.com.br` não é necessário nesta etapa ✅ 2026-10-21
+- [x] **Confirmar acesso ao projeto correto da Vercel e cadastrar as variáveis server-side** sem registrar valores no código ou na documentação ✅ 2026-10-21
 - [x] **Aplicar no Supabase o novo SQL** `supabase/whatsapp_evolution_provider_schema.sql` ✅ aplicado em 2026-10-16
 - [x] **Confirmar/aplicar `supabase/whatsapp_media_storage.sql`** antes da homologação de anexos ✅ aplicado em 2026-10-16
+- [ ] **Aplicar `supabase/whatsapp_three_number_safety.sql`** antes da conexão dos três números; ele adiciona isolamento composto por clínica+número e idempotência do envio interativo
 - [ ] **Separar o número de homologação** com WhatsApp Business ativo, celular disponível e responsável presente para ler o QR Code em “Dispositivos conectados”
 - [ ] **Definir contatos de teste autorizados** para validar texto, áudio, imagem, documento, grupos e mensagens enviadas diretamente pelo celular
 - [ ] **Informar qual será o número definitivo da clínica** depois da homologação
@@ -114,14 +115,13 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 
 #### O que será executado pela implementação após os acessos
 
-- [ ] Atualizar o sistema da VPS, criar usuário operacional, restringir SSH e configurar firewall
-- [ ] Instalar Docker e subir Evolution API com versão estável fixada, PostgreSQL e Redis persistentes
-- [ ] Configurar volumes, reinício automático, backup diário e procedimento de restauração
-- [ ] Publicar somente HTTPS por proxy reverso e emitir certificado válido para `evolution.surgimetrics.com.br`
-- [ ] Gerar uma chave global forte da Evolution e mantê-la exclusivamente no servidor/Vercel
-- [ ] Configurar na Vercel `EVOLUTION_API_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_REQUEST_TIMEOUT_MS` e `WHATSAPP_WEBHOOK_BASE_URL`
+- [x] Publicar Evolution API v2.3.7 com HTTPS no Railway ✅ 2026-10-21
+- [ ] Confirmar PostgreSQL e Redis persistentes, política de backup e restauração no Railway
+- [x] Gerar uma chave global forte da Evolution e mantê-la exclusivamente no servidor/Vercel ✅ 2026-10-21
+- [x] Configurar na Vercel Production `EVOLUTION_API_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_REQUEST_TIMEOUT_MS` e `WHATSAPP_WEBHOOK_BASE_URL` ✅ 2026-10-21
 - [ ] Conferir as colunas, índices, RLS e bucket de mídia depois da aplicação dos SQLs
-- [ ] Criar a instância de homologação pelo SurgiMetrics, configurar e reler o webhook e apresentar o QR Code
+- [x] Validar o contrato da Evolution com instância temporária: autenticação, criação/QR, configuração e releitura do webhook, estado e limpeza ✅ 2026-10-21
+- [ ] Criar a instância durável de homologação pelo SurgiMetrics e apresentar o QR Code
 - [ ] Validar envio e recebimento de texto, imagem, áudio, vídeo e documento nos dois sentidos
 - [ ] Validar mensagens enviadas pelo celular, grupos, endereços `@lid`, responsáveis e vínculo correto com paciente/contato
 - [ ] Validar estados `sent`, `delivered` e `read`, deduplicação, reprocessamento de falhas e reconexão após reinício

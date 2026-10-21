@@ -7,29 +7,27 @@ O SurgiMetrics está preparado para operar com Evolution API e manter números Z
 Antes de usar a integração real:
 
 1. reaplicar `supabase/whatsapp_media_storage.sql` e `supabase/whatsapp_evolution_provider_schema.sql` no Supabase;
-2. disponibilizar a Evolution em uma VPS persistente com HTTPS;
+2. disponibilizar a Evolution em infraestrutura persistente com HTTPS;
 3. configurar as variáveis server-side na Vercel;
 4. homologar envio, recebimento, mídia, confirmação de entrega e reconexão com um número de teste;
 5. só depois migrar o número da clínica e manter a Z-API como rollback durante a estabilização.
 
-## Infraestrutura escolhida
+## Infraestrutura ativa
 
-- VPS HostGator NVMe 4, região Brasil;
-- Ubuntu 22.04 sem cPanel;
-- domínio `evolution.surgimetrics.com.br` apontando por registro A para o IP da VPS;
-- Evolution API em contêiner com versão estável fixada;
-- PostgreSQL e Redis persistentes;
-- proxy reverso com certificado TLS válido;
-- volumes e banco incluídos em backup diário.
+- Railway com URL pública HTTPS gerenciada;
+- Evolution API v2.3.7;
+- chave global disponível somente no Railway e na Vercel;
+- PostgreSQL e Redis devem permanecer persistentes e ter backup/restauração confirmados antes do número definitivo;
+- o subdomínio próprio `evolution.surgimetrics.com.br` fica opcional e não bloqueia a homologação.
 
-Não publicar PostgreSQL, Redis ou o painel administrativo diretamente na internet. A porta pública deve ser apenas HTTPS; SSH deve usar chave, usuário sem login por senha e firewall restritivo.
+Não publicar PostgreSQL ou Redis diretamente na internet. A única superfície necessária para o SurgiMetrics é a URL HTTPS da Evolution. Em 2026-10-21, um smoke test real confirmou autenticação, criação de instância com QR, configuração e releitura do webhook secreto, consulta do estado e remoção da instância temporária.
 
 ## Variáveis da Vercel
 
-Configurar em Preview e Production, sem prefixo `VITE_`:
+Configurar obrigatoriamente em Production e, quando houver homologação de branch, também em Preview, sempre sem prefixo `VITE_`:
 
 ```env
-EVOLUTION_API_BASE_URL=https://evolution.surgimetrics.com.br
+EVOLUTION_API_BASE_URL=https://<dominio-publico-do-railway>
 EVOLUTION_API_KEY=<chave global forte da Evolution>
 EVOLUTION_REQUEST_TIMEOUT_MS=15000
 WHATSAPP_WEBHOOK_BASE_URL=https://www.surgimetrics.com.br/api/whatsapp?action=webhook
