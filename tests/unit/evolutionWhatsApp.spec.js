@@ -137,6 +137,34 @@ test('baixa mídia recebida pelo endpoint de decriptação da Evolution', async 
   expect(request.body).toEqual({ message, convertToMp4:false })
 })
 
+test('mensagem enviada direto pelo celular conectado não rotula a conversa com o nome do dono do número', () => {
+  // No webhook da Evolution, pushName é o perfil de quem MANDOU a mensagem.
+  // Em fromMe=true (enviada pelo celular, fora do app), quem mandou é a
+  // própria clínica — usar isso como nome do contato troca "Gabrielle" por
+  // "Felipe Dalpra" na conversa.
+  const parsed = parseEvolutionIncomingMessage({
+    event: 'messages.upsert',
+    data: {
+      key: { id: 'EV-SELF', fromMe: true, remoteJid: '5551988887777@s.whatsapp.net' },
+      pushName: 'Felipe Dalpra',
+      message: { conversation: 'rapudo' },
+    },
+  })
+  expect(parsed).toMatchObject({ direction: 'outbound', chatName: '', senderName: '' })
+})
+
+test('em grupo, pushName de uma mensagem enviada pelo celular ainda identifica o integrante da equipe', () => {
+  const parsed = parseEvolutionIncomingMessage({
+    event: 'messages.upsert',
+    data: {
+      key: { id: 'EV-SELF-GROUP', fromMe: true, remoteJid: '120363019502650977@g.us' },
+      pushName: 'Felipe Dalpra',
+      message: { conversation: 'oi equipe' },
+    },
+  })
+  expect(parsed).toMatchObject({ isGroup: true, direction: 'outbound', senderName: 'Felipe Dalpra' })
+})
+
 test('normaliza mensagem Evolution com LID e telefone alternativo sem inventar identidade', () => {
   const parsed = parseEvolutionIncomingMessage({
     event: 'messages.upsert',
