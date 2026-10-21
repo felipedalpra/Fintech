@@ -61,6 +61,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 
 ### Timbre para documentos (Pedido de Exames + Receituário + Prontuário)
 - [x] **Aplicar no Supabase** a migration aditiva `supabase/clinical_documents_schema.sql` depois das migrations da fundação clínica — aplicada em 2026-10-20
+- [ ] **Aplicar no Supabase** a correção aditiva `supabase/clinical_documents_review_fixes.sql` depois de `clinical_documents_schema.sql` — restringe receitas a admin e corrige idempotência, auditoria clínica, timbre e validações
 - [ ] **Logo da clínica** — arquivo PNG ou SVG, fundo transparente
 - [ ] **Nome completo** da Dra. Vitoria como aparece nos documentos clínicos
 - [ ] **CRM** da Dra. Vitoria (número + UF, ex: CRM-SP 123456)

@@ -7,6 +7,7 @@ import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { canIssueClinicalPrescription } from '../lib/roleAccess.js'
 import { fetchSecureProfile } from '../lib/secureProfileClient.js'
 import { formatDateBR, today } from '../utils.js'
 import {
@@ -28,7 +29,7 @@ const CLINICAL_TABS = [
 
 export function ClinicalRecords({ data }) {
   const { user } = useAuth()
-  const { ownerId, clinicId, clinicName, isOwner, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
+  const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
   const [selected, setSelected] = useState(null)
   const [search, setSearch] = useState('')
@@ -43,6 +44,7 @@ export function ClinicalRecords({ data }) {
   const [currentDate, setCurrentDate] = useState(today)
   const [author, setAuthor] = useState({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
   const [secureProfile, setSecureProfile] = useState(null)
+  const [secureProfileStatus, setSecureProfileStatus] = useState('loading')
   const searchWrapRef = useRef(null)
   const daySchedule = useMemo(() => buildClinicalDaySchedule(data, currentDate), [data, currentDate])
 
@@ -57,10 +59,12 @@ export function ClinicalRecords({ data }) {
 
   useEffect(() => {
     let active = true
+    setSecureProfileStatus('loading')
     fetchSecureProfile()
       .then(async payload => {
         if (!active) return
         setSecureProfile(payload?.profile || null)
+        setSecureProfileStatus('ready')
         const nextAuthor = {
           name:payload?.profile?.doctor?.fullName || '',
           registration:payload?.profile?.doctor?.registrationId || '',
@@ -79,7 +83,11 @@ export function ClinicalRecords({ data }) {
           if (active) setAuthor(nextAuthor)
         }
       })
-      .catch(() => { if (active) setSecureProfile(null) })
+      .catch(() => {
+        if (!active) return
+        setSecureProfile(null)
+        setSecureProfileStatus('error')
+      })
     return () => { active = false }
   }, [isOwner, clinicId])
 
@@ -301,7 +309,9 @@ export function ClinicalRecords({ data }) {
                     ownerId={ownerId}
                     author={author}
                     profile={secureProfile}
+                    profileLoading={secureProfileStatus === 'loading'}
                     clinicName={clinicName}
+                    canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
                   />
                 )}
                 {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}

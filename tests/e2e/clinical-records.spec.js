@@ -43,12 +43,14 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   const documents = []
   const rpcPayloads = []
 
+  await page.setViewportSize({ width:390, height:844 })
+
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({
     status:200,
     contentType:'application/json',
     body:JSON.stringify({ profile:{
       doctor:{ fullName:'Dra. Clínica E2E', registrationId:'CRM-RS 0001', phone:'51999990000', email:'medica@clinica.test' },
-      clinic:{ tradeName:'Clínica E2E', addressLine:'Av. Clínica, 100', city:'Porto Alegre', state:'RS' },
+      clinic:{ tradeName:'Clínica E2E', addressLine:'Av. Clínica, 100', city:'Porto Alegre', state:'RS', logoDataUrl:'data:image/png;base64,logo-e2e' },
     } }),
   }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({
@@ -92,6 +94,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
       issuer_contact:payload.p_issuer_contact,
       issuer_address:payload.p_issuer_address,
       clinic_name:payload.p_clinic_name,
+      clinic_logo_data_url:payload.p_clinic_logo_data_url,
       request_id:payload.p_request_id,
       created_at:'2026-10-20T12:00:00Z',
     })
@@ -112,6 +115,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await expect(page.getByText('Hemograma completo, Coagulograma')).toBeVisible()
   expect(rpcPayloads[0]).not.toHaveProperty('p_author_name')
   expect(rpcPayloads[0]).not.toHaveProperty('p_patient_name')
+  expect(rpcPayloads[0].p_clinic_logo_data_url).toBe('data:image/png;base64,logo-e2e')
 
   await page.getByRole('button', { name:'+ Receita simples' }).click()
   await page.getByLabel('Medicamento 1 *').fill('Dipirona')
@@ -123,7 +127,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await page.getByLabel('Endereço profissional *').fill('Av. Clínica, 100 — Porto Alegre/RS')
   await page.getByRole('button', { name:'Emitir documento' }).click()
 
-  await expect(page.getByText('Dipirona')).toBeVisible()
+  await expect(page.getByText(/Dipirona — 500 mg — Tomar um comprimido/)).toBeVisible()
   await expect(page.getByText('2 no histórico')).toBeVisible()
   expect(rpcPayloads[1].p_document_data).toMatchObject({ simple_prescription_confirmed:true })
 })

@@ -32,12 +32,12 @@ function dateLabel(value) {
 function DocumentSummary({ record }) {
   const data = record.document_data || {}
   if (record.document_type === SIMPLE_PRESCRIPTION) {
-    return <>{(data.items || []).map(item => item.medication).filter(Boolean).join(', ') || 'Receita sem itens disponíveis'}</>
+    return <>{(data.items || []).map(item => [item.medication, item.presentation, item.directions].filter(Boolean).join(' — ')).filter(Boolean).join(' · ') || 'Receita sem itens disponíveis'}</>
   }
   return <>{(data.exams || []).join(', ') || 'Pedido sem exames disponíveis'}</>
 }
 
-export function ClinicalDocuments({ patient, ownerId, author, profile, clinicName }) {
+export function ClinicalDocuments({ patient, ownerId, author, profile, profileLoading = false, clinicName, canPrescribe = false }) {
   const [records, setRecords] = useState([])
   const [status, setStatus] = useState('loading')
   const [editingType, setEditingType] = useState('')
@@ -72,6 +72,10 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, clinicNam
   }), [records])
 
   function begin(type) {
+    if (type === SIMPLE_PRESCRIPTION && !canPrescribe) {
+      setError('Somente o perfil administrador pode emitir receitas.')
+      return
+    }
     setEditingType(type)
     setRequestId(uid())
     setForm(clinicalDocumentDefaults({ type, issueDate:today(), profile, clinicName }))
@@ -160,7 +164,7 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, clinicNam
       <div className="clinical-document-editor">
         <header className="clinical-document-editor__header">
           <div><span>Novo documento</span><h3>{clinicalDocumentTypeLabel(editingType)}</h3></div>
-          <label>Data de emissão<input type="date" value={form.issue_date} onChange={event => update('issue_date', event.target.value)} /></label>
+          <label>Data de emissão<input type="date" value={form.issue_date} readOnly aria-readonly="true" /></label>
         </header>
 
         {error && <div className="clinical-form-error" role="alert">{error}</div>}
@@ -216,11 +220,13 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, clinicNam
     <div className="clinical-documents">
       <header className="clinical-documents__toolbar">
         <div><span>Documentos emitidos</span><strong>{records.length} no histórico</strong><small>{groupedCount.exams} exames · {groupedCount.prescriptions} receitas</small></div>
-        <div><Btn variant="ghost" onClick={() => begin(EXAM_REQUEST)}>+ Pedido de exames</Btn><Btn onClick={() => begin(SIMPLE_PRESCRIPTION)}>+ Receita simples</Btn></div>
+        <div><Btn variant="ghost" disabled={profileLoading} onClick={() => begin(EXAM_REQUEST)}>+ Pedido de exames</Btn>{canPrescribe && <Btn disabled={profileLoading} onClick={() => begin(SIMPLE_PRESCRIPTION)}>+ Receita simples</Btn>}</div>
       </header>
 
       {error && <div className="clinical-form-error" role="alert">{error}</div>}
+      {profileLoading && <div className="clinical-document-access-note">Carregando dados profissionais e o timbre da clínica…</div>}
       <div className="clinical-document-legal-note">Os PDFs desta etapa são preparados para impressão e assinatura manual. Prescrição eletrônica, medicamentos controlados e receitas sujeitas à retenção exigem integrações e assinaturas específicas.</div>
+      {!canPrescribe && <div className="clinical-document-access-note">Receitas podem ser emitidas somente por usuários com perfil administrador. Você ainda pode consultar o histórico e emitir pedidos de exames.</div>}
 
       {records.length === 0 ? (
         <div className="clinical-empty-panel"><strong>Nenhum documento emitido</strong><p>Crie pedidos de exames ou receitas simples sem sair da ficha do paciente.</p></div>

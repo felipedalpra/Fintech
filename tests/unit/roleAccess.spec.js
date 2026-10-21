@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { canRoleAccess } from '../../src/lib/roleAccess.js'
+import { canIssueClinicalPrescription, canRoleAccess } from '../../src/lib/roleAccess.js'
 
 test('admin e gestão acessam finanças, mas somente admin acessa configurações', () => {
   expect(canRoleAccess('admin', 'finance')).toBe(true)
@@ -33,4 +33,12 @@ test('acesso clínico é independente do cargo administrativo', () => {
   expect(canRoleAccess('gestao', 'clinical-records', { clinicalAccess:true })).toBe(true)
   expect(canRoleAccess('equipe', 'clinical-records', { clinicalAccess:true })).toBe(true)
   expect(canRoleAccess('concierge', 'clinical-records')).toBe(false)
+})
+
+test('somente admin com acesso clínico pode prescrever', () => {
+  expect(canIssueClinicalPrescription('admin', { clinicalAccess:true })).toBe(true)
+  expect(canIssueClinicalPrescription('admin', { clinicalAccess:false })).toBe(false)
+  expect(canIssueClinicalPrescription('gestao', { clinicalAccess:true })).toBe(false)
+  expect(canIssueClinicalPrescription('equipe', { clinicalAccess:true })).toBe(false)
+  expect(canIssueClinicalPrescription('concierge', { clinicalAccess:true })).toBe(false)
 })

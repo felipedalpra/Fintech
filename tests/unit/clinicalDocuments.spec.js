@@ -4,6 +4,7 @@ import {
   buildClinicalDocumentRpcArgs,
   clinicalDocumentDefaults,
   CLINICAL_DOCUMENT_TYPES,
+  hasCompletePatientAddress,
   patientResidentialAddress,
   professionalRegistration,
   validateClinicalDocument,
@@ -25,6 +26,8 @@ const author = { name:'Dra. Vitória', registration:'CRM-RS 12345', council:'CRM
 
 test('monta o endereço residencial exigido no receituário', () => {
   expect(patientResidentialAddress(patient)).toBe('Rua Clínica, 10 · Centro · Porto Alegre / RS · CEP 90000-000')
+  expect(hasCompletePatientAddress(patient)).toBe(true)
+  expect(hasCompletePatientAddress({ ...patient, address_number:'' })).toBe(false)
 })
 
 test('normaliza pedido de exames sem confiar na autoria do navegador', () => {
@@ -46,6 +49,7 @@ test('normaliza pedido de exames sem confiar na autoria do navegador', () => {
   })
   expect(args).not.toHaveProperty('p_author_name')
   expect(args).not.toHaveProperty('p_patient_name')
+  expect(args).toHaveProperty('p_clinic_logo_data_url', null)
 })
 
 test('receita simples exige endereço, modo de usar e confirmação sanitária', () => {
@@ -83,6 +87,7 @@ test('gera impressão com identificação mínima e escapa conteúdo clínico', 
     issuer_contact:'contato@clinica.com.br',
     issuer_address:'Av. Profissional, 100',
     clinic_name:'Clínica Exemplo',
+    clinic_logo_data_url:'data:image/png;base64,stored-logo',
     document_data:{ exams:['Hemograma <completo>'], clinical_indication:'Pré-operatório' },
   })
 
@@ -91,6 +96,8 @@ test('gera impressão com identificação mínima e escapa conteúdo clínico', 
   expect(html).toContain('Hemograma &lt;completo&gt;')
   expect(html).toContain('CRM-RS 12345')
   expect(html).toContain('assinatura manual')
+  expect(html).toContain('data:image/png;base64,stored-logo')
+  expect(html).not.toContain('position:fixed')
   expect(html).not.toContain('Ana <Paciente>')
 })
 

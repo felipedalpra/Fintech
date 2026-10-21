@@ -26,6 +26,11 @@ export function patientResidentialAddress(patient = {}) {
   ]).join(' · ')
 }
 
+export function hasCompletePatientAddress(patient = {}) {
+  return ['address_street', 'address_number', 'address_city', 'address_state']
+    .every(field => String(patient[field] || '').trim())
+}
+
 export function clinicalDocumentDefaults({ type, issueDate, profile = {}, clinicName = '' }) {
   const safeProfile = profile || {}
   const clinic = safeProfile.clinic || {}
@@ -45,6 +50,7 @@ export function clinicalDocumentDefaults({ type, issueDate, profile = {}, clinic
     issuer_contact:contact,
     issuer_address:address,
     clinic_name:String(clinic.tradeName || clinic.legalName || clinicName || '').trim(),
+    clinic_logo_data_url:String(clinic.logoDataUrl || '').trim(),
     clinical_indication:'',
     instructions:'',
     exams_text:'',
@@ -87,7 +93,9 @@ export function validateClinicalDocument({ type, form, patient, author }) {
   }
 
   if (type === SIMPLE_PRESCRIPTION) {
-    if (!patientResidentialAddress(patient)) return 'Cadastre o endereço residencial do paciente antes de emitir a receita.'
+    if (!hasCompletePatientAddress(patient)) {
+      return 'Cadastre o endereço residencial completo do paciente (rua, número, cidade e estado) antes de emitir a receita.'
+    }
     if (!form.simple_prescription_confirmed) {
       return 'Confirme que o receituário não contém medicamento controlado nem sujeito à retenção.'
     }
@@ -127,6 +135,7 @@ export function buildClinicalDocumentRpcArgs({ patientId, requestId, type, form,
     p_issuer_contact:String(form.issuer_contact).trim(),
     p_issuer_address:String(form.issuer_address).trim(),
     p_clinic_name:String(form.clinic_name || '').trim() || null,
+    p_clinic_logo_data_url:String(form.clinic_logo_data_url || '').trim() || null,
   }
 }
 
@@ -172,7 +181,9 @@ function documentBody(record) {
 }
 
 export function buildClinicalDocumentPrintHtml(record, { logoDataUrl = '' } = {}) {
-  const safeLogo = /^data:image\/(png|jpeg|jpg|webp|svg\+xml);base64,/i.test(logoDataUrl) ? logoDataUrl : ''
+  const storedLogo = String(record.clinic_logo_data_url || '').trim()
+  const selectedLogo = storedLogo || String(logoDataUrl || '').trim()
+  const safeLogo = /^data:image\/(png|jpeg|jpg|webp|svg\+xml);base64,/i.test(selectedLogo) ? selectedLogo : ''
   const title = clinicalDocumentTypeLabel(record.document_type)
   const patientMeta = compact([
     record.patient_cpf ? `CPF ${record.patient_cpf}` : '',
@@ -181,7 +192,7 @@ export function buildClinicalDocumentPrintHtml(record, { logoDataUrl = '' } = {}
   return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(title)} — ${escapeHtml(record.patient_name)}</title>
 <style>
-  @page{size:A4;margin:18mm}*{box-sizing:border-box}body{margin:0;color:#18202b;font:14px/1.5 Arial,sans-serif}.header{display:flex;align-items:center;gap:18px;padding-bottom:18px;border-bottom:2px solid #1d7a77}.logo{max-width:110px;max-height:62px;object-fit:contain}.clinic{flex:1}.clinic h1{margin:0 0 3px;font-size:19px}.clinic p,.patient p{margin:2px 0;color:#55606e}.document-title{margin:30px 0 24px;text-align:center;font-size:22px;text-transform:uppercase;letter-spacing:.06em}.patient{padding:14px 16px;border:1px solid #ccd4dd;border-radius:8px;background:#f8fafb}.patient strong{font-size:16px}section{margin-top:24px}section h2{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#38505a}section p{white-space:pre-wrap}.exam-list{margin:0;padding-left:24px}.exam-list li{margin:9px 0}.prescription-list{margin:24px 0 0;padding-left:25px}.prescription-list li{margin:0 0 25px;padding-left:8px}.medication{font-size:16px;border-bottom:1px solid #d6dce2;padding-bottom:6px}.medication span{float:right;font-size:13px;font-weight:700}.prescription-list p{margin:8px 0;white-space:pre-wrap}.signature{margin:68px auto 0;width:320px;border-top:1px solid #59636e;padding-top:8px;text-align:center}.signature strong{display:block;font-size:15px}.signature span{display:block;color:#55606e}.footer{position:fixed;left:0;right:0;bottom:0;border-top:1px solid #dfe4e8;padding-top:8px;color:#6a737d;font-size:10px;text-align:center}.notice{margin-top:26px;padding:10px 12px;border:1px solid #d8a83d;background:#fff9e9;color:#765b1d;font-size:11px}@media print{.notice{break-inside:avoid}}
+  @page{size:A4;margin:18mm}*{box-sizing:border-box}body{margin:0;color:#18202b;font:14px/1.5 Arial,sans-serif}.header{display:flex;align-items:center;gap:18px;padding-bottom:18px;border-bottom:2px solid #1d7a77}.logo{max-width:110px;max-height:62px;object-fit:contain}.clinic{flex:1}.clinic h1{margin:0 0 3px;font-size:19px}.clinic p,.patient p{margin:2px 0;color:#55606e}.document-title{margin:30px 0 24px;text-align:center;font-size:22px;text-transform:uppercase;letter-spacing:.06em}.patient{padding:14px 16px;border:1px solid #ccd4dd;border-radius:8px;background:#f8fafb}.patient strong{font-size:16px}section{margin-top:24px}section h2{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#38505a}section p{white-space:pre-wrap}.exam-list{margin:0;padding-left:24px}.exam-list li{margin:9px 0;break-inside:avoid}.prescription-list{margin:24px 0 0;padding-left:25px}.prescription-list li{margin:0 0 25px;padding-left:8px;break-inside:avoid}.medication{font-size:16px;border-bottom:1px solid #d6dce2;padding-bottom:6px}.medication span{float:right;font-size:13px;font-weight:700}.prescription-list p{margin:8px 0;white-space:pre-wrap}.signature{margin:68px auto 0;width:320px;max-width:100%;border-top:1px solid #59636e;padding-top:8px;text-align:center;break-inside:avoid}.signature strong{display:block;font-size:15px}.signature span{display:block;color:#55606e}.footer{margin-top:20px;border-top:1px solid #dfe4e8;padding-top:8px;color:#6a737d;font-size:10px;text-align:center;break-inside:avoid}.notice{margin-top:26px;padding:10px 12px;border:1px solid #d8a83d;background:#fff9e9;color:#765b1d;font-size:11px;break-inside:avoid}
 </style></head><body>
   <header class="header">${safeLogo ? `<img class="logo" src="${escapeHtml(safeLogo)}" alt="">` : ''}<div class="clinic"><h1>${escapeHtml(record.clinic_name || record.author_name)}</h1><p>${escapeHtml(record.issuer_address)}</p><p>${escapeHtml(record.issuer_contact)}</p></div></header>
   <h1 class="document-title">${escapeHtml(title)}</h1>

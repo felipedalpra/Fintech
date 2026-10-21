@@ -20,15 +20,28 @@ create table if not exists public.record_audit (
 create index if not exists idx_record_audit_record on public.record_audit(table_name, record_id, changed_at desc);
 create index if not exists idx_record_audit_owner  on public.record_audit(owner_id, changed_at desc);
 
--- 2. RLS: leitura só para a clínica dona dos dados (admin/gestão enxergam o histórico da sua clínica).
+-- 2. RLS: leitura só para a clínica dona. Snapshots clínicos exigem também acesso clínico.
 --    A escrita é feita só pela trigger (SECURITY DEFINER); ninguém insere/edita auditoria à mão.
 alter table public.record_audit enable row level security;
 do $$ begin
-  begin
+  drop policy if exists "Record audit clinic read" on public.record_audit;
+  if to_regprocedure('public.has_clinical_access()') is not null then
+    execute $policy$
+      create policy "Record audit clinic read" on public.record_audit
+      for select to authenticated
+      using (
+        owner_id = public.data_owner_id()
+        and (
+          table_name not in ('patient_clinical_profiles', 'medical_records', 'medical_record_addenda', 'clinical_anamneses', 'clinical_documents')
+          or public.has_clinical_access()
+        )
+      )
+    $policy$;
+  else
     create policy "Record audit clinic read" on public.record_audit
       for select to authenticated
       using (owner_id = public.data_owner_id());
-  exception when duplicate_object then null; end;
+  end if;
 end $$;
 
 -- 3. Função genérica de log. Usa acesso via jsonb (v_old/v_new) para funcionar em QUALQUER tabela,
