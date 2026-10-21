@@ -1,7 +1,7 @@
 # Pendências da Clínica — SurgiMetrics
 
 > Itens que precisam ser fornecidos ou decididos pela Dra. Vitoria / Augusto antes ou durante cada fase de implementação.
-> Atualizado em: 2026-10-20
+> Atualizado em: 2026-10-21
 
 ---
 
@@ -67,6 +67,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [ ] **CRM** da Dra. Vitoria (número + UF, ex: CRM-SP 123456)
 - [ ] **Endereço completo** da clínica (rua, número, bairro, cidade, CEP)
 - [ ] **Telefone/contato** para constar no rodapé dos documentos
+- [ ] **Homologar em produção com dados reais da clínica** a emissão, a impressão e o salvamento em PDF de um pedido de exames e uma receita simples, conferindo timbre, identificação profissional, endereço do paciente e histórico após recarregar a página
 
 > Esses dados são configurados em Configurações → Perfil e aparecem nos documentos gerados. Nesta primeira versão, o PDF é preparado para impressão e assinatura manual; assinatura eletrônica qualificada será uma integração posterior.
 
@@ -89,7 +90,7 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 ### WhatsApp CRM e Automações (Fase 2)
 - [x] **Provedor de WhatsApp escolhido** — Evolution API self-hosted, com Z-API temporariamente disponível para rollback. ✅ 2026-10-16
 
-> **Status em 2026-10-16:** implementação revisada, testada, publicada e integrada à `main`; SQLs de mídia e Evolution aplicados no Supabase. A ativação externa foi **adiada a pedido do responsável** e não será executada hoje. Ao retomar, começar pela contratação/acesso da VPS e DNS, depois configurar as variáveis na Vercel e somente então homologar com um número de teste. Não migrar o número definitivo antes dessa homologação.
+> **Status verificado em 2026-10-21:** implementação revisada, testada, publicada e integrada à `main`; SQLs de mídia e Evolution aplicados no Supabase. O projeto correto está vinculado e acessível pela Vercel, porém `evolution.surgimetrics.com.br` ainda não resolve no DNS e as variáveis `EVOLUTION_API_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_REQUEST_TIMEOUT_MS` e `WHATSAPP_WEBHOOK_BASE_URL` ainda não estão cadastradas na Vercel. A retomada começa pela contratação/acesso da VPS e criação do DNS; somente depois entram variáveis e homologação com número de teste. Não migrar o número definitivo antes dessa homologação.
 
 #### O que Felipe / cliente precisa providenciar
 
