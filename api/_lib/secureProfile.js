@@ -111,6 +111,8 @@ export function sanitizeProfilePayload(rawProfile = {}) {
       professionalTitle:trim(doctor.professionalTitle),
       specialty:trim(doctor.specialty),
       registrationId:trim(doctor.registrationId),
+      rqe:trim(doctor.rqe),
+      cpf:trim(doctor.cpf),
       phone:trim(doctor.phone),
       email:trim(doctor.email),
     },

@@ -71,6 +71,15 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 
 > Esses dados são configurados em Configurações → Perfil e aparecem nos documentos gerados. Nesta primeira versão, o PDF é preparado para impressão e assinatura manual; assinatura eletrônica qualificada será uma integração posterior.
 
+### Assinatura clínica ICP-Brasil
+- [ ] **Aplicar no Supabase** a migration aditiva `supabase/clinical_signature_readiness_schema.sql` depois dos dois SQLs de documentos clínicos
+- [ ] **Escolher e contratar o provedor de assinatura ICP-Brasil** compatível com PAdES, callback/webhook e certificado A1 em cofre/HSM; a estrutura é multiprovedor e ainda não presume fornecedor
+- [ ] **Enviar CPF e RQE da profissional** para completar a identidade do signatário em Configurações → Perfil
+- [ ] **Disponibilizar um certificado de homologação** pelo fluxo seguro do provedor escolhido — nunca enviar `.pfx`/`.p12` e senha por WhatsApp, e-mail ou pela tela atual
+- [ ] Homologar com documento de teste: hash, assinatura PAdES, cadeia ICP-Brasil, validade/revogação, carimbo do tempo, callback idempotente e download do PDF assinado
+
+> A base técnica não ativa assinatura sozinha. Até provedor e certificado serem homologados, a plataforma continua informando corretamente que a via depende de assinatura manual.
+
 ---
 
 ### Pedido de Exames
