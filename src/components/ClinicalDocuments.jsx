@@ -9,6 +9,11 @@ import {
   openClinicalDocumentPrint,
   professionalRegistration,
 } from '../lib/clinicalDocuments.js'
+import {
+  clinicalSignerReadiness,
+  clinicalSignaturePresentation,
+  latestClinicalSignatureByDocument,
+} from '../lib/clinicalSignature.js'
 import { Btn } from './UI.jsx'
 
 const { EXAM_REQUEST, SIMPLE_PRESCRIPTION } = CLINICAL_DOCUMENT_TYPES
@@ -22,6 +27,24 @@ async function fetchDocuments(patientId, ownerId) {
     .order('created_at', { ascending:false })
   if (error) throw error
   return data || []
+}
+
+async function fetchSignatureEvidence(documents, ownerId) {
+  if (documents.length === 0) return { rows:[], available:true }
+  const { data, error } = await supabase
+    .from('clinical_document_signatures')
+    .select('id, document_id, status, created_at, signed_file_path, signed_file_sha256, signature_standard, certificate_subject, certificate_serial, certificate_issuer, certificate_valid_from, certificate_valid_until, signed_at')
+    .eq('user_id', ownerId)
+    .in('document_id', documents.map(document => document.id))
+    .order('created_at', { ascending:false })
+  if (error) return { rows:[], available:false }
+  return { rows:data || [], available:true }
+}
+
+async function fetchDocumentBundle(patientId, ownerId) {
+  const documents = await fetchDocuments(patientId, ownerId)
+  const signatures = await fetchSignatureEvidence(documents, ownerId)
+  return { documents, signatures }
 }
 
 function dateLabel(value) {
@@ -39,6 +62,8 @@ function DocumentSummary({ record }) {
 
 export function ClinicalDocuments({ patient, ownerId, author, profile, profileLoading = false, clinicName, canPrescribe = false }) {
   const [records, setRecords] = useState([])
+  const [signatureByDocument, setSignatureByDocument] = useState({})
+  const [signatureEvidenceAvailable, setSignatureEvidenceAvailable] = useState(true)
   const [status, setStatus] = useState('loading')
   const [editingType, setEditingType] = useState('')
   const [requestId, setRequestId] = useState('')
@@ -51,10 +76,12 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
     setStatus('loading')
     setRecords([])
     setError('')
-    fetchDocuments(patient.id, ownerId)
-      .then(rows => {
+    fetchDocumentBundle(patient.id, ownerId)
+      .then(({ documents, signatures }) => {
         if (!active) return
-        setRecords(rows)
+        setRecords(documents)
+        setSignatureByDocument(latestClinicalSignatureByDocument(signatures.rows))
+        setSignatureEvidenceAvailable(signatures.available)
         setStatus('ready')
       })
       .catch(() => {
@@ -70,6 +97,7 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
     exams:records.filter(item => item.document_type === EXAM_REQUEST).length,
     prescriptions:records.filter(item => item.document_type === SIMPLE_PRESCRIPTION).length,
   }), [records])
+  const signerReadiness = useMemo(() => clinicalSignerReadiness(profile), [profile])
 
   function begin(type) {
     if (type === SIMPLE_PRESCRIPTION && !canPrescribe) {
@@ -120,8 +148,10 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
       issued = true
       setEditingType('')
       setForm(null)
-      const freshRecords = await fetchDocuments(patient.id, ownerId)
-      setRecords(freshRecords)
+      const fresh = await fetchDocumentBundle(patient.id, ownerId)
+      setRecords(fresh.documents)
+      setSignatureByDocument(latestClinicalSignatureByDocument(fresh.signatures.rows))
+      setSignatureEvidenceAvailable(fresh.signatures.available)
       setStatus('ready')
     } catch (nextError) {
       if (issued) {
@@ -139,7 +169,10 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
     setStatus('loading')
     setError('')
     try {
-      setRecords(await fetchDocuments(patient.id, ownerId))
+      const fresh = await fetchDocumentBundle(patient.id, ownerId)
+      setRecords(fresh.documents)
+      setSignatureByDocument(latestClinicalSignatureByDocument(fresh.signatures.rows))
+      setSignatureEvidenceAvailable(fresh.signatures.available)
       setStatus('ready')
     } catch {
       setStatus('error')
@@ -225,24 +258,37 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
 
       {error && <div className="clinical-form-error" role="alert">{error}</div>}
       {profileLoading && <div className="clinical-document-access-note">Carregando dados profissionais e o timbre da clínica…</div>}
-      <div className="clinical-document-legal-note">Os PDFs desta etapa são preparados para impressão e assinatura manual. Prescrição eletrônica, medicamentos controlados e receitas sujeitas à retenção exigem integrações e assinaturas específicas.</div>
+      <div className="clinical-signature-readiness">
+        <div>
+          <strong>Assinatura clínica ICP-Brasil preparada</strong>
+          <span>O documento original permanece imutável; assinatura, hash e certificado serão registrados como evidências separadas quando o provedor for conectado.</span>
+        </div>
+        <span className={signerReadiness.ready ? 'is-ready' : 'is-pending'}>
+          {signerReadiness.ready ? 'Identidade profissional completa' : `Pendente: ${signerReadiness.missing.join(', ')}`}
+        </span>
+      </div>
+      <div className="clinical-document-legal-note">Enquanto o provedor não estiver conectado, os PDFs continuam disponíveis para impressão e assinatura manual. Não envie certificado A1 ou senha por esta tela.</div>
+      {!signatureEvidenceAvailable && <div className="clinical-document-access-note">O histórico clínico está disponível, mas o status de assinatura digital não pôde ser consultado. A via manual não foi afetada.</div>}
       {!canPrescribe && <div className="clinical-document-access-note">Receitas podem ser emitidas somente por usuários com perfil administrador. Você ainda pode consultar o histórico e emitir pedidos de exames.</div>}
 
       {records.length === 0 ? (
         <div className="clinical-empty-panel"><strong>Nenhum documento emitido</strong><p>Crie pedidos de exames ou receitas simples sem sair da ficha do paciente.</p></div>
       ) : (
         <div className="clinical-document-history">
-          {records.map(record => (
-            <article key={record.id}>
+          {records.map(record => {
+            const signature = signatureByDocument[record.id]
+            const signatureState = clinicalSignaturePresentation(signature, { evidenceAvailable:signatureEvidenceAvailable })
+            return <article key={record.id}>
               <div className={`clinical-document-icon is-${record.document_type}`}>{record.document_type === SIMPLE_PRESCRIPTION ? 'Rx' : 'Ex'}</div>
               <div className="clinical-document-history__body">
                 <span>{clinicalDocumentTypeLabel(record.document_type)} · {dateLabel(record.issue_date)}</span>
                 <strong><DocumentSummary record={record} /></strong>
                 <small>{record.author_name} · {professionalRegistration(record)}</small>
+                <small className={`clinical-signature-status is-${signatureState.tone}`}>{signatureState.label}</small>
               </div>
-              <Btn variant="ghost" onClick={() => print(record)}>Imprimir / salvar PDF</Btn>
+              <Btn variant="ghost" onClick={() => print(record)}>{signature?.status === 'signed' ? 'Imprimir via manual' : 'Imprimir / salvar PDF'}</Btn>
             </article>
-          ))}
+          })}
         </div>
       )}
     </div>

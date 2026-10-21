@@ -74,6 +74,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(documents) }))
+  await page.route('**/rest/v1/clinical_document_signatures*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/rpc/create_clinical_document*', async route => {
     const payload = await route.request().postDataJSON()
     rpcPayloads.push(payload)
@@ -113,6 +114,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await page.getByRole('button', { name:'Emitir documento' }).click()
 
   await expect(page.getByText('Hemograma completo, Coagulograma')).toBeVisible()
+  await expect(page.getByText('Assinatura digital não configurada')).toBeVisible()
   expect(rpcPayloads[0]).not.toHaveProperty('p_author_name')
   expect(rpcPayloads[0]).not.toHaveProperty('p_patient_name')
   expect(rpcPayloads[0].p_clinic_logo_data_url).toBe('data:image/png;base64,logo-e2e')

@@ -12,6 +12,7 @@ import { MetaConnection } from './MetaConnection.jsx'
 import { FollowupRules } from './FollowupRules.jsx'
 import { IntegrationHealth } from './IntegrationHealth.jsx'
 import { BillingConnection } from './BillingConnection.jsx'
+import { isValidCpf } from '../lib/clinicalSignature.js'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -19,6 +20,8 @@ const EMPTY_PROFILE = {
     professionalTitle:'Cirurgião plástico',
     specialty:'',
     registrationId:'',
+    rqe:'',
+    cpf:'',
     phone:'',
     email:'',
   },
@@ -184,10 +187,26 @@ export function Settings({ google }) {
                     <FInput label="Nome completo" value={profile.doctor.fullName} onChange={value => updateField('doctor', 'fullName', value)} />
                     <FInput label="Título profissional" value={profile.doctor.professionalTitle} onChange={value => updateField('doctor', 'professionalTitle', value)} />
                     <FInput label="Especialidade" value={profile.doctor.specialty} onChange={value => updateField('doctor', 'specialty', value)} />
-                    <FInput label="CRM / RQE" value={profile.doctor.registrationId} onChange={value => updateField('doctor', 'registrationId', value)} />
+                    <FInput label="CRM (número + UF)" value={profile.doctor.registrationId} onChange={value => updateField('doctor', 'registrationId', value)} />
+                    <FInput label="RQE" value={profile.doctor.rqe} onChange={value => updateField('doctor', 'rqe', value)} />
+                    <FInput label="CPF do profissional" value={profile.doctor.cpf} onChange={value => updateField('doctor', 'cpf', value)} />
                     <FInput label="Telefone" value={profile.doctor.phone} onChange={value => updateField('doctor', 'phone', value)} />
                     <FInput label="E-mail profissional" value={profile.doctor.email} onChange={value => updateField('doctor', 'email', value)} />
                   </Grid>
+                </SectionCard>
+
+                <SectionCard title="Assinatura clínica ICP-Brasil" subtitle="Base preparada para conectar um provedor de assinatura qualificada sem expor o certificado.">
+                  <div style={{ display:'grid', gap:10 }}>
+                    <div style={{ padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.surface, color:C.textSub, fontSize:13, lineHeight:1.6 }}>
+                      <strong style={{ display:'block', color:C.text, marginBottom:4 }}>Integração ainda não ativada</strong>
+                      O certificado A1 e a senha não serão enviados pelo navegador nem gravados no Supabase. Quando o provedor for escolhido, o servidor guardará somente uma referência segura à credencial e os documentos receberão evidências verificáveis de assinatura.
+                    </div>
+                    <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                      <MiniStatus label="Identidade" value={profile.doctor.fullName && profile.doctor.registrationId && isValidCpf(profile.doctor.cpf) ? 'Completa' : 'Pendente'} />
+                      <MiniStatus label="Certificado" value="Não conectado" />
+                      <MiniStatus label="Provedor" value="A definir" />
+                    </div>
+                  </div>
                 </SectionCard>
 
                 <SectionCard title="Informações da clínica" subtitle="Dados institucionais para identidade visual, contato e documentos da operação.">
