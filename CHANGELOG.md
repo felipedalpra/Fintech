@@ -7,9 +7,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-10-22 (122)
 ### Added
+- **Remover número de WhatsApp sem apagar histórico**: Configurações → WhatsApp ganha "Remover conexão", que desconecta a sessão na Evolution (best-effort) e tira o número da lista principal sem apagar cadastro, mensagens ou histórico — pede confirmação explícita antes, já que desconecta de verdade o celular. O número removido fica numa seção recolhível "Números removidos", de onde "Reconectar" só o traz de volta pra lista (inativo); reconectar de fato continua passando pelo fluxo normal de "Conectar / novo QR". Aplicar `supabase/whatsapp_numbers_archive_schema.sql` antes do deploy. (`api/whatsapp.js`, `api/_lib/whatsappProvider.js`, `src/components/WhatsAppNumbers.jsx`, `supabase/whatsapp_numbers_archive_schema.sql`.)
 - **Fotos e documentos clínicos privados**: a ficha do paciente passa a receber JPEG, PNG, WebP e PDF com data, região, procedimento, observação e etapa antes/depois. O navegador calcula SHA-256 e envia o arquivo diretamente para um bucket privado depois que o banco reserva um caminho canônico por clínica/paciente; a confirmação confere tamanho e MIME observados pelo Storage. A galeria oferece busca, filtros, visualização por URLs assinadas curtas em lote e comparação lado a lado, sem função serverless nova. (`src/components/ClinicalAssets.jsx`, `src/lib/clinicalAssets.js`, `supabase/clinical_assets_schema.sql`.)
 
 ### Changed
+- **Tela de números de WhatsApp reorganizada**: os botões de ação (testar conexão, conectar, ativar/desativar) viram componentes de botão de verdade, com espaçamento e agrupamento claros, em vez de links de texto amontoados numa única linha. "Remover conexão" fica isolado numa faixa própria, separada por borda, pra não ser clicado por engano perto das ações do dia a dia. (`src/components/WhatsAppNumbers.jsx`.)
 - **Aceite de imagem vinculado sem ampliar autorização**: uma foto pode apontar para um aceite de uso de imagem já registrado para o mesmo paciente, mas a interface deixa explícito que esse vínculo não autoriza divulgação externa além do texto efetivamente aceito. A abertura do ativo é registrada antes da geração da URL temporária. (`docs/superpowers/specs/2026-10-22-clinical-assets-design.md`.)
 
 ### Fixed
