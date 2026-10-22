@@ -3,6 +3,7 @@ import { C } from '../theme.js'
 import { Btn } from './UI.jsx'
 import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
 import { ClinicalDocuments } from './ClinicalDocuments.jsx'
+import { ClinicalIntake } from './ClinicalIntake.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -22,6 +23,7 @@ import './ClinicalRecords.css'
 const CLINICAL_TABS = [
   { id:'record', label:'Prontuário' },
   { id:'summary', label:'Anamnese' },
+  { id:'intake', label:'Pré-anamnese e termos' },
   { id:'prescriptions', label:'Exames e receitas' },
   { id:'files', label:'Fotos e documentos', planned:true },
   { id:'treatment', label:'Plano e retorno', planned:true },
@@ -38,6 +40,7 @@ export function ClinicalRecords({ data }) {
   const [error, setError] = useState('')
   const [tab, setTab] = useState('record')
   const [clinicalProfile, setClinicalProfile] = useState(null)
+  const [anamnesisDraft, setAnamnesisDraft] = useState(null)
   const [clinicalAccessStatus, setClinicalAccessStatus] = useState('idle')
   const [profileStatus, setProfileStatus] = useState('idle')
   const [openAttempt, setOpenAttempt] = useState(0)
@@ -180,6 +183,7 @@ export function ClinicalRecords({ data }) {
     setClinicalAccessStatus('auditing')
     setProfileStatus('loading')
     setClinicalProfile(null)
+    setAnamnesisDraft(null)
     setOpenAttempt(value => value + 1)
     setSelected(patient)
     setTab('record')
@@ -202,6 +206,7 @@ export function ClinicalRecords({ data }) {
   function returnToAgenda() {
     setSelected(null)
     setClinicalProfile(null)
+    setAnamnesisDraft(null)
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('record')
@@ -301,6 +306,18 @@ export function ClinicalRecords({ data }) {
                     ownerId={ownerId}
                     author={author}
                     legacyProfile={clinicalProfile}
+                    initialDraft={anamnesisDraft}
+                    onDraftConsumed={() => setAnamnesisDraft(null)}
+                  />
+                )}
+                {tab === 'intake' && (
+                  <ClinicalIntake
+                    patient={selected}
+                    ownerId={ownerId}
+                    onUseDraft={draft => {
+                      setAnamnesisDraft(draft)
+                      setTab('summary')
+                    }}
                   />
                 )}
                 {tab === 'prescriptions' && (

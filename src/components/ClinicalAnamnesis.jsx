@@ -80,7 +80,7 @@ async function fetchClinicalAnamneses(patientId, ownerId) {
   return data || []
 }
 
-export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile }) {
+export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, initialDraft, onDraftConsumed }) {
   const [records, setRecords] = useState([])
   const [selectedRecordId, setSelectedRecordId] = useState('')
   const [requestId, setRequestId] = useState('')
@@ -110,6 +110,16 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile })
       })
     return () => { active = false }
   }, [patientId, ownerId])
+
+  useEffect(() => {
+    if (!initialDraft) return
+    const source = clinicalAnamnesisFromLegacy(legacyProfile, today())
+    setForm({ ...emptyClinicalAnamnesis(today()), ...source, ...initialDraft, session_date:today() })
+    setRequestId(uid())
+    setError('')
+    setEditing(true)
+    onDraftConsumed?.()
+  }, [initialDraft])
 
   const record = records.find(item => item.id === selectedRecordId) || records[0] || null
   const latestRecord = records[0] || null

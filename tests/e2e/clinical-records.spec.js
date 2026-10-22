@@ -273,7 +273,7 @@ test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor'
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana SOAP/ }).click()
-  await page.getByRole('button', { name:'Anamnese' }).click()
+  await page.getByRole('button', { name:'Anamnese', exact:true }).click()
   await expect(page.getByText('Dados legados — ainda não assinados neste formato')).toBeVisible()
   await expect(page.locator('.clinical-legacy-alerts').getByText('Alergias:', { exact:true })).toBeVisible()
   await page.getByRole('button', { name:'Completar anamnese' }).click()
