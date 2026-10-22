@@ -4,6 +4,7 @@
 // idempotente nas tabelas de cache. NÃO toca o financeiro.
 //
 // O sync é chamado pelo cron de alertas (api/alerts/process.js) e por api/whatsapp.js?action=meta-sync.
+import { decryptPayload } from './secureProfile.js'
 
 // Tipos de ação que representam leads, em ordem de PREFERÊNCIA. Nas Insights API esses tipos
 // costumam descrever o MESMO evento por recortes diferentes de atribuição — somá-los conta em
@@ -11,6 +12,19 @@
 const LEAD_ACTION_PRIORITY = ['lead', 'onsite_conversion.lead_grouped', 'leadgen_grouped']
 
 // ---------- Puro ----------
+
+const TOKEN_EXPIRY_WARNING_MS = 7 * 24 * 60 * 60 * 1000
+
+// Decide o status pós-sync bem-sucedido a partir do vencimento do token. Nunca deixa a
+// clínica "conectada" com um token já vencido, e avisa com 7 dias de antecedência.
+export function metaConnectionStatusAfterSync(tokenExpiresAt, now = Date.now()) {
+  if (!tokenExpiresAt) return 'conectado'
+  const expiresAtMs = new Date(tokenExpiresAt).getTime()
+  if (!Number.isFinite(expiresAtMs)) return 'conectado'
+  if (expiresAtMs <= now) return 'erro'
+  if (expiresAtMs - now <= TOKEN_EXPIRY_WARNING_MS) return 'expirando'
+  return 'conectado'
+}
 
 // Converte uma string decimal do Meta ('3120.50') para número; vazio/indefinido → 0.
 function num(v) {
@@ -214,25 +228,35 @@ export async function syncMetaInsights(supabase, opts = {}) {
 
   let query = supabase
     .from('meta_connections')
-    .select('user_id, ad_account_id, access_token')
-    .in('status', ['configurado', 'conectado'])
-    .not('access_token', 'is', null)
+    .select('user_id, ad_account_id, access_token_encrypted, token_expires_at')
+    .in('status', ['conectado', 'expirando'])
+    .not('access_token_encrypted', 'is', null)
     .not('ad_account_id', 'is', null)
   if (opts.owner) query = query.eq('user_id', opts.owner)
 
-  const { data: conns, error } = await query
+  const { data: rawConns, error } = await query
   if (error) throw error
 
+  const conns = (rawConns || [])
+    .map(row => ({
+      user_id: row.user_id,
+      ad_account_id: row.ad_account_id,
+      access_token: decryptPayload(row.access_token_encrypted)?.pageToken,
+      token_expires_at: row.token_expires_at,
+    }))
+    .filter(conn => conn.access_token)
+
   const summary = { ok: true, owners: 0, synced: 0, failures: 0, since, until, details: [] }
-  for (const conn of conns || []) {
+  for (const conn of conns) {
     summary.owners += 1
     try {
       const counts = await syncOwner(supabase, conn, { version, since, until, reachPeriods })
       summary.synced += 1
       summary.details.push({ owner: conn.user_id, ...counts })
-      // Sync real bem-sucedido valida a conexão (torna "conectado" visível na tela de config).
+      // Sync real bem-sucedido valida a conexão; ainda assim, nunca mostra "conectado"
+      // com um token vencido ou perto de vencer (ver metaConnectionStatusAfterSync).
       await supabase.from('meta_connections')
-        .update({ status: 'conectado', updated_at: new Date().toISOString() })
+        .update({ status: metaConnectionStatusAfterSync(conn.token_expires_at), updated_at: new Date().toISOString() })
         .eq('user_id', conn.user_id)
     } catch (e) {
       summary.failures += 1
