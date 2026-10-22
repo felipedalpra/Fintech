@@ -1132,17 +1132,18 @@ async function handleMetaWebhook(req, res) {
       // Descobre a clínica dona pela página do lead.
       const { data: conn, error: connectionError } = await supabase
         .from('meta_connections')
-        .select('user_id, access_token')
+        .select('user_id, access_token_encrypted')
         .eq('page_id', lead.pageId)
-        .in('status', ['configurado', 'conectado'])
+        .in('status', ['conectado', 'expirando'])
         .maybeSingle()
       if (connectionError) throw connectionError
-      if (!conn?.access_token) {
+      const pageToken = conn?.access_token_encrypted ? decryptPayload(conn.access_token_encrypted)?.pageToken : null
+      if (!pageToken) {
         console.warn('meta lead ignored: page is not configured', lead.pageId)
         continue
       }
 
-      const full = await fetchLeadData(lead.leadgenId, conn.access_token, graphVersion)
+      const full = await fetchLeadData(lead.leadgenId, pageToken, graphVersion)
       const fields = mapLeadFields(full?.field_data)
       const { error: rpcError } = await supabase.rpc('ensure_meta_lead', {
         p_owner: conn.user_id,
