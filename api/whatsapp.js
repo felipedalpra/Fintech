@@ -18,6 +18,7 @@ import {
   whatsappProvider,
 } from './_lib/whatsappProvider.js'
 import { evolutionConfig, evolutionInstanceMissing } from './_lib/evolutionClient.js'
+import { buildConnectionHealthPatch, parseEvolutionConnectionState, shouldProcessWebhookPayload } from './_lib/evolutionConnection.js'
 import {
   matchPatientId,
   clinicWhatsAppMediaPath,
@@ -685,7 +686,9 @@ async function handleReplayWebhook(req, res) {
   }
   const { data: number } = await getWhatsAppNumber(supabase, event.whatsapp_number_id)
   if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número do evento não encontrado.' })
-  if (!number.active) return res.status(409).json({ error: 'Ative o número antes de reprocessar o evento.' })
+  // Não bloquear aqui por `!number.active`: um evento connection.update preso é
+  // exatamente o que precisa ser reprocessado pra destravar um número inativo (ver
+  // handleWebhook). handleWebhook decide, por tipo de evento, o que pode seguir.
   const claimed = await supabase.from('whatsapp_webhook_events').update({
     processing_status: 'received',
     attempts: Number(event.attempts || 1) + 1,
@@ -1351,22 +1354,36 @@ async function handleWebhook(req, res) {
   }
   if (audit.duplicate) return res.status(200).json({ ok: true, duplicate: true })
 
-  // Manter a conexão antiga cadastrada para rollback não pode duplicar o inbox,
-  // mas o evento autenticado permanece auditável e pode ser reprocessado.
-  if (!num.active) {
-    await finishWebhookEvent(supabase, audit.id, 'ignored', 'Número inativo no recebimento.')
-    return res.status(200).json({ ok: true, inactive: true })
-  }
-
   const receivedAt = new Date().toISOString()
   const healthPatch = { last_webhook_at: receivedAt, last_webhook_event: metadata.eventType }
-  if (provider === 'evolution' && metadata.eventType === 'connection.update') {
-    const state = String(req.body?.data?.state || req.body?.data?.status || req.body?.state || 'unknown').toLowerCase()
-    healthPatch.connection_state = state
-    healthPatch.last_health_at = receivedAt
-    if (state === 'open') healthPatch.connected_at = receivedAt
+  const isConnectionUpdate = provider === 'evolution' && metadata.eventType === 'connection.update'
+  let reactivated = false
+  if (isConnectionUpdate) {
+    const state = parseEvolutionConnectionState(req.body)
+    let canActivate = false
+    if (state === 'open' && !num.active) {
+      const { count } = await supabase.from('whatsapp_numbers')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', num.user_id)
+        .eq('active', true)
+        .neq('id', num.id)
+      canActivate = Number(count || 0) < 3
+    }
+    Object.assign(healthPatch, buildConnectionHealthPatch(state, { now: receivedAt, wasActive: num.active, canActivate }))
+    reactivated = Boolean(healthPatch.active)
   }
-  await supabase.from('whatsapp_numbers').update(healthPatch).eq('id', num.id)
+  // Eventos de ciclo de vida da conexão (connection.update) sempre atualizam o estado,
+  // mesmo com o número inativo — sem isso, escanear o QR de um número inativo nunca
+  // destrava a reconexão (o evento real chega e é descartado antes de ser lido).
+  // Mensagens/status/automações continuam bloqueados enquanto o número não reativar.
+  if (isConnectionUpdate || num.active) {
+    await supabase.from('whatsapp_numbers').update(healthPatch).eq('id', num.id)
+  }
+
+  if (!shouldProcessWebhookPayload({ wasActive: num.active, reactivated })) {
+    await finishWebhookEvent(supabase, audit.id, isConnectionUpdate ? 'processed' : 'ignored', isConnectionUpdate ? null : 'Número inativo no recebimento.')
+    return res.status(200).json({ ok: true, inactive: true, connectionUpdated: isConnectionUpdate })
+  }
 
   // Atualiza o ciclo real da mensagem enviada (enviada → entregue → lida).
   // Nunca regride um status mais avançado se callbacks chegarem fora de ordem.
