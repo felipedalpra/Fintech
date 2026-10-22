@@ -34,6 +34,19 @@ import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
 import { existingSendRequestAction, normalizeWhatsAppRequestId, payloadCollisionAction, providerFailureIsDefinitive, whatsappSendRequestFingerprint } from './_lib/whatsappSendRequest.js'
 import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
+import { decryptPayload, encryptPayload } from './_lib/secureProfile.js'
+import { signState, verifyState } from './_lib/oauthState.js'
+import {
+  buildMetaAuthUrl,
+  computeMetaTokenExpiresAt,
+  exchangeMetaCode,
+  exchangeMetaLongLivedToken,
+  fetchMetaGrantedAdAccounts,
+  fetchMetaGrantedPages,
+  getMetaOAuthConfig,
+  isMetaOAuthConfigured,
+  revokeMetaToken,
+} from './_lib/metaOAuth.js'
 import { syncMetaInsights } from './_lib/metaInsights.js'
 
 export const config = {
@@ -395,6 +408,11 @@ export default async function handler(req, res) {
   if (action === 'dispatch') return handleDispatch(req, res)
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
   if (action === 'meta-sync') return handleMetaSync(req, res)
+  if (action === 'meta-connect') return handleMetaConnect(req, res)
+  if (action === 'meta-callback') return handleMetaOAuthCallback(req, res)
+  if (action === 'meta-pending') return handleMetaPending(req, res)
+  if (action === 'meta-select') return handleMetaSelect(req, res)
+  if (action === 'meta-disconnect') return handleMetaDisconnect(req, res)
   return res.status(400).json({ error: 'Ação inválida.' })
 }
 
@@ -944,6 +962,138 @@ async function handleTestConnection(req, res) {
     webhookConfigured: Boolean(number.id),
     ...(result.instanceUrl ? { instanceUrl: result.instanceUrl } : {}),
   })
+}
+
+// ---- Meta Ads: conexão OAuth ("Login do Facebook para empresas") ----
+// Mesmo padrão do Google Agenda (api/google/calendar.js): state HMAC assinada, token sempre
+// criptografado, frontend nunca lê nem escreve token. Fica aqui (não em api/meta.js) pelo mesmo
+// motivo do webhook/sync acima — teto de 12 funções serverless do Vercel Hobby (já no limite).
+
+async function handleMetaConnect(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const config = getMetaOAuthConfig()
+  if (!isMetaOAuthConfigured(config)) return res.status(503).json({ error: 'Integração Meta Ads não configurada.' })
+  const state = signState(auth.user.id, config.stateSecret)
+  return res.status(200).json({ url: buildMetaAuthUrl(config, state) })
+}
+
+async function handleMetaOAuthCallback(req, res) {
+  const config = getMetaOAuthConfig()
+  const back = result => res.redirect(`${config.appUrl}/app/configuracoes?meta=${result}`)
+  try {
+    if (req.query.error) return back('denied')
+    const actorUserId = verifyState(String(req.query.state || ''), config.stateSecret)
+    if (!actorUserId) return back('error')
+
+    const supabase = adminSupabase()
+    const ownerId = await resolveOwnerId(supabase, actorUserId)
+    if (!await resolveClinicAdmin(supabase, { id: actorUserId }, ownerId)) return back('error')
+
+    const shortToken = await exchangeMetaCode(config, String(req.query.code || ''))
+    if (!shortToken.access_token) return back('error')
+    const longToken = await exchangeMetaLongLivedToken(config, shortToken.access_token)
+    if (!longToken.access_token) return back('error')
+
+    const [pages, adAccounts] = await Promise.all([
+      fetchMetaGrantedPages(config, longToken.access_token),
+      fetchMetaGrantedAdAccounts(config, longToken.access_token),
+    ])
+    if (!pages.length) return back('no_page')
+
+    const base = {
+      user_id: ownerId,
+      connected_by: actorUserId,
+      token_expires_at: computeMetaTokenExpiresAt(longToken.expires_in),
+      updated_at: new Date().toISOString(),
+    }
+
+    if (pages.length === 1 && adAccounts.length <= 1) {
+      const page = pages[0]
+      const { error } = await supabase.from('meta_connections').upsert({
+        ...base,
+        page_id: page.id,
+        ad_account_id: adAccounts[0]?.id || null,
+        access_token_encrypted: encryptPayload({ pageToken: page.access_token, userToken: longToken.access_token }),
+        status: 'conectado',
+      }, { onConflict: 'user_id' })
+      if (error) return back('error')
+      return back('connected')
+    }
+
+    const { error } = await supabase.from('meta_connections').upsert({
+      ...base,
+      page_id: null,
+      ad_account_id: null,
+      access_token_encrypted: encryptPayload({ userToken: longToken.access_token, pendingPages: pages, pendingAdAccounts: adAccounts }),
+      status: 'selecionando',
+    }, { onConflict: 'user_id' })
+    if (error) return back('error')
+    return back('selecting')
+  } catch (e) {
+    console.error('meta oauth callback error:', e?.message)
+    return back('error')
+  }
+}
+
+async function handleMetaPending(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const { data: conn } = await auth.supabase.from('meta_connections')
+    .select('access_token_encrypted, status').eq('user_id', auth.ownerId).maybeSingle()
+  if (!conn || conn.status !== 'selecionando') return res.status(200).json({ pages: [], adAccounts: [] })
+  const decrypted = decryptPayload(conn.access_token_encrypted)
+  return res.status(200).json({
+    pages: (decrypted?.pendingPages || []).map(p => ({ id: p.id, name: p.name })),
+    adAccounts: (decrypted?.pendingAdAccounts || []).map(a => ({ id: a.id, name: a.name })),
+  })
+}
+
+async function handleMetaSelect(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const pageId = String(req.body?.pageId || '')
+  const adAccountId = req.body?.adAccountId ? String(req.body.adAccountId) : null
+  if (!pageId) return res.status(400).json({ error: 'Selecione uma Página.' })
+
+  const { data: conn, error: readError } = await auth.supabase.from('meta_connections')
+    .select('access_token_encrypted, status').eq('user_id', auth.ownerId).maybeSingle()
+  if (readError || !conn || conn.status !== 'selecionando') {
+    return res.status(409).json({ error: 'Nenhuma seleção pendente para esta clínica.' })
+  }
+  const decrypted = decryptPayload(conn.access_token_encrypted)
+  const page = (decrypted?.pendingPages || []).find(p => p.id === pageId)
+  if (!page) return res.status(400).json({ error: 'Página não encontrada na lista autorizada.' })
+  if (adAccountId && !(decrypted?.pendingAdAccounts || []).some(a => a.id === adAccountId)) {
+    return res.status(400).json({ error: 'Conta de anúncios não encontrada na lista autorizada.' })
+  }
+
+  const { error: writeError } = await auth.supabase.from('meta_connections').update({
+    page_id: pageId,
+    ad_account_id: adAccountId,
+    access_token_encrypted: encryptPayload({ pageToken: page.access_token, userToken: decrypted.userToken }),
+    status: 'conectado',
+    updated_at: new Date().toISOString(),
+  }).eq('user_id', auth.ownerId)
+  if (writeError) return res.status(500).json({ error: 'Não foi possível salvar a seleção.' })
+  return res.status(200).json({ ok: true })
+}
+
+async function handleMetaDisconnect(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const config = getMetaOAuthConfig()
+  const { data: conn } = await auth.supabase.from('meta_connections')
+    .select('access_token_encrypted').eq('user_id', auth.ownerId).maybeSingle()
+  const decrypted = conn?.access_token_encrypted ? decryptPayload(conn.access_token_encrypted) : null
+  if (decrypted?.userToken) await revokeMetaToken(config, decrypted.userToken)
+  const { error } = await auth.supabase.from('meta_connections').delete().eq('user_id', auth.ownerId)
+  if (error) return res.status(500).json({ error: 'Não foi possível desconectar.' })
+  return res.status(200).json({ ok: true })
 }
 
 // ---- Meta Ads: webhook de Lead Ads (leadgen) → cria oportunidade no pipeline ----
