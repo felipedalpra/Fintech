@@ -1,6 +1,6 @@
 # Conexão Meta Ads via OAuth — Plano de Implementação
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Substituir o preenchimento manual de Ad Account ID/Page ID/token (em Configurações → Meta Ads) por um botão "Continuar com Facebook" self-serve, pra que conectar uma clínica nova ao Meta Ads não exija mais dar acesso de admin no Business Manager dela.
 
@@ -56,7 +56,7 @@ O app novo do Meta ("SurgiMetrics", dentro do Business Manager verificado da Zen
 **Files:**
 - Create: `supabase/meta_oauth_connection_schema.sql`
 
-- [ ] **Step 1: Escrever a migration**
+- [x] **Step 1: Escrever a migration**
 
 ```sql
 -- meta_oauth_connection_schema.sql
@@ -102,7 +102,7 @@ commit;
 -- select id, user_id from public.meta_connections where status = 'erro' and access_token_encrypted is null;
 ```
 
-- [ ] **Step 2: Confirmar que não quebra nada que já lê `meta_connections`**
+- [x] **Step 2: Confirmar que não quebra nada que já lê `meta_connections`**
 
 Rode:
 ```bash
@@ -110,7 +110,7 @@ grep -rn "from('meta_connections')\|\"meta_connections\"" api src --include="*.j
 ```
 Expected: só aparecem `api/whatsapp.js` (`handleMetaWebhook`, e as novas funções que você vai criar nas próximas tasks) e `api/_lib/metaInsights.js` (`syncMetaInsights`) — ambos serão corrigidos nas Tasks 5 e 6 pra não usar mais `access_token`. Se aparecer algum outro arquivo lendo `access_token` diretamente, pare e trate antes de seguir.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add supabase/meta_oauth_connection_schema.sql
@@ -128,7 +128,7 @@ git commit -m "docs: migration da conexão Meta Ads via OAuth"
 - Modify: `api/_lib/googleCalendar.js:1-3, 77-98`
 - Test (já existe, não muda): `tests/unit/googleCalendarServer.spec.js`
 
-- [ ] **Step 1: Criar o módulo genérico com o código movido de `googleCalendar.js`**
+- [x] **Step 1: Criar o módulo genérico com o código movido de `googleCalendar.js`**
 
 ```js
 // api/_lib/oauthState.js
@@ -162,7 +162,7 @@ export function verifyState(state, secret, now = Date.now()) {
 }
 ```
 
-- [ ] **Step 2: Remover o código duplicado de `googleCalendar.js` e reexportar**
+- [x] **Step 2: Remover o código duplicado de `googleCalendar.js` e reexportar**
 
 Em `api/_lib/googleCalendar.js`, linha 1 (`import crypto from 'crypto'`) e linhas 77-98 (a função `sign` local e `signState`/`verifyState`) saem. No lugar, logo abaixo da linha 3 (`const STATE_TTL_MS = ...`, que também sai por não ser mais usada aqui), adicione:
 
@@ -172,14 +172,14 @@ export { signState, verifyState } from './oauthState.js'
 
 O `import crypto from 'crypto'` no topo do arquivo só pode ser removido se nada mais em `googleCalendar.js` usar `crypto` — confira com `grep -n "crypto\." api/_lib/googleCalendar.js` antes de remover o import; se algo mais no arquivo (fora de `sign`/`signState`/`verifyState`) ainda usar `crypto`, mantenha o import.
 
-- [ ] **Step 3: Rodar o teste existente pra confirmar que nada quebrou (não é feature nova, é extração)**
+- [x] **Step 3: Rodar o teste existente pra confirmar que nada quebrou (não é feature nova, é extração)**
 
 ```bash
 npx playwright test -c playwright.unit.config.js tests/unit/googleCalendarServer.spec.js
 ```
 Expected: PASS, mesmos testes de antes (`signState`/`verifyState` continuam se comportando idêntico, só mudou de onde o código mora).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add api/_lib/oauthState.js api/_lib/googleCalendar.js
@@ -194,7 +194,7 @@ git commit -m "refactor: extrai signState/verifyState pra módulo OAuth genéric
 - Create: `api/_lib/metaOAuth.js`
 - Test: `tests/unit/metaOAuth.spec.js`
 
-- [ ] **Step 1: Escrever o teste (vai falhar — o módulo ainda não existe)**
+- [x] **Step 1: Escrever o teste (vai falhar — o módulo ainda não existe)**
 
 ```js
 // tests/unit/metaOAuth.spec.js
@@ -305,14 +305,14 @@ test('computeMetaTokenExpiresAt calcula a partir de expires_in; rejeita valor in
 })
 ```
 
-- [ ] **Step 2: Rodar o teste pra confirmar que falha (módulo não existe ainda)**
+- [x] **Step 2: Rodar o teste pra confirmar que falha (módulo não existe ainda)**
 
 ```bash
 npx playwright test -c playwright.unit.config.js tests/unit/metaOAuth.spec.js
 ```
 Expected: FAIL — `Cannot find module '../../api/_lib/metaOAuth.js'`.
 
-- [ ] **Step 3: Implementar `api/_lib/metaOAuth.js`**
+- [x] **Step 3: Implementar `api/_lib/metaOAuth.js`**
 
 ```js
 // api/_lib/metaOAuth.js
@@ -410,14 +410,14 @@ export function computeMetaTokenExpiresAt(expiresInSeconds, now = Date.now()) {
 }
 ```
 
-- [ ] **Step 4: Rodar o teste de novo, confirmar que passa**
+- [x] **Step 4: Rodar o teste de novo, confirmar que passa**
 
 ```bash
 npx playwright test -c playwright.unit.config.js tests/unit/metaOAuth.spec.js
 ```
 Expected: todos os testes PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add api/_lib/metaOAuth.js tests/unit/metaOAuth.spec.js
@@ -431,7 +431,7 @@ git commit -m "feat: cliente OAuth do Meta (login do Facebook para empresas)"
 **Files:**
 - Modify: `api/whatsapp.js` (imports no topo, dispatcher em `handler`, novas funções)
 
-- [ ] **Step 1: Adicionar os imports novos no topo do arquivo**
+- [x] **Step 1: Adicionar os imports novos no topo do arquivo**
 
 Logo abaixo da linha `import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'` (linha 33), adicione:
 
@@ -451,7 +451,7 @@ import {
 } from './_lib/metaOAuth.js'
 ```
 
-- [ ] **Step 2: Registrar as 5 novas ações no dispatcher**
+- [x] **Step 2: Registrar as 5 novas ações no dispatcher**
 
 Em `handler`, logo após a linha `if (action === 'meta-sync') return handleMetaSync(req, res)` (linha 397), adicione:
 
@@ -463,7 +463,7 @@ Em `handler`, logo após a linha `if (action === 'meta-sync') return handleMetaS
   if (action === 'meta-disconnect') return handleMetaDisconnect(req, res)
 ```
 
-- [ ] **Step 3: Implementar as 5 funções**
+- [x] **Step 3: Implementar as 5 funções**
 
 Logo acima do comentário `// ---- Meta Ads: webhook de Lead Ads (leadgen) → cria oportunidade no pipeline ----` (linha 949), adicione:
 
@@ -602,14 +602,14 @@ async function handleMetaDisconnect(req, res) {
 
 ```
 
-- [ ] **Step 4: Confirmar que o arquivo ainda é um JS válido**
+- [x] **Step 4: Confirmar que o arquivo ainda é um JS válido**
 
 ```bash
 node --check api/whatsapp.js
 ```
 Expected: sem saída (sem erro de sintaxe).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add api/whatsapp.js
@@ -623,7 +623,7 @@ git commit -m "feat: rotas de conexão OAuth do Meta Ads em api/whatsapp.js"
 **Files:**
 - Modify: `api/whatsapp.js:983-993` (dentro de `handleMetaWebhook`)
 
-- [ ] **Step 1: Trocar a leitura da coluna e descriptografar**
+- [x] **Step 1: Trocar a leitura da coluna e descriptografar**
 
 Troque:
 ```js
@@ -662,14 +662,14 @@ Por:
 
 (O status `'configurado'` não existe mais nesse fluxo — era o estado "token colado mas não validado" da configuração manual, que deixou de existir. `'expirando'` entra porque um token perto do vencimento ainda é válido pra ler leads até expirar de verdade.)
 
-- [ ] **Step 2: Conferir visualmente que não sobrou nenhuma outra referência a `conn.access_token` (sem `_encrypted`) nessa função**
+- [x] **Step 2: Conferir visualmente que não sobrou nenhuma outra referência a `conn.access_token` (sem `_encrypted`) nessa função**
 
 ```bash
 grep -n "conn.access_token\b" api/whatsapp.js
 ```
 Expected: nenhuma ocorrência (só `conn.access_token_encrypted` deve aparecer).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add api/whatsapp.js
@@ -688,7 +688,7 @@ O cron diário que já roda `syncMetaInsights` (via `api/alerts/process.js`) é 
 vencimento — não precisa de cron novo (a spec exige isso explicitamente; não tinha ficado implementado
 em nenhuma outra task).
 
-- [ ] **Step 1: Escrever o teste da função pura de decisão (vai falhar — a função não existe ainda)**
+- [x] **Step 1: Escrever o teste da função pura de decisão (vai falhar — a função não existe ainda)**
 
 ```js
 // tests/unit/metaInsightsExpiry.spec.js
@@ -720,14 +720,14 @@ test('já vencido: vira "erro" (nunca usa token morto)', () => {
 })
 ```
 
-- [ ] **Step 2: Rodar o teste pra confirmar que falha**
+- [x] **Step 2: Rodar o teste pra confirmar que falha**
 
 ```bash
 npx playwright test -c playwright.unit.config.js tests/unit/metaInsightsExpiry.spec.js
 ```
 Expected: FAIL — `metaConnectionStatusAfterSync is not a function`.
 
-- [ ] **Step 3: Importar `decryptPayload` e adicionar a função pura**
+- [x] **Step 3: Importar `decryptPayload` e adicionar a função pura**
 
 No topo de `api/_lib/metaInsights.js`, adicione:
 ```js
@@ -750,14 +750,14 @@ export function metaConnectionStatusAfterSync(tokenExpiresAt, now = Date.now()) 
 }
 ```
 
-- [ ] **Step 4: Rodar o teste de novo, confirmar que passa**
+- [x] **Step 4: Rodar o teste de novo, confirmar que passa**
 
 ```bash
 npx playwright test -c playwright.unit.config.js tests/unit/metaInsightsExpiry.spec.js
 ```
 Expected: todos PASS.
 
-- [ ] **Step 5: Descriptografar o token e usar `metaConnectionStatusAfterSync` no fluxo real**
+- [x] **Step 5: Descriptografar o token e usar `metaConnectionStatusAfterSync` no fluxo real**
 
 Troque:
 ```js
@@ -825,7 +825,7 @@ Por:
 
 (`syncOwner` continua recebendo `conn.access_token` como antes, já descriptografado — nenhuma outra linha em `syncOwner` precisa mudar.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add api/_lib/metaInsights.js tests/unit/metaInsightsExpiry.spec.js
@@ -839,7 +839,7 @@ git commit -m "fix: sync do Meta descriptografa o token e avisa antes do vencime
 **Files:**
 - Create: `src/lib/metaOAuthClient.js`
 
-- [ ] **Step 1: Escrever o cliente (mesmo padrão de `src/lib/googleCalendarClient.js`)**
+- [x] **Step 1: Escrever o cliente (mesmo padrão de `src/lib/googleCalendarClient.js`)**
 
 ```js
 // src/lib/metaOAuthClient.js
@@ -877,7 +877,7 @@ export const selectMetaAssets = ({ pageId, adAccountId }) => request('meta-selec
 export const disconnectMeta = () => request('meta-disconnect', { method:'POST' })
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add src/lib/metaOAuthClient.js
@@ -891,7 +891,7 @@ git commit -m "feat: cliente frontend da conexão OAuth do Meta Ads"
 **Files:**
 - Modify: `src/components/MetaConnection.jsx` (reescrita completa do arquivo)
 
-- [ ] **Step 1: Substituir o conteúdo inteiro do arquivo**
+- [x] **Step 1: Substituir o conteúdo inteiro do arquivo**
 
 ```jsx
 import { useEffect, useState } from 'react'
@@ -1054,14 +1054,14 @@ export function MetaConnection() {
 }
 ```
 
-- [ ] **Step 2: Verificar que não há import não usado nem erro óbvio**
+- [x] **Step 2: Verificar que não há import não usado nem erro óbvio**
 
 ```bash
 node --check src/lib/metaOAuthClient.js
 ```
 (O `.jsx` não roda em `node --check` por causa do JSX; a validação real desse arquivo acontece no build, no Step 2 da Task 11.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/MetaConnection.jsx
@@ -1075,7 +1075,7 @@ git commit -m "feat: tela de conexão Meta Ads via OAuth, substitui campos manua
 **Files:**
 - Modify: `src/components/Settings.jsx:1, 45-47`
 
-- [ ] **Step 1: Importar `useLocation`**
+- [x] **Step 1: Importar `useLocation`**
 
 Linha 1, troque:
 ```js
@@ -1087,7 +1087,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 ```
 
-- [ ] **Step 2: Ler `?meta=` na URL e já abrir na aba certa**
+- [x] **Step 2: Ler `?meta=` na URL e já abrir na aba certa**
 
 Logo após a linha `const [tab, setTab] = useState('perfil')` (linha 46), adicione:
 ```js
@@ -1100,7 +1100,7 @@ Logo após a linha `const [tab, setTab] = useState('perfil')` (linha 46), adicio
 
 (Roda só na montagem — o próprio `MetaConnection.jsx`, na Task 8, já limpa o `?meta=` da URL depois de ler o resultado, então não precisa reagir a mudanças subsequentes aqui.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/components/Settings.jsx
@@ -1114,7 +1114,7 @@ git commit -m "fix: Configurações abre na aba Meta Ads ao voltar da conexão O
 **Files:**
 - Create: `tests/e2e/meta-connection.spec.js`
 
-- [ ] **Step 1: Escrever os testes**
+- [x] **Step 1: Escrever os testes**
 
 ```js
 import { expect, test } from '@playwright/test'
@@ -1215,14 +1215,14 @@ test('desconectar chama meta-disconnect e some o status conectado', async ({ pag
 })
 ```
 
-- [ ] **Step 2: Rodar os testes novos**
+- [x] **Step 2: Rodar os testes novos**
 
 ```bash
 npx playwright test tests/e2e/meta-connection.spec.js
 ```
 Expected: 6 PASS. Se o `getByRole('button', { name:'Meta Ads' })` não encontrar nada, confira o texto exato da aba em `Settings.jsx` (linha ~137, array de tabs) antes de ajustar o teste — não mude o texto do app pra fazer o teste passar sem necessidade.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/e2e/meta-connection.spec.js
@@ -1236,55 +1236,55 @@ git commit -m "test: cobertura e2e da conexão Meta Ads via OAuth"
 **Files:**
 - Modify: `CHANGELOG.md`, `PROJECT_MEMORY.md`, `docs/PENDENCIAS_CLIENTE.md`
 
-- [ ] **Step 1: Adicionar entrada no `CHANGELOG.md`**
+- [x] **Step 1: Adicionar entrada no `CHANGELOG.md`**
 
 Na seção `### Added` do bloco `[Unreleased]` mais recente, adicione:
 ```markdown
 - **Conexão Meta Ads via OAuth ("Continuar com Facebook")**: Configurações → Meta Ads deixa de pedir Ad Account ID/Page ID/token colados manualmente — o admin loga com o Facebook, autoriza, e a clínica fica conectada automaticamente (ou escolhe a Página/Conta certa, se autorizou mais de uma). Token sempre criptografado no servidor (nunca chega ao navegador); reutiliza o mesmo padrão OAuth já implementado pro Google Agenda. Aplicar `supabase/meta_oauth_connection_schema.sql` e cadastrar `META_APP_ID`, `META_CLIENT_CONFIG_ID`, `META_OAUTH_REDIRECT_URI` na Vercel antes do deploy. (`api/whatsapp.js`, `api/_lib/metaOAuth.js`, `api/_lib/oauthState.js`, `api/_lib/metaInsights.js`, `src/components/MetaConnection.jsx`, `src/components/Settings.jsx`, `src/lib/metaOAuthClient.js`, `supabase/meta_oauth_connection_schema.sql`.)
 ```
 
-- [ ] **Step 2: Adicionar entrada no `PROJECT_MEMORY.md`**
+- [x] **Step 2: Adicionar entrada no `PROJECT_MEMORY.md`**
 
 Na seção "Histórico recente (resumo)", adicione (data de hoje):
 ```markdown
 - 2026-10-21 (branch a definir): conexão Meta Ads passa a ser self-serve via OAuth ("Login do Facebook para empresas"), eliminando o processo manual que exigiria dar acesso de admin no Business Manager de cada clínica nova. Reaproveita o padrão já implementado pro Google Agenda (state assinada, token criptografado). App único da Zentri Tech reutilizado por todas as clínicas — nunca um app por cliente. Aplicar `supabase/meta_oauth_connection_schema.sql` e cadastrar `META_APP_ID`/`META_CLIENT_CONFIG_ID`/`META_OAUTH_REDIRECT_URI` na Vercel antes do deploy. Pendência: o App Review (`leads_retrieval`/`ads_read`) do app novo ainda não foi aprovado — enquanto isso, só funciona em modo desenvolvimento (contas/Páginas como testadoras).
 ```
 
-- [ ] **Step 3: Atualizar `docs/PENDENCIAS_CLIENTE.md`**
+- [x] **Step 3: Atualizar `docs/PENDENCIAS_CLIENTE.md`**
 
 Adicione um item novo na lista de pendências:
 ```markdown
-- [ ] **Aplicar `supabase/meta_oauth_connection_schema.sql`** antes do deploy da conexão Meta Ads via OAuth; cadastrar `META_APP_ID`, `META_CLIENT_CONFIG_ID` (da configuração "Login do Facebook para empresas") e `META_OAUTH_REDIRECT_URI` na Vercel
+- [x] **Aplicar `supabase/meta_oauth_connection_schema.sql`** antes do deploy da conexão Meta Ads via OAuth; cadastrar `META_APP_ID`, `META_CLIENT_CONFIG_ID` (da configuração "Login do Facebook para empresas") e `META_OAUTH_REDIRECT_URI` na Vercel
 ```
 
-- [ ] **Step 4: Rodar a suíte de testes unitários inteira**
+- [x] **Step 4: Rodar a suíte de testes unitários inteira**
 
 ```bash
 npm run test:unit
 ```
 Expected: todos PASS (inclui os novos `metaOAuth.spec.js` e o `googleCalendarServer.spec.js` já existente, intacto).
 
-- [ ] **Step 5: Rodar o build de produção**
+- [x] **Step 5: Rodar o build de produção**
 
 ```bash
 npm run build
 ```
 Expected: `✓ built` sem erro.
 
-- [ ] **Step 6: Rodar os e2e novos mais os de WhatsApp/Meta já existentes (garantir que nada quebrou por perto)**
+- [x] **Step 6: Rodar os e2e novos mais os de WhatsApp/Meta já existentes (garantir que nada quebrou por perto)**
 
 ```bash
 npx playwright test tests/e2e/meta-connection.spec.js tests/e2e/whatsapp-inbox.spec.js tests/e2e/whatsapp-evolution-settings.spec.js
 ```
 Expected: todos PASS.
 
-- [ ] **Step 7: Commit final**
+- [x] **Step 7: Commit final**
 
 ```bash
 git add CHANGELOG.md PROJECT_MEMORY.md docs/PENDENCIAS_CLIENTE.md
 git commit -m "docs: changelog e pendências da conexão Meta Ads via OAuth"
 ```
 
-- [ ] **Step 8: Seguir o fluxo de git do projeto**
+- [x] **Step 8: Seguir o fluxo de git do projeto**
 
 Esse plano inteiro deve rodar numa branch própria (`feat/meta-oauth-connection`, criada a partir da `main` atualizada — ver SYSTEM_RULES regra 8), nunca direto na `main`. Ao final de todas as tasks, reportar: nome da branch, lista de commits, e que falta (aplicar a migration no Supabase, cadastrar as 3 variáveis na Vercel, criar a configuração "Login do Facebook para empresas" no painel do Meta se ainda não existir, e então push/PR/merge — só quando pedido).
