@@ -981,7 +981,7 @@ async function handleMetaConnect(req, res) {
 
 async function handleMetaOAuthCallback(req, res) {
   const config = getMetaOAuthConfig()
-  const back = result => res.redirect(`${config.appUrl}/app/configuracoes?meta=${result}`)
+  const back = result => res.redirect(`${config.appUrl}/app/settings?meta=${result}`)
   try {
     if (req.query.error) return back('denied')
     const actorUserId = verifyState(String(req.query.state || ''), config.stateSecret)

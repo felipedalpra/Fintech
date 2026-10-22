@@ -121,15 +121,15 @@ export function MetaConnection() {
         {status === 'selecionando' && (
           <>
             <div>
-              <label style={s.label}>Página do Facebook</label>
-              <select style={s.select} value={selectedPage} onChange={e => setSelectedPage(e.target.value)}>
+              <label htmlFor="meta-page-select" style={s.label}>Página do Facebook</label>
+              <select id="meta-page-select" style={s.select} value={selectedPage} onChange={e => setSelectedPage(e.target.value)}>
                 <option value="">Selecione…</option>
                 {pending.pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={s.label}>Conta de Anúncios (opcional por enquanto)</label>
-              <select style={s.select} value={selectedAdAccount} onChange={e => setSelectedAdAccount(e.target.value)}>
+              <label htmlFor="meta-ad-account-select" style={s.label}>Conta de Anúncios (opcional por enquanto)</label>
+              <select id="meta-ad-account-select" style={s.select} value={selectedAdAccount} onChange={e => setSelectedAdAccount(e.target.value)}>
                 <option value="">Nenhuma</option>
                 {pending.adAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
