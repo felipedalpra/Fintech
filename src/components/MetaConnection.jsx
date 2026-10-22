@@ -1,63 +1,91 @@
 import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
-import { Btn, FInput } from './UI.jsx'
+import { Btn } from './UI.jsx'
+import { disconnectMeta, fetchMetaPendingAssets, selectMetaAssets, startMetaConnection } from '../lib/metaOAuthClient.js'
 
-// Conexão do Meta Ads (admin). O token da página é write-only. App Secret e Verify Token pertencem
-// ao app global e ficam exclusivamente nas variáveis de ambiente da Vercel.
-const WEBHOOK_URL = 'https://www.surgimetrics.com.br/api/whatsapp?action=meta-webhook'
+const RESULT_MESSAGES = {
+  connected:{ text:'Meta Ads conectado com sucesso.', tone:'ok' },
+  selecting:{ text:'Escolha a Página e a Conta de Anúncios abaixo para concluir a conexão.', tone:'warn' },
+  denied:{ text:'Conexão cancelada. Nenhuma permissão foi concedida.', tone:'warn' },
+  no_page:{ text:'Nenhuma Página foi autorizada. Tente novamente e marque pelo menos uma Página do Facebook.', tone:'bad' },
+  error:{ text:'Não foi possível conectar ao Meta. Tente novamente.', tone:'bad' },
+}
+
+const STATUS_META = {
+  conectado:{ label:'● Conectado', ok:true },
+  selecionando:{ label:'◐ Escolha a Página/Conta', ok:false },
+  expirando:{ label:'⚠ Expirando — reconecte', ok:false },
+  erro:{ label:'⚠ Erro de conexão', ok:false },
+  configurado:{ label:'◐ Reconexão necessária', ok:false },
+  desconectado:{ label:'○ Não conectado', ok:false },
+}
 
 export function MetaConnection() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { ownerId } = useUserRole()
   const effectiveUserId = ownerId || user?.id
 
   const [cfg, setCfg] = useState(null)
-  const [form, setForm] = useState({ ad_account_id: '', page_id: '', access_token: '' })
+  const [pending, setPending] = useState({ pages:[], adAccounts:[] })
+  const [selectedPage, setSelectedPage] = useState('')
+  const [selectedAdAccount, setSelectedAdAccount] = useState('')
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [saved, setSaved] = useState(false)
+  const [result, setResult] = useState(null)
 
   async function load() {
     setLoading(true); setError(null)
-    // NÃO seleciona access_token/app_secret (SELECT revogado).
-    const { data, error: err } = await supabase.from('meta_connections')
-      .select('ad_account_id, page_id, status').maybeSingle()
+    const { data, error:err } = await supabase.from('meta_connections')
+      .select('ad_account_id, page_id, status, token_expires_at').maybeSingle()
     if (err) { setError(err.message); setLoading(false); return }
     setCfg(data)
-    setForm(f => ({ ...f, ad_account_id: data?.ad_account_id || '', page_id: data?.page_id || '' }))
+    if (data?.status === 'selecionando') {
+      try {
+        const assets = await fetchMetaPendingAssets()
+        setPending({ pages:assets.pages || [], adAccounts:assets.adAccounts || [] })
+      } catch (e) { setError(e.message) }
+    }
     setLoading(false)
   }
+
   useEffect(() => { if (effectiveUserId) load() }, [effectiveUserId])
 
-  const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setSaved(false) }
-
-  async function save() {
-    if (saving) return
-    setSaving(true); setError(null)
-    const hasStoredToken = cfg?.status === 'configurado' || cfg?.status === 'conectado'
-    const hasPageToken = Boolean(form.access_token.trim()) || hasStoredToken
-    const payload = {
-      user_id: effectiveUserId,
-      ad_account_id: form.ad_account_id.trim() || null,
-      page_id: form.page_id.trim() || null,
-      status: (form.page_id.trim() && hasPageToken)
-        ? (cfg?.status === 'conectado' ? 'conectado' : 'configurado')
-        : 'desconectado',
-      updated_at: new Date().toISOString(),
-    }
-    // Só grava o token se foi digitado (não apaga o existente ao salvar novamente).
-    if (form.access_token.trim()) payload.access_token = form.access_token.trim()
-
-    const { error: err } = await supabase.from('meta_connections').upsert(payload, { onConflict: 'user_id' })
-    setSaving(false)
-    if (err) { setError(err.message); return }
-    setForm(f => ({ ...f, access_token: '' })) // limpa o segredo do formulário
-    setSaved(true)
+  useEffect(() => {
+    const code = new URLSearchParams(location.search).get('meta')
+    if (!code) return
+    setResult(RESULT_MESSAGES[code] || null)
+    navigate(location.pathname, { replace:true })
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
+
+  async function run(action) {
+    setBusy(true); setError(null)
+    try { await action() } catch (e) { setError(e.message || 'Não foi possível concluir a ação.') }
+    finally { setBusy(false) }
+  }
+
+  async function connect() {
+    const { url } = await startMetaConnection()
+    window.location.assign(url)
+  }
+
+  async function confirmSelection() {
+    if (!selectedPage) { setError('Selecione uma Página.'); return }
+    await selectMetaAssets({ pageId:selectedPage, adAccountId:selectedAdAccount || null })
+    await load()
+  }
+
+  async function disconnect() {
+    await disconnectMeta()
+    await load()
   }
 
   if (loading) return <div style={{ color: C.textSub, fontSize: 13, padding: 20 }}>Carregando…</div>
@@ -66,68 +94,64 @@ export function MetaConnection() {
     intro: { fontSize: 13, color: C.textSub, marginBottom: 16, lineHeight: 1.45 },
     card: { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 12 },
     label: { fontSize: 11, fontWeight: 700, color: C.textDim, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4, display: 'block' },
-    mono: { fontFamily: 'ui-monospace, monospace', fontSize: 12, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', color: C.text, wordBreak: 'break-all' },
     note: { fontSize: 11.5, color: C.textDim, lineHeight: 1.5 },
     status: ok => ({ fontSize: 12, fontWeight: 700, color: ok ? (C.green || '#16a34a') : C.textSub }),
+    select: { width: '100%', boxSizing: 'border-box', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px', color: C.text, fontSize: 13 },
   }
+  const toneColor = { ok:C.green || '#16a34a', warn:C.yellow || '#eab308', bad:C.red || '#ef4444' }
   const status = cfg?.status || 'desconectado'
-  const statusMeta = {
-    conectado: { label: '● Conectado e validado', ok: true },
-    configurado: { label: '◐ Configuração salva', ok: false },
-    erro: { label: '⚠ Erro de conexão', ok: false },
-    desconectado: { label: '○ Aguardando configuração', ok: false },
-  }[status] || { label: '○ Aguardando configuração', ok: false }
+  const statusMeta = STATUS_META[status] || STATUS_META.desconectado
 
   return (
     <div>
       <div style={s.intro}>
         Conecte os anúncios do Meta (Facebook/Instagram) da clínica. Os <strong>leads dos formulários
         (Lead Ads) entram automaticamente no funil</strong> em "Primeiro Contato", etiquetados com a
-        campanha de origem. (Métricas de campanha e atribuição até a receita vêm nas próximas fases.)
+        campanha de origem.
       </div>
       {error && <div style={{ color: C.red || '#ef4444', fontSize: 12, marginBottom: 10 }}>{error}</div>}
+      {result && <div style={{ color: toneColor[result.tone], fontSize: 12, marginBottom: 10 }}>{result.text}</div>}
 
       <div style={s.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <strong style={{ fontSize: 14, color: C.text }}>Credenciais</strong>
+          <strong style={{ fontSize: 14, color: C.text }}>Conexão</strong>
           <span style={s.status(statusMeta.ok)}>{statusMeta.label}</span>
         </div>
-        <FInput label="Ad Account ID (act_…)" value={form.ad_account_id} onChange={v => set('ad_account_id', v)} placeholder="act_123456789" />
-        <FInput label="Page ID (página do Facebook)" value={form.page_id} onChange={v => set('page_id', v)} placeholder="ID da página" />
-        <div>
-          <label style={s.label}>Access token da página (write-only)</label>
-          <input type="password" value={form.access_token} onChange={e => set('access_token', e.target.value)}
-            placeholder={cfg ? '•••• (deixe em branco para manter)' : 'colar token'} style={{ ...s.mono, width: '100%', boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <Btn onClick={save} disabled={saving}>{saving ? 'Salvando…' : 'Salvar conexão'}</Btn>
-          {saved && <span style={{ fontSize: 12, color: C.green || '#16a34a' }}>Salvo ✓</span>}
-        </div>
-      </div>
 
-      <div style={s.card}>
-        <strong style={{ fontSize: 14, color: C.text }}>Webhook (configurar no app do Meta)</strong>
-        <div>
-          <label style={s.label}>URL de callback</label>
-          <div style={s.mono}>{WEBHOOK_URL}</div>
-        </div>
-        <div style={s.note}>
-          No Meta for Developers → seu app → Webhooks → objeto <strong>Page</strong>, campo
-          <strong> leadgen</strong>: use a URL acima. O Verify Token e o App Secret ficam somente
-          no servidor e serão configurados na Vercel, nunca nesta tela.
-          ⚠️ Ler leads reais exige <strong>App Review + Verificação de Negócio</strong> no Meta
-          (permissões <code>leads_retrieval</code> e <code>ads_read</code>) — processo de semanas; inicie em paralelo.
-        </div>
-      </div>
+        {status === 'selecionando' && (
+          <>
+            <div>
+              <label style={s.label}>Página do Facebook</label>
+              <select style={s.select} value={selectedPage} onChange={e => setSelectedPage(e.target.value)}>
+                <option value="">Selecione…</option>
+                {pending.pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={s.label}>Conta de Anúncios (opcional por enquanto)</label>
+              <select style={s.select} value={selectedAdAccount} onChange={e => setSelectedAdAccount(e.target.value)}>
+                <option value="">Nenhuma</option>
+                {pending.adAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <Btn onClick={() => run(confirmSelection)} disabled={busy}>{busy ? 'Salvando…' : 'Confirmar seleção'}</Btn>
+          </>
+        )}
 
-      <div style={s.card}>
-        <strong style={{ fontSize: 14, color: C.text }}>Ativação futura no servidor</strong>
-        <div style={s.note}>
-          A estrutura está preparada. Para ativar, cadastre na Vercel as variáveis
-          <code> META_VERIFY_TOKEN</code>, <code> META_APP_SECRET</code> e
-          <code> META_GRAPH_VERSION</code>, conclua a revisão do app e valide a assinatura do webhook.
-          Enquanto isso não acontecer, “Configuração salva” não será apresentada como conexão validada.
-        </div>
+        {status !== 'selecionando' && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {status === 'conectado'
+              ? <Btn onClick={() => run(disconnect)} disabled={busy}>{busy ? 'Aguarde…' : 'Desconectar'}</Btn>
+              : <Btn onClick={() => run(connect)} disabled={busy}>{busy ? 'Redirecionando…' : 'Continuar com Facebook'}</Btn>}
+          </div>
+        )}
+
+        {status === 'conectado' && cfg?.token_expires_at && (
+          <div style={s.note}>
+            Token válido até {new Date(cfg.token_expires_at).toLocaleDateString('pt-BR')}.
+            Perto do vencimento, um aviso aparece aqui pedindo reconexão.
+          </div>
+        )}
       </div>
     </div>
   )
