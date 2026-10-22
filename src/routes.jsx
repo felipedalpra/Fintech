@@ -6,6 +6,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
 import { FinanceWorkspace } from './pages/FinanceWorkspace.jsx'
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage.jsx'
 import { TermsOfServicePage } from './pages/TermsOfServicePage.jsx'
+import { PublicClinicalIntake } from './pages/PublicClinicalIntake.jsx'
 import { LandingPage } from './landing/LandingPage.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
@@ -38,6 +39,7 @@ export function AppRoutes() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/privacidade" element={<PrivacyPolicyPage />} />
         <Route path="/termos" element={<TermsOfServicePage />} />
+        <Route path="/anamnese/:token" element={<PublicClinicalIntake />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppEntryRedirect />} />
           <Route path="/app/:page" element={<FinanceWorkspace />} />
