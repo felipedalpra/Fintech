@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { C } from '../theme.js'
 import { Btn, Card, FInput } from './UI.jsx'
 import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClient.js'
@@ -44,6 +45,11 @@ export function Settings({ google }) {
   const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
   const { role, clinicId, isOwner } = useUserRole()
   const [tab, setTab] = useState('perfil')
+  const location = useLocation()
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('meta')) setTab('meta')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [profile, setProfile] = useState(EMPTY_PROFILE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
