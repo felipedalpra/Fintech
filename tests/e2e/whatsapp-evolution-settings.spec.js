@@ -200,3 +200,47 @@ test('avisa quando o QR expira sem ninguém escanear, sem travar a tela em "cone
   // A tela não força o fechamento do QR; o admin ainda pode gerar outro pelo mesmo botão.
   await expect(page.getByRole('button', { name:'Conectar / novo QR' })).toBeEnabled()
 })
+
+test('remove um número da lista sem apagar nada e permite reconectar depois', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
+
+  let number = {
+    id:'number-evolution-1', label:'Jonas Concierge', phone:'5511999990000', active:false,
+    assigned_user_id:null, provider:'evolution', provider_instance_name:'surgimetrics_e2e_789',
+    connection_state:'close', archived_at:null,
+  }
+  let archivePayload = null
+  await page.route('**/rest/v1/**', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:'{"profile":{}}' }))
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{}' }))
+  await page.route('**/api/whatsapp?action=list-numbers', route => route.fulfill({
+    status:200, contentType:'application/json', body:JSON.stringify({ numbers:[number], pendingEvents:[] }),
+  }))
+  await page.route('**/api/whatsapp?action=set-number-archived', async route => {
+    archivePayload = route.request().postDataJSON()
+    number = { ...number, archived_at: archivePayload.archived ? '2026-10-22T20:00:00.000Z' : null }
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ ok:true, archived:archivePayload.archived }) })
+  })
+
+  await page.goto('/app/settings')
+  await page.getByRole('button', { name:'WhatsApp', exact:true }).click()
+  await expect(page.getByText('Jonas Concierge')).toBeVisible()
+
+  await page.getByRole('button', { name:'Remover conexão' }).click()
+  await expect(page.getByRole('heading', { name:'Remover conexão' })).toBeVisible()
+  await expect(page.getByText('a sessão do WhatsApp será desconectada')).toBeVisible()
+  await page.getByRole('button', { name:'Remover', exact:true }).click()
+
+  await expect.poll(() => archivePayload).toEqual({ whatsappNumberId:'number-evolution-1', archived:true })
+  // Some da lista principal — nada na tela indica mais o número ativo/removido por engano.
+  await expect(page.getByRole('button', { name:'Remover conexão' })).toHaveCount(0)
+  await expect(page.getByText('foi removido da lista')).toBeVisible()
+
+  await page.getByText('Números removidos (1)').click()
+  await expect(page.getByText('Jonas Concierge', { exact:true })).toBeVisible()
+  await page.getByRole('button', { name:'Reconectar' }).click()
+
+  await expect.poll(() => archivePayload).toEqual({ whatsappNumberId:'number-evolution-1', archived:false })
+  await expect(page.getByText('voltou pra lista')).toBeVisible()
+  await expect(page.getByRole('button', { name:'Conectar / novo QR' })).toBeVisible()
+})

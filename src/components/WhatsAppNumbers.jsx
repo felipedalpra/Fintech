@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
-import { Btn, FInput } from './UI.jsx'
+import { Btn, ConfirmModal, FInput } from './UI.jsx'
 
 // Gerência dos números de WhatsApp Business da clínica (admin). Evolution usa
 // chave global somente no backend; Z-API permanece disponível para rollback.
@@ -29,6 +29,9 @@ export function WhatsAppNumbers() {
   const [qrCode, setQrCode] = useState(null)
   const [pendingEvents, setPendingEvents] = useState([])
   const [replayBusy, setReplayBusy] = useState(null)
+  const [archiveBusy, setArchiveBusy] = useState(null)
+  const [confirmArchive, setConfirmArchive] = useState(null)
+  const [showArchived, setShowArchived] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -241,6 +244,38 @@ export function WhatsAppNumbers() {
     }
   }
 
+  // Remove o número da lista principal sem apagar cadastro, mensagens ou histórico —
+  // a sessão na Evolution é desconectada, mas o número pode ser restaurado depois e
+  // reconectado pelo fluxo normal de "Conectar / novo QR".
+  async function archiveNumber(n) {
+    setArchiveBusy(n.id)
+    setMsg(null)
+    try {
+      await whatsappApi('set-number-archived', { whatsappNumberId:n.id, archived:true })
+      setConfirmArchive(null)
+      setMsg({ type:'success', text:`"${n.label}" foi removido da lista. Clique em "Números removidos" para reconectar quando quiser.` })
+      await load()
+    } catch (error) {
+      setMsg({ type:'error', text:error.message })
+    } finally {
+      setArchiveBusy(null)
+    }
+  }
+
+  async function restoreNumber(n) {
+    setArchiveBusy(n.id)
+    setMsg(null)
+    try {
+      await whatsappApi('set-number-archived', { whatsappNumberId:n.id, archived:false })
+      setMsg({ type:'success', text:`"${n.label}" voltou pra lista. Use "Conectar / novo QR" pra reconectar.` })
+      await load()
+    } catch (error) {
+      setMsg({ type:'error', text:error.message })
+    } finally {
+      setArchiveBusy(null)
+    }
+  }
+
   async function replayPending(n) {
     const events = pendingEvents.filter(event => event.whatsapp_number_id === n.id)
     // Não bloqueia por número inativo: um connection.update preso é exatamente o que
@@ -269,26 +304,33 @@ export function WhatsAppNumbers() {
   }
 
   const s = {
-    item: { display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, background: C.bg, marginBottom: 10 },
+    item: { display: 'flex', flexDirection: 'column', gap: 14, padding: '18px 20px', borderRadius: 14, border: `1px solid ${C.border}`, background: C.bg, marginBottom: 14 },
     row: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
-    label: { fontSize: 13, fontWeight: 700, color: C.text },
+    identityRow: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+    actionsRow: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', paddingTop: 2 },
+    dangerRow: { display: 'flex', justifyContent: 'flex-end', paddingTop: 12, marginTop: 2, borderTop: `1px solid ${C.border}` },
+    label: { fontSize: 14, fontWeight: 700, color: C.text },
     phone: { fontSize: 12, color: C.textSub },
     hook: { fontSize: 11, color: C.textDim, wordBreak: 'break-all', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 8px', flex: 1, minWidth: 220 },
-    tagOn: { fontSize: 10, fontWeight: 700, color: '#10b981', border: '1px solid #10b98155', borderRadius: 6, padding: '1px 6px' },
-    tagOff: { fontSize: 10, fontWeight: 700, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '1px 6px' },
+    tagOn: { fontSize: 10, fontWeight: 700, color: '#10b981', border: '1px solid #10b98155', borderRadius: 6, padding: '2px 7px' },
+    tagOff: { fontSize: 10, fontWeight: 700, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '2px 7px' },
     linkBtn: { background: 'none', border: 'none', color: C.accent, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 0 },
     assign: { fontSize: 12, padding: '5px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit' },
-    unassignedTag: { fontSize: 10, fontWeight: 700, color: C.yellow || '#f59e0b', border: `1px solid ${(C.yellow || '#f59e0b')}55`, borderRadius: 6, padding: '1px 6px' },
-    connectionOk: { fontSize: 10, fontWeight: 700, color: '#10b981', border: '1px solid #10b98155', borderRadius: 6, padding: '1px 6px' },
-    connectionError: { fontSize: 10, fontWeight: 700, color: C.red || '#ef4444', border: `1px solid ${(C.red || '#ef4444')}55`, borderRadius: 6, padding: '1px 6px' },
-    editor: { marginTop: 6, padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, display: 'flex', flexDirection: 'column', gap: 10 },
-    providerTag: { fontSize: 10, fontWeight: 700, color: C.accent, border: `1px solid ${C.accent}55`, borderRadius: 6, padding: '1px 6px' },
+    unassignedTag: { fontSize: 10, fontWeight: 700, color: C.yellow || '#f59e0b', border: `1px solid ${(C.yellow || '#f59e0b')}55`, borderRadius: 6, padding: '2px 7px' },
+    connectionOk: { fontSize: 10, fontWeight: 700, color: '#10b981', border: '1px solid #10b98155', borderRadius: 6, padding: '2px 7px' },
+    connectionError: { fontSize: 10, fontWeight: 700, color: C.red || '#ef4444', border: `1px solid ${(C.red || '#ef4444')}55`, borderRadius: 6, padding: '2px 7px' },
+    editor: { padding: 12, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, display: 'flex', flexDirection: 'column', gap: 10 },
+    providerTag: { fontSize: 10, fontWeight: 700, color: C.accent, border: `1px solid ${C.accent}55`, borderRadius: 6, padding: '2px 7px' },
     qrBox: { margin: '14px 0', padding: 16, borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' },
+    sectionLabel: { fontSize: 12, fontWeight: 700, color: C.textSub, marginTop: 24, marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 },
+    archivedItem: { display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', padding: '12px 16px', borderRadius: 12, border: `1px dashed ${C.border}`, background: 'transparent', marginBottom: 8 },
   }
 
   const qrImage = qrCode?.base64
     ? (String(qrCode.base64).startsWith('data:image/') ? qrCode.base64 : `data:image/png;base64,${qrCode.base64}`)
     : null
+  const visibleNumbers = numbers.filter(n => !n.archived_at)
+  const archivedNumbers = numbers.filter(n => n.archived_at)
 
   return (
     <div>
@@ -316,52 +358,28 @@ export function WhatsAppNumbers() {
       )}
 
       {loading ? <div style={{ color: C.textSub, fontSize: 14 }}>Carregando...</div>
-        : numbers.length === 0 ? <div style={{ color: C.textDim, fontSize: 14, marginBottom: 18 }}>Nenhum número cadastrado ainda.</div>
-        : numbers.map(n => {
+        : visibleNumbers.length === 0 ? <div style={{ color: C.textDim, fontSize: 14, marginBottom: 18 }}>Nenhum número cadastrado ainda.</div>
+        : visibleNumbers.map(n => {
           const numberPending = pendingEvents.filter(event => event.whatsapp_number_id === n.id)
           return (
             <div key={n.id} style={s.item}>
-              <div style={s.row}>
+              <div style={s.identityRow}>
                 <span style={s.label}>{n.label}</span>
                 {n.phone && <span style={s.phone}>{n.phone}</span>}
                 <span style={s.providerTag}>{n.provider === 'evolution' ? 'Evolution' : 'Z-API'}</span>
                 <span style={n.active ? s.tagOn : s.tagOff}>{n.active ? 'ativo' : 'inativo'}</span>
-                <span style={{ flex: 1 }} />
-                <button style={s.linkBtn} disabled={connectionBusy === n.id} onClick={() => checkConnection(n)}>{connectionBusy === n.id ? 'Testando...' : 'Testar conexão'}</button>
-                {n.provider === 'evolution'
-                  ? <button style={s.linkBtn} disabled={connectionBusy === n.id} onClick={() => connectEvolution(n)}>{connectionBusy === n.id ? 'Gerando...' : 'Conectar / novo QR'}</button>
-                  : <button style={s.linkBtn} onClick={() => editingId === n.id ? setEditingId(null) : beginEdit(n)}>{editingId === n.id ? 'Cancelar edição' : 'Editar conexão'}</button>}
-                <button style={s.linkBtn} onClick={() => toggleActive(n)}>{n.active ? 'Desativar' : 'Ativar'}</button>
-              </div>
-              <div style={s.row}>
-                <code style={s.hook}>{webhookUrl(n)}</code>
-                <button style={s.linkBtn} onClick={() => copy(webhookUrl(n))}>Copiar URL de webhook</button>
-              </div>
-              <div style={s.row}>
-                <span style={{ fontSize: 12, color: C.textSub }}>Responsável:</span>
-                <select style={s.assign} value={n.assigned_user_id || ''} onChange={e => assign(n.id, e.target.value)}>
-                  <option value="">— sem responsável (só admin vê)</option>
-                  {members.map(m => <option key={m.user_id} value={m.user_id}>{m.member_email} · {m.role}</option>)}
-                </select>
-                {!n.assigned_user_id && <span style={s.unassignedTag}>só admin</span>}
                 {connectionStatus[n.id] && <span style={connectionStatus[n.id].ok ? s.connectionOk : s.connectionError}>{connectionStatus[n.id].text}</span>}
                 {!connectionStatus[n.id] && n.provider === 'evolution' && <span style={n.connection_state === 'open' ? s.connectionOk : s.connectionError}>{n.connection_state === 'open' ? 'conectado' : n.connection_state === 'connecting' ? 'aguardando QR' : 'conferir conexão'}</span>}
               </div>
-              {n.provider === 'evolution' && (n.last_health_at || n.last_webhook_at) && (
-                <div style={{ fontSize: 11, color: C.textDim, lineHeight: 1.5 }}>
-                  {n.last_health_at && <>Conexão conferida em {new Date(n.last_health_at).toLocaleString('pt-BR')}.</>}
-                  {n.last_health_at && n.last_webhook_at && ' '}
-                  {n.last_webhook_at && <>Último evento recebido em {new Date(n.last_webhook_at).toLocaleString('pt-BR')}{n.last_webhook_event ? ` (${n.last_webhook_event})` : ''}.</>}
-                </div>
-              )}
-              {numberPending.length > 0 && (
-                <div style={{ ...s.row, color:C.textSub, fontSize:12 }}>
-                  <span>{numberPending.length} evento(s) aguardando reprocessamento.</span>
-                  <button style={s.linkBtn} disabled={replayBusy === n.id} onClick={() => replayPending(n)}>
-                    {replayBusy === n.id ? 'Reprocessando...' : 'Reprocessar agora'}
-                  </button>
-                </div>
-              )}
+
+              <div style={s.actionsRow}>
+                <Btn variant="ghost" disabled={connectionBusy === n.id} onClick={() => checkConnection(n)}>{connectionBusy === n.id ? 'Testando...' : 'Testar conexão'}</Btn>
+                {n.provider === 'evolution'
+                  ? <Btn variant="primary" disabled={connectionBusy === n.id} onClick={() => connectEvolution(n)}>{connectionBusy === n.id ? 'Gerando...' : 'Conectar / novo QR'}</Btn>
+                  : <Btn variant="ghost" onClick={() => editingId === n.id ? setEditingId(null) : beginEdit(n)}>{editingId === n.id ? 'Cancelar edição' : 'Editar conexão'}</Btn>}
+                <Btn variant="ghost" onClick={() => toggleActive(n)}>{n.active ? 'Desativar' : 'Ativar'}</Btn>
+              </div>
+
               {editingId === n.id && n.provider !== 'evolution' && (
                 <div style={s.editor}>
                   <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.45 }}>
@@ -375,9 +393,71 @@ export function WhatsAppNumbers() {
                   </div>
                 </div>
               )}
+
+              <div style={s.row}>
+                <code style={s.hook}>{webhookUrl(n)}</code>
+                <button style={s.linkBtn} onClick={() => copy(webhookUrl(n))}>Copiar URL de webhook</button>
+              </div>
+
+              <div style={s.row}>
+                <span style={{ fontSize: 12, color: C.textSub }}>Responsável:</span>
+                <select style={s.assign} value={n.assigned_user_id || ''} onChange={e => assign(n.id, e.target.value)}>
+                  <option value="">— sem responsável (só admin vê)</option>
+                  {members.map(m => <option key={m.user_id} value={m.user_id}>{m.member_email} · {m.role}</option>)}
+                </select>
+                {!n.assigned_user_id && <span style={s.unassignedTag}>só admin</span>}
+              </div>
+
+              {n.provider === 'evolution' && (n.last_health_at || n.last_webhook_at) && (
+                <div style={{ fontSize: 11, color: C.textDim, lineHeight: 1.5 }}>
+                  {n.last_health_at && <>Conexão conferida em {new Date(n.last_health_at).toLocaleString('pt-BR')}.</>}
+                  {n.last_health_at && n.last_webhook_at && ' '}
+                  {n.last_webhook_at && <>Último evento recebido em {new Date(n.last_webhook_at).toLocaleString('pt-BR')}{n.last_webhook_event ? ` (${n.last_webhook_event})` : ''}.</>}
+                </div>
+              )}
+
+              {numberPending.length > 0 && (
+                <div style={{ ...s.row, color:C.textSub, fontSize:12 }}>
+                  <span>{numberPending.length} evento(s) aguardando reprocessamento.</span>
+                  <button style={s.linkBtn} disabled={replayBusy === n.id} onClick={() => replayPending(n)}>
+                    {replayBusy === n.id ? 'Reprocessando...' : 'Reprocessar agora'}
+                  </button>
+                </div>
+              )}
+
+              <div style={s.dangerRow}>
+                <Btn variant="danger" disabled={archiveBusy === n.id} onClick={() => setConfirmArchive(n)}>Remover conexão</Btn>
+              </div>
             </div>
           )
         })}
+
+      {archivedNumbers.length > 0 && (
+        <div>
+          <div style={s.sectionLabel} onClick={() => setShowArchived(v => !v)}>
+            {showArchived ? '▾' : '▸'} Números removidos ({archivedNumbers.length})
+          </div>
+          {showArchived && archivedNumbers.map(n => (
+            <div key={n.id} style={s.archivedItem}>
+              <span style={{ ...s.label, color: C.textSub }}>{n.label}</span>
+              {n.phone && <span style={s.phone}>{n.phone}</span>}
+              <span style={s.providerTag}>{n.provider === 'evolution' ? 'Evolution' : 'Z-API'}</span>
+              <span style={{ flex: 1 }} />
+              <Btn variant="ghost" disabled={archiveBusy === n.id} onClick={() => restoreNumber(n)}>{archiveBusy === n.id ? 'Restaurando...' : 'Reconectar'}</Btn>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ConfirmModal
+        open={Boolean(confirmArchive)}
+        onClose={() => setConfirmArchive(null)}
+        onConfirm={() => archiveNumber(confirmArchive)}
+        title="Remover conexão"
+        message={confirmArchive ? `"${confirmArchive.label}" vai sair da lista e a sessão do WhatsApp será desconectada. O histórico de mensagens continua guardado e você pode reconectar esse número depois em "Números removidos".` : ''}
+        confirmLabel="Remover"
+        busy={archiveBusy === confirmArchive?.id}
+      />
 
       <form onSubmit={add} style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 520 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Adicionar número</div>
