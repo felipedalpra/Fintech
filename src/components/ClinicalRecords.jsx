@@ -4,6 +4,7 @@ import { Btn } from './UI.jsx'
 import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
 import { ClinicalDocuments } from './ClinicalDocuments.jsx'
 import { ClinicalIntake } from './ClinicalIntake.jsx'
+import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -25,7 +26,7 @@ const CLINICAL_TABS = [
   { id:'summary', label:'Anamnese' },
   { id:'intake', label:'Pré-anamnese e termos' },
   { id:'prescriptions', label:'Exames e receitas' },
-  { id:'files', label:'Fotos e documentos', planned:true },
+  { id:'files', label:'Fotos e documentos' },
   { id:'treatment', label:'Plano e retorno', planned:true },
 ]
 
@@ -331,7 +332,7 @@ export function ClinicalRecords({ data }) {
                     canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
                   />
                 )}
-                {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
+                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}
                 {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
               </div>
             </>

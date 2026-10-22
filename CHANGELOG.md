@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-22 (122)
+### Added
+- **Fotos e documentos clínicos privados**: a ficha do paciente passa a receber JPEG, PNG, WebP e PDF com data, região, procedimento, observação e etapa antes/depois. O navegador calcula SHA-256 e envia o arquivo diretamente para um bucket privado depois que o banco reserva um caminho canônico por clínica/paciente; a confirmação confere tamanho e MIME observados pelo Storage. A galeria oferece busca, filtros, visualização por URLs assinadas curtas em lote e comparação lado a lado, sem função serverless nova. (`src/components/ClinicalAssets.jsx`, `src/lib/clinicalAssets.js`, `supabase/clinical_assets_schema.sql`.)
+
+### Changed
+- **Aceite de imagem vinculado sem ampliar autorização**: uma foto pode apontar para um aceite de uso de imagem já registrado para o mesmo paciente, mas a interface deixa explícito que esse vínculo não autoriza divulgação externa além do texto efetivamente aceito. A abertura do ativo é registrada antes da geração da URL temporária. (`docs/superpowers/specs/2026-10-22-clinical-assets-design.md`.)
+
+### Fixed
+- **Arquivo clínico sem sobrescrita nem exclusão física**: upload usa `upsert:false`, metadados e caminho tornam-se imutáveis, falhas parciais ficam visíveis para nova confirmação e arquivar/restaurar preserva o objeto original. RLS e políticas do Storage isolam clínica e paciente; testes unitários, E2E e PostgreSQL descartável cobrem persistência após recarregar, vínculo de consentimento, auditoria, transições, cross-clínica e reaplicação da migration. (`tests/unit/clinicalAssets.spec.js`, `tests/e2e/clinical-assets.spec.js`, `tests/postgres/clinicalAssets.spec.sql`.)
+
 ## [Unreleased] - 2026-10-21 (121)
 ### Added
 - **Pré-anamnese pública e consentimentos versionados**: a ficha clínica ganha um construtor de formulários personalizados, publicação imutável de TCLE/termos, convite temporário por link opaco e página pública responsiva. O token possui 256 bits, fica persistido somente como SHA-256, expira em até sete dias, pode ser revogado e é consumido atomicamente junto da resposta e dos aceites. A migration aditiva mantém RLS por clínica e não cria função serverless. (`supabase/clinical_intake_consents_schema.sql`, `src/components/ClinicalIntake.jsx`, `src/pages/PublicClinicalIntake.jsx`, `src/lib/clinicalIntake.js`.)
