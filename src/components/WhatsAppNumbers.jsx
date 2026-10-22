@@ -166,6 +166,43 @@ export function WhatsAppNumbers() {
     }
   }
 
+  // Com o QR aberto, acompanha a conexão sozinho até virar "open" (ou até o QR
+  // expirar) — sem isso a tela fica presa em "aguardando QR" até alguém recarregar.
+  useEffect(() => {
+    if (!qrCode?.numberId) return undefined
+    const numberId = qrCode.numberId
+    const POLL_MS = 3000
+    const MAX_ATTEMPTS = 40 // ~2min, cobre a janela normal de validade do QR
+    let attempts = 0
+    let cancelled = false
+
+    const interval = setInterval(async () => {
+      attempts += 1
+      try {
+        const result = await whatsappApi('list-numbers', {})
+        if (cancelled) return
+        setNumbers(result.numbers || [])
+        setPendingEvents(result.pendingEvents || [])
+        const updated = (result.numbers || []).find(x => x.id === numberId)
+        if (updated?.active && updated.connection_state === 'open') {
+          cancelled = true
+          clearInterval(interval)
+          setConnectionStatus(prev => ({ ...prev, [numberId]: { ok:true, text:'Conectado · celular sincronizado' } }))
+          setMsg({ type:'success', text:`"${updated.label}" conectado com sucesso.` })
+          setQrCode(null)
+          return
+        }
+      } catch { /* tenta de novo no próximo ciclo; erro de rede pontual não encerra o acompanhamento */ }
+      if (attempts >= MAX_ATTEMPTS && !cancelled) {
+        cancelled = true
+        clearInterval(interval)
+        setConnectionStatus(prev => ({ ...prev, [numberId]: { ok:false, text:'QR Code expirado. Clique em "Conectar / novo QR" para gerar outro.' } }))
+      }
+    }, POLL_MS)
+
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [qrCode?.numberId])
+
   async function saveConnection(n) {
     if (!editInstanceUrl.trim() || !editApiToken.trim()) {
       setMsg({ type: 'error', text: 'Informe novamente a URL da instância e o Client-Token.' })
@@ -206,7 +243,8 @@ export function WhatsAppNumbers() {
 
   async function replayPending(n) {
     const events = pendingEvents.filter(event => event.whatsapp_number_id === n.id)
-    if (!n.active) { setMsg({ type:'error', text:'Ative e reconecte o número antes de reprocessar os eventos.' }); return }
+    // Não bloqueia por número inativo: um connection.update preso é exatamente o que
+    // destrava a reconexão (o backend decide, por tipo de evento, o que pode seguir).
     setReplayBusy(n.id)
     setMsg(null)
     try {
