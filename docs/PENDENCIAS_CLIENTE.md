@@ -59,6 +59,13 @@ Este é o pacote que a Dra. Vitoria / Augusto precisam enviar ou confirmar para 
 - [x] **Aplicar no Supabase** a correção `supabase/clinical_anamnesis_review_fixes.sql`, que adiciona idempotência às assinaturas — aplicada em 2026-10-20
 - [ ] Homologar com a Dra. Vitoria os campos obrigatórios e os modelos específicos por procedimento; até essa validação, a tela usa o núcleo clínico geral baseado em CFM/SBIS
 
+### Conexão Meta Ads via OAuth
+- [ ] **Aplicar no Supabase** a migration aditiva `supabase/meta_oauth_connection_schema.sql` depois de `supabase/meta_integration_schema.sql`
+- [ ] **Cadastrar na Vercel (Production)**: `META_APP_ID`, `META_CLIENT_CONFIG_ID`, `META_OAUTH_REDIRECT_URI` (reaproveita `META_APP_SECRET`/`META_GRAPH_VERSION` já cadastradas)
+- [ ] **Criar a configuração "Login do Facebook para empresas"** no painel do app do Meta (Casos de uso → Login do Facebook para empresas → Criar configuração), com as permissões `pages_show_list`, `pages_manage_metadata`, `pages_read_engagement`, `leads_retrieval`, `ads_read`, `business_management`, e anotar o `config_id` gerado
+- [ ] **Cadastrar a URL de redirecionamento** no painel do Meta: `https://www.surgimetrics.com.br/api/whatsapp?action=meta-callback`
+- [ ] **Concluir o App Review** (`leads_retrieval`/`ads_read`) do app da Zentri Tech — até lá, só funciona em modo desenvolvimento (contas/Páginas cadastradas como testadoras no app)
+
 ### Timbre para documentos (Pedido de Exames + Receituário + Prontuário)
 - [x] **Aplicar no Supabase** a migration aditiva `supabase/clinical_documents_schema.sql` depois das migrations da fundação clínica — aplicada em 2026-10-20
 - [x] **Aplicar no Supabase** a correção aditiva `supabase/clinical_documents_review_fixes.sql` depois de `clinical_documents_schema.sql` — aplicada em 2026-10-20; restringe receitas a admin e corrige idempotência, auditoria clínica, timbre e validações
