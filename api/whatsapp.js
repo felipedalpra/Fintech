@@ -10,6 +10,7 @@ import {
   createEvolutionInstance,
   downloadProviderMedia,
   listProviderChats,
+  logoutProviderInstance,
   providerReady,
   resolveProviderPhoneLids,
   sendProviderMedia,
@@ -51,7 +52,7 @@ const INBOUND_MEDIA_BUCKET = 'wa-media-inbound'
 const INBOUND_MEDIA_PREFIX = `storage://${INBOUND_MEDIA_BUCKET}/`
 const OUTBOUND_MEDIA_BUCKET = 'wa-media'
 const DEFAULT_WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
-const NUMBER_PROVIDER_FIELDS = 'id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at'
+const NUMBER_PROVIDER_FIELDS = 'id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at, archived_at'
 const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_lid', 'sender_photo', 'chat_lid', 'contact_phone']
 const PREVIOUS_MESSAGE_IDENTITY_FIELDS = MESSAGE_IDENTITY_FIELDS.filter(field => field !== 'sender_lid')
 
@@ -94,11 +95,11 @@ function webhookUrlFor(number) {
 
 function providerColumnsMissing(error) {
   return ['PGRST204', '42703'].includes(error?.code)
-    && ['provider', 'provider_instance_name', 'connection_state'].some(field => String(error.message || '').includes(field))
+    && ['provider', 'provider_instance_name', 'connection_state', 'archived_at'].some(field => String(error.message || '').includes(field))
 }
 
 function withLegacyProvider(number) {
-  return number ? { provider: 'zapi', provider_instance_name: null, connection_state: 'unknown', ...number } : number
+  return number ? { provider: 'zapi', provider_instance_name: null, connection_state: 'unknown', archived_at: null, ...number } : number
 }
 
 async function getWhatsAppNumber(supabase, id) {
@@ -389,6 +390,7 @@ export default async function handler(req, res) {
   if (action === 'provision-number') return handleProvisionNumber(req, res)
   if (action === 'connect-instance') return handleConnectInstance(req, res)
   if (action === 'set-number-active') return handleSetNumberActive(req, res)
+  if (action === 'set-number-archived') return handleSetNumberArchived(req, res)
   if (action === 'list-numbers') return handleListNumbers(req, res)
   if (action === 'replay-webhook') return handleReplayWebhook(req, res)
   if (action === 'media-url') return handleMediaUrl(req, res)
@@ -618,6 +620,41 @@ async function handleSetNumberActive(req, res) {
   }).eq('id', number.id).eq('user_id', ownerId)
   if (update.error) return res.status(500).json({ error: 'Não foi possível alterar o estado do número.' })
   return res.status(200).json({ ok: true, active })
+}
+
+// ---- Remover/restaurar um número da tela sem apagar cadastro, mensagens ou histórico ----
+// Remover desconecta a sessão na Evolution (best-effort) e marca archived_at; a lista
+// padrão deixa de mostrar o número. Restaurar só limpa archived_at — o número volta a
+// aparecer inativo e precisa do fluxo normal de "Conectar / novo QR" pra reconectar.
+async function handleSetNumberArchived(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const { supabase, ownerId } = auth
+  const { data: number, error } = await getWhatsAppNumber(supabase, req.body?.whatsappNumberId)
+  if (error || !number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+  const archived = req.body?.archived === true
+
+  if (!archived) {
+    const restored = await supabase.from('whatsapp_numbers').update({ archived_at: null }).eq('id', number.id).eq('user_id', ownerId)
+    if (restored.error) return res.status(500).json({ error: 'Não foi possível restaurar a conexão.' })
+    return res.status(200).json({ ok: true, archived: false })
+  }
+
+  try {
+    await logoutProviderInstance(number)
+  } catch (logoutError) {
+    // Best-effort: a instância pode já estar desconectada/apagada do lado da Evolution.
+    // Isso nunca pode impedir o admin de limpar a tela do SurgiMetrics.
+    console.error('whatsapp logout on archive error:', logoutError.message)
+  }
+  const archivedUpdate = await supabase.from('whatsapp_numbers').update({
+    archived_at: new Date().toISOString(),
+    active: false,
+    connection_state: 'close',
+  }).eq('id', number.id).eq('user_id', ownerId)
+  if (archivedUpdate.error) return res.status(500).json({ error: 'Não foi possível remover a conexão.' })
+  return res.status(200).json({ ok: true, archived: true })
 }
 
 async function handleListNumbers(req, res) {
