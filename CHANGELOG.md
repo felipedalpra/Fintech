@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-23 (123)
+### Added
+- **Visualização clínica imersiva**: fotos individuais e comparações antes/depois podem ser abertas em uma experiência de tela inteira, com navegação entre imagens, zoom, atalhos de teclado e metadados clínicos sempre visíveis. O envio passa a aceitar até 12 fotos de uma vez, com arrastar e soltar, prévias e progresso por arquivo. (`src/components/ClinicalAssets.jsx`, `src/components/ClinicalRecords.css`.)
+
+### Changed
+- **Galeria clínica reorganizada por tarefa**: comparação, histórico de fotos e documentos agora vivem em seções claras, com resumo de quantidades, ações contextuais e seletores separados para fotos de antes e de depois. O layout foi redesenhado para desktop e celular, reduzindo a concentração de controles no mesmo bloco. (`src/components/ClinicalAssets.jsx`, `src/components/ClinicalRecords.css`.)
+
+### Fixed
+- **Fotos privadas voltam a aparecer e podem ser abertas**: falhas no carregamento em lote de auditoria ou URLs assinadas agora recorrem à leitura individual, mostram estado de erro e permitem tentar novamente, em vez de deixar cartões vazios silenciosamente. O seletor de arquivos também aceita escolher novamente o mesmo arquivo após removê-lo, e documentos privados abrem sem uma segunda assinatura/auditoria desnecessária. (`src/components/ClinicalAssets.jsx`, `tests/e2e/clinical-assets.spec.js`.)
+
 ## [Unreleased] - 2026-10-22 (122)
 ### Added
 - **Remover número de WhatsApp sem apagar histórico**: Configurações → WhatsApp ganha "Remover conexão", que desconecta a sessão na Evolution (best-effort) e tira o número da lista principal sem apagar cadastro, mensagens ou histórico — pede confirmação explícita antes, já que desconecta de verdade o celular. O número removido fica numa seção recolhível "Números removidos", de onde "Reconectar" só o traz de volta pra lista (inativo); reconectar de fato continua passando pelo fluxo normal de "Conectar / novo QR". Aplicar `supabase/whatsapp_numbers_archive_schema.sql` antes do deploy. (`api/whatsapp.js`, `api/_lib/whatsappProvider.js`, `src/components/WhatsAppNumbers.jsx`, `supabase/whatsapp_numbers_archive_schema.sql`.)
