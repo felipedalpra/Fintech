@@ -102,6 +102,34 @@ function withLegacyProvider(number) {
   return number ? { provider: 'zapi', provider_instance_name: null, connection_state: 'unknown', archived_at: null, ...number } : number
 }
 
+// Campos que ?action=list-numbers manda pro navegador. Função nomeada e testada à
+// parte justamente porque um campo esquecido aqui (ex.: archived_at) não dá erro
+// nenhum — só faz a tela nunca enxergar a mudança, mesmo com o backend salvando
+// certo. instance_url/api_token (segredos Z-API) e user_id (interno) ficam de fora
+// de propósito.
+export function serializeWhatsAppNumberForClient(number) {
+  return {
+    id: number.id,
+    label: number.label,
+    phone: number.phone,
+    active: number.active,
+    // Evolution autentica por header configurado no backend; o navegador não
+    // precisa nem deve receber esse segredo. Z-API legado ainda usa o token na
+    // URL exibida ao administrador.
+    webhook_secret: whatsappProvider(number) === 'zapi' ? number.webhook_secret : null,
+    assigned_user_id: number.assigned_user_id,
+    provider: whatsappProvider(number),
+    provider_instance_name: number.provider_instance_name,
+    connection_state: number.connection_state,
+    connected_at: number.connected_at,
+    last_health_at: number.last_health_at,
+    last_webhook_at: number.last_webhook_at,
+    last_webhook_event: number.last_webhook_event,
+    webhook_verified_at: number.webhook_verified_at,
+    archived_at: number.archived_at,
+  }
+}
+
 async function getWhatsAppNumber(supabase, id) {
   let result = await supabase.from('whatsapp_numbers').select(NUMBER_PROVIDER_FIELDS).eq('id', id).maybeSingle()
   if (providerColumnsMissing(result.error)) {
@@ -678,25 +706,7 @@ async function handleListNumbers(req, res) {
     .flatMap(item => item.data || [])
     .sort((a, b) => Date.parse(b.received_at) - Date.parse(a.received_at))
     .slice(0, 100)
-  const numbers = (result.data || []).map(number => ({
-    id: number.id,
-    label: number.label,
-    phone: number.phone,
-    active: number.active,
-    // Evolution autentica por header configurado no backend; o navegador não
-    // precisa nem deve receber esse segredo. Z-API legado ainda usa o token na
-    // URL exibida ao administrador.
-    webhook_secret: whatsappProvider(number) === 'zapi' ? number.webhook_secret : null,
-    assigned_user_id: number.assigned_user_id,
-    provider: whatsappProvider(number),
-    provider_instance_name: number.provider_instance_name,
-    connection_state: number.connection_state,
-    connected_at: number.connected_at,
-    last_health_at: number.last_health_at,
-    last_webhook_at: number.last_webhook_at,
-    last_webhook_event: number.last_webhook_event,
-    webhook_verified_at: number.webhook_verified_at,
-  }))
+  const numbers = (result.data || []).map(serializeWhatsAppNumberForClient)
   res.setHeader('Cache-Control', 'private, no-store')
   return res.status(200).json({ numbers, pendingEvents })
 }
