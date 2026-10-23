@@ -6,6 +6,7 @@ import {
   downloadEvolutionMedia,
   evolutionInstanceMissing,
   evolutionRecipient,
+  logoutEvolutionInstance,
   normalizeEvolutionBaseUrl,
   sendEvolutionText,
 } from '../../api/_lib/evolutionClient.js'
@@ -251,4 +252,22 @@ test('reconhece instância ausente sem confundir outros erros', () => {
   expect(evolutionInstanceMissing({ statusCode:404, message:'not found' })).toBe(true)
   expect(evolutionInstanceMissing(new Error('Instance does not exist'))).toBe(true)
   expect(evolutionInstanceMissing(new Error('timeout'))).toBe(false)
+})
+
+test('logoutEvolutionInstance respeita um timeoutMs curto passado explicitamente, sem depender da env var', async () => {
+  // Reproduz uma instância travada: o fetch nunca resolve sozinho, só reage ao abort.
+  // Sem um timeoutMs curto aqui, essa chamada (best-effort, chamada antes de arquivar
+  // um número) podia travar a função inteira até o limite de 10s da Vercel e nunca
+  // deixar a remoção ser gravada no banco — exatamente o bug que isso trava.
+  globalThis.fetch = (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => {
+      const error = new Error('aborted')
+      error.name = 'AbortError'
+      reject(error)
+    })
+  })
+  const start = Date.now()
+  await expect(logoutEvolutionInstance('surgimetrics_teste', { timeoutMs: 50 }))
+    .rejects.toThrow(/não respondeu dentro do tempo esperado/i)
+  expect(Date.now() - start).toBeLessThan(1000)
 })
