@@ -5,6 +5,7 @@ import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
 import { ClinicalDocuments } from './ClinicalDocuments.jsx'
 import { ClinicalIntake } from './ClinicalIntake.jsx'
 import { ClinicalAssets } from './ClinicalAssets.jsx'
+import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -27,10 +28,10 @@ const CLINICAL_TABS = [
   { id:'intake', label:'Pré-anamnese e termos' },
   { id:'prescriptions', label:'Exames e receitas' },
   { id:'files', label:'Fotos e documentos' },
-  { id:'treatment', label:'Plano e retorno', planned:true },
+  { id:'treatment', label:'Plano e retorno' },
 ]
 
-export function ClinicalRecords({ data }) {
+export function ClinicalRecords({ data, setData }) {
   const { user } = useAuth()
   const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
@@ -293,7 +294,6 @@ export function ClinicalRecords({ data }) {
                 {CLINICAL_TABS.map(item => (
                   <button key={item.id} type="button" className={tab === item.id ? 'is-active' : ''} onClick={() => setTab(item.id)}>
                     {item.label}
-                    {item.planned && <small>próxima etapa</small>}
                   </button>
                 ))}
               </nav>
@@ -333,7 +333,7 @@ export function ClinicalRecords({ data }) {
                   />
                 )}
                 {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}
-                {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
+                {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} />}
               </div>
             </>
           )}
@@ -421,17 +421,6 @@ function ClinicalOpenError({ onRetry }) {
     <div className="clinical-empty-panel">
       <p>Os dados clínicos não foram abertos porque a auditoria não pôde ser confirmada.</p>
       <Btn variant="ghost" onClick={onRetry}>Tentar novamente</Btn>
-    </div>
-  )
-}
-
-function PlannedModule({ title, description }) {
-  return (
-    <div className="clinical-planned-module">
-      <span>Próxima etapa do Amigo essencial</span>
-      <h3>{title}</h3>
-      <p>{description}</p>
-      <Btn variant="ghost" disabled>Em implementação</Btn>
     </div>
   )
 }
