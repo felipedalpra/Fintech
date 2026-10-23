@@ -10,6 +10,7 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
   let uploadCount = 0
 
   await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
+  await page.route('**/rest/v1/**', route => route.fulfill(json([])))
   await page.route('**/api/secure-profile?action=get', route => route.fulfill(json({ profile:{ doctor:{ fullName:'Dra. E2E', registrationId:'CRM-RS 1' } } })))
   await page.route('**/rest/v1/patients*', route => route.fulfill(json([{ id:'patient-assets', full_name:'Ana Imagens', date_of_birth:'1990-01-01', active:true }])))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill(json(null)))
@@ -74,18 +75,20 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Imagens/ }).click()
   await page.getByRole('button', { name:'Fotos e documentos' }).click()
-  await expect(page.getByText('Nenhuma foto ou documento neste filtro.')).toBeVisible()
+  await expect(page.getByText('Comece registrando as fotos pré-procedimento')).toBeVisible()
 
-  await page.getByRole('button', { name:'+ Adicionar arquivo' }).click()
+  await page.getByRole('button', { name:'+ Adicionar fotos', exact:true }).first().click()
+  await expect(page.getByText('Escolha ou arraste as fotos aqui')).toBeVisible()
   await page.locator('input[type="file"]').setInputFiles({ name:'antes.png', mimeType:'image/png', buffer:PNG })
+  await expect(page.getByText('1 arquivo(s) pronto(s)')).toBeVisible()
   await page.getByLabel('Região').fill('Abdômen')
   await page.getByLabel('Procedimento').fill('Abdominoplastia')
   await page.getByLabel('Observação clínica').fill('Registro pré-operatório')
   await page.getByLabel('Aceite de uso de imagem relacionado').selectOption('consent-image')
-  await page.getByRole('button', { name:'Enviar arquivo' }).click()
+  await page.getByRole('button', { name:'Salvar 1 foto(s)' }).click()
 
   await expect(page.getByText('Abdominoplastia').first()).toBeVisible()
-  await expect(page.getByText('✓ aceite de imagem vinculado')).toBeVisible()
+  await expect(page.getByText('✓ Aceite de imagem vinculado')).toBeVisible()
   expect(uploadCount).toBe(1)
   expect(rpcPayloads[0]).toMatchObject({
     p_patient_id:'patient-assets',
@@ -100,13 +103,68 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
   await page.reload()
   await page.getByRole('button', { name:/Ana Imagens/ }).click()
   await page.getByRole('button', { name:'Fotos e documentos' }).click()
+  await page.getByRole('button', { name:'Galeria de fotos' }).click()
   await expect(page.getByText('Abdominoplastia').first()).toBeVisible()
   await expect.poll(() => auditIds.filter(id => id === 'asset-photo').length).toBeGreaterThan(0)
 
+  await page.getByRole('button', { name:'Visualizar' }).click()
+  await expect(page.getByRole('dialog', { name:'Abdominoplastia' })).toBeVisible()
+  await expect(page.getByRole('img', { name:'antes.png' })).toBeVisible()
+  await page.getByRole('button', { name:'Fechar visualização' }).click()
+
   await page.getByRole('button', { name:'Arquivar' }).click()
-  await expect(page.getByText('Nenhuma foto ou documento neste filtro.')).toBeVisible()
+  await expect(page.getByText('Nenhuma foto adicionada')).toBeVisible()
   await page.getByText('Mostrar arquivados').click()
   await expect(page.getByText('Arquivado', { exact:true })).toBeVisible()
   await page.getByRole('button', { name:'Restaurar' }).click()
   await expect(page.getByText('Disponível')).toBeVisible()
+})
+
+test('separa fotos de antes e depois e abre a comparação em tela cheia', async ({ page }) => {
+  const baseAsset = {
+    user_id:'e2e-user-id', patient_id:'patient-assets', created_by:'e2e-user-id', asset_kind:'clinical_photo',
+    region:'Face', procedure_name:'Rinoplastia', notes:null, bucket_id:'clinical-assets', expected_mime_type:'image/png',
+    expected_file_size:PNG.length, observed_mime_type:'image/png', file_size:PNG.length, client_sha256:'b'.repeat(64),
+    consent_acceptance_id:null, status:'available', created_at:'2026-10-22T12:00:00Z', completed_at:'2026-10-22T12:00:01Z', failed_at:null, archived_at:null,
+  }
+  const assets = [
+    { ...baseAsset, id:'photo-after', stage:'after', captured_on:'2026-10-22', object_path:'e2e-user-id/patient-assets/photo-after/original.png', file_name:'depois.png' },
+    { ...baseAsset, id:'photo-before', stage:'before', captured_on:'2026-09-22', object_path:'e2e-user-id/patient-assets/photo-before/original.png', file_name:'antes.png' },
+  ]
+
+  await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
+  await page.route('**/rest/v1/**', route => route.fulfill(json([])))
+  await page.route('**/api/secure-profile?action=get', route => route.fulfill(json({ profile:{} })))
+  await page.route('**/rest/v1/patients*', route => route.fulfill(json([{ id:'patient-assets', full_name:'Ana Imagens', date_of_birth:'1990-01-01', active:true }])))
+  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill(json(null)))
+  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill(json(true)))
+  await page.route('**/rest/v1/medical_records*', route => route.fulfill(json([])))
+  await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill(json([])))
+  await page.route('**/rest/v1/clinical_assets*', route => route.fulfill(json(assets)))
+  await page.route('**/rest/v1/clinical_consent_acceptances*', route => route.fulfill(json([])))
+  await page.route('**/rest/v1/rpc/log_clinical_asset_accesses*', route => route.fulfill(json(2)))
+  await page.route('**/rest/v1/rpc/log_clinical_asset_access*', route => route.fulfill(json(true)))
+  await page.route('**/storage/v1/object/sign/clinical-assets', route => route.fulfill(json(assets.map(asset => ({ path:asset.object_path, signedURL:`/object/sign/clinical-assets/${asset.object_path}?token=e2e` })))))
+  await page.route('**/storage/v1/object/sign/clinical-assets/**', route => route.request().method() === 'POST'
+    ? route.fulfill(json({ signedURL:`${new URL(route.request().url()).pathname}?token=e2e` }))
+    : route.fulfill({ status:200, contentType:'image/png', body:PNG }))
+
+  await page.goto('/app/clinical-records')
+  await page.getByRole('button', { name:/Ana Imagens/ }).click()
+  await page.getByRole('button', { name:'Fotos e documentos' }).click()
+
+  const beforeSelect = page.getByLabel('Foto de antes')
+  const afterSelect = page.getByLabel('Foto de depois')
+  await expect(beforeSelect.locator('option')).toHaveCount(2)
+  await expect(afterSelect.locator('option')).toHaveCount(2)
+  await expect(page.getByRole('button', { name:'Abrir foto de antes em tela cheia' })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Abrir foto de depois em tela cheia' })).toBeVisible()
+
+  await page.getByRole('button', { name:/Comparar em tela cheia/ }).click()
+  const compareDialog = page.getByRole('dialog', { name:'Comparação antes e depois' })
+  await expect(compareDialog).toBeVisible()
+  await expect(compareDialog.getByRole('img', { name:'Antes: antes.png' })).toBeVisible()
+  await expect(compareDialog.getByRole('img', { name:'Depois: depois.png' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name:'Comparação antes e depois' })).toBeHidden()
 })
