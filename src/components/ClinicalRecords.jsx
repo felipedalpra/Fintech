@@ -6,6 +6,7 @@ import { ClinicalDocuments } from './ClinicalDocuments.jsx'
 import { ClinicalIntake } from './ClinicalIntake.jsx'
 import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
+import { ClinicalProtocols } from './ClinicalProtocols.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -36,6 +37,7 @@ export function ClinicalRecords({ data, setData }) {
   const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
   const [selected, setSelected] = useState(null)
+  const [showProtocols, setShowProtocols] = useState(false)
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -182,6 +184,7 @@ export function ClinicalRecords({ data, setData }) {
   }
 
   function selectPatient(patient) {
+    setShowProtocols(false)
     setClinicalAccessStatus('auditing')
     setProfileStatus('loading')
     setClinicalProfile(null)
@@ -206,6 +209,7 @@ export function ClinicalRecords({ data, setData }) {
   }
 
   function returnToAgenda() {
+    setShowProtocols(false)
     setSelected(null)
     setClinicalProfile(null)
     setAnamnesisDraft(null)
@@ -276,12 +280,18 @@ export function ClinicalRecords({ data, setData }) {
           )}
         </div>
 
+        <button type="button" className={`clinical-protocols-button${showProtocols ? ' is-active' : ''}`} onClick={() => { setSelected(null); setShowProtocols(true); setError('') }}>
+          <span>▤</span><strong>Protocolos</strong>
+        </button>
+
         {selected && <div className="clinical-toolbar-context"><span>Ficha aberta</span><strong>{selected.full_name}</strong></div>}
       </div>
 
       {error && <div className="clinical-alert" role="alert">{error}</div>}
 
-      {!selected ? (
+      {showProtocols ? (
+        <ClinicalProtocols ownerId={ownerId} canManage={isOwner || role === 'admin'} onClose={returnToAgenda} />
+      ) : !selected ? (
         <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={selectPatient} />
       ) : (
         <div className="clinical-patient-workspace">

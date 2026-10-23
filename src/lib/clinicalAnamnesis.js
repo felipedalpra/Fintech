@@ -38,6 +38,10 @@ export function emptyClinicalAnamnesis(sessionDate = '') {
     pain_score:'',
     weight_kg:'',
     height_cm:'',
+    protocol_id:null,
+    protocol_version_id:null,
+    protocol_name:'',
+    protocol_responses:{},
   }
 }
 
@@ -117,6 +121,10 @@ export function buildClinicalAnamnesisRpcArgs({ patientId, requestId, form, auth
     physical_exam:String(form.physical_exam).trim(),
     diagnostic_hypotheses:String(form.diagnostic_hypotheses).trim(),
     therapeutic_plan:String(form.therapeutic_plan).trim(),
+    protocol_id:form.protocol_id || null,
+    protocol_version_id:form.protocol_version_id || null,
+    protocol_name:String(form.protocol_name || '').trim() || null,
+    protocol_responses:form.protocol_responses || {},
   }
   NUMERIC_FIELDS.forEach(field => { payload[field] = nullableNumber(form[field]) })
 
