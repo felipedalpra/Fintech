@@ -1,10 +1,19 @@
 -- Fase 4.5: planos terapeuticos, sessoes e retornos clinicos.
--- Executar depois de clinical_record_foundation_schema.sql e google_calendar_schema.sql.
+-- Executar depois de clinical_record_foundation_schema.sql.
 -- A migration e aditiva, idempotente e nao altera registros clinicos existentes.
 
 begin;
 
 create extension if not exists pgcrypto;
+
+-- Dependências mínimas da Agenda. Mantidas aqui para a migration não depender da
+-- ordem histórica em que google_calendar_schema/competence_date_migration foram aplicadas.
+alter table public.consultations
+  add column if not exists patient_id uuid references public.patients(id) on delete set null,
+  add column if not exists competence_date date,
+  add column if not exists due_date date,
+  add column if not exists start_time time,
+  add column if not exists duration_minutes integer;
 
 create table if not exists public.clinical_treatment_plans (
   id uuid primary key default gen_random_uuid(),
@@ -12,7 +21,7 @@ create table if not exists public.clinical_treatment_plans (
   patient_id uuid not null references public.patients(id) on delete restrict,
   created_by uuid not null references auth.users(id) on delete restrict,
   request_id uuid not null,
-  created_at timestamptz not null default timezone('utc', now()),
+  created_at timestamptz not null default clock_timestamp(),
   unique (user_id, request_id)
 );
 
@@ -35,7 +44,7 @@ create table if not exists public.clinical_treatment_plan_versions (
   author_registration text not null,
   author_council text not null default 'CRM',
   request_id uuid not null,
-  recorded_at timestamptz not null default timezone('utc', now()),
+  recorded_at timestamptz not null default clock_timestamp(),
   unique (plan_id, version_number),
   unique (user_id, request_id),
   constraint treatment_plan_review_after_start check (
@@ -55,7 +64,7 @@ create table if not exists public.clinical_treatment_plan_status_events (
   author_registration text not null,
   author_council text not null default 'CRM',
   request_id uuid not null,
-  recorded_at timestamptz not null default timezone('utc', now()),
+  recorded_at timestamptz not null default clock_timestamp(),
   unique (user_id, request_id)
 );
 
@@ -68,9 +77,10 @@ create table if not exists public.clinical_treatment_sessions (
   session_type text not null check (session_type in ('procedure', 'consultation', 'return', 'exam', 'other')),
   title text not null check (length(btrim(title)) between 1 and 160),
   instructions text check (instructions is null or length(instructions) <= 5000),
+  created_with_plan boolean not null default false,
   created_by uuid not null references auth.users(id) on delete restrict,
   request_id uuid not null,
-  created_at timestamptz not null default timezone('utc', now()),
+  created_at timestamptz not null default clock_timestamp(),
   unique (plan_id, sequence_number),
   unique (user_id, request_id)
 );
@@ -92,7 +102,7 @@ create table if not exists public.clinical_treatment_session_events (
   author_registration text not null,
   author_council text not null default 'CRM',
   request_id uuid not null,
-  recorded_at timestamptz not null default timezone('utc', now()),
+  recorded_at timestamptz not null default clock_timestamp(),
   unique (user_id, request_id),
   constraint treatment_session_event_links check (
     (status = 'completed' and medical_record_id is not null)
@@ -108,9 +118,18 @@ alter table public.medical_records
   add column if not exists treatment_plan_id uuid references public.clinical_treatment_plans(id) on delete restrict,
   add column if not exists treatment_session_id uuid references public.clinical_treatment_sessions(id) on delete restrict;
 
+alter table public.clinical_treatment_sessions
+  add column if not exists created_with_plan boolean not null default false;
+alter table public.clinical_treatment_plans alter column created_at set default clock_timestamp();
+alter table public.clinical_treatment_plan_versions alter column recorded_at set default clock_timestamp();
+alter table public.clinical_treatment_plan_status_events alter column recorded_at set default clock_timestamp();
+alter table public.clinical_treatment_sessions alter column created_at set default clock_timestamp();
+alter table public.clinical_treatment_session_events alter column recorded_at set default clock_timestamp();
+
 create unique index if not exists idx_treatment_session_completed_once
   on public.clinical_treatment_session_events(session_id) where status = 'completed';
-create unique index if not exists idx_treatment_session_consultation_once
+drop index if exists public.idx_treatment_session_consultation_once;
+create index if not exists idx_treatment_session_consultation
   on public.clinical_treatment_session_events(consultation_id) where consultation_id is not null;
 create index if not exists idx_treatment_plans_patient
   on public.clinical_treatment_plans(user_id, patient_id, created_at desc);
@@ -128,19 +147,18 @@ alter table public.clinical_treatment_sessions enable row level security;
 alter table public.clinical_treatment_session_events enable row level security;
 
 do $$
-declare table_name text; policy_row record;
+declare table_name text; policy_name text;
 begin
   foreach table_name in array array[
     'clinical_treatment_plans', 'clinical_treatment_plan_versions',
     'clinical_treatment_plan_status_events', 'clinical_treatment_sessions',
     'clinical_treatment_session_events'
   ] loop
-    for policy_row in select policyname from pg_policies where schemaname = 'public' and tablename = table_name loop
-      execute format('drop policy if exists %I on public.%I', policy_row.policyname, table_name);
-    end loop;
+    policy_name := table_name || ' authorized read';
+    execute format('drop policy if exists %I on public.%I', policy_name, table_name);
     execute format(
       'create policy %I on public.%I for select to authenticated using (user_id = public.data_owner_id() and public.has_clinical_access())',
-      table_name || ' authorized read', table_name
+      policy_name, table_name
     );
     execute format('revoke insert, update, delete on public.%I from anon, authenticated', table_name);
     execute format('grant select on public.%I to authenticated', table_name);
@@ -193,10 +211,11 @@ create or replace function public.create_clinical_treatment_plan(
 ) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  owner_id uuid := public.data_owner_id(); plan_id uuid; identity record; item jsonb;
+  owner_id uuid := public.data_owner_id(); new_plan_id uuid; identity record; item jsonb; existing_version record;
   session_id uuid; session_request uuid; next_sequence integer := 0; initial_status text;
 begin
   select * into identity from public.assert_clinical_treatment_author();
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
   if p_patient_id is null or p_request_id is null or nullif(btrim(p_title), '') is null
     or nullif(btrim(p_indication), '') is null or nullif(btrim(p_objectives), '') is null
     or nullif(btrim(p_planned_treatment), '') is null or nullif(btrim(p_guidance), '') is null then
@@ -205,30 +224,66 @@ begin
   if not exists (select 1 from public.patients p where p.id = p_patient_id and p.user_id = owner_id and p.active) then
     raise exception 'Paciente fora do escopo da clinica.' using errcode = '42501';
   end if;
-  select p.id into plan_id from public.clinical_treatment_plans p where p.user_id = owner_id and p.request_id = p_request_id;
-  if plan_id is not null then return plan_id; end if;
-
-  insert into public.clinical_treatment_plans(user_id, patient_id, created_by, request_id)
-  values (owner_id, p_patient_id, auth.uid(), p_request_id) returning id into plan_id;
-  insert into public.clinical_treatment_plan_versions(
-    user_id, plan_id, patient_id, version_number, title, indication, diagnostic_summary,
-    objectives, planned_treatment, guidance, expected_start_on, review_on, created_by,
-    author_name, author_registration, author_council, request_id
-  ) values (
-    owner_id, plan_id, p_patient_id, 1, btrim(p_title), btrim(p_indication), nullif(btrim(p_diagnostic_summary), ''),
-    btrim(p_objectives), btrim(p_planned_treatment), btrim(p_guidance), p_expected_start_on, p_review_on,
-    auth.uid(), identity.author_name, identity.author_registration, identity.author_council, p_request_id
-  );
-  insert into public.clinical_treatment_plan_status_events(
-    user_id, plan_id, patient_id, status, created_by, author_name, author_registration, author_council, request_id
-  ) values (owner_id, plan_id, p_patient_id, 'active', auth.uid(), identity.author_name, identity.author_registration, identity.author_council, p_request_id);
-
   if jsonb_typeof(coalesce(p_sessions, '[]'::jsonb)) <> 'array' then
     raise exception 'Sessoes devem ser enviadas como lista.' using errcode = '22023';
   end if;
   if jsonb_array_length(coalesce(p_sessions, '[]'::jsonb)) > 100 then
     raise exception 'Um plano pode iniciar com no maximo 100 sessoes.' using errcode = '22023';
   end if;
+  select p.id into new_plan_id from public.clinical_treatment_plans p where p.user_id = owner_id and p.request_id = p_request_id;
+  if new_plan_id is not null then
+    select * into existing_version from public.clinical_treatment_plan_versions v where v.plan_id = new_plan_id and v.version_number = 1;
+    if existing_version.patient_id is distinct from p_patient_id or existing_version.title is distinct from btrim(p_title)
+      or existing_version.indication is distinct from btrim(p_indication)
+      or existing_version.diagnostic_summary is distinct from nullif(btrim(p_diagnostic_summary), '')
+      or existing_version.objectives is distinct from btrim(p_objectives)
+      or existing_version.planned_treatment is distinct from btrim(p_planned_treatment)
+      or existing_version.guidance is distinct from btrim(p_guidance)
+      or existing_version.expected_start_on is distinct from p_expected_start_on
+      or existing_version.review_on is distinct from p_review_on
+      or (select count(*) from public.clinical_treatment_sessions s
+          where s.plan_id = new_plan_id and s.created_with_plan)
+        <> jsonb_array_length(coalesce(p_sessions, '[]'::jsonb))
+      or exists (
+        select 1
+        from jsonb_array_elements(coalesce(p_sessions, '[]'::jsonb)) with ordinality incoming(item, sequence_number)
+        left join public.clinical_treatment_sessions s
+          on s.plan_id = new_plan_id and s.sequence_number = incoming.sequence_number and s.created_with_plan
+        left join lateral (
+          select e.status, e.scheduled_start, e.duration_minutes
+          from public.clinical_treatment_session_events e
+          where e.session_id = s.id and e.request_id = s.request_id
+          limit 1
+        ) initial_event on true
+        where s.id is null
+          or s.request_id is distinct from nullif(incoming.item->>'request_id', '')::uuid
+          or s.session_type is distinct from coalesce(nullif(incoming.item->>'session_type', ''), 'procedure')
+          or s.title is distinct from btrim(incoming.item->>'title')
+          or s.instructions is distinct from nullif(btrim(incoming.item->>'instructions'), '')
+          or initial_event.status is distinct from case when nullif(incoming.item->>'scheduled_start', '') is null then 'planned' else 'scheduled' end
+          or initial_event.scheduled_start is distinct from nullif(incoming.item->>'scheduled_start', '')::timestamptz
+          or initial_event.duration_minutes is distinct from nullif(incoming.item->>'duration_minutes', '')::integer
+      ) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode = '22023';
+    end if;
+    return new_plan_id;
+  end if;
+
+  insert into public.clinical_treatment_plans(user_id, patient_id, created_by, request_id)
+  values (owner_id, p_patient_id, auth.uid(), p_request_id) returning id into new_plan_id;
+  insert into public.clinical_treatment_plan_versions(
+    user_id, plan_id, patient_id, version_number, title, indication, diagnostic_summary,
+    objectives, planned_treatment, guidance, expected_start_on, review_on, created_by,
+    author_name, author_registration, author_council, request_id
+  ) values (
+    owner_id, new_plan_id, p_patient_id, 1, btrim(p_title), btrim(p_indication), nullif(btrim(p_diagnostic_summary), ''),
+    btrim(p_objectives), btrim(p_planned_treatment), btrim(p_guidance), p_expected_start_on, p_review_on,
+    auth.uid(), identity.author_name, identity.author_registration, identity.author_council, p_request_id
+  );
+  insert into public.clinical_treatment_plan_status_events(
+    user_id, plan_id, patient_id, status, created_by, author_name, author_registration, author_council, request_id
+  ) values (owner_id, new_plan_id, p_patient_id, 'active', auth.uid(), identity.author_name, identity.author_registration, identity.author_council, p_request_id);
+
   for item in select value from jsonb_array_elements(coalesce(p_sessions, '[]'::jsonb)) loop
     next_sequence := next_sequence + 1;
     session_request := coalesce(nullif(item->>'request_id', '')::uuid, gen_random_uuid());
@@ -236,24 +291,24 @@ begin
       raise exception 'Toda sessao precisa de titulo.' using errcode = '22023';
     end if;
     insert into public.clinical_treatment_sessions(
-      user_id, plan_id, patient_id, sequence_number, session_type, title, instructions, created_by, request_id
+      user_id, plan_id, patient_id, sequence_number, session_type, title, instructions, created_with_plan, created_by, request_id
     ) values (
-      owner_id, plan_id, p_patient_id, next_sequence, coalesce(nullif(item->>'session_type', ''), 'procedure'),
-      btrim(item->>'title'), nullif(btrim(item->>'instructions'), ''), auth.uid(), session_request
+      owner_id, new_plan_id, p_patient_id, next_sequence, coalesce(nullif(item->>'session_type', ''), 'procedure'),
+      btrim(item->>'title'), nullif(btrim(item->>'instructions'), ''), true, auth.uid(), session_request
     ) returning id into session_id;
     initial_status := case when nullif(item->>'scheduled_start', '') is null then 'planned' else 'scheduled' end;
     insert into public.clinical_treatment_session_events(
       user_id, session_id, plan_id, patient_id, status, scheduled_start, duration_minutes,
       created_by, author_name, author_registration, author_council, request_id
     ) values (
-      owner_id, session_id, plan_id, p_patient_id, initial_status,
+      owner_id, session_id, new_plan_id, p_patient_id, initial_status,
       nullif(item->>'scheduled_start', '')::timestamptz, nullif(item->>'duration_minutes', '')::integer,
       auth.uid(), identity.author_name, identity.author_registration, identity.author_council, session_request
     );
   end loop;
   insert into public.clinical_record_access_logs(user_id, patient_id, actor_id, action)
   values (owner_id, p_patient_id, auth.uid(), 'create_treatment_plan');
-  return plan_id;
+  return new_plan_id;
 end;
 $$;
 
@@ -266,11 +321,22 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare owner_id uuid := public.data_owner_id(); patient_id uuid; version_id uuid; next_version integer; identity record;
 begin
   select * into identity from public.assert_clinical_treatment_author();
-  select v.id into version_id from public.clinical_treatment_plan_versions v where v.user_id = owner_id and v.request_id = p_request_id;
-  if version_id is not null then return version_id; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_plan_id::text, 0));
   select p.patient_id into patient_id from public.clinical_treatment_plans p where p.id = p_plan_id and p.user_id = owner_id;
   if patient_id is null then raise exception 'Plano fora do escopo.' using errcode = '42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_plan_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
+  select v.id into version_id from public.clinical_treatment_plan_versions v where v.user_id = owner_id and v.request_id = p_request_id;
+  if version_id is not null then
+    if not exists(select 1 from public.clinical_treatment_plan_versions v where v.id = version_id and v.plan_id = p_plan_id
+      and v.title = btrim(p_title) and v.indication = btrim(p_indication)
+      and v.diagnostic_summary is not distinct from nullif(btrim(p_diagnostic_summary), '')
+      and v.objectives = btrim(p_objectives) and v.planned_treatment = btrim(p_planned_treatment)
+      and v.guidance = btrim(p_guidance) and v.expected_start_on is not distinct from p_expected_start_on
+      and v.review_on is not distinct from p_review_on) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode = '22023';
+    end if;
+    return version_id;
+  end if;
   if (select e.status from public.clinical_treatment_plan_status_events e where e.plan_id = p_plan_id order by e.recorded_at desc, e.id desc limit 1) <> 'active' then
     raise exception 'Somente planos ativos podem receber nova versao.' using errcode = '22023';
   end if;
@@ -302,11 +368,27 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare owner_id uuid := public.data_owner_id(); patient_id uuid; session_id uuid; next_sequence integer; identity record;
 begin
   select * into identity from public.assert_clinical_treatment_author();
-  select s.id into session_id from public.clinical_treatment_sessions s where s.user_id = owner_id and s.request_id = p_request_id;
-  if session_id is not null then return session_id; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_plan_id::text, 0));
   select p.patient_id into patient_id from public.clinical_treatment_plans p where p.id = p_plan_id and p.user_id = owner_id;
   if patient_id is null then raise exception 'Plano fora do escopo.' using errcode = '42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_plan_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
+  select s.id into session_id from public.clinical_treatment_sessions s where s.user_id = owner_id and s.request_id = p_request_id;
+  if session_id is not null then
+    if not exists(select 1 from public.clinical_treatment_sessions s
+      left join lateral (
+        select e.status, e.scheduled_start, e.duration_minutes from public.clinical_treatment_session_events e
+        where e.session_id = s.id and e.request_id = s.request_id
+        limit 1
+      ) initial_event on true
+      where s.id = session_id and s.plan_id = p_plan_id and s.session_type = p_session_type
+        and s.title = btrim(p_title) and s.instructions is not distinct from nullif(btrim(p_instructions), '')
+        and initial_event.status = case when p_scheduled_start is null then 'planned' else 'scheduled' end
+        and initial_event.scheduled_start is not distinct from p_scheduled_start
+        and initial_event.duration_minutes is not distinct from p_duration_minutes) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode = '22023';
+    end if;
+    return session_id;
+  end if;
   if (select e.status from public.clinical_treatment_plan_status_events e where e.plan_id = p_plan_id order by e.recorded_at desc, e.id desc limit 1) <> 'active' then
     raise exception 'Somente planos ativos podem receber novas sessoes.' using errcode = '22023';
   end if;
@@ -336,6 +418,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare owner_id uuid := public.data_owner_id(); session_row record; event_id uuid; identity record; consultation_valid boolean;
 begin
   select * into identity from public.assert_clinical_treatment_author();
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
   select e.id into event_id from public.clinical_treatment_session_events e where e.user_id = owner_id and e.request_id = p_request_id;
   if event_id is not null then return event_id; end if;
   select s.* into session_row from public.clinical_treatment_sessions s where s.id = p_session_id and s.user_id = owner_id;
@@ -355,6 +438,9 @@ begin
   if p_status in ('cancelled', 'no_show') and nullif(btrim(p_reason), '') is null then
     raise exception 'Informe o motivo para preservar o historico clinico.' using errcode = '22023';
   end if;
+  if p_consultation_id is not null and p_consultation_id <> p_session_id then
+    raise exception 'A consulta vinculada deve usar a identidade canonica da sessao.' using errcode = '22023';
+  end if;
   if p_consultation_id is not null then
     select exists(select 1 from public.consultations c where c.id = p_consultation_id and c.user_id = owner_id and c.patient_id = session_row.patient_id)
       into consultation_valid;
@@ -372,6 +458,73 @@ begin
 end;
 $$;
 
+create or replace function public.sync_clinical_treatment_session_schedule(
+  p_session_id uuid, p_request_id uuid, p_status text, p_scheduled_start timestamptz,
+  p_duration_minutes integer, p_reason text, p_sync_consultation boolean default false
+) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare owner_id uuid := public.data_owner_id(); session_row record; event_id uuid; identity record;
+  patient_name text; local_date date; local_time time;
+begin
+  select * into identity from public.assert_clinical_treatment_author();
+  select s.* into session_row from public.clinical_treatment_sessions s where s.id = p_session_id and s.user_id = owner_id;
+  if session_row.id is null then raise exception 'Sessao fora do escopo.' using errcode = '42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(session_row.plan_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended(p_session_id::text, 1));
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
+  select e.id into event_id from public.clinical_treatment_session_events e where e.user_id = owner_id and e.request_id = p_request_id;
+  if event_id is not null then
+    if not exists(select 1 from public.clinical_treatment_session_events e where e.id = event_id and e.session_id = p_session_id and e.status = p_status and e.scheduled_start is not distinct from p_scheduled_start and e.duration_minutes is not distinct from p_duration_minutes and e.reason is not distinct from nullif(btrim(p_reason), '') and e.consultation_id is not distinct from case when p_sync_consultation then p_session_id else null end) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode = '22023';
+    end if;
+    return event_id;
+  end if;
+  if (select e.status from public.clinical_treatment_plan_status_events e where e.plan_id = session_row.plan_id order by e.recorded_at desc, e.id desc limit 1) <> 'active' then
+    raise exception 'O plano esta encerrado.' using errcode = '22023';
+  end if;
+  if (select e.status from public.clinical_treatment_session_events e where e.session_id = p_session_id order by e.recorded_at desc, e.id desc limit 1) = 'completed' then
+    raise exception 'Sessao concluida nao pode receber novos eventos.' using errcode = '22023';
+  end if;
+  if p_status not in ('scheduled', 'rescheduled', 'cancelled', 'no_show') then raise exception 'Estado invalido.' using errcode = '22023'; end if;
+  if p_status in ('scheduled', 'rescheduled') and p_scheduled_start is null then raise exception 'Data e hora sao obrigatorias.' using errcode = '22023'; end if;
+  if p_status in ('cancelled', 'no_show') and nullif(btrim(p_reason), '') is null then raise exception 'Motivo obrigatorio.' using errcode = '22023'; end if;
+
+  if p_sync_consultation then
+    if p_status in ('scheduled', 'rescheduled') then
+      select p.full_name into patient_name from public.patients p where p.id = session_row.patient_id and p.user_id = owner_id;
+      local_date := (p_scheduled_start at time zone 'America/Sao_Paulo')::date;
+      local_time := (p_scheduled_start at time zone 'America/Sao_Paulo')::time;
+      insert into public.consultations(
+        id, user_id, patient, patient_id, date, competence_date, due_date, start_time, duration_minutes,
+        consultation_type, value, payment_type, invoice_issuance_percent, payment_status, forecast_payment_date
+      ) values (
+        p_session_id, owner_id, patient_name, session_row.patient_id, local_date, local_date, local_date, local_time,
+        coalesce(p_duration_minutes, 30), case when session_row.session_type = 'return' then 'retorno' else 'avaliacao' end,
+        0, 'particular', 0, 'pendente', local_date
+      ) on conflict (id) do update set
+        date = excluded.date, start_time = excluded.start_time, duration_minutes = excluded.duration_minutes,
+        payment_status = case when public.consultations.payment_status = 'cancelado' then 'pendente' else public.consultations.payment_status end
+      where public.consultations.user_id = owner_id and public.consultations.patient_id = session_row.patient_id;
+      if not found then raise exception 'Consulta canonica pertence a outro contexto.' using errcode = '42501'; end if;
+    else
+      update public.consultations set payment_status = 'cancelado'
+      where id = p_session_id and user_id = owner_id and patient_id = session_row.patient_id;
+      if not found then raise exception 'Consulta vinculada nao encontrada para cancelar.' using errcode = '22023'; end if;
+    end if;
+  end if;
+
+  insert into public.clinical_treatment_session_events(
+    user_id, session_id, plan_id, patient_id, status, scheduled_start, duration_minutes, reason, consultation_id,
+    created_by, author_name, author_registration, author_council, request_id
+  ) values (
+    owner_id, p_session_id, session_row.plan_id, session_row.patient_id, p_status, p_scheduled_start,
+    p_duration_minutes, nullif(btrim(p_reason), ''), case when p_sync_consultation then p_session_id else null end,
+    auth.uid(), identity.author_name, identity.author_registration, identity.author_council, p_request_id
+  ) returning id into event_id;
+  return event_id;
+end;
+$$;
+
 create or replace function public.complete_clinical_treatment_session(
   p_session_id uuid, p_request_id uuid, p_care_occurred_at timestamptz,
   p_evolution_notes text, p_procedures_applied text, p_next_appointment_date date
@@ -380,12 +533,19 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare owner_id uuid := public.data_owner_id(); session_row record; record_id uuid; identity record;
 begin
   select * into identity from public.assert_clinical_treatment_author();
-  select e.medical_record_id into record_id from public.clinical_treatment_session_events e
-    where e.user_id = owner_id and e.request_id = p_request_id and e.status = 'completed';
-  if record_id is not null then return record_id; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_session_id::text, 0));
   select s.* into session_row from public.clinical_treatment_sessions s where s.id = p_session_id and s.user_id = owner_id;
   if session_row.id is null then raise exception 'Sessao fora do escopo.' using errcode = '42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(session_row.plan_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended(p_session_id::text, 1));
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
+  select e.medical_record_id into record_id from public.clinical_treatment_session_events e
+    where e.user_id = owner_id and e.request_id = p_request_id and e.status = 'completed';
+  if record_id is not null then
+    if not exists(select 1 from public.clinical_treatment_session_events e join public.medical_records mr on mr.id = e.medical_record_id where e.medical_record_id = record_id and e.session_id = p_session_id and mr.care_occurred_at = p_care_occurred_at and mr.evolution_notes = btrim(p_evolution_notes) and mr.procedures_applied = btrim(p_procedures_applied) and mr.next_appointment_date is not distinct from p_next_appointment_date) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode = '22023';
+    end if;
+    return record_id;
+  end if;
   if (select e.status from public.clinical_treatment_plan_status_events e where e.plan_id = session_row.plan_id order by e.recorded_at desc, e.id desc limit 1) <> 'active' then
     raise exception 'O plano esta encerrado.' using errcode = '22023';
   end if;
@@ -400,6 +560,9 @@ begin
   end if;
   if p_care_occurred_at > now() + interval '5 minutes' then
     raise exception 'A data/hora do atendimento nao pode estar no futuro.' using errcode = '22023';
+  end if;
+  if length(btrim(p_evolution_notes)) > 20000 or length(btrim(p_procedures_applied)) > 20000 then
+    raise exception 'Evolucao ou conduta excede o limite permitido.' using errcode = '22001';
   end if;
   insert into public.medical_records(
     user_id, patient_id, created_by, session_date, care_occurred_at, evolution_notes, procedures_applied,
@@ -431,10 +594,17 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare owner_id uuid := public.data_owner_id(); patient_id uuid; event_id uuid; identity record;
 begin
   select * into identity from public.assert_clinical_treatment_author();
-  select e.id into event_id from public.clinical_treatment_plan_status_events e where e.user_id = owner_id and e.request_id = p_request_id;
-  if event_id is not null then return event_id; end if;
   select p.patient_id into patient_id from public.clinical_treatment_plans p where p.id = p_plan_id and p.user_id = owner_id;
   if patient_id is null then raise exception 'Plano fora do escopo.' using errcode = '42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_plan_id::text, 0));
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':' || p_request_id::text, 9));
+  select e.id into event_id from public.clinical_treatment_plan_status_events e where e.user_id = owner_id and e.request_id = p_request_id;
+  if event_id is not null then
+    if not exists(select 1 from public.clinical_treatment_plan_status_events e where e.id = event_id and e.plan_id = p_plan_id and e.status = p_status and e.reason = btrim(p_reason)) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode = '22023';
+    end if;
+    return event_id;
+  end if;
   if (select e.status from public.clinical_treatment_plan_status_events e where e.plan_id = p_plan_id order by e.recorded_at desc, e.id desc limit 1) <> 'active' then
     raise exception 'O plano ja esta encerrado.' using errcode = '22023';
   end if;
@@ -475,13 +645,14 @@ revoke all on function public.assert_clinical_treatment_author() from public, an
 revoke all on function public.create_clinical_treatment_plan(uuid, uuid, text, text, text, text, text, text, date, date, jsonb) from public, anon;
 revoke all on function public.revise_clinical_treatment_plan(uuid, uuid, text, text, text, text, text, text, date, date) from public, anon;
 revoke all on function public.add_clinical_treatment_session(uuid, uuid, text, text, text, timestamptz, integer) from public, anon;
-revoke all on function public.record_clinical_treatment_session_event(uuid, uuid, text, timestamptz, integer, text, uuid) from public, anon;
+revoke all on function public.record_clinical_treatment_session_event(uuid, uuid, text, timestamptz, integer, text, uuid) from public, anon, authenticated;
+revoke all on function public.sync_clinical_treatment_session_schedule(uuid, uuid, text, timestamptz, integer, text, boolean) from public, anon;
 revoke all on function public.complete_clinical_treatment_session(uuid, uuid, timestamptz, text, text, date) from public, anon;
 revoke all on function public.close_clinical_treatment_plan(uuid, uuid, text, text) from public, anon;
 grant execute on function public.create_clinical_treatment_plan(uuid, uuid, text, text, text, text, text, text, date, date, jsonb) to authenticated;
 grant execute on function public.revise_clinical_treatment_plan(uuid, uuid, text, text, text, text, text, text, date, date) to authenticated;
 grant execute on function public.add_clinical_treatment_session(uuid, uuid, text, text, text, timestamptz, integer) to authenticated;
-grant execute on function public.record_clinical_treatment_session_event(uuid, uuid, text, timestamptz, integer, text, uuid) to authenticated;
+grant execute on function public.sync_clinical_treatment_session_schedule(uuid, uuid, text, timestamptz, integer, text, boolean) to authenticated;
 grant execute on function public.complete_clinical_treatment_session(uuid, uuid, timestamptz, text, text, date) to authenticated;
 grant execute on function public.close_clinical_treatment_plan(uuid, uuid, text, text) to authenticated;
 

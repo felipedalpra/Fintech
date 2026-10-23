@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Btn } from './UI.jsx'
 import { supabase } from '../lib/supabase.js'
 import {
   TREATMENT_SESSION_TYPES,
   TREATMENT_STATUS_LABELS,
   buildTreatmentConsultation,
+  clinicDateTimeToIso,
+  clinicIsoToDateTime,
   newRequestId,
   validateTreatmentDraft,
 } from '../lib/clinicalTreatment.js'
@@ -16,8 +18,9 @@ const EMPTY_PLAN = {
 }
 
 const EMPTY_SESSION = { sessionType:'procedure', title:'', instructions:'', scheduledStart:'', durationMinutes:30 }
+const createSessionDraft = () => ({ ...EMPTY_SESSION, requestId:newRequestId() })
 
-export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
+export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -26,6 +29,8 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
   const [notice, setNotice] = useState('')
   const [editor, setEditor] = useState(null)
   const [sessionEditor, setSessionEditor] = useState(false)
+  const calendarRequestIds = useRef(new Map())
+  const closeRequestIds = useRef(new Map())
 
   async function reload(preferredPlanId = '') {
     setLoading(true)
@@ -49,7 +54,7 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
   )
 
   function openNewPlan() {
-    setEditor({ mode:'create', values:{ ...EMPTY_PLAN }, sessions:[{ ...EMPTY_SESSION }] })
+    setEditor({ mode:'create', requestId:newRequestId(), values:{ ...EMPTY_PLAN }, sessions:[createSessionDraft()] })
     setError('')
   }
 
@@ -58,6 +63,7 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
     if (!version) return
     setEditor({
       mode:'revise',
+      requestId:newRequestId(),
       values:{
         title:version.title || '', indication:version.indication || '', diagnosticSummary:version.diagnostic_summary || '',
         objectives:version.objectives || '', plannedTreatment:version.planned_treatment || '', guidance:version.guidance || '',
@@ -74,7 +80,7 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
     setError('')
     setNotice('')
     const values = editor.values
-    const requestId = newRequestId()
+    const requestId = editor.requestId
     const params = {
       p_request_id:requestId,
       p_title:values.title,
@@ -93,8 +99,8 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
           ...params,
           p_patient_id:patient.id,
           p_sessions:editor.sessions.filter(item => item.title.trim()).map(item => ({
-            request_id:newRequestId(), session_type:item.sessionType, title:item.title, instructions:item.instructions || null,
-            scheduled_start:item.scheduledStart ? new Date(item.scheduledStart).toISOString() : null,
+            request_id:item.requestId, session_type:item.sessionType, title:item.title, instructions:item.instructions || null,
+            scheduled_start:item.scheduledStart ? clinicDateTimeToIso(item.scheduledStart) : null,
             duration_minutes:Number(item.durationMinutes) || 30,
           })),
         })
@@ -119,11 +125,11 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
     try {
       const { error:rpcError } = await supabase.rpc('add_clinical_treatment_session', {
         p_plan_id:selectedPlan.id,
-        p_request_id:newRequestId(),
+        p_request_id:values.requestId,
         p_session_type:values.sessionType,
         p_title:values.title,
         p_instructions:values.instructions || null,
-        p_scheduled_start:values.scheduledStart ? new Date(values.scheduledStart).toISOString() : null,
+        p_scheduled_start:values.scheduledStart ? clinicDateTimeToIso(values.scheduledStart) : null,
         p_duration_minutes:Number(values.durationMinutes) || 30,
       })
       if (rpcError) throw rpcError
@@ -140,67 +146,58 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
     setError('')
     try {
       const linkedConsultationId = session.timeline.find(item => item.consultation_id)?.consultation_id
-      if (linkedConsultationId && ['scheduled', 'rescheduled'].includes(payload.status) && payload.scheduledStart) {
-        const currentConsultation = data?.consultations?.find(item => item.id === linkedConsultationId)
-        if (!currentConsultation) throw new Error('A consulta vinculada não foi encontrada na agenda. Recarregue a página antes de reagendar.')
-        const schedule = buildTreatmentConsultation({
-          id:linkedConsultationId,
-          patient,
-          session,
-          event:{ scheduled_start:new Date(payload.scheduledStart).toISOString(), duration_minutes:payload.durationMinutes },
-        })
-        const updatedConsultation = {
-          ...currentConsultation,
-          date:schedule.date,
-          startTime:schedule.startTime,
-          durationMinutes:schedule.durationMinutes,
-        }
-        await saveDataNow(
-          current => ({ ...current, consultations:(current.consultations || []).map(item => item.id === linkedConsultationId ? updatedConsultation : item) }),
-          { collection:'consultations', record:updatedConsultation },
-        )
-      }
-      const { error:rpcError } = await supabase.rpc('record_clinical_treatment_session_event', {
+      const scheduledIso = payload.scheduledStart ? clinicDateTimeToIso(payload.scheduledStart) : null
+      const { error:rpcError } = await supabase.rpc('sync_clinical_treatment_session_schedule', {
         p_session_id:session.id,
-        p_request_id:newRequestId(),
+        p_request_id:payload.requestId || newRequestId(),
         p_status:payload.status,
-        p_scheduled_start:payload.scheduledStart ? new Date(payload.scheduledStart).toISOString() : null,
+        p_scheduled_start:scheduledIso,
         p_duration_minutes:Number(payload.durationMinutes) || null,
         p_reason:payload.reason || null,
-        p_consultation_id:payload.consultationId || null,
+        p_sync_consultation:Boolean(linkedConsultationId),
       })
       if (rpcError) throw rpcError
+      if (linkedConsultationId && setData) {
+        setData(current => ({ ...current, consultations:(current.consultations || []).map(item => {
+          if (item.id !== linkedConsultationId) return item
+          if (['cancelled', 'no_show'].includes(payload.status)) return { ...item, paymentStatus:'cancelado' }
+          const schedule = buildTreatmentConsultation({ id:linkedConsultationId, patient, session, event:{ scheduled_start:scheduledIso, duration_minutes:payload.durationMinutes } })
+          return { ...item, date:schedule.date, startTime:schedule.startTime, durationMinutes:schedule.durationMinutes, paymentStatus:item.paymentStatus === 'cancelado' ? 'pendente' : item.paymentStatus }
+        }) }))
+      }
       setNotice('Histórico da sessão atualizado.')
       await reload(selectedPlan.id)
+      return true
     } catch (nextError) {
       setError(nextError.message || 'Não foi possível atualizar a sessão.')
+      return false
     } finally { setBusy('') }
   }
 
   async function sendToCalendar(session) {
     const event = session.currentEvent
     if (!event?.scheduled_start || event.consultation_id) return
-    if (!saveDataNow) { setError('A agenda não está disponível neste momento.'); return }
     setBusy(session.id)
     setError('')
     // O UUID da sessão também identifica a consulta gerada. Se o vínculo RPC falhar depois
     // da Agenda salvar, a tentativa seguinte reaproveita a mesma consulta em vez de duplicá-la.
     const consultationId = session.id
+    const requestKey = `${session.id}:calendar`
+    const requestId = calendarRequestIds.current.get(requestKey) || newRequestId()
+    calendarRequestIds.current.set(requestKey, requestId)
     try {
       const consultation = buildTreatmentConsultation({ id:consultationId, patient, session, event })
-      if (!data?.consultations?.some(item => item.id === consultationId)) {
-        await saveDataNow(
-          current => ({ ...current, consultations:[...(current.consultations || []), consultation] }),
-          { collection:'consultations', record:consultation },
-        )
-      }
-      const { error:rpcError } = await supabase.rpc('record_clinical_treatment_session_event', {
-        p_session_id:session.id, p_request_id:newRequestId(), p_status:'scheduled',
+      const { error:rpcError } = await supabase.rpc('sync_clinical_treatment_session_schedule', {
+        p_session_id:session.id, p_request_id:requestId, p_status:'scheduled',
         p_scheduled_start:event.scheduled_start, p_duration_minutes:event.duration_minutes || 30,
-        p_reason:'Vinculada à agenda da clínica.', p_consultation_id:consultationId,
+        p_reason:'Vinculada à agenda da clínica.', p_sync_consultation:true,
       })
       if (rpcError) throw rpcError
+      if (setData && !data?.consultations?.some(item => item.id === consultationId)) {
+        setData(current => ({ ...current, consultations:[...(current.consultations || []), consultation] }))
+      }
       setNotice('Retorno salvo na Agenda. As informações financeiras continuam opcionais e podem ser preenchidas lá.')
+      calendarRequestIds.current.delete(requestKey)
       await reload(selectedPlan.id)
     } catch (nextError) {
       setError(nextError.message || 'Não foi possível enviar a sessão para a agenda.')
@@ -213,8 +210,8 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
     try {
       const { error:rpcError } = await supabase.rpc('complete_clinical_treatment_session', {
         p_session_id:session.id,
-        p_request_id:newRequestId(),
-        p_care_occurred_at:new Date(values.occurredAt).toISOString(),
+        p_request_id:values.requestId || newRequestId(),
+        p_care_occurred_at:clinicDateTimeToIso(values.occurredAt),
         p_evolution_notes:values.evolution,
         p_procedures_applied:values.procedure,
         p_next_appointment_date:values.nextDate || null,
@@ -222,21 +219,29 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, saveDataNow }) {
       if (rpcError) throw rpcError
       setNotice('Sessão concluída e evolução registrada no prontuário canônico.')
       await reload(selectedPlan.id)
+      return true
     } catch (nextError) {
       setError(nextError.message || 'Não foi possível concluir a sessão.')
+      return false
     } finally { setBusy('') }
   }
 
   async function closePlan(status) {
     const reason = window.prompt(status === 'completed' ? 'Registre o desfecho do plano:' : 'Informe o motivo do cancelamento:')
     if (!reason?.trim()) return
+    const requestKey = `${selectedPlan.id}:${status}`
+    const previousRequest = closeRequestIds.current.get(requestKey)
+    const requestId = previousRequest?.reason === reason.trim() ? previousRequest.requestId : newRequestId()
+    closeRequestIds.current.set(requestKey, { requestId, reason:reason.trim() })
     setBusy('close')
+    setError('')
     try {
       const { error:rpcError } = await supabase.rpc('close_clinical_treatment_plan', {
-        p_plan_id:selectedPlan.id, p_request_id:newRequestId(), p_status:status, p_reason:reason,
+        p_plan_id:selectedPlan.id, p_request_id:requestId, p_status:status, p_reason:reason,
       })
       if (rpcError) throw rpcError
       setNotice(status === 'completed' ? 'Plano concluído.' : 'Plano cancelado com justificativa preservada.')
+      closeRequestIds.current.delete(requestKey)
       await reload(selectedPlan.id)
     } catch (nextError) { setError(nextError.message || 'Não foi possível encerrar o plano.') }
     finally { setBusy('') }
@@ -295,7 +300,7 @@ function PlanEditor({ editor, setEditor, busy, onSave, onCancel }) {
         <Field label="Início previsto" type="date" value={editor.values.expectedStartOn} onChange={value => update('expectedStartOn', value)} />
         <Field label="Revisão prevista" type="date" value={editor.values.reviewOn} onChange={value => update('reviewOn', value)} />
       </div>
-      {editor.mode === 'create' && <div className="treatment-initial-sessions"><div className="treatment-section-heading"><div><strong>Etapas iniciais</strong><span>Você também pode adicioná-las depois.</span></div><Btn variant="ghost" onClick={() => setEditor(current => ({ ...current, sessions:[...current.sessions, { ...EMPTY_SESSION }] }))}>+ Etapa</Btn></div>{editor.sessions.map((session, index) => <SessionFields key={index} values={session} onChange={(key, value) => updateSession(index, key, value)} />)}</div>}
+      {editor.mode === 'create' && <div className="treatment-initial-sessions"><div className="treatment-section-heading"><div><strong>Etapas iniciais</strong><span>Você também pode adicioná-las depois.</span></div><Btn variant="ghost" onClick={() => setEditor(current => ({ ...current, sessions:[...current.sessions, createSessionDraft()] }))}>+ Etapa</Btn></div>{editor.sessions.map((session, index) => <SessionFields key={session.requestId || index} values={session} onChange={(key, value) => updateSession(index, key, value)} />)}</div>}
       <footer><Btn variant="ghost" onClick={onCancel} disabled={busy}>Cancelar</Btn><Btn onClick={onSave} disabled={busy}>{busy ? 'Registrando…' : editor.mode === 'create' ? 'Registrar plano' : 'Registrar nova versão'}</Btn></footer>
     </div>
   )
@@ -330,7 +335,9 @@ function SessionCard({ session, active, busy, onEvent, onCalendar, onComplete })
     .sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
     .find(item => item.scheduled_start) || event
   const linkedConsultationId = session.timeline.find(item => item.consultation_id)?.consultation_id
-  const scheduled = lastScheduledEvent.scheduled_start ? new Date(lastScheduledEvent.scheduled_start).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' }) : ''
+  const scheduled = lastScheduledEvent.scheduled_start ? new Date(lastScheduledEvent.scheduled_start).toLocaleString('pt-BR', {
+    dateStyle:'short', timeStyle:'short', timeZone:'America/Sao_Paulo',
+  }) : ''
   const done = event.status === 'completed'
   return <article className={`treatment-session is-${event.status || 'planned'}`}>
     <div className="treatment-session__number">{String(session.sequence_number).padStart(2, '0')}</div>
@@ -339,27 +346,27 @@ function SessionCard({ session, active, busy, onEvent, onCalendar, onComplete })
       {linkedConsultationId && <span className="treatment-calendar-linked">✓ Na Agenda</span>}
       {active && !done && <><button type="button" onClick={() => setMode('schedule')}>{scheduled ? 'Reagendar' : 'Agendar'}</button>{scheduled && !linkedConsultationId && <button type="button" onClick={() => onCalendar(session)}>Enviar à Agenda</button>}<button type="button" onClick={() => setMode('complete')}>Concluir</button><button type="button" onClick={() => setMode('cancel')}>Ocorrência</button></>}
     </div>
-    {mode === 'schedule' && <ScheduleEditor event={lastScheduledEvent} busy={busy} onCancel={() => setMode('')} onSave={values => onEvent(session, { ...values, status:scheduled ? 'rescheduled' : 'scheduled' }).then(() => setMode(''))} />}
-    {mode === 'complete' && <CompletionEditor busy={busy} onCancel={() => setMode('')} onSave={values => onComplete(session, values).then(() => setMode(''))} />}
-    {mode === 'cancel' && <OccurrenceEditor busy={busy} onCancel={() => setMode('')} onSave={values => onEvent(session, values).then(() => setMode(''))} />}
+    {mode === 'schedule' && <ScheduleEditor event={lastScheduledEvent} busy={busy} onCancel={() => setMode('')} onSave={values => onEvent(session, { ...values, status:scheduled ? 'rescheduled' : 'scheduled' }).then(success => { if (success) setMode('') })} />}
+    {mode === 'complete' && <CompletionEditor busy={busy} onCancel={() => setMode('')} onSave={values => onComplete(session, values).then(success => { if (success) setMode('') })} />}
+    {mode === 'cancel' && <OccurrenceEditor busy={busy} onCancel={() => setMode('')} onSave={values => onEvent(session, values).then(success => { if (success) setMode('') })} />}
   </article>
 }
 
 function InlineSessionEditor({ busy, onSave, onCancel }) {
-  const [values, setValues] = useState({ ...EMPTY_SESSION })
+  const [values, setValues] = useState(createSessionDraft)
   return <div className="treatment-inline-editor"><SessionFields values={values} onChange={(key, value) => setValues(current => ({ ...current, [key]:value }))} /><div><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn disabled={busy || !values.title.trim()} onClick={() => onSave(values)}>{busy ? 'Salvando…' : 'Adicionar etapa'}</Btn></div></div>
 }
 
 function ScheduleEditor({ event, busy, onSave, onCancel }) {
-  const initial = event.scheduled_start ? new Date(event.scheduled_start) : null
-  const [scheduledStart, setScheduledStart] = useState(initial ? new Date(initial.getTime() - initial.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '')
+  const [scheduledStart, setScheduledStart] = useState(event.scheduled_start ? clinicIsoToDateTime(event.scheduled_start) : '')
+  const [requestId] = useState(newRequestId)
   const [durationMinutes, setDuration] = useState(event.duration_minutes || 30)
-  return <div className="treatment-action-editor"><Field label="Data e hora" type="datetime-local" value={scheduledStart} onChange={setScheduledStart} required /><Field label="Duração (min)" type="number" value={durationMinutes} onChange={setDuration} /><div><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn disabled={busy || !scheduledStart} onClick={() => onSave({ scheduledStart, durationMinutes })}>{busy ? 'Salvando…' : 'Confirmar agenda'}</Btn></div></div>
+  return <div className="treatment-action-editor"><Field label="Data e hora" type="datetime-local" value={scheduledStart} onChange={setScheduledStart} required /><Field label="Duração (min)" type="number" value={durationMinutes} onChange={setDuration} /><div><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn disabled={busy || !scheduledStart} onClick={() => onSave({ scheduledStart, durationMinutes, requestId })}>{busy ? 'Salvando…' : 'Confirmar agenda'}</Btn></div></div>
 }
 
 function CompletionEditor({ busy, onSave, onCancel }) {
-  const localNow = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-  const [values, setValues] = useState({ occurredAt:localNow, evolution:'', procedure:'', nextDate:'' })
+  const localNow = clinicIsoToDateTime(new Date().toISOString())
+  const [values, setValues] = useState({ occurredAt:localNow, evolution:'', procedure:'', nextDate:'', requestId:newRequestId() })
   const update = (key, value) => setValues(current => ({ ...current, [key]:value }))
   return <div className="treatment-action-editor is-completion"><Field label="Data e hora do atendimento" type="datetime-local" value={values.occurredAt} onChange={value => update('occurredAt', value)} required /><Field label="Evolução clínica" value={values.evolution} onChange={value => update('evolution', value)} area required /><Field label="Conduta/procedimento realizado" value={values.procedure} onChange={value => update('procedure', value)} area required /><Field label="Próximo retorno (opcional)" type="date" value={values.nextDate} onChange={value => update('nextDate', value)} /><div><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn disabled={busy || !values.occurredAt || !values.evolution.trim() || !values.procedure.trim()} onClick={() => onSave(values)}>{busy ? 'Registrando…' : 'Concluir e registrar evolução'}</Btn></div></div>
 }
@@ -367,7 +374,8 @@ function CompletionEditor({ busy, onSave, onCancel }) {
 function OccurrenceEditor({ busy, onSave, onCancel }) {
   const [status, setStatus] = useState('cancelled')
   const [reason, setReason] = useState('')
-  return <div className="treatment-action-editor"><label><span>Ocorrência</span><select value={status} onChange={event => setStatus(event.target.value)}><option value="cancelled">Cancelada</option><option value="no_show">Não compareceu</option></select></label><Field label="Motivo" value={reason} onChange={setReason} area required /><div><Btn variant="ghost" onClick={onCancel}>Voltar</Btn><Btn variant="danger" disabled={busy || !reason.trim()} onClick={() => onSave({ status, reason })}>Registrar ocorrência</Btn></div></div>
+  const [requestId] = useState(newRequestId)
+  return <div className="treatment-action-editor"><label><span>Ocorrência</span><select value={status} onChange={event => setStatus(event.target.value)}><option value="cancelled">Cancelada</option><option value="no_show">Não compareceu</option></select></label><Field label="Motivo" value={reason} onChange={setReason} area required /><div><Btn variant="ghost" onClick={onCancel}>Voltar</Btn><Btn variant="danger" disabled={busy || !reason.trim()} onClick={() => onSave({ status, reason, requestId })}>Registrar ocorrência</Btn></div></div>
 }
 
 function SessionFields({ values, onChange }) {

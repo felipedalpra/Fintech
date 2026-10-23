@@ -65,6 +65,27 @@ export function buildTreatmentConsultation({ id, patient, session, event }) {
   }
 }
 
+export function clinicDateTimeToIso(value, timeZone = 'America/Sao_Paulo') {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(value || ''))
+  if (!match) throw new Error('Data e hora inválidas.')
+  const [, year, month, day, hour, minute] = match
+  const desiredAsUtc = Date.UTC(+year, +month - 1, +day, +hour, +minute)
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
+  }).formatToParts(new Date(desiredAsUtc)).reduce((result, part) => ({ ...result, [part.type]:part.value }), {})
+  const zoneWallAsUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute)
+  return new Date(desiredAsUtc - (zoneWallAsUtc - desiredAsUtc)).toISOString()
+}
+
+export function clinicIsoToDateTime(value, timeZone = 'America/Sao_Paulo') {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23',
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]:part.value }), {})
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
 export function buildTreatmentWorkspace({ plans = [], versions = [], statuses = [], sessions = [], events = [] }) {
   return [...plans]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))

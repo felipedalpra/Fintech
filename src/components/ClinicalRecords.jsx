@@ -31,7 +31,7 @@ const CLINICAL_TABS = [
   { id:'treatment', label:'Plano e retorno' },
 ]
 
-export function ClinicalRecords({ data, saveDataNow }) {
+export function ClinicalRecords({ data, setData }) {
   const { user } = useAuth()
   const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
@@ -333,7 +333,7 @@ export function ClinicalRecords({ data, saveDataNow }) {
                   />
                 )}
                 {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}
-                {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} saveDataNow={saveDataNow} />}
+                {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} />}
               </div>
             </>
           )}

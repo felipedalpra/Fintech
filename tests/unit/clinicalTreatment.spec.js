@@ -2,9 +2,16 @@ import { expect, test } from '@playwright/test'
 import {
   buildTreatmentConsultation,
   buildTreatmentWorkspace,
+  clinicDateTimeToIso,
+  clinicIsoToDateTime,
   latestTimelineEvent,
   validateTreatmentDraft,
 } from '../../src/lib/clinicalTreatment.js'
+
+test('interpreta datetime-local no fuso da clínica, independente do navegador', () => {
+  expect(clinicDateTimeToIso('2026-10-23T14:30')).toBe('2026-10-23T17:30:00.000Z')
+  expect(clinicIsoToDateTime('2026-10-23T17:30:00.000Z')).toBe('2026-10-23T14:30')
+})
 
 test('valida os campos clínicos obrigatórios e a ordem das datas', () => {
   expect(validateTreatmentDraft({})).toMatchObject({ valid:false })
