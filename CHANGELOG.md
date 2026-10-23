@@ -14,6 +14,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 - **Fotos privadas voltam a aparecer e podem ser abertas**: falhas no carregamento em lote de auditoria ou URLs assinadas agora recorrem à leitura individual, mostram estado de erro e permitem tentar novamente, em vez de deixar cartões vazios silenciosamente. O seletor de arquivos também aceita escolher novamente o mesmo arquivo após removê-lo, e documentos privados abrem sem uma segunda assinatura/auditoria desnecessária. (`src/components/ClinicalAssets.jsx`, `tests/e2e/clinical-assets.spec.js`.)
+- **Comparação antes/depois sem fotos cortadas ou área vazia**: estilos antigos não conseguem mais impor 190 px à imagem dentro de um painel muito maior. Cada foto agora ocupa toda a área de comparação, preserva sua proporção com `contain` e usa uma altura responsiva previsível no desktop e no celular. (`src/components/ClinicalRecords.css`, `tests/e2e/clinical-assets.spec.js`.)
 
 ## [Unreleased] - 2026-10-22 (122)
 ### Added

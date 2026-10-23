@@ -157,8 +157,11 @@ test('separa fotos de antes e depois e abre a comparação em tela cheia', async
   const afterSelect = page.getByLabel('Foto de depois')
   await expect(beforeSelect.locator('option')).toHaveCount(2)
   await expect(afterSelect.locator('option')).toHaveCount(2)
-  await expect(page.getByRole('button', { name:'Abrir foto de antes em tela cheia' })).toBeVisible()
+  const beforeImageButton = page.getByRole('button', { name:'Abrir foto de antes em tela cheia' })
+  await expect(beforeImageButton).toBeVisible()
   await expect(page.getByRole('button', { name:'Abrir foto de depois em tela cheia' })).toBeVisible()
+  await expect(beforeImageButton.locator('img')).toHaveCSS('object-fit', 'contain')
+  expect((await beforeImageButton.boundingBox())?.height).toBeGreaterThan(250)
 
   await page.getByRole('button', { name:/Comparar em tela cheia/ }).click()
   const compareDialog = page.getByRole('dialog', { name:'Comparação antes e depois' })
