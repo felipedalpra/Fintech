@@ -51,6 +51,14 @@ select set_config('test.protocol_id',:'protocol_id',false);
 select public.save_clinical_protocol(null,'40000000-0000-4000-8000-000000000001','{"name":"Mamoplastia","procedureName":"Mama","description":"Teste","indication":"Indicacao","objectives":"Objetivos","plannedTreatment":"Tratamento","guidance":"Orientacoes","anamnesisPrompts":[{"key":"tabagismo","label":"Tabagismo","required":true}],"examKit":["Hemograma"],"medicationFavorites":[],"photoRequirements":["Frente"],"returnSchedule":[{"days":7,"title":"Retorno","instructions":"Revisar"}]}'::jsonb);
 do $$ begin if (select count(*) from public.clinical_protocol_versions)<>1 then raise exception 'Protocolo duplicado'; end if; end $$;
 
+-- Formato inválido é recusado pelo banco, mesmo sem passar pelo cliente.
+do $$ begin
+  begin
+    perform public.save_clinical_protocol(null,'40000000-0000-4000-8000-000000000009','{"name":"Inválido","procedureName":"Teste","indication":"i","objectives":"o","plannedTreatment":"t","guidance":"g","examKit":{}}'::jsonb);
+    raise exception 'Lista inválida foi aceita';
+  exception when sqlstate '22023' then null; end;
+end $$;
+
 -- Perfil clínico não administrador consulta, mas não altera.
 reset role; select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',false); set role authenticated;
 do $$ begin begin perform public.save_clinical_protocol(current_setting('test.protocol_id')::uuid,gen_random_uuid(),'{}'::jsonb); raise exception 'Equipe alterou protocolo'; exception when sqlstate '42501' then null; end; end $$;
@@ -58,11 +66,37 @@ do $$ begin begin perform public.save_clinical_protocol(current_setting('test.pr
 -- Snapshot e respostas obrigatórias ficam na anamnese.
 reset role; select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',false); set role authenticated;
 select id::text version_id from public.clinical_protocol_versions limit 1 \gset
+select set_config('test.version_id',:'version_id',false);
 select public.create_clinical_anamnesis('30000000-0000-4000-8000-000000000001',current_date,jsonb_build_object('chief_complaint','Queixa','history_present_illness','Historia','physical_exam','Exame','diagnostic_hypotheses','Hipotese','therapeutic_plan','Plano','protocol_version_id',:'version_id','protocol_responses',jsonb_build_object('tabagismo','Nao')),'50000000-0000-4000-8000-000000000001');
 do $$ begin if not exists(select 1 from public.clinical_anamneses where protocol_name='Mamoplastia' and protocol_snapshot->>'name'='Mamoplastia' and protocol_responses->>'tabagismo'='Nao') then raise exception 'Snapshot ausente'; end if; end $$;
 
+-- Repetição fiel retorna o mesmo registro; conteúdo divergente com a mesma chave é bloqueado.
+select public.create_clinical_anamnesis('30000000-0000-4000-8000-000000000001',current_date,jsonb_build_object('chief_complaint','Queixa','history_present_illness','Historia','physical_exam','Exame','diagnostic_hypotheses','Hipotese','therapeutic_plan','Plano','protocol_version_id',:'version_id','protocol_responses',jsonb_build_object('tabagismo','Nao')),'50000000-0000-4000-8000-000000000001');
+do $$ begin
+  begin
+    perform public.create_clinical_anamnesis('30000000-0000-4000-8000-000000000001',current_date,jsonb_build_object('chief_complaint','Queixa alterada','history_present_illness','Historia','physical_exam','Exame','diagnostic_hypotheses','Hipotese','therapeutic_plan','Plano','protocol_version_id',current_setting('test.version_id'),'protocol_responses',jsonb_build_object('tabagismo','Nao')),'50000000-0000-4000-8000-000000000001');
+    raise exception 'Reuso divergente foi aceito';
+  exception when sqlstate '22023' then null; end;
+end $$;
+
+-- Arquivar não altera o snapshot existente, mas bloqueia novas aplicações.
+select public.set_clinical_protocol_status(current_setting('test.protocol_id')::uuid,'40000000-0000-4000-8000-000000000008','archived','Encerrado');
+do $$ begin
+  begin
+    perform public.create_clinical_anamnesis('30000000-0000-4000-8000-000000000001',current_date,jsonb_build_object('chief_complaint','Outra','history_present_illness','Historia','physical_exam','Exame','diagnostic_hypotheses','Hipotese','therapeutic_plan','Plano','protocol_version_id',(select id::text from public.clinical_protocol_versions limit 1),'protocol_responses',jsonb_build_object('tabagismo','Nao')),'50000000-0000-4000-8000-000000000002');
+    raise exception 'Protocolo arquivado foi aplicado';
+  exception when sqlstate '22023' then null; end;
+end $$;
+
+-- Tabelas versionadas não permitem mutação nem exclusão física, mesmo fora da RLS.
+reset role;
+do $$ begin
+  begin update public.clinical_protocol_versions set name='Mutado' where id=current_setting('test.version_id')::uuid; raise exception 'Versao mutada'; exception when sqlstate '55000' then null; end;
+  begin delete from public.clinical_protocol_status_events where protocol_id=current_setting('test.protocol_id')::uuid; raise exception 'Evento apagado'; exception when sqlstate '55000' then null; end;
+end $$;
+
 -- Outra clínica não lê protocolos.
-reset role; select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000004',false); set role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000004',false); set role authenticated;
 do $$ begin if (select count(*) from public.clinical_protocols)<>0 then raise exception 'RLS vazou protocolo'; end if; end $$;
 
 reset role;

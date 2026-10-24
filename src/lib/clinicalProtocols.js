@@ -1,5 +1,23 @@
 const MAX_LIST_ITEMS = 60
 
+const FIELD_LIMITS = {
+  name:160,
+  procedureName:160,
+  description:2000,
+  indication:5000,
+  objectives:5000,
+  plannedTreatment:10000,
+  guidance:5000,
+}
+
+const LIST_LIMITS = {
+  anamnesisPrompts:{ label:240, key:120 },
+  examKit:{ value:240 },
+  medicationFavorites:{ medication:240, presentation:240, quantity:120, directions:1000 },
+  photoRequirements:{ value:240 },
+  returnSchedule:{ title:160, instructions:1000 },
+}
+
 export const EMPTY_CLINICAL_PROTOCOL = {
   name:'', procedureName:'', description:'', indication:'', objectives:'', plannedTreatment:'', guidance:'',
   anamnesisPrompts:[], examKit:[], medicationFavorites:[], photoRequirements:[], returnSchedule:[],
@@ -13,6 +31,27 @@ export function newRequestId() {
 
 function limited(items, mapper) {
   return (Array.isArray(items) ? items : []).slice(0, MAX_LIST_ITEMS).map(mapper).filter(Boolean)
+}
+
+function validateRawLimits(input = {}) {
+  for (const [field, limit] of Object.entries(FIELD_LIMITS)) {
+    if (text(input[field]).length > limit) return `O campo ${field} excede o limite de ${limit} caracteres.`
+  }
+
+  for (const [field, limits] of Object.entries(LIST_LIMITS)) {
+    const value = input[field]
+    if (value !== undefined && !Array.isArray(value)) return `A lista ${field} é inválida.`
+    if ((value || []).length > MAX_LIST_ITEMS) return `A lista ${field} aceita no máximo ${MAX_LIST_ITEMS} itens.`
+    for (const item of value || []) {
+      if (limits.value && text(item).length > limits.value) return `Um item da lista ${field} excede o limite de ${limits.value} caracteres.`
+      for (const [itemField, limit] of Object.entries(limits)) {
+        if (itemField !== 'value' && text(item?.[itemField]).length > limit) {
+          return `O campo ${itemField} da lista ${field} excede o limite de ${limit} caracteres.`
+        }
+      }
+    }
+  }
+  return ''
 }
 
 export function normalizeClinicalProtocol(input = {}) {
@@ -49,6 +88,8 @@ export function normalizeClinicalProtocol(input = {}) {
 }
 
 export function validateClinicalProtocol(input) {
+  const limitError = validateRawLimits(input)
+  if (limitError) return limitError
   const protocol = normalizeClinicalProtocol(input)
   if (!protocol.name) return 'Informe o nome do protocolo.'
   if (!protocol.procedureName) return 'Informe o procedimento relacionado.'

@@ -182,19 +182,54 @@ end $$;
 drop function if exists public.create_clinical_anamnesis(uuid,date,jsonb,uuid);
 create or replace function public.create_clinical_anamnesis(p_patient_id uuid,p_session_date date,p_anamnesis jsonb,p_request_id uuid)
 returns uuid language plpgsql security definer set search_path=public,pg_temp as $$
-declare owner_id uuid:=public.data_owner_id(); anamnesis_id uuid; identity record; v_protocol public.clinical_protocol_versions%rowtype; prompt jsonb;
+declare
+  owner_id uuid:=public.data_owner_id(); anamnesis_id uuid; identity record;
+  existing public.clinical_anamneses%rowtype; v_protocol public.clinical_protocol_versions%rowtype; prompt jsonb;
 begin
   if auth.uid() is null or not public.has_clinical_access() then raise exception 'Acesso clinico nao autorizado.' using errcode='42501'; end if;
   if p_patient_id is null or p_session_date is null or p_request_id is null or jsonb_typeof(p_anamnesis)<>'object' then raise exception 'Paciente, data, conteudo e identificador sao obrigatorios.' using errcode='22023'; end if;
   if not exists(select 1 from public.patients where id=p_patient_id and user_id=owner_id) then raise exception 'Paciente fora da clinica.' using errcode='42501'; end if;
-  select id into anamnesis_id from public.clinical_anamneses where user_id=owner_id and patient_id=p_patient_id and request_id=p_request_id;
-  if anamnesis_id is not null then return anamnesis_id; end if;
   if nullif(btrim(p_anamnesis->>'chief_complaint'),'') is null or nullif(btrim(p_anamnesis->>'history_present_illness'),'') is null
     or nullif(btrim(p_anamnesis->>'physical_exam'),'') is null or nullif(btrim(p_anamnesis->>'diagnostic_hypotheses'),'') is null
     or nullif(btrim(p_anamnesis->>'therapeutic_plan'),'') is null then raise exception 'Campos SOAP obrigatorios ausentes.' using errcode='22023'; end if;
+  if p_anamnesis ? 'protocol_responses' and coalesce(jsonb_typeof(p_anamnesis->'protocol_responses'),'null')<>'object' then
+    raise exception 'Respostas do protocolo devem ser um objeto.' using errcode='22023';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(owner_id::text || ':anamnesis:' || p_request_id::text,17));
+  select * into existing from public.clinical_anamneses
+  where user_id=owner_id and request_id=p_request_id order by recorded_at,id limit 1;
+  if found then
+    if existing.patient_id is distinct from p_patient_id or existing.session_date is distinct from p_session_date
+      or existing.chief_complaint is distinct from btrim(p_anamnesis->>'chief_complaint')
+      or existing.history_present_illness is distinct from btrim(p_anamnesis->>'history_present_illness')
+      or existing.personal_history is distinct from nullif(btrim(p_anamnesis->>'personal_history'),'')
+      or existing.family_history is distinct from nullif(btrim(p_anamnesis->>'family_history'),'')
+      or existing.review_of_systems is distinct from nullif(btrim(p_anamnesis->>'review_of_systems'),'')
+      or existing.physical_exam is distinct from btrim(p_anamnesis->>'physical_exam')
+      or existing.diagnostic_hypotheses is distinct from btrim(p_anamnesis->>'diagnostic_hypotheses')
+      or existing.therapeutic_plan is distinct from btrim(p_anamnesis->>'therapeutic_plan')
+      or existing.systolic_bp is distinct from nullif(p_anamnesis->>'systolic_bp','')::smallint
+      or existing.diastolic_bp is distinct from nullif(p_anamnesis->>'diastolic_bp','')::smallint
+      or existing.temperature_c is distinct from nullif(p_anamnesis->>'temperature_c','')::numeric
+      or existing.heart_rate is distinct from nullif(p_anamnesis->>'heart_rate','')::smallint
+      or existing.respiratory_rate is distinct from nullif(p_anamnesis->>'respiratory_rate','')::smallint
+      or existing.oxygen_saturation is distinct from nullif(p_anamnesis->>'oxygen_saturation','')::numeric
+      or existing.pain_score is distinct from nullif(p_anamnesis->>'pain_score','')::smallint
+      or existing.weight_kg is distinct from nullif(p_anamnesis->>'weight_kg','')::numeric
+      or existing.height_cm is distinct from nullif(p_anamnesis->>'height_cm','')::numeric
+      or existing.protocol_version_id is distinct from nullif(p_anamnesis->>'protocol_version_id','')::uuid
+      or coalesce(existing.protocol_responses,'{}'::jsonb) is distinct from coalesce(p_anamnesis->'protocol_responses','{}'::jsonb) then
+      raise exception 'Identificador de requisicao reutilizado com conteudo diferente.' using errcode='22023';
+    end if;
+    return existing.id;
+  end if;
   if nullif(p_anamnesis->>'protocol_version_id','') is not null then
     select * into v_protocol from public.clinical_protocol_versions where id=(p_anamnesis->>'protocol_version_id')::uuid and user_id=owner_id;
     if not found then raise exception 'Versao de protocolo fora da clinica.' using errcode='42501'; end if;
+    if coalesce((select status from public.clinical_protocol_status_events where protocol_id=v_protocol.protocol_id and user_id=owner_id order by recorded_at desc,id desc limit 1),'archived')<>'active' then
+      raise exception 'Protocolo arquivado nao pode ser aplicado a novos registros.' using errcode='22023';
+    end if;
     for prompt in select value from jsonb_array_elements(v_protocol.anamnesis_prompts) loop
       if coalesce((prompt->>'required')::boolean,false) and nullif(btrim((coalesce(p_anamnesis->'protocol_responses','{}'::jsonb))->>(prompt->>'key')),'') is null then
         raise exception 'Resposta obrigatoria do protocolo ausente: %', prompt->>'label' using errcode='22023';

@@ -12,6 +12,14 @@ test('normaliza e valida o protocolo sem transformar modelo em decisão automát
   expect(validateClinicalProtocol(normalized)).toBe('')
 })
 
+test('bloqueia conteúdo excedente antes da normalização sem truncar silenciosamente', () => {
+  const base = { name:'Mamoplastia', procedureName:'Mama', indication:'i', objectives:'o', plannedTreatment:'t', guidance:'g' }
+  expect(validateClinicalProtocol({ ...base, examKit:Array.from({ length:61 }, (_, index) => `Exame ${index}`) })).toContain('no máximo 60 itens')
+  expect(validateClinicalProtocol({ ...base, indication:'x'.repeat(5001) })).toContain('5000 caracteres')
+  expect(validateClinicalProtocol({ ...base, medicationFavorites:[{ medication:'x'.repeat(241) }] })).toContain('240 caracteres')
+  expect(validateClinicalProtocol({ ...base, photoRequirements:'Frente' })).toContain('lista photoRequirements é inválida')
+})
+
 test('aplica protocolo como rascunho de anamnese e exige respostas marcadas', () => {
   const draft = buildProtocolAnamnesisDraft(version, { therapeutic_plan:'' })
   expect(draft).toMatchObject({ protocol_id:'p1', protocol_version_id:'v1', protocol_name:'Mamoplastia', therapeutic_plan:'Tratamento-base\n\nOrientações-base' })
