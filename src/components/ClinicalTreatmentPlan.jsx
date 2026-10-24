@@ -11,6 +11,8 @@ import {
   validateTreatmentDraft,
 } from '../lib/clinicalTreatment.js'
 import { loadTreatmentWorkspace } from '../lib/clinicalTreatmentClient.js'
+import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
+import { applyProtocolToTreatment } from '../lib/clinicalProtocols.js'
 
 const EMPTY_PLAN = {
   title:'', indication:'', diagnosticSummary:'', objectives:'', plannedTreatment:'', guidance:'',
@@ -29,6 +31,7 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
   const [notice, setNotice] = useState('')
   const [editor, setEditor] = useState(null)
   const [sessionEditor, setSessionEditor] = useState(false)
+  const [protocols, setProtocols] = useState([])
   const calendarRequestIds = useRef(new Map())
   const closeRequestIds = useRef(new Map())
 
@@ -47,6 +50,11 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
   }
 
   useEffect(() => { reload() }, [ownerId, patient.id])
+  useEffect(() => {
+    let active = true
+    loadClinicalProtocols(ownerId, { activeOnly:true }).then(rows => { if (active) setProtocols(rows) }).catch(() => { if (active) setProtocols([]) })
+    return () => { active = false }
+  }, [ownerId])
 
   const selectedPlan = useMemo(
     () => plans.find(plan => plan.id === selectedPlanId) || plans[0] || null,
@@ -262,7 +270,7 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
       {error && <div className="clinical-alert" role="alert">{error}</div>}
       {notice && <div className="treatment-notice" role="status">{notice}</div>}
 
-      {editor && <PlanEditor editor={editor} setEditor={setEditor} busy={busy === 'plan'} onSave={savePlan} onCancel={() => setEditor(null)} />}
+      {editor && <PlanEditor editor={editor} setEditor={setEditor} protocols={protocols} busy={busy === 'plan'} onSave={savePlan} onCancel={() => setEditor(null)} />}
 
       {!editor && plans.length === 0 && (
         <div className="treatment-empty"><span>⌁</span><h4>Nenhum plano registrado</h4><p>Crie o plano, defina os objetivos e organize os próximos atendimentos sem misturar o registro clínico com o financeiro.</p><Btn onClick={openNewPlan}>Criar primeiro plano</Btn></div>
@@ -284,13 +292,22 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
   )
 }
 
-function PlanEditor({ editor, setEditor, busy, onSave, onCancel }) {
+function PlanEditor({ editor, setEditor, protocols, busy, onSave, onCancel }) {
   const update = (key, value) => setEditor(current => ({ ...current, values:{ ...current.values, [key]:value } }))
   const updateSession = (index, key, value) => setEditor(current => ({ ...current, sessions:current.sessions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]:value } : item) }))
+  const applyProtocol = versionId => {
+    const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
+    if (!version) return
+    setEditor(current => {
+      const applied = applyProtocolToTreatment(version, current.values, current.values.expectedStartOn)
+      return { ...current, values:applied.values, sessions:applied.sessions.length ? applied.sessions.map(item => ({ ...item, requestId:newRequestId() })) : current.sessions }
+    })
+  }
   return (
     <div className="treatment-editor">
       <header><div><span>{editor.mode === 'create' ? 'Novo plano' : 'Nova versão'}</span><h4>{editor.mode === 'create' ? 'Planejar tratamento' : 'Revisar sem apagar o histórico'}</h4></div><button type="button" onClick={onCancel} aria-label="Fechar editor">×</button></header>
       <div className="treatment-fields">
+        {editor.mode === 'create' && protocols.length > 0 && <label className="is-area treatment-protocol-picker"><span>Começar por um protocolo</span><select value={editor.values.protocolVersionId || ''} onChange={event => applyProtocol(event.target.value)}><option value="">Preencher manualmente</option>{protocols.map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name} · v{item.currentVersion.version_number}</option>)}</select><small>O protocolo somente preenche o rascunho. Revise tudo antes de registrar.</small></label>}
         <Field label="Título do plano" value={editor.values.title} onChange={value => update('title', value)} required />
         <Field label="Indicação clínica" value={editor.values.indication} onChange={value => update('indication', value)} area required />
         <Field label="Hipótese/diagnóstico relacionado" value={editor.values.diagnosticSummary} onChange={value => update('diagnosticSummary', value)} area />

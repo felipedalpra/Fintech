@@ -15,6 +15,8 @@ import {
   latestClinicalSignatureByDocument,
 } from '../lib/clinicalSignature.js'
 import { Btn } from './UI.jsx'
+import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
+import { protocolVersionToForm } from '../lib/clinicalProtocols.js'
 
 const { EXAM_REQUEST, SIMPLE_PRESCRIPTION } = CLINICAL_DOCUMENT_TYPES
 
@@ -70,6 +72,7 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [protocols, setProtocols] = useState([])
 
   useEffect(() => {
     let active = true
@@ -91,6 +94,12 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
       })
     return () => { active = false }
   }, [patient.id, ownerId])
+
+  useEffect(() => {
+    let active = true
+    loadClinicalProtocols(ownerId, { activeOnly:true }).then(rows => { if (active) setProtocols(rows) }).catch(() => { if (active) setProtocols([]) })
+    return () => { active = false }
+  }, [ownerId])
 
   const logoDataUrl = profile?.clinic?.logoDataUrl || ''
   const groupedCount = useMemo(() => ({
@@ -123,6 +132,17 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
 
   function addMedication() {
     setForm(current => ({ ...current, items:[...current.items, { medication:'', presentation:'', quantity:'', directions:'' }] }))
+  }
+
+  function applyProtocol(versionId) {
+    const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
+    if (!version) return
+    const protocol = protocolVersionToForm(version)
+    if (editingType === EXAM_REQUEST) {
+      setForm(current => ({ ...current, exams_text:protocol.examKit.join('\n'), clinical_indication:current.clinical_indication || protocol.indication, instructions:current.instructions || protocol.guidance }))
+    } else if (protocol.medicationFavorites.length) {
+      setForm(current => ({ ...current, items:protocol.medicationFavorites, simple_prescription_confirmed:false }))
+    }
   }
 
   function removeMedication(index) {
@@ -205,6 +225,8 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
         <div className="clinical-document-legal-note">
           Esta etapa prepara o documento para impressão e assinatura manual. Ela ainda não realiza assinatura eletrônica qualificada.
         </div>
+
+        {protocols.some(item => editingType === EXAM_REQUEST ? item.currentVersion.exam_kit?.length : item.currentVersion.medication_favorites?.length) && <section className="clinical-protocol-apply"><div><strong>Usar modelo da clínica</strong><span>Revise todos os itens antes de emitir.</span></div><select aria-label="Modelo de protocolo para o documento" defaultValue="" onChange={event => applyProtocol(event.target.value)}><option value="">Selecionar protocolo</option>{protocols.filter(item => editingType === EXAM_REQUEST ? item.currentVersion.exam_kit?.length : item.currentVersion.medication_favorites?.length).map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name}</option>)}</select></section>}
 
         {editingType === EXAM_REQUEST ? (
           <div className="clinical-document-fields">

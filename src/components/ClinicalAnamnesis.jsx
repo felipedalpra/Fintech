@@ -9,6 +9,8 @@ import {
   hasLegacyClinicalAnamnesis,
 } from '../lib/clinicalAnamnesis.js'
 import { Btn } from './UI.jsx'
+import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
+import { buildProtocolAnamnesisDraft, protocolVersionToForm, validateProtocolResponses } from '../lib/clinicalProtocols.js'
 
 const SOAP_SECTIONS = [
   {
@@ -89,6 +91,7 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState(() => emptyClinicalAnamnesis(today()))
+  const [protocols, setProtocols] = useState([])
 
   useEffect(() => {
     let active = true
@@ -110,6 +113,12 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
       })
     return () => { active = false }
   }, [patientId, ownerId])
+
+  useEffect(() => {
+    let active = true
+    loadClinicalProtocols(ownerId, { activeOnly:true }).then(rows => { if (active) setProtocols(rows) }).catch(() => { if (active) setProtocols([]) })
+    return () => { active = false }
+  }, [ownerId])
 
   useEffect(() => {
     if (!initialDraft) return
@@ -140,12 +149,24 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
     setForm(current => ({ ...current, [field]:value }))
   }
 
+  function applyProtocol(versionId) {
+    if (!versionId) {
+      setForm(current => ({ ...current, protocol_id:null, protocol_version_id:null, protocol_name:'', protocol_responses:{} }))
+      return
+    }
+    const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
+    if (version) setForm(current => buildProtocolAnamnesisDraft(version, current))
+  }
+
   async function save() {
     if (saving) return
     setSaving(true)
     setError('')
     let signatureCompleted = false
     try {
+      const selectedProtocol = protocols.map(item => item.currentVersion).find(item => item?.id === form.protocol_version_id)
+      const protocolError = selectedProtocol ? validateProtocolResponses(selectedProtocol, form.protocol_responses) : ''
+      if (protocolError) throw new Error(protocolError)
       const args = buildClinicalAnamnesisRpcArgs({ patientId, requestId, form, author })
       const { data:createdId, error:saveError } = await supabase.rpc('create_clinical_anamnesis', args)
       if (saveError) throw saveError
@@ -198,6 +219,8 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
 
         {error && <div className="clinical-form-error" role="alert">{error}</div>}
 
+        {protocols.length > 0 && <section className="clinical-protocol-apply"><div><strong>Protocolo do procedimento</strong><span>Use como roteiro e revise cada informação antes de assinar.</span></div><select aria-label="Protocolo clínico" value={form.protocol_version_id || ''} onChange={event => applyProtocol(event.target.value)}><option value="">Sem protocolo</option>{protocols.map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name} · v{item.currentVersion.version_number}</option>)}</select></section>}
+
         {SOAP_SECTIONS.map(section => (
           <section key={section.key} className={`clinical-soap-section is-${section.key}`}>
             <header><span>{section.letter}</span><div><strong>{section.title}</strong><small>{section.description}</small></div></header>
@@ -216,6 +239,12 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
             </div>
           </section>
         ))}
+
+        {form.protocol_version_id && (() => {
+          const version = protocols.map(item => item.currentVersion).find(item => item?.id === form.protocol_version_id)
+          const prompts = version ? protocolVersionToForm(version).anamnesisPrompts : []
+          return prompts.length > 0 ? <section className="clinical-soap-section is-protocol"><header><span>+</span><div><strong>Campos do protocolo</strong><small>Complementos específicos de {form.protocol_name}</small></div></header><div className="clinical-soap-fields">{prompts.map(prompt => <label key={prompt.key}><span>{prompt.label}{prompt.required ? ' *' : ''}</span><textarea rows="3" value={form.protocol_responses?.[prompt.key] || ''} onChange={event => setForm(current => ({ ...current, protocol_responses:{ ...current.protocol_responses, [prompt.key]:event.target.value } }))} /></label>)}</div></section> : null
+        })()}
 
         <footer className="clinical-anamnesis-actions">
           <p>Ao assinar, esta versão se torna imutável. Correções devem ser registradas em uma nova versão.</p>
@@ -278,6 +307,8 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
           )
         })}
       </div>
+
+      {visibleRecord.protocol_name && <section className="clinical-protocol-record"><strong>Protocolo aplicado: {visibleRecord.protocol_name}</strong><span>Snapshot preservado neste registro</span>{Object.entries(visibleRecord.protocol_responses || {}).filter(([, value]) => String(value || '').trim()).map(([key, value]) => { const prompt = (visibleRecord.protocol_snapshot?.anamnesis_prompts || []).find(item => item.key === key); return <div key={key}><span>{prompt?.label || key}</span><p>{value}</p></div> })}</section>}
 
       {legacyProfile && (
         <div className="clinical-legacy-alerts">
