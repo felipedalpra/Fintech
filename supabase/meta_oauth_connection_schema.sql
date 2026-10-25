@@ -13,10 +13,19 @@ alter table public.meta_connections
 
 -- Linhas antigas com token em texto puro (configuração manual anterior) nunca são
 -- "promovidas" silenciosamente a criptografadas: força reconexão explícita.
-update public.meta_connections
-set status = 'erro'
-where access_token is not null
-  and access_token_encrypted is null;
+-- A coluna access_token só existe em instalações que já rodaram uma versão anterior
+-- de meta_integration_schema.sql com ela; checa antes de referenciar.
+do $$ begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'meta_connections' and column_name = 'access_token'
+  ) then
+    update public.meta_connections
+    set status = 'erro'
+    where access_token is not null
+      and access_token_encrypted is null;
+  end if;
+end $$;
 
 alter table public.meta_connections drop column if exists access_token;
 
