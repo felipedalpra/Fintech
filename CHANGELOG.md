@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-25
+### Changed
+- **Conexão Meta Ads sincroniza na hora, não só no cron diário**: ao conectar (ou escolher Página/Conta de Anúncios na seleção), a clínica já vê os últimos 7 dias de campanhas/métricas na tela de Anúncios sem esperar o cron das 11h UTC — que continua responsável por completar a janela de 90 dias à noite. Sync inicial roda melhor-esforço (nunca bloqueia nem quebra a conexão se falhar). (`api/whatsapp.js`.)
+
 ## [Unreleased] - 2026-10-23 (123)
 ### Added
 - **Protocolos clínicos por procedimento**: biblioteca versionada com perguntas complementares de anamnese, kits de exames, medicamentos favoritos, protocolo fotográfico e agenda sugerida de retornos. A aplicação em anamnese, pedido/receita e plano terapêutico apenas preenche rascunhos revisáveis. (`src/components/ClinicalProtocols.jsx`, `src/lib/clinicalProtocols.js`, `supabase/clinical_protocols_schema.sql`.)

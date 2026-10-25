@@ -1069,6 +1069,9 @@ async function handleMetaOAuthCallback(req, res) {
         status: 'conectado',
       }, { onConflict: 'user_id' })
       if (error) return back('error')
+      // Sync inicial curto (não bloqueia a conexão se falhar/demorar) — o cron diário
+      // completa a janela de 90 dias depois; isso só adianta os primeiros dias pro usuário ver algo na hora.
+      try { await syncMetaInsights(supabase, { owner: ownerId, days: 7 }) } catch (e) { console.error('meta insights initial sync error:', e?.message) }
       return back('connected')
     }
 
@@ -1129,6 +1132,10 @@ async function handleMetaSelect(req, res) {
     updated_at: new Date().toISOString(),
   }).eq('user_id', auth.ownerId)
   if (writeError) return res.status(500).json({ error: 'Não foi possível salvar a seleção.' })
+  // Mesmo sync inicial curto do fluxo direto — só roda se escolheu uma Conta de Anúncios.
+  if (adAccountId) {
+    try { await syncMetaInsights(auth.supabase, { owner: auth.ownerId, days: 7 }) } catch (e) { console.error('meta insights initial sync error:', e?.message) }
+  }
   return res.status(200).json({ ok: true })
 }
 
