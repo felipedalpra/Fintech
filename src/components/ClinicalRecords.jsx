@@ -4,6 +4,9 @@ import { Btn } from './UI.jsx'
 import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
 import { ClinicalDocuments } from './ClinicalDocuments.jsx'
 import { ClinicalIntake } from './ClinicalIntake.jsx'
+import { ClinicalAssets } from './ClinicalAssets.jsx'
+import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
+import { ClinicalProtocols } from './ClinicalProtocols.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -25,15 +28,16 @@ const CLINICAL_TABS = [
   { id:'summary', label:'Anamnese' },
   { id:'intake', label:'Pré-anamnese e termos' },
   { id:'prescriptions', label:'Exames e receitas' },
-  { id:'files', label:'Fotos e documentos', planned:true },
-  { id:'treatment', label:'Plano e retorno', planned:true },
+  { id:'files', label:'Fotos e documentos' },
+  { id:'treatment', label:'Plano e retorno' },
 ]
 
-export function ClinicalRecords({ data }) {
+export function ClinicalRecords({ data, setData }) {
   const { user } = useAuth()
   const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
   const [selected, setSelected] = useState(null)
+  const [showProtocols, setShowProtocols] = useState(false)
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -180,6 +184,7 @@ export function ClinicalRecords({ data }) {
   }
 
   function selectPatient(patient) {
+    setShowProtocols(false)
     setClinicalAccessStatus('auditing')
     setProfileStatus('loading')
     setClinicalProfile(null)
@@ -204,6 +209,7 @@ export function ClinicalRecords({ data }) {
   }
 
   function returnToAgenda() {
+    setShowProtocols(false)
     setSelected(null)
     setClinicalProfile(null)
     setAnamnesisDraft(null)
@@ -274,12 +280,18 @@ export function ClinicalRecords({ data }) {
           )}
         </div>
 
+        <button type="button" className={`clinical-protocols-button${showProtocols ? ' is-active' : ''}`} onClick={() => { setSelected(null); setShowProtocols(true); setError('') }}>
+          <span>▤</span><strong>Protocolos</strong>
+        </button>
+
         {selected && <div className="clinical-toolbar-context"><span>Ficha aberta</span><strong>{selected.full_name}</strong></div>}
       </div>
 
       {error && <div className="clinical-alert" role="alert">{error}</div>}
 
-      {!selected ? (
+      {showProtocols ? (
+        <ClinicalProtocols ownerId={ownerId} canManage={isOwner || role === 'admin'} onClose={returnToAgenda} />
+      ) : !selected ? (
         <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={selectPatient} />
       ) : (
         <div className="clinical-patient-workspace">
@@ -292,7 +304,6 @@ export function ClinicalRecords({ data }) {
                 {CLINICAL_TABS.map(item => (
                   <button key={item.id} type="button" className={tab === item.id ? 'is-active' : ''} onClick={() => setTab(item.id)}>
                     {item.label}
-                    {item.planned && <small>próxima etapa</small>}
                   </button>
                 ))}
               </nav>
@@ -331,8 +342,8 @@ export function ClinicalRecords({ data }) {
                     canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
                   />
                 )}
-                {tab === 'files' && <PlannedModule title="Fotos e documentos" description="Fotos clínicas, comparação antes/depois, termos e anexos protegidos ficarão vinculados a esta ficha." />}
-                {tab === 'treatment' && <PlannedModule title="Plano e retorno" description="Condutas, etapas, sessões e próximos retornos ficarão organizados junto do histórico clínico." />}
+                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}
+                {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} />}
               </div>
             </>
           )}
@@ -420,17 +431,6 @@ function ClinicalOpenError({ onRetry }) {
     <div className="clinical-empty-panel">
       <p>Os dados clínicos não foram abertos porque a auditoria não pôde ser confirmada.</p>
       <Btn variant="ghost" onClick={onRetry}>Tentar novamente</Btn>
-    </div>
-  )
-}
-
-function PlannedModule({ title, description }) {
-  return (
-    <div className="clinical-planned-module">
-      <span>Próxima etapa do Amigo essencial</span>
-      <h3>{title}</h3>
-      <p>{description}</p>
-      <Btn variant="ghost" disabled>Em implementação</Btn>
     </div>
   )
 }

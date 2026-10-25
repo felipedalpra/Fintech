@@ -15,6 +15,7 @@ import {
   downloadEvolutionMedia,
   getEvolutionConnection,
   listEvolutionChats,
+  logoutEvolutionInstance,
   resolveEvolutionPhoneLids,
   sendEvolutionMedia,
   sendEvolutionText,
@@ -37,6 +38,18 @@ export async function testProviderConnection(number) {
     return result
   }
   return testWhatsAppConnection(number.instance_url, number.api_token)
+}
+
+// Best-effort: Z-API não tem endpoint de logout nesta base, então não faz nada pra
+// ela (o número só fica arquivado no Supabase). Chamado antes de arquivar um número
+// Evolution, pra não deixar a sessão "pendurada" conectada no celular sem avisar.
+// Timeout curto e fixo (bem menor que o limite de 10s da função serverless): uma
+// instância já travada/quebrada não pode impedir a gravação real do arquivamento.
+const LOGOUT_TIMEOUT_MS = 4_000
+
+export async function logoutProviderInstance(number) {
+  if (whatsappProvider(number) !== 'evolution' || !number?.provider_instance_name) return
+  await logoutEvolutionInstance(number.provider_instance_name, { timeoutMs: LOGOUT_TIMEOUT_MS })
 }
 
 export async function configureProviderWebhook(number, webhookUrl) {

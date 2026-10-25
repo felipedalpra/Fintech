@@ -255,9 +255,9 @@ export async function resolveEvolutionPhoneLids(instanceName, phones, { chats } 
   return [...new Map(aliases.map(item => [`${item.outputPhone}:${item.lid}`, item])).values()]
 }
 
-export async function logoutEvolutionInstance(instanceName) {
+export async function logoutEvolutionInstance(instanceName, { timeoutMs } = {}) {
   const name = safeInstanceName(instanceName)
-  return evolutionRequest(`/instance/logout/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  return evolutionRequest(`/instance/logout/${encodeURIComponent(name)}`, { method: 'DELETE', timeoutMs })
 }
 
 export { EVOLUTION_EVENTS }

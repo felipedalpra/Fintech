@@ -10,6 +10,7 @@ import {
   createEvolutionInstance,
   downloadProviderMedia,
   listProviderChats,
+  logoutProviderInstance,
   providerReady,
   resolveProviderPhoneLids,
   sendProviderMedia,
@@ -18,6 +19,7 @@ import {
   whatsappProvider,
 } from './_lib/whatsappProvider.js'
 import { evolutionConfig, evolutionInstanceMissing } from './_lib/evolutionClient.js'
+import { buildConnectionHealthPatch, parseEvolutionConnectionState, shouldProcessWebhookPayload } from './_lib/evolutionConnection.js'
 import {
   matchPatientId,
   clinicWhatsAppMediaPath,
@@ -63,7 +65,7 @@ const INBOUND_MEDIA_BUCKET = 'wa-media-inbound'
 const INBOUND_MEDIA_PREFIX = `storage://${INBOUND_MEDIA_BUCKET}/`
 const OUTBOUND_MEDIA_BUCKET = 'wa-media'
 const DEFAULT_WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
-const NUMBER_PROVIDER_FIELDS = 'id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at'
+const NUMBER_PROVIDER_FIELDS = 'id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at, archived_at'
 const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_lid', 'sender_photo', 'chat_lid', 'contact_phone']
 const PREVIOUS_MESSAGE_IDENTITY_FIELDS = MESSAGE_IDENTITY_FIELDS.filter(field => field !== 'sender_lid')
 
@@ -106,11 +108,39 @@ function webhookUrlFor(number) {
 
 function providerColumnsMissing(error) {
   return ['PGRST204', '42703'].includes(error?.code)
-    && ['provider', 'provider_instance_name', 'connection_state'].some(field => String(error.message || '').includes(field))
+    && ['provider', 'provider_instance_name', 'connection_state', 'archived_at'].some(field => String(error.message || '').includes(field))
 }
 
 function withLegacyProvider(number) {
-  return number ? { provider: 'zapi', provider_instance_name: null, connection_state: 'unknown', ...number } : number
+  return number ? { provider: 'zapi', provider_instance_name: null, connection_state: 'unknown', archived_at: null, ...number } : number
+}
+
+// Campos que ?action=list-numbers manda pro navegador. Função nomeada e testada à
+// parte justamente porque um campo esquecido aqui (ex.: archived_at) não dá erro
+// nenhum — só faz a tela nunca enxergar a mudança, mesmo com o backend salvando
+// certo. instance_url/api_token (segredos Z-API) e user_id (interno) ficam de fora
+// de propósito.
+export function serializeWhatsAppNumberForClient(number) {
+  return {
+    id: number.id,
+    label: number.label,
+    phone: number.phone,
+    active: number.active,
+    // Evolution autentica por header configurado no backend; o navegador não
+    // precisa nem deve receber esse segredo. Z-API legado ainda usa o token na
+    // URL exibida ao administrador.
+    webhook_secret: whatsappProvider(number) === 'zapi' ? number.webhook_secret : null,
+    assigned_user_id: number.assigned_user_id,
+    provider: whatsappProvider(number),
+    provider_instance_name: number.provider_instance_name,
+    connection_state: number.connection_state,
+    connected_at: number.connected_at,
+    last_health_at: number.last_health_at,
+    last_webhook_at: number.last_webhook_at,
+    last_webhook_event: number.last_webhook_event,
+    webhook_verified_at: number.webhook_verified_at,
+    archived_at: number.archived_at,
+  }
 }
 
 async function getWhatsAppNumber(supabase, id) {
@@ -401,6 +431,7 @@ export default async function handler(req, res) {
   if (action === 'provision-number') return handleProvisionNumber(req, res)
   if (action === 'connect-instance') return handleConnectInstance(req, res)
   if (action === 'set-number-active') return handleSetNumberActive(req, res)
+  if (action === 'set-number-archived') return handleSetNumberArchived(req, res)
   if (action === 'list-numbers') return handleListNumbers(req, res)
   if (action === 'replay-webhook') return handleReplayWebhook(req, res)
   if (action === 'media-url') return handleMediaUrl(req, res)
@@ -637,6 +668,41 @@ async function handleSetNumberActive(req, res) {
   return res.status(200).json({ ok: true, active })
 }
 
+// ---- Remover/restaurar um número da tela sem apagar cadastro, mensagens ou histórico ----
+// Remover desconecta a sessão na Evolution (best-effort) e marca archived_at; a lista
+// padrão deixa de mostrar o número. Restaurar só limpa archived_at — o número volta a
+// aparecer inativo e precisa do fluxo normal de "Conectar / novo QR" pra reconectar.
+async function handleSetNumberArchived(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const { supabase, ownerId } = auth
+  const { data: number, error } = await getWhatsAppNumber(supabase, req.body?.whatsappNumberId)
+  if (error || !number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+  const archived = req.body?.archived === true
+
+  if (!archived) {
+    const restored = await supabase.from('whatsapp_numbers').update({ archived_at: null }).eq('id', number.id).eq('user_id', ownerId)
+    if (restored.error) return res.status(500).json({ error: 'Não foi possível restaurar a conexão.' })
+    return res.status(200).json({ ok: true, archived: false })
+  }
+
+  try {
+    await logoutProviderInstance(number)
+  } catch (logoutError) {
+    // Best-effort: a instância pode já estar desconectada/apagada do lado da Evolution.
+    // Isso nunca pode impedir o admin de limpar a tela do SurgiMetrics.
+    console.error('whatsapp logout on archive error:', logoutError.message)
+  }
+  const archivedUpdate = await supabase.from('whatsapp_numbers').update({
+    archived_at: new Date().toISOString(),
+    active: false,
+    connection_state: 'close',
+  }).eq('id', number.id).eq('user_id', ownerId)
+  if (archivedUpdate.error) return res.status(500).json({ error: 'Não foi possível remover a conexão.' })
+  return res.status(200).json({ ok: true, archived: true })
+}
+
 async function handleListNumbers(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const auth = await authenticatedAdmin(req)
@@ -658,25 +724,7 @@ async function handleListNumbers(req, res) {
     .flatMap(item => item.data || [])
     .sort((a, b) => Date.parse(b.received_at) - Date.parse(a.received_at))
     .slice(0, 100)
-  const numbers = (result.data || []).map(number => ({
-    id: number.id,
-    label: number.label,
-    phone: number.phone,
-    active: number.active,
-    // Evolution autentica por header configurado no backend; o navegador não
-    // precisa nem deve receber esse segredo. Z-API legado ainda usa o token na
-    // URL exibida ao administrador.
-    webhook_secret: whatsappProvider(number) === 'zapi' ? number.webhook_secret : null,
-    assigned_user_id: number.assigned_user_id,
-    provider: whatsappProvider(number),
-    provider_instance_name: number.provider_instance_name,
-    connection_state: number.connection_state,
-    connected_at: number.connected_at,
-    last_health_at: number.last_health_at,
-    last_webhook_at: number.last_webhook_at,
-    last_webhook_event: number.last_webhook_event,
-    webhook_verified_at: number.webhook_verified_at,
-  }))
+  const numbers = (result.data || []).map(serializeWhatsAppNumberForClient)
   res.setHeader('Cache-Control', 'private, no-store')
   return res.status(200).json({ numbers, pendingEvents })
 }
@@ -703,7 +751,9 @@ async function handleReplayWebhook(req, res) {
   }
   const { data: number } = await getWhatsAppNumber(supabase, event.whatsapp_number_id)
   if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número do evento não encontrado.' })
-  if (!number.active) return res.status(409).json({ error: 'Ative o número antes de reprocessar o evento.' })
+  // Não bloquear aqui por `!number.active`: um evento connection.update preso é
+  // exatamente o que precisa ser reprocessado pra destravar um número inativo (ver
+  // handleWebhook). handleWebhook decide, por tipo de evento, o que pode seguir.
   const claimed = await supabase.from('whatsapp_webhook_events').update({
     processing_status: 'received',
     attempts: Number(event.attempts || 1) + 1,
@@ -1502,22 +1552,36 @@ async function handleWebhook(req, res) {
   }
   if (audit.duplicate) return res.status(200).json({ ok: true, duplicate: true })
 
-  // Manter a conexão antiga cadastrada para rollback não pode duplicar o inbox,
-  // mas o evento autenticado permanece auditável e pode ser reprocessado.
-  if (!num.active) {
-    await finishWebhookEvent(supabase, audit.id, 'ignored', 'Número inativo no recebimento.')
-    return res.status(200).json({ ok: true, inactive: true })
-  }
-
   const receivedAt = new Date().toISOString()
   const healthPatch = { last_webhook_at: receivedAt, last_webhook_event: metadata.eventType }
-  if (provider === 'evolution' && metadata.eventType === 'connection.update') {
-    const state = String(req.body?.data?.state || req.body?.data?.status || req.body?.state || 'unknown').toLowerCase()
-    healthPatch.connection_state = state
-    healthPatch.last_health_at = receivedAt
-    if (state === 'open') healthPatch.connected_at = receivedAt
+  const isConnectionUpdate = provider === 'evolution' && metadata.eventType === 'connection.update'
+  let reactivated = false
+  if (isConnectionUpdate) {
+    const state = parseEvolutionConnectionState(req.body)
+    let canActivate = false
+    if (state === 'open' && !num.active) {
+      const { count } = await supabase.from('whatsapp_numbers')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', num.user_id)
+        .eq('active', true)
+        .neq('id', num.id)
+      canActivate = Number(count || 0) < 3
+    }
+    Object.assign(healthPatch, buildConnectionHealthPatch(state, { now: receivedAt, wasActive: num.active, canActivate }))
+    reactivated = Boolean(healthPatch.active)
   }
-  await supabase.from('whatsapp_numbers').update(healthPatch).eq('id', num.id)
+  // Eventos de ciclo de vida da conexão (connection.update) sempre atualizam o estado,
+  // mesmo com o número inativo — sem isso, escanear o QR de um número inativo nunca
+  // destrava a reconexão (o evento real chega e é descartado antes de ser lido).
+  // Mensagens/status/automações continuam bloqueados enquanto o número não reativar.
+  if (isConnectionUpdate || num.active) {
+    await supabase.from('whatsapp_numbers').update(healthPatch).eq('id', num.id)
+  }
+
+  if (!shouldProcessWebhookPayload({ wasActive: num.active, reactivated })) {
+    await finishWebhookEvent(supabase, audit.id, isConnectionUpdate ? 'processed' : 'ignored', isConnectionUpdate ? null : 'Número inativo no recebimento.')
+    return res.status(200).json({ ok: true, inactive: true, connectionUpdated: isConnectionUpdate })
+  }
 
   // Atualiza o ciclo real da mensagem enviada (enviada → entregue → lida).
   // Nunca regride um status mais avançado se callbacks chegarem fora de ordem.
