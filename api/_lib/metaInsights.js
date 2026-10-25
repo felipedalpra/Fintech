@@ -237,11 +237,15 @@ export async function syncMetaInsights(supabase, opts = {}) {
   const { data: rawConns, error } = await query
   if (error) throw error
 
+  // act_<id>/campanhas, adsets, ads e insights são endpoints de Conta de Anúncios: exigem o
+  // token de USUÁRIO (ads_read), não o pageToken — pageToken só serve pra ações de Página
+  // (ex.: leads_retrieval dos formulários, em handleMetaWebhook). Usar pageToken aqui derruba
+  // toda consulta com "(#100) Unsupported get request" do Graph API.
   const conns = (rawConns || [])
     .map(row => ({
       user_id: row.user_id,
       ad_account_id: row.ad_account_id,
-      access_token: decryptPayload(row.access_token_encrypted)?.pageToken,
+      access_token: decryptPayload(row.access_token_encrypted)?.userToken,
       token_expires_at: row.token_expires_at,
     }))
     .filter(conn => conn.access_token)
@@ -263,10 +267,13 @@ export async function syncMetaInsights(supabase, opts = {}) {
       summary.details.push({ owner: conn.user_id, error: e?.message || 'erro no sync Meta' })
       console.error('meta insights sync error:', conn.user_id, e?.message)
       // Marca erro para o usuário ver (ex.: token expirado) em vez de falhar em silêncio.
-      await supabase.from('meta_connections')
-        .update({ status: 'erro', updated_at: new Date().toISOString() })
-        .eq('user_id', conn.user_id)
-        .catch(() => {})
+      // PostgrestFilterBuilder só garante .then (thenable), não .catch — por isso try/await,
+      // não encadeamento direto (que lançava "catch is not a function" e mascarava o erro real).
+      try {
+        await supabase.from('meta_connections')
+          .update({ status: 'erro', updated_at: new Date().toISOString() })
+          .eq('user_id', conn.user_id)
+      } catch {}
     }
   }
   return summary

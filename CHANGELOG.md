@@ -9,6 +9,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ### Changed
 - **Conexão Meta Ads sincroniza na hora, não só no cron diário**: ao conectar (ou escolher Página/Conta de Anúncios na seleção), a clínica já vê os últimos 7 dias de campanhas/métricas na tela de Anúncios sem esperar o cron das 11h UTC — que continua responsável por completar a janela de 90 dias à noite. Sync inicial roda melhor-esforço (nunca bloqueia nem quebra a conexão se falhar). (`api/whatsapp.js`.)
 
+### Fixed
+- **Sync do Meta Ads nunca trazia dado nenhum**: `syncMetaInsights` consultava `act_<id>/campaigns`/`adsets`/`ads`/`insights` com o `pageToken` (token da Página), mas esses são endpoints de Conta de Anúncios — exigem o token de usuário com `ads_read`. Toda consulta falhava com `(#100) Unsupported get request` do Graph API, silenciosamente: o tratamento de erro também estava quebrado (`.catch()` encadeado direto numa query do Supabase, que não é uma Promise de verdade — só garante `.then`), então nem o status `'erro'` era gravado. Achado pelos logs de runtime da Vercel depois que o Felipe testou a conexão ao vivo e não via nenhum dado aparecer. Corrigido: usa `userToken` pra insights/estrutura de anúncios (mantém `pageToken` só pra leads_retrieval, que é escopo de Página) e o marcador de erro agora usa try/await em vez de `.catch()` direto. (`api/_lib/metaInsights.js`.)
+
 ## [Unreleased] - 2026-10-23 (123)
 ### Added
 - **Protocolos clínicos por procedimento**: biblioteca versionada com perguntas complementares de anamnese, kits de exames, medicamentos favoritos, protocolo fotográfico e agenda sugerida de retornos. A aplicação em anamnese, pedido/receita e plano terapêutico apenas preenche rascunhos revisáveis. (`src/components/ClinicalProtocols.jsx`, `src/lib/clinicalProtocols.js`, `supabase/clinical_protocols_schema.sql`.)
