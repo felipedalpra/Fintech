@@ -113,8 +113,16 @@ export function MetaAdsDashboard() {
     if (conn.status === 'selecionando') return { kind: 'selecting', text: 'Conexão iniciada, mas falta escolher a Página/Conta de Anúncios em Configurações → Meta Ads.' }
     if (conn.status === 'erro') return { kind: 'error', text: `A última sincronização falhou (token pode ter expirado ou sido revogado). Reconecte em Configurações → Meta Ads. Última tentativa: ${freshness(conn.updated_at) || 'desconhecida'}.` }
     if (conn.status === 'expirando') return { kind: 'expiring', text: 'O token do Meta está perto de vencer. Reconecte em Configurações → Meta Ads para não perder a sincronização.' }
-    if (!syncedAt) return { kind: 'pending_sync', text: 'Conta conectada, mas a primeira sincronização ainda não rodou. Aguarde alguns minutos ou reconecte para forçar um sync imediato.' }
-    if (hasAnyCampaign === false) return { kind: 'no_campaigns', text: `Conectado e sincronizado (última vez ${freshness(syncedAt) || 'agora'}), mas esta Conta de Anúncios não tem nenhuma campanha — o Alcance que aparece acima é o agregado da conta, não de campanhas específicas.` }
+    // hasAnyCampaign vem de meta_campaigns (estrutura, sem filtro de período) — é o sinal
+    // confiável de "já sincronizou com sucesso". meta_insights (syncedAt) NUNCA ganha linha
+    // quando a conta não tem campanha nenhuma, então usá-lo aqui travava a mensagem em
+    // "aguardando sincronização" pra sempre nesse caso, mesmo com o sync rodando certinho.
+    if (hasAnyCampaign === false) {
+      return { kind: 'no_campaigns', text: `Conectado${conn.updated_at ? ` (última sincronização ${freshness(conn.updated_at)})` : ''}, mas não há nenhuma campanha sincronizada — ou a Conta de Anúncios realmente não tem campanha nenhuma, ou o sync ainda não rodou. O Alcance acima é o agregado da conta inteira. Se você tem campanhas ativas no Gerenciador de Anúncios e isso persistir, reconecte em Configurações → Meta Ads para forçar um sync novo.` }
+    }
+    if (hasAnyCampaign === true && !syncedAt) {
+      return { kind: 'no_period_data', text: 'Esta conta tem campanhas, mas nenhuma teve atividade no período selecionado. Tente "Trimestre" ou um período mais amplo.' }
+    }
     return { kind: 'ok', text: null }
   }, [conn, syncedAt, hasAnyCampaign])
 
