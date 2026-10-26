@@ -65,6 +65,8 @@ export function MetaAdsDashboard() {
   const [syncedAt, setSyncedAt] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [conn, setConn] = useState(null)
+  const [hasAnyCampaign, setHasAnyCampaign] = useState(null)
   const [sort, setSort] = useState({ key: 'spend', dir: 'desc' })
 
   useEffect(() => {
@@ -74,18 +76,25 @@ export function MetaAdsDashboard() {
       setLoading(true); setError(null)
       const { since } = rangeFor(period)
       const lvl = LEVELS.find(l => l.key === level)
-      const [insRes, strRes, reachRes] = await Promise.all([
+      const [insRes, strRes, reachRes, connRes, campaignsRes] = await Promise.all([
         supabase.from('meta_insights')
           .select('level, ref_id, campaign_id, date, spend, impressions, clicks, leads, updated_at')
           .eq('user_id', uid).eq('level', level).gte('date', since),
         supabase.from(lvl.table).select(`${lvl.idCol}, name, status`).eq('user_id', uid),
         supabase.from('meta_reach').select('level, ref_id, reach, frequency')
           .eq('user_id', uid).eq('period', period),
+        // Status real da conexão (não cruza com financeiro) — explica o "sem dado" em vez de
+        // mostrar sempre o mesmo aviso genérico de App Review, que nem é a causa mais comum.
+        supabase.from('meta_connections')
+          .select('status, ad_account_id, updated_at').eq('user_id', uid).maybeSingle(),
+        supabase.from('meta_campaigns').select('campaign_id', { count: 'exact', head: true }).eq('user_id', uid),
       ])
       if (!mounted) return
       if (insRes.error) { setError(insRes.error.message); setLoading(false); return }
       setInsights(insRes.data ?? [])
       setReachRows(reachRes.data ?? [])
+      setConn(connRes.data ?? null)
+      setHasAnyCampaign((campaignsRes.count ?? 0) > 0)
       const map = {}
       for (const r of strRes.data ?? []) map[r[lvl.idCol]] = { name: r.name, status: r.status }
       setNames(map)
@@ -96,6 +105,18 @@ export function MetaAdsDashboard() {
     load()
     return () => { mounted = false }
   }, [uid, level, period])
+
+  // Motivo real de não ter dado na tela — nunca o aviso fixo de App Review, que nem é
+  // a causa mais provável (Standard Access já cobre a própria conta sem revisão do Meta).
+  const diagnosis = useMemo(() => {
+    if (!conn || !conn.ad_account_id) return { kind: 'not_connected', text: 'Nenhuma conta do Meta conectada ainda. Conecte em Configurações → Meta Ads.' }
+    if (conn.status === 'selecionando') return { kind: 'selecting', text: 'Conexão iniciada, mas falta escolher a Página/Conta de Anúncios em Configurações → Meta Ads.' }
+    if (conn.status === 'erro') return { kind: 'error', text: `A última sincronização falhou (token pode ter expirado ou sido revogado). Reconecte em Configurações → Meta Ads. Última tentativa: ${freshness(conn.updated_at) || 'desconhecida'}.` }
+    if (conn.status === 'expirando') return { kind: 'expiring', text: 'O token do Meta está perto de vencer. Reconecte em Configurações → Meta Ads para não perder a sincronização.' }
+    if (!syncedAt) return { kind: 'pending_sync', text: 'Conta conectada, mas a primeira sincronização ainda não rodou. Aguarde alguns minutos ou reconecte para forçar um sync imediato.' }
+    if (hasAnyCampaign === false) return { kind: 'no_campaigns', text: `Conectado e sincronizado (última vez ${freshness(syncedAt) || 'agora'}), mas esta Conta de Anúncios não tem nenhuma campanha — o Alcance que aparece acima é o agregado da conta, não de campanhas específicas.` }
+    return { kind: 'ok', text: null }
+  }, [conn, syncedAt, hasAnyCampaign])
 
   // Alcance/frequência do período para o nível atual (keyed por ref_id) e da conta (KPI total).
   const reachMap = useMemo(() => {
@@ -205,11 +226,12 @@ export function MetaAdsDashboard() {
             <div style={{ ...s.fresh, marginBottom: 14 }}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</div>
           )}
 
-          <div style={s.banner}>
-            <span>⚠️</span>
-            <span><b>Modo teste.</b> Os números vêm da conta conectada no Meta. A leitura dos anúncios reais
-            depende da aprovação do app no Meta (App Review · <code>ads_read</code>) — em andamento.</span>
-          </div>
+          {diagnosis.text && (
+            <div style={s.banner}>
+              <span>{diagnosis.kind === 'no_campaigns' ? 'ℹ️' : '⚠️'}</span>
+              <span>{diagnosis.text}</span>
+            </div>
+          )}
 
           {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 
@@ -239,7 +261,7 @@ export function MetaAdsDashboard() {
                     <tr><td style={{ ...s.td, textAlign: 'center', color: C.textDim }} colSpan={COLS.length + 1}>Carregando…</td></tr>
                   ) : rows.length === 0 ? (
                     <tr><td style={{ ...s.td, textAlign: 'center' }} colSpan={COLS.length + 1}>
-                      Nenhum dado do Meta ainda. Conecte a conta em <b>Configurações → Meta Ads</b> e aguarde o próximo sync.
+                      {diagnosis.text || <>Nenhum dado do Meta ainda. Conecte a conta em <b>Configurações → Meta Ads</b> e aguarde o próximo sync.</>}
                     </td></tr>
                   ) : (
                     rows.map(r => (
