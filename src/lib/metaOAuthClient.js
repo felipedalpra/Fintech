@@ -31,3 +31,5 @@ export const startMetaConnection = () => request('meta-connect', { method:'POST'
 export const fetchMetaPendingAssets = () => request('meta-pending')
 export const selectMetaAssets = ({ pageId, adAccountId }) => request('meta-select', { method:'POST', body:{ pageId, adAccountId } })
 export const disconnectMeta = () => request('meta-disconnect', { method:'POST' })
+// Sync sob demanda pra um período arbitrário (cron/conexão só cobrem os últimos 90 dias).
+export const syncMetaRange = ({ since, until }) => request('meta-sync-range', { method:'POST', body:{ since, until } })

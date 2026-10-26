@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { aggregateInsights, deriveMetrics, fmtBRL, fmtInt, fmtPct } from '../lib/metaMetrics.js'
 import { requestMetaAnalysis } from '../lib/aiClient.js'
+import { syncMetaRange } from '../lib/metaOAuthClient.js'
 
 // Tela CRM → Anúncios (Meta Ads). Espelho fiel do Meta: só exibe o que vem de lá, não cruza
 // com o financeiro. Drill por nível (Campanhas / Conjuntos / Anúncios), métricas nativas.
@@ -17,11 +18,17 @@ const PERIODS = [
   { key: 'month',   label: 'Este mês' },
   { key: '30d',     label: 'Últimos 30d' },
   { key: 'quarter', label: 'Trimestre' },
+  { key: 'custom',  label: 'Personalizado' },
 ]
 
 function isoDay(d) { return d.toISOString().slice(0, 10) }
-function rangeFor(period) {
+// customRange só é usado quando period === 'custom'. Alcance/Frequência (meta_reach) são
+// pré-calculados no backend só pra month/30d/quarter — período personalizado nunca tem
+// linha em meta_reach, então aparecem como "—" (honesto: Gasto/Cliques/Leads continuam
+// exatos, vêm de meta_insights por dia, que funciona pra qualquer intervalo).
+function rangeFor(period, customRange) {
   const until = new Date()
+  if (period === 'custom' && customRange?.since && customRange?.until) return customRange
   if (period === 'month') return { since: isoDay(new Date(until.getFullYear(), until.getMonth(), 1)), until: isoDay(until) }
   const days = period === 'quarter' ? 89 : 29
   return { since: isoDay(new Date(Date.now() - days * 86400000)), until: isoDay(until) }
@@ -59,6 +66,10 @@ export function MetaAdsDashboard() {
   const [subtab, setSubtab] = useState('desempenho')
   const [level, setLevel] = useState('campaign')
   const [period, setPeriod] = useState('month')
+  const [customRange, setCustomRange] = useState(() => {
+    const until = new Date()
+    return { since: isoDay(new Date(Date.now() - 89 * 86400000)), until: isoDay(until) }
+  })
   const [insights, setInsights] = useState([])
   const [names, setNames] = useState({})
   const [reachRows, setReachRows] = useState([])
@@ -68,18 +79,33 @@ export function MetaAdsDashboard() {
   const [conn, setConn] = useState(null)
   const [hasAnyCampaign, setHasAnyCampaign] = useState(null)
   const [sort, setSort] = useState({ key: 'spend', dir: 'desc' })
+  const [rangeSyncing, setRangeSyncing] = useState(false)
+  const [rangeSyncError, setRangeSyncError] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  async function syncRangeNow() {
+    setRangeSyncing(true); setRangeSyncError(null)
+    try {
+      await syncMetaRange(customRange)
+      setReloadKey(k => k + 1)
+    } catch (e) {
+      setRangeSyncError(e.message || 'Não foi possível sincronizar esse período.')
+    } finally {
+      setRangeSyncing(false)
+    }
+  }
 
   useEffect(() => {
     if (!uid) return
     let mounted = true
     async function load() {
       setLoading(true); setError(null)
-      const { since } = rangeFor(period)
+      const { since, until } = rangeFor(period, customRange)
       const lvl = LEVELS.find(l => l.key === level)
       const [insRes, strRes, reachRes, connRes, campaignsRes] = await Promise.all([
         supabase.from('meta_insights')
           .select('level, ref_id, campaign_id, date, spend, impressions, clicks, leads, updated_at')
-          .eq('user_id', uid).eq('level', level).gte('date', since),
+          .eq('user_id', uid).eq('level', level).gte('date', since).lte('date', until),
         supabase.from(lvl.table).select(`${lvl.idCol}, name, status`).eq('user_id', uid),
         supabase.from('meta_reach').select('level, ref_id, reach, frequency')
           .eq('user_id', uid).eq('period', period),
@@ -104,7 +130,7 @@ export function MetaAdsDashboard() {
     }
     load()
     return () => { mounted = false }
-  }, [uid, level, period])
+  }, [uid, level, period, customRange, reloadKey])
 
   // Motivo real de não ter dado na tela — nunca o aviso fixo de App Review, que nem é
   // a causa mais provável (Standard Access já cobre a própria conta sem revisão do Meta).
@@ -113,8 +139,16 @@ export function MetaAdsDashboard() {
     if (conn.status === 'selecionando') return { kind: 'selecting', text: 'Conexão iniciada, mas falta escolher a Página/Conta de Anúncios em Configurações → Meta Ads.' }
     if (conn.status === 'erro') return { kind: 'error', text: `A última sincronização falhou (token pode ter expirado ou sido revogado). Reconecte em Configurações → Meta Ads. Última tentativa: ${freshness(conn.updated_at) || 'desconhecida'}.` }
     if (conn.status === 'expirando') return { kind: 'expiring', text: 'O token do Meta está perto de vencer. Reconecte em Configurações → Meta Ads para não perder a sincronização.' }
-    if (!syncedAt) return { kind: 'pending_sync', text: 'Conta conectada, mas a primeira sincronização ainda não rodou. Aguarde alguns minutos ou reconecte para forçar um sync imediato.' }
-    if (hasAnyCampaign === false) return { kind: 'no_campaigns', text: `Conectado e sincronizado (última vez ${freshness(syncedAt) || 'agora'}), mas esta Conta de Anúncios não tem nenhuma campanha — o Alcance que aparece acima é o agregado da conta, não de campanhas específicas.` }
+    // hasAnyCampaign vem de meta_campaigns (estrutura, sem filtro de período) — é o sinal
+    // confiável de "já sincronizou com sucesso". meta_insights (syncedAt) NUNCA ganha linha
+    // quando a conta não tem campanha nenhuma, então usá-lo aqui travava a mensagem em
+    // "aguardando sincronização" pra sempre nesse caso, mesmo com o sync rodando certinho.
+    if (hasAnyCampaign === false) {
+      return { kind: 'no_campaigns', text: `Conectado${conn.updated_at ? ` (última sincronização ${freshness(conn.updated_at)})` : ''}, mas não há nenhuma campanha sincronizada — ou a Conta de Anúncios realmente não tem campanha nenhuma, ou o sync ainda não rodou. O Alcance acima é o agregado da conta inteira. Se você tem campanhas ativas no Gerenciador de Anúncios e isso persistir, reconecte em Configurações → Meta Ads para forçar um sync novo.` }
+    }
+    if (hasAnyCampaign === true && !syncedAt) {
+      return { kind: 'no_period_data', text: 'Esta conta tem campanhas, mas nenhuma teve atividade no período selecionado. Tente "Trimestre" ou "Personalizado" com um intervalo mais amplo (o sync guarda até 90 dias de histórico).' }
+    }
     return { kind: 'ok', text: null }
   }, [conn, syncedAt, hasAnyCampaign])
 
@@ -176,6 +210,15 @@ export function MetaAdsDashboard() {
     pills: { display: 'flex', gap: 6, flexWrap: 'wrap' },
     pill: on => ({ padding: '6px 12px', fontSize: 12.5, borderRadius: 999, cursor: 'pointer',
       border: `1px solid ${on ? C.accent : C.border}`, background: on ? C.accent : C.surface, color: on ? '#fff' : C.textSub, fontWeight: on ? 700 : 500 }),
+    customRange: { display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14,
+      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px' },
+    customLabel: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.textSub, fontWeight: 600 },
+    customInput: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, color: C.text,
+      font: 'inherit', fontSize: 12.5, padding: '5px 8px' },
+    customHint: { fontSize: 11, color: C.textDim, lineHeight: 1.4, flex: '1 1 260px' },
+    syncBtn: busy => ({ border: 0, borderRadius: 8, padding: '7px 13px', fontSize: 12.5, fontWeight: 700,
+      cursor: busy ? 'default' : 'pointer', background: C.accent, color: '#fff', opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap' }),
+    syncError: { flexBasis: '100%', fontSize: 12, color: C.red },
     fresh: { fontSize: 12, color: C.textSub, display: 'flex', alignItems: 'center', gap: 7 },
     dot: { width: 6, height: 6, borderRadius: '50%', background: C.green, display: 'inline-block' },
     banner: { display: 'flex', gap: 10, alignItems: 'flex-start', background: 'rgba(245,158,11,.08)',
@@ -206,7 +249,7 @@ export function MetaAdsDashboard() {
       </div>
 
       {subtab === 'analises' ? (
-        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} />
+        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} customRange={customRange} />
       ) : (
         <>
           <div style={s.bar}>
@@ -221,6 +264,24 @@ export function MetaAdsDashboard() {
               ))}
             </div>
           </div>
+
+          {period === 'custom' && (
+            <div style={s.customRange}>
+              <label style={s.customLabel}>De
+                <input type="date" style={s.customInput} value={customRange.since} max={customRange.until}
+                  onChange={e => setCustomRange(r => ({ ...r, since: e.target.value }))} />
+              </label>
+              <label style={s.customLabel}>Até
+                <input type="date" style={s.customInput} value={customRange.until} min={customRange.since} max={isoDay(new Date())}
+                  onChange={e => setCustomRange(r => ({ ...r, until: e.target.value }))} />
+              </label>
+              <button style={s.syncBtn(rangeSyncing)} disabled={rangeSyncing} onClick={syncRangeNow}>
+                {rangeSyncing ? 'Buscando no Meta…' : 'Buscar esse período'}
+              </button>
+              <span style={s.customHint}>Alcance e Frequência não ficam disponíveis em período personalizado (só pré-calculados pros atalhos acima); Gasto, Impressões, Cliques e Leads valem pra qualquer intervalo. O cron diário e a conexão só trazem os últimos 90 dias automaticamente — pra datas mais antigas, clique em "Buscar esse período" (busca direto no Meta, uma vez; fica salvo depois).</span>
+              {rangeSyncError && <div style={s.syncError}>{rangeSyncError}</div>}
+            </div>
+          )}
 
           {syncedAt && (
             <div style={{ ...s.fresh, marginBottom: 14 }}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</div>
@@ -292,7 +353,7 @@ export function MetaAdsDashboard() {
 }
 
 // Aba Análises: leitura por IA das campanhas. Lê o cache (meta_analyses) ao abrir e regenera sob demanda.
-function AnalysisView({ uid, period, setPeriod }) {
+function AnalysisView({ uid, period, setPeriod, customRange }) {
   // Dentro do componente (lê C no render) — nunca no nível de módulo, senão não acompanha o tema.
   const TIPO = {
     escalar:  { icon: '↑', color: C.green,       bg: 'rgba(16,185,129,.14)' },
@@ -307,13 +368,18 @@ function AnalysisView({ uid, period, setPeriod }) {
   const [error, setError] = useState(null)
   const [empty, setEmpty] = useState(false)
 
+  // meta_analyses tem UNIQUE(user_id, period) sem colunas since/until — codifica o intervalo
+  // direto na string pra cada combinação de datas ter seu próprio cache (ver parseMetaAnalysisPeriod
+  // em api/financial-assistant.js, que decodifica o mesmo formato).
+  const analysisPeriod = period === 'custom' ? `custom:${customRange.since}:${customRange.until}` : period
+
   useEffect(() => {
     if (!uid) return
     let mounted = true
     async function loadCache() {
       setLoading(true); setError(null); setEmpty(false)
       const { data, error: err } = await supabase.from('meta_analyses')
-        .select('generated_at, payload').eq('user_id', uid).eq('period', period).maybeSingle()
+        .select('generated_at, payload').eq('user_id', uid).eq('period', analysisPeriod).maybeSingle()
       if (!mounted) return
       if (err) { setError(err.message); setLoading(false); return }
       setItems(data?.payload?.items ?? [])
@@ -322,12 +388,12 @@ function AnalysisView({ uid, period, setPeriod }) {
     }
     loadCache()
     return () => { mounted = false }
-  }, [uid, period])
+  }, [uid, analysisPeriod])
 
   async function reanalyze() {
     if (running) return
     setRunning(true); setError(null); setEmpty(false)
-    const r = await requestMetaAnalysis({ period })
+    const r = await requestMetaAnalysis({ period: analysisPeriod })
     setRunning(false)
     if (r?.error) { setError(r.error); return }
     if (r?.empty) { setItems([]); setGeneratedAt(null); setEmpty(true); return }
@@ -353,6 +419,7 @@ function AnalysisView({ uid, period, setPeriod }) {
     detail: { color: C.textSub, fontSize: 12.5, marginTop: 2, lineHeight: 1.5 },
     empty: { textAlign: 'center', padding: '44px 20px', color: C.textSub, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, lineHeight: 1.5 },
     disclaimer: { fontSize: 11.5, color: C.textDim, marginTop: 14, display: 'flex', gap: 8, alignItems: 'flex-start' },
+    customNote: { fontSize: 12, color: C.textSub, marginBottom: 14 },
   }
 
   return (
@@ -368,6 +435,10 @@ function AnalysisView({ uid, period, setPeriod }) {
           <button style={st.btn} onClick={reanalyze} disabled={running}>{running ? 'Analisando…' : 'Reanalisar'}</button>
         </div>
       </div>
+
+      {period === 'custom' && (
+        <div style={st.customNote}>Analisando {customRange.since} até {customRange.until} — ajuste as datas na aba Desempenho.</div>
+      )}
 
       {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 
