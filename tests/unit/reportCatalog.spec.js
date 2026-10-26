@@ -131,13 +131,17 @@ test('auditoria sinaliza ausência estrutural de liquidação em produtos', () =
 test('gera workbooks individuais e consolidados com auditoria', () => {
   const context = { data:baseData(), patients:[], recurrences:[], range:RANGE, generatedAt:'2026-10-12T12:00:00.000Z' }
   const report = buildReport('accounts-receivable', context)
-  const individual = createReportWorkbook(report)
+  const individual = createReportWorkbook(report, { clinicName:'Clínica Aurora' })
   expect(individual.SheetNames).toEqual(['Resumo', 'Contas a receber', 'Auditoria'])
+  expect(individual.Sheets.Resumo.A1.v).toContain('Clínica Aurora')
+  expect(individual.Sheets.Resumo.A3.v).toContain('Gerado em')
 
-  const complete = createCompleteWorkbook(buildAllReports(context), RANGE)
+  const complete = createCompleteWorkbook(buildAllReports(context), RANGE, { clinicName:'Clínica Aurora' })
   expect(complete.SheetNames[0]).toBe('Índice')
   expect(complete.SheetNames.at(-1)).toBe('Auditoria')
   expect(new Set(complete.SheetNames).size).toBe(complete.SheetNames.length)
+  expect(complete.Sheets['Índice'].A1.v).toContain('Clínica Aurora')
+  expect(complete.Sheets['DRE por competência']['!merges']).toContainEqual({ s:{ r:0, c:0 }, e:{ r:0, c:4 } })
   const bytes = XLSXStyle.write(complete, { bookType:'xlsx', type:'buffer' })
   expect(bytes.length).toBeGreaterThan(10_000)
 })

@@ -10,6 +10,7 @@ import { BrandLogo } from '../components/BrandLogo.jsx'
 import { NavIcon } from '../components/NavIcon.jsx'
 import { AlertsBell } from '../components/AlertsBell.jsx'
 import { CrmBell } from '../components/CrmBell.jsx'
+import { FeatureExportButton } from '../components/FeatureExportButton.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -1170,6 +1171,7 @@ export function FinanceWorkspace() {
           })}
         </div>
         <div data-testid="notification-bell-dock" style={{ flex:'0 0 auto', display:'flex', alignItems:'center', gap:8, marginLeft:isMobile ? 8 : 14, paddingLeft:isMobile ? 8 : 14, background:C.surface, borderLeft:`1px solid ${C.border}` }}>
+          {isInboxPage && !isMobile && <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact />}
           {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
           <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
         </div>
@@ -1290,6 +1292,7 @@ export function FinanceWorkspace() {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+              <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact={isMobile} />
               <button
                 onClick={toggleTheme}
                 title={isLightMode ? 'Ativar modo escuro' : 'Ativar modo claro'}
@@ -1342,6 +1345,7 @@ export function FinanceWorkspace() {
             <button onClick={() => setMobileNavOpen(true)} style={getIconButton()} aria-label="Abrir menu">☰</button>
             <strong style={{ color:C.text, fontSize:17 }}>WhatsApp</strong>
             <span style={{ flex:1 }} />
+            <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact />
             {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
             <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
           </div>

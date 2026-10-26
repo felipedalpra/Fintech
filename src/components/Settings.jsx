@@ -41,9 +41,9 @@ const EMPTY_PROFILE = {
   },
 }
 
-export function Settings({ google }) {
+export function Settings({ google, data }) {
   const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
-  const { role, clinicId, isOwner } = useUserRole()
+  const { role, clinicId, clinicName, isOwner } = useUserRole()
   const [tab, setTab] = useState('perfil')
   const location = useLocation()
   useEffect(() => {
@@ -140,7 +140,7 @@ export function Settings({ google }) {
 
   const tabs = [
     { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'exportacao', label:'Exportação' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
   ]
 
   return (
@@ -259,6 +259,10 @@ export function Settings({ google }) {
           <TeamSettings clinicId={clinicId} />
         )}
 
+        {tab === 'exportacao' && role === 'admin' && (
+          <FullPlatformExport data={data} profile={profile} clinicName={clinicName} loadingProfile={loading} />
+        )}
+
         {tab === 'integracoes' && role === 'admin' && (
           <IntegrationHealth google={google} />
         )}
@@ -370,6 +374,56 @@ function BrowserDataRecovery() {
 }
 
 const ROLE_LABELS = { admin:'Administrador', gestao:'Gestão', concierge:'Concierge', equipe:'Equipe' }
+
+function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const [exportMessage, setExportMessage] = useState('')
+
+  async function runExport() {
+    if (exporting) return
+    setExporting(true)
+    setExportError('')
+    setExportMessage('')
+    try {
+      const { exportAllPlatformWorkbook } = await import('../lib/platformExport.js')
+      const result = await exportAllPlatformWorkbook({ data, profile, clinicName, database:supabase })
+      setExportMessage(result.warnings.length
+        ? `Excel gerado com ${result.sheetCount} abas de dados e ${result.warnings.length} aviso(s). Confira a aba “Visão Geral”.`
+        : `Excel gerado com sucesso com ${result.sheetCount} abas de dados.`)
+    } catch (nextError) {
+      setExportError(nextError?.message || 'Não foi possível gerar a exportação completa.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
+      <div>
+        <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Portabilidade dos dados</div>
+        <h3 style={{ margin:'0 0 8px', fontSize:22, color:C.text, letterSpacing:'-0.03em' }}>Exportar todos os dados</h3>
+        <p style={{ margin:0, color:C.textSub, fontSize:14, lineHeight:1.7, maxWidth:700 }}>
+          Baixe uma planilha Excel consolidada, dividida por funcionalidade: pacientes, cirurgias, consultas, produtos, financeiro, CRM, clínico, WhatsApp, Meta Ads, equipe e demais registros disponíveis para esta clínica.
+        </p>
+      </div>
+
+      <div style={{ padding:'14px 16px', borderRadius:14, border:`1px solid ${C.yellow}55`, background:C.yellow+'0D', color:C.textSub, fontSize:13, lineHeight:1.65 }}>
+        <strong style={{ color:C.text }}>Arquivo confidencial.</strong> A planilha é montada localmente no navegador e pode conter dados pessoais, financeiros e de saúde. Guarde-a em local seguro. Senhas, tokens e credenciais de integrações nunca são incluídos.
+      </div>
+
+      <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
+        <Btn onClick={runExport} disabled={exporting || loadingProfile} style={{ padding:'11px 18px' }}>
+          {exporting ? 'Carregando dados e gerando Excel…' : '↓ Exportar tudo em Excel'}
+        </Btn>
+        <span style={{ color:C.textDim, fontSize:12 }}>Cada assunto é organizado em uma aba própria, com clínica, data e horário da geração.</span>
+      </div>
+
+      {exportMessage ? <Feedback color={C.green} text={exportMessage} /> : null}
+      {exportError ? <Feedback color={C.red} text={exportError} /> : null}
+    </div>
+  )
+}
 
 function TeamSettings({ clinicId }) {
   const [members, setMembers] = useState([])

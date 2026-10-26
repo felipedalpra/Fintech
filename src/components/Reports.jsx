@@ -27,7 +27,7 @@ const CATEGORY_OPTIONS = [
 
 export function Reports({ data }) {
   const { user } = useAuth()
-  const { ownerId } = useUserRole()
+  const { ownerId, clinicName } = useUserRole()
   const effectiveUserId = ownerId || user?.id
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
@@ -96,7 +96,7 @@ export function Reports({ data }) {
     if (invalidRange || loadingAuxiliary || loadWarning) return
     setExporting(reportId)
     try {
-      exportReportWorkbook(buildReport(reportId, { ...context, generatedAt:new Date().toISOString() }))
+      exportReportWorkbook(buildReport(reportId, { ...context, generatedAt:new Date().toISOString() }), { clinicName })
     } finally {
       setExporting('')
     }
@@ -106,7 +106,7 @@ export function Reports({ data }) {
     if (invalidRange || loadingAuxiliary || loadWarning) return
     setExporting('all')
     try {
-      exportCompleteWorkbook(buildAllReports({ ...context, generatedAt:new Date().toISOString() }), range)
+      exportCompleteWorkbook(buildAllReports({ ...context, generatedAt:new Date().toISOString() }), range, { clinicName })
     } finally {
       setExporting('')
     }

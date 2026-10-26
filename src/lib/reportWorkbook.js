@@ -14,6 +14,7 @@ const COLORS = {
 }
 
 const FONT = { name:'Calibri', sz:11 }
+const EXPORT_TIME_ZONE = 'America/Sao_Paulo'
 
 const STYLES = {
   title:{ font:{ ...FONT, bold:true, sz:16, color:{ rgb:COLORS.white } }, fill:{ fgColor:{ rgb:COLORS.navy } }, alignment:{ vertical:'center' } },
@@ -30,46 +31,46 @@ const STYLES = {
   success:{ font:{ ...FONT, color:{ rgb:COLORS.green } } },
 }
 
-export function exportReportWorkbook(report) {
-  const workbook = createReportWorkbook(report)
+export function exportReportWorkbook(report, metadata = {}) {
+  const workbook = createReportWorkbook(report, metadata)
   const period = report.period?.end || new Date().toISOString().slice(0, 10)
-  XLSXStyle.writeFile(workbook, `${safeFilename(report.title)}_${period}.xlsx`)
+  XLSXStyle.writeFile(workbook, `${safeFilename(metadata.clinicName || 'Clinica')}_${safeFilename(report.title)}_${period}.xlsx`)
 }
 
-export function exportCompleteWorkbook(reports, range = {}) {
-  const workbook = createCompleteWorkbook(reports, range)
+export function exportCompleteWorkbook(reports, range = {}, metadata = {}) {
+  const workbook = createCompleteWorkbook(reports, range, metadata)
   const period = range.end || new Date().toISOString().slice(0, 10)
-  XLSXStyle.writeFile(workbook, `SurgiMetrics_Relatorios_${period}.xlsx`)
+  XLSXStyle.writeFile(workbook, `${safeFilename(metadata.clinicName || 'Clinica')}_SurgiMetrics_Relatorios_${period}.xlsx`)
 }
 
-export function createReportWorkbook(report) {
+export function createReportWorkbook(report, metadata = {}) {
   const workbook = XLSXStyle.utils.book_new()
-  XLSXStyle.utils.book_append_sheet(workbook, buildSummarySheet(report), 'Resumo')
-  XLSXStyle.utils.book_append_sheet(workbook, buildDataSheet(report), safeSheetName(report.title))
-  XLSXStyle.utils.book_append_sheet(workbook, buildAuditSheet(report), 'Auditoria')
+  XLSXStyle.utils.book_append_sheet(workbook, buildSummarySheet(report, metadata), 'Resumo')
+  XLSXStyle.utils.book_append_sheet(workbook, buildDataSheet(report, metadata), safeSheetName(report.title))
+  XLSXStyle.utils.book_append_sheet(workbook, buildAuditSheet(report, metadata), 'Auditoria')
   return workbook
 }
 
-export function createCompleteWorkbook(reports, range = {}) {
+export function createCompleteWorkbook(reports, range = {}, metadata = {}) {
   const workbook = XLSXStyle.utils.book_new()
-  XLSXStyle.utils.book_append_sheet(workbook, buildIndexSheet(reports, range), 'Índice')
+  XLSXStyle.utils.book_append_sheet(workbook, buildIndexSheet(reports, range, metadata), 'Índice')
 
   const usedNames = new Set(['Índice', 'Auditoria'])
   reports.forEach(report => {
     const name = uniqueSheetName(report.title, usedNames)
     usedNames.add(name)
-    XLSXStyle.utils.book_append_sheet(workbook, buildDataSheet(report), name)
+    XLSXStyle.utils.book_append_sheet(workbook, buildDataSheet(report, metadata), name)
   })
 
-  XLSXStyle.utils.book_append_sheet(workbook, buildCombinedAuditSheet(reports), 'Auditoria')
+  XLSXStyle.utils.book_append_sheet(workbook, buildCombinedAuditSheet(reports, metadata), 'Auditoria')
   return workbook
 }
 
-function buildSummarySheet(report) {
+function buildSummarySheet(report, metadata) {
   const rows = [
-    [`SURGIMETRICS — ${report.title}`],
+    [`SURGIMETRICS — ${clinicLabel(metadata)} — ${report.title}`],
     [report.description],
-    [`Período: ${periodLabel(report.period)}`],
+    [`Período: ${periodLabel(report.period)} · Gerado em ${formatTimestamp(report.generatedAt)} · ${EXPORT_TIME_ZONE}`],
     [],
     ['Indicador', 'Valor'],
     ...(report.summary || []).map(([label, value, type]) => [label, typedCell(value, type || inferSummaryType(label, value))]),
@@ -105,35 +106,39 @@ function buildSummarySheet(report) {
   return ws
 }
 
-function buildDataSheet(report) {
+function buildDataSheet(report, metadata = {}) {
   const columns = report.columns || []
   const dataRows = report.rows || []
+  const displayWidth = Math.max(5, columns.length)
   const rows = [
-    [report.title, ...Array(Math.max(0, columns.length - 1)).fill('')],
-    [`Período: ${periodLabel(report.period)} · Gerado em ${formatTimestamp(report.generatedAt)}`, ...Array(Math.max(0, columns.length - 1)).fill('')],
+    [`SURGIMETRICS — ${clinicLabel(metadata)} — ${report.title}`, ...Array(displayWidth - 1).fill('')],
+    [`Período: ${periodLabel(report.period)} · Gerado em ${formatTimestamp(report.generatedAt)} · ${EXPORT_TIME_ZONE}`, ...Array(displayWidth - 1).fill('')],
     [],
     columns.map(column => column.label),
     ...dataRows.map(row => columns.map(column => normalizeCellValue(row[column.key], column.type))),
   ]
   const ws = XLSXStyle.utils.aoa_to_sheet(rows)
   const lastColumn = Math.max(0, columns.length - 1)
-  styleMergedTitle(ws, columns.length)
-  styleRow(ws, 1, STYLES.subtitle, columns.length)
-  if (columns.length > 1) merge(ws, 1, 0, 1, lastColumn)
+  styleMergedTitle(ws, displayWidth)
+  styleRow(ws, 1, STYLES.subtitle, displayWidth)
+  merge(ws, 1, 0, 1, displayWidth - 1)
   styleRow(ws, 3, STYLES.header, columns.length)
   dataRows.forEach((_row, index) => {
     const rowIndex = index + 4
     columns.forEach((column, columnIndex) => setStyle(ws, rowIndex, columnIndex, STYLES[column.type] || STYLES.text))
   })
-  ws['!cols'] = columns.map(column => ({ wch:column.width || 18 }))
+  ws['!cols'] = [
+    ...columns.map(column => ({ wch:column.width || 18 })),
+    ...Array.from({ length:displayWidth - columns.length }, () => ({ wch:18 })),
+  ]
   ws['!rows'] = [{ hpt:30 }, { hpt:20 }, undefined, { hpt:32 }]
   if (columns.length) ws['!autofilter'] = { ref:`A4:${XLSXStyle.utils.encode_col(lastColumn)}${Math.max(4, dataRows.length + 4)}` }
   return ws
 }
 
-function buildAuditSheet(report) {
+function buildAuditSheet(report, metadata) {
   const rows = [
-    ['AUDITORIA DO RELATÓRIO'],
+    [`AUDITORIA — ${clinicLabel(metadata)}`],
     ['Relatório', report.title],
     ['Gerado em', formatTimestamp(report.generatedAt)],
     ['Período/data-base', periodLabel(report.period)],
@@ -161,10 +166,10 @@ function buildAuditSheet(report) {
   return ws
 }
 
-function buildIndexSheet(reports, range) {
+function buildIndexSheet(reports, range, metadata) {
   const rows = [
-    ['SURGIMETRICS — CENTRAL DE RELATÓRIOS'],
-    [`Período: ${periodLabel(range)} · Gerado em ${formatTimestamp(reports[0]?.generatedAt)}`],
+    [`SURGIMETRICS — ${clinicLabel(metadata)} — CENTRAL DE RELATÓRIOS`],
+    [`Período: ${periodLabel(range)} · Gerado em ${formatTimestamp(reports[0]?.generatedAt)} · ${EXPORT_TIME_ZONE}`],
     [],
     ['Categoria', 'Relatório', 'Linhas exportadas', 'Alertas', 'Descrição'],
     ...reports.map(report => [report.categoryLabel, report.title, report.rows?.length || 0, report.warnings?.length || 0, report.description]),
@@ -183,9 +188,9 @@ function buildIndexSheet(reports, range) {
   return ws
 }
 
-function buildCombinedAuditSheet(reports) {
+function buildCombinedAuditSheet(reports, metadata) {
   const rows = [
-    ['AUDITORIA CONSOLIDADA'],
+    [`AUDITORIA CONSOLIDADA — ${clinicLabel(metadata)}`],
     ['Relatório', 'Categoria', 'Linhas', 'Tipo', 'Detalhe'],
   ]
   reports.forEach(report => {
@@ -249,7 +254,11 @@ function formatTimestamp(value) {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleString('pt-BR')
+  return date.toLocaleString('pt-BR', { timeZone:EXPORT_TIME_ZONE })
+}
+
+function clinicLabel(metadata = {}) {
+  return String(metadata.clinicName || 'Clínica não identificada').trim()
 }
 
 function safeSheetName(value) {

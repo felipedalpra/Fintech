@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-26
+### Added
+- **Exportação completa da plataforma em Excel**: Configurações ganha uma área administrativa para baixar, em um único arquivo, os dados operacionais, financeiros, comerciais, clínicos, WhatsApp e Meta Ads separados por abas. A coleta respeita o acesso da clínica no Supabase, pagina volumes acima do limite padrão, sinaliza fontes indisponíveis dentro da própria planilha e exclui credenciais, tokens e conteúdo binário sensível. As principais telas também passam a oferecer exportação contextual com todos os dados disponíveis para a funcionalidade. (`src/components/FeatureExportButton.jsx`, `src/components/Settings.jsx`, `src/lib/platformExport.js`, `src/pages/FinanceWorkspace.jsx`, `tests/unit/platformExport.spec.js`.)
+
+### Changed
+- **Planilhas padronizadas e identificadas pela clínica**: os novos arquivos e os relatórios financeiros existentes recebem título, nome da clínica, data, horário e fuso de geração, cabeçalhos estilizados, filtros, larguras ajustadas, linhas alternadas e formatos adequados para moeda, números e datas. Os nomes dos arquivos também incluem a clínica para facilitar a organização dos downloads. (`src/components/Reports.jsx`, `src/lib/reportWorkbook.js`, `tests/unit/reportCatalog.spec.js`.)
+
+### Fixed
+- **Abas estreitas mantêm o cabeçalho legível**: funcionalidades sem registros ou com poucas colunas e relatórios como a DRE reservam largura suficiente para o nome da clínica e da aba, sem cortar o título no Excel. (`src/lib/platformExport.js`, `src/lib/reportWorkbook.js`, `tests/unit/platformExport.spec.js`, `tests/unit/reportCatalog.spec.js`.)
+
 ## [Unreleased] - 2026-10-25
 ### Changed
 - **Conexão Meta Ads sincroniza na hora, não só no cron diário**: ao conectar (ou escolher Página/Conta de Anúncios na seleção), a clínica já vê os últimos 7 dias de campanhas/métricas na tela de Anúncios sem esperar o cron das 11h UTC — que continua responsável por completar a janela de 90 dias à noite. Sync inicial roda melhor-esforço (nunca bloqueia nem quebra a conexão se falhar). (`api/whatsapp.js`.)
