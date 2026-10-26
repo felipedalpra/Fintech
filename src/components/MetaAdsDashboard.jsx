@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { aggregateInsights, deriveMetrics, fmtBRL, fmtInt, fmtPct } from '../lib/metaMetrics.js'
 import { requestMetaAnalysis } from '../lib/aiClient.js'
+import { syncMetaRange } from '../lib/metaOAuthClient.js'
 
 // Tela CRM → Anúncios (Meta Ads). Espelho fiel do Meta: só exibe o que vem de lá, não cruza
 // com o financeiro. Drill por nível (Campanhas / Conjuntos / Anúncios), métricas nativas.
@@ -78,6 +79,21 @@ export function MetaAdsDashboard() {
   const [conn, setConn] = useState(null)
   const [hasAnyCampaign, setHasAnyCampaign] = useState(null)
   const [sort, setSort] = useState({ key: 'spend', dir: 'desc' })
+  const [rangeSyncing, setRangeSyncing] = useState(false)
+  const [rangeSyncError, setRangeSyncError] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  async function syncRangeNow() {
+    setRangeSyncing(true); setRangeSyncError(null)
+    try {
+      await syncMetaRange(customRange)
+      setReloadKey(k => k + 1)
+    } catch (e) {
+      setRangeSyncError(e.message || 'Não foi possível sincronizar esse período.')
+    } finally {
+      setRangeSyncing(false)
+    }
+  }
 
   useEffect(() => {
     if (!uid) return
@@ -114,7 +130,7 @@ export function MetaAdsDashboard() {
     }
     load()
     return () => { mounted = false }
-  }, [uid, level, period, customRange])
+  }, [uid, level, period, customRange, reloadKey])
 
   // Motivo real de não ter dado na tela — nunca o aviso fixo de App Review, que nem é
   // a causa mais provável (Standard Access já cobre a própria conta sem revisão do Meta).
@@ -200,6 +216,9 @@ export function MetaAdsDashboard() {
     customInput: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, color: C.text,
       font: 'inherit', fontSize: 12.5, padding: '5px 8px' },
     customHint: { fontSize: 11, color: C.textDim, lineHeight: 1.4, flex: '1 1 260px' },
+    syncBtn: busy => ({ border: 0, borderRadius: 8, padding: '7px 13px', fontSize: 12.5, fontWeight: 700,
+      cursor: busy ? 'default' : 'pointer', background: C.accent, color: '#fff', opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap' }),
+    syncError: { flexBasis: '100%', fontSize: 12, color: C.red },
     fresh: { fontSize: 12, color: C.textSub, display: 'flex', alignItems: 'center', gap: 7 },
     dot: { width: 6, height: 6, borderRadius: '50%', background: C.green, display: 'inline-block' },
     banner: { display: 'flex', gap: 10, alignItems: 'flex-start', background: 'rgba(245,158,11,.08)',
@@ -256,7 +275,11 @@ export function MetaAdsDashboard() {
                 <input type="date" style={s.customInput} value={customRange.until} min={customRange.since} max={isoDay(new Date())}
                   onChange={e => setCustomRange(r => ({ ...r, until: e.target.value }))} />
               </label>
-              <span style={s.customHint}>Alcance e Frequência não ficam disponíveis em período personalizado (só pré-calculados pros atalhos acima); Gasto, Impressões, Cliques e Leads valem pra qualquer intervalo.</span>
+              <button style={s.syncBtn(rangeSyncing)} disabled={rangeSyncing} onClick={syncRangeNow}>
+                {rangeSyncing ? 'Buscando no Meta…' : 'Buscar esse período'}
+              </button>
+              <span style={s.customHint}>Alcance e Frequência não ficam disponíveis em período personalizado (só pré-calculados pros atalhos acima); Gasto, Impressões, Cliques e Leads valem pra qualquer intervalo. O cron diário e a conexão só trazem os últimos 90 dias automaticamente — pra datas mais antigas, clique em "Buscar esse período" (busca direto no Meta, uma vez; fica salvo depois).</span>
+              {rangeSyncError && <div style={s.syncError}>{rangeSyncError}</div>}
             </div>
           )}
 

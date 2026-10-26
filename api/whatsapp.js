@@ -49,7 +49,7 @@ import {
   isMetaOAuthConfigured,
   revokeMetaToken,
 } from './_lib/metaOAuth.js'
-import { syncMetaInsights } from './_lib/metaInsights.js'
+import { syncMetaInsights, validateMetaSyncRange } from './_lib/metaInsights.js'
 
 export const config = {
   api: {
@@ -444,6 +444,7 @@ export default async function handler(req, res) {
   if (action === 'meta-pending') return handleMetaPending(req, res)
   if (action === 'meta-select') return handleMetaSelect(req, res)
   if (action === 'meta-disconnect') return handleMetaDisconnect(req, res)
+  if (action === 'meta-sync-range') return handleMetaSyncRange(req, res)
   return res.status(400).json({ error: 'Ação inválida.' })
 }
 
@@ -1151,6 +1152,33 @@ async function handleMetaDisconnect(req, res) {
   const { error } = await auth.supabase.from('meta_connections').delete().eq('user_id', auth.ownerId)
   if (error) return res.status(500).json({ error: 'Não foi possível desconectar.' })
   return res.status(200).json({ ok: true })
+}
+
+// Sync sob demanda pra um período arbitrário (ex.: "2026 inteiro"), diferente do cron diário
+// e do sync inicial ao conectar, que só cobrem os últimos 90 dias. Autenticado pela sessão do
+// próprio admin (não pelo CRON_SECRET) e sempre escopado ao dono que chamou — nunca aceita
+// 'owner' arbitrário no body, ao contrário de handleMetaSync (uso interno do cron).
+async function handleMetaSyncRange(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+
+  const since = String(req.body?.since || '')
+  const until = String(req.body?.until || '')
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const validation = validateMetaSyncRange(since, until, todayIso)
+  if (!validation.ok) return res.status(400).json({ error: validation.error })
+
+  // skipReach: período personalizado nunca grava Alcance/Frequência (a tela já mostra "—"
+  // pra esses campos nesse modo) — evita sobrescrever o cache de month/30d/quarter com
+  // números calculados a partir de um `until` que pode ser bem antigo.
+  const summary = await syncMetaInsights(auth.supabase, { owner: auth.ownerId, since, until, skipReach: true })
+  if (!summary.ok) return res.status(500).json({ error: summary.reason || 'Falha ao sincronizar.' })
+  if (summary.failures > 0) {
+    const detail = summary.details.find(d => d.error)?.error
+    return res.status(502).json({ error: detail || 'Falha ao consultar o Meta para esse período.' })
+  }
+  return res.status(200).json({ ok: true, since, until })
 }
 
 // ---- Meta Ads: webhook de Lead Ads (leadgen) → cria oportunidade no pipeline ----

@@ -26,6 +26,21 @@ export function metaConnectionStatusAfterSync(tokenExpiresAt, now = Date.now()) 
   return 'conectado'
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const MAX_SYNC_RANGE_DAYS = 400
+
+// Validação do período pedido pelo sync sob demanda (handleMetaSyncRange). since/until no
+// formato YYYY-MM-DD; todayIso também YYYY-MM-DD (injetado pra não depender de Date.now()
+// no teste). Retorna { ok:true } ou { ok:false, error }.
+export function validateMetaSyncRange(since, until, todayIso) {
+  if (!DATE_RE.test(since) || !DATE_RE.test(until)) return { ok: false, error: 'since/until inválidos (use YYYY-MM-DD)' }
+  if (since > until) return { ok: false, error: 'since não pode ser depois de until' }
+  if (until > todayIso) return { ok: false, error: 'until não pode ser no futuro' }
+  const spanDays = Math.round((new Date(`${until}T00:00:00Z`) - new Date(`${since}T00:00:00Z`)) / 86400000)
+  if (spanDays > MAX_SYNC_RANGE_DAYS) return { ok: false, error: `Intervalo máximo de ${MAX_SYNC_RANGE_DAYS} dias por sincronização.` }
+  return { ok: true }
+}
+
 // Converte uma string decimal do Meta ('3120.50') para número; vazio/indefinido → 0.
 function num(v) {
   const n = Number(v)
@@ -218,9 +233,13 @@ export async function syncMetaInsights(supabase, opts = {}) {
   const until = ISO.test(opts.until || '') ? opts.until : isoDate(new Date())
   const since = ISO.test(opts.since || '') ? opts.since : isoDate(new Date(Date.now() - days * 86400000))
 
-  // Janelas de alcance que a tela oferece (cada uma termina em `until`).
+  // Janelas de alcance que a tela oferece (cada uma termina em `until`) — SEMPRE relativas
+  // a `until`, então só fazem sentido quando `until` é "agora" (sync normal). Um sync de
+  // intervalo histórico sob demanda (opts.skipReach) pularia escrever period='month'/'30d'/
+  // 'quarter' com números calculados a partir de um `until` antigo, o que sobrescreveria
+  // silenciosamente o Alcance ATUAL de verdade com dado velho.
   const u = new Date(until + 'T00:00:00Z')
-  const reachPeriods = [
+  const reachPeriods = opts.skipReach ? [] : [
     { key: 'month', since: isoDate(new Date(Date.UTC(u.getUTCFullYear(), u.getUTCMonth(), 1))) },
     { key: '30d', since: isoDate(new Date(u.getTime() - 29 * 86400000)) },
     { key: 'quarter', since: isoDate(new Date(u.getTime() - 89 * 86400000)) },
