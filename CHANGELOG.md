@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-26
+### Added
+- **Período personalizado na tela de Anúncios (Desempenho)**: além dos atalhos Este mês/Últimos 30d/Trimestre, um pill "Personalizado" abre dois campos de data (De/Até). Gasto, Impressões, Cliques, CTR e Leads valem pra qualquer intervalo (vêm de `meta_insights`, por dia); Alcance/Frequência ficam indisponíveis nesse modo porque só são pré-calculados no backend pros 3 atalhos fixos — mostrados como "—", nunca inventados. A aba Análises (IA) fica de fora por enquanto: o cache `meta_analyses` ainda só entende os 3 períodos fixos. (`src/components/MetaAdsDashboard.jsx`.)
+
 ## [Unreleased] - 2026-10-25
 ### Changed
 - **Conexão Meta Ads sincroniza na hora, não só no cron diário**: ao conectar (ou escolher Página/Conta de Anúncios na seleção), a clínica já vê os últimos 7 dias de campanhas/métricas na tela de Anúncios sem esperar o cron das 11h UTC — que continua responsável por completar a janela de 90 dias à noite. Sync inicial roda melhor-esforço (nunca bloqueia nem quebra a conexão se falhar). (`api/whatsapp.js`.)

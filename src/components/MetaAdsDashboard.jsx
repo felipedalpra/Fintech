@@ -17,11 +17,17 @@ const PERIODS = [
   { key: 'month',   label: 'Este mês' },
   { key: '30d',     label: 'Últimos 30d' },
   { key: 'quarter', label: 'Trimestre' },
+  { key: 'custom',  label: 'Personalizado' },
 ]
 
 function isoDay(d) { return d.toISOString().slice(0, 10) }
-function rangeFor(period) {
+// customRange só é usado quando period === 'custom'. Alcance/Frequência (meta_reach) são
+// pré-calculados no backend só pra month/30d/quarter — período personalizado nunca tem
+// linha em meta_reach, então aparecem como "—" (honesto: Gasto/Cliques/Leads continuam
+// exatos, vêm de meta_insights por dia, que funciona pra qualquer intervalo).
+function rangeFor(period, customRange) {
   const until = new Date()
+  if (period === 'custom' && customRange?.since && customRange?.until) return customRange
   if (period === 'month') return { since: isoDay(new Date(until.getFullYear(), until.getMonth(), 1)), until: isoDay(until) }
   const days = period === 'quarter' ? 89 : 29
   return { since: isoDay(new Date(Date.now() - days * 86400000)), until: isoDay(until) }
@@ -59,6 +65,10 @@ export function MetaAdsDashboard() {
   const [subtab, setSubtab] = useState('desempenho')
   const [level, setLevel] = useState('campaign')
   const [period, setPeriod] = useState('month')
+  const [customRange, setCustomRange] = useState(() => {
+    const until = new Date()
+    return { since: isoDay(new Date(Date.now() - 89 * 86400000)), until: isoDay(until) }
+  })
   const [insights, setInsights] = useState([])
   const [names, setNames] = useState({})
   const [reachRows, setReachRows] = useState([])
@@ -74,12 +84,12 @@ export function MetaAdsDashboard() {
     let mounted = true
     async function load() {
       setLoading(true); setError(null)
-      const { since } = rangeFor(period)
+      const { since, until } = rangeFor(period, customRange)
       const lvl = LEVELS.find(l => l.key === level)
       const [insRes, strRes, reachRes, connRes, campaignsRes] = await Promise.all([
         supabase.from('meta_insights')
           .select('level, ref_id, campaign_id, date, spend, impressions, clicks, leads, updated_at')
-          .eq('user_id', uid).eq('level', level).gte('date', since),
+          .eq('user_id', uid).eq('level', level).gte('date', since).lte('date', until),
         supabase.from(lvl.table).select(`${lvl.idCol}, name, status`).eq('user_id', uid),
         supabase.from('meta_reach').select('level, ref_id, reach, frequency')
           .eq('user_id', uid).eq('period', period),
@@ -104,7 +114,7 @@ export function MetaAdsDashboard() {
     }
     load()
     return () => { mounted = false }
-  }, [uid, level, period])
+  }, [uid, level, period, customRange])
 
   // Motivo real de não ter dado na tela — nunca o aviso fixo de App Review, que nem é
   // a causa mais provável (Standard Access já cobre a própria conta sem revisão do Meta).
@@ -121,7 +131,7 @@ export function MetaAdsDashboard() {
       return { kind: 'no_campaigns', text: `Conectado${conn.updated_at ? ` (última sincronização ${freshness(conn.updated_at)})` : ''}, mas não há nenhuma campanha sincronizada — ou a Conta de Anúncios realmente não tem campanha nenhuma, ou o sync ainda não rodou. O Alcance acima é o agregado da conta inteira. Se você tem campanhas ativas no Gerenciador de Anúncios e isso persistir, reconecte em Configurações → Meta Ads para forçar um sync novo.` }
     }
     if (hasAnyCampaign === true && !syncedAt) {
-      return { kind: 'no_period_data', text: 'Esta conta tem campanhas, mas nenhuma teve atividade no período selecionado. Tente "Trimestre" ou um período mais amplo.' }
+      return { kind: 'no_period_data', text: 'Esta conta tem campanhas, mas nenhuma teve atividade no período selecionado. Tente "Trimestre" ou "Personalizado" com um intervalo mais amplo (o sync guarda até 90 dias de histórico).' }
     }
     return { kind: 'ok', text: null }
   }, [conn, syncedAt, hasAnyCampaign])
@@ -184,6 +194,12 @@ export function MetaAdsDashboard() {
     pills: { display: 'flex', gap: 6, flexWrap: 'wrap' },
     pill: on => ({ padding: '6px 12px', fontSize: 12.5, borderRadius: 999, cursor: 'pointer',
       border: `1px solid ${on ? C.accent : C.border}`, background: on ? C.accent : C.surface, color: on ? '#fff' : C.textSub, fontWeight: on ? 700 : 500 }),
+    customRange: { display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14,
+      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px' },
+    customLabel: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.textSub, fontWeight: 600 },
+    customInput: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 7, color: C.text,
+      font: 'inherit', fontSize: 12.5, padding: '5px 8px' },
+    customHint: { fontSize: 11, color: C.textDim, lineHeight: 1.4, flex: '1 1 260px' },
     fresh: { fontSize: 12, color: C.textSub, display: 'flex', alignItems: 'center', gap: 7 },
     dot: { width: 6, height: 6, borderRadius: '50%', background: C.green, display: 'inline-block' },
     banner: { display: 'flex', gap: 10, alignItems: 'flex-start', background: 'rgba(245,158,11,.08)',
@@ -229,6 +245,20 @@ export function MetaAdsDashboard() {
               ))}
             </div>
           </div>
+
+          {period === 'custom' && (
+            <div style={s.customRange}>
+              <label style={s.customLabel}>De
+                <input type="date" style={s.customInput} value={customRange.since} max={customRange.until}
+                  onChange={e => setCustomRange(r => ({ ...r, since: e.target.value }))} />
+              </label>
+              <label style={s.customLabel}>Até
+                <input type="date" style={s.customInput} value={customRange.until} min={customRange.since} max={isoDay(new Date())}
+                  onChange={e => setCustomRange(r => ({ ...r, until: e.target.value }))} />
+              </label>
+              <span style={s.customHint}>Alcance e Frequência não ficam disponíveis em período personalizado (só pré-calculados pros atalhos acima); Gasto, Impressões, Cliques e Leads valem pra qualquer intervalo.</span>
+            </div>
+          )}
 
           {syncedAt && (
             <div style={{ ...s.fresh, marginBottom: 14 }}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</div>
@@ -367,7 +397,9 @@ function AnalysisView({ uid, period, setPeriod }) {
     <div>
       <div style={st.bar}>
         <div style={st.pills}>
-          {PERIODS.map(p => (
+          {/* 'custom' fica de fora aqui: a análise por IA é cacheada por período fixo no
+              backend (meta_analyses), que ainda não sabe lidar com intervalo arbitrário. */}
+          {PERIODS.filter(p => p.key !== 'custom').map(p => (
             <span key={p.key} style={st.pill(period === p.key)} onClick={() => setPeriod(p.key)}>{p.label}</span>
           ))}
         </div>
