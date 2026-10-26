@@ -42,7 +42,7 @@ test('cria plano e sessão, preserva após recarregar e mostra autoria clínica'
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Plano/ }).click()
-  await page.getByRole('button', { name:'Plano e retorno' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Plano e retorno', exact:true }).click()
   await expect(page.getByText('Nenhum plano registrado')).toBeVisible()
   await page.getByRole('button', { name:'+ Novo plano' }).click()
   await page.getByLabel('Título do plano *').fill('Acompanhamento pós-operatório')
@@ -62,7 +62,7 @@ test('cria plano e sessão, preserva após recarregar e mostra autoria clínica'
 
   await page.reload()
   await page.getByRole('button', { name:/Ana Plano/ }).click()
-  await page.getByRole('button', { name:'Plano e retorno' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Plano e retorno', exact:true }).click()
   await expect(page.getByRole('heading', { name:'Acompanhamento pós-operatório' })).toBeVisible()
   await expect(page.getByText('Retorno de 7 dias')).toBeVisible()
 })

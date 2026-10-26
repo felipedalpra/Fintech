@@ -36,7 +36,7 @@ test('trocar de área troca a sub-navegação e navega', async ({ page }) => {
   await expect(subNav.getByText('Relatórios')).toHaveCount(0)
 })
 
-test('área Clínica abre o prontuário ativo', async ({ page }) => {
+test('área Clínica abre a ficha auditada no resumo do paciente', async ({ page }) => {
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Vitória', registrationId:'CRM-SP 123' } } }) }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'p1', full_name:'Ana Clínica', date_of_birth:'1990-04-10', active:true, start_date:'2026-01-10' }]) }))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
@@ -48,6 +48,8 @@ test('área Clínica abre o prontuário ativo', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/clinical-records$/)
   await expect(page.getByTestId('clinical-records-page')).toBeVisible()
   await page.getByRole('button', { name:/Ana Clínica/ }).click()
+  await expect(page.getByTestId('clinical-patient-summary')).toBeVisible()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Prontuário' }).click()
   await expect(page.getByTestId('medical-record')).toBeVisible()
   await expect(page.getByRole('button', { name:'+ Nova evolução' })).toBeEnabled()
 })

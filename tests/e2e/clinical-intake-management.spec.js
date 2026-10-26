@@ -43,7 +43,7 @@ test('clínica cria modelo, publica TCLE e gera link opaco para o paciente', asy
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Formulário/ }).click()
-  await page.getByRole('button', { name:'Pré-anamnese e termos' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Pré-anamnese e termos', exact:true }).click()
   await expect(page.getByText('Crie o primeiro modelo para liberar o link ao paciente.')).toBeVisible()
 
   await page.getByRole('button', { name:'+ Modelo' }).click()

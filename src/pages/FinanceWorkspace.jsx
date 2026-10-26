@@ -19,6 +19,7 @@ import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.j
 import { mergePendingFinanceSave } from '../lib/pendingFinanceSave.js'
 import { createSerializedTaskQueue } from '../lib/serializedTaskQueue.js'
 import { useGoogleCalendarSync } from '../lib/useGoogleCalendarSync.js'
+import { CLINICAL_SECTIONS } from '../lib/roleAccess.js'
 
 const lazyNamed = (loader, name) => lazy(() => loader().then(module => ({ default:module[name] })))
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
@@ -92,7 +93,11 @@ const AREAS = [
     id:'clinico', label:'Clínico', icon:'clinico', roles:ALL_ROLES,
     sections:[
       { title:'Cuidado clínico', items:[
-        { id:'clinical-records', label:'Atendimento', icon:'clinico', hint:'Agenda do dia e ficha central do paciente' },
+        { id:'clinical-records', label:'Hoje', icon:'calendar', hint:'Agenda do dia e continuidade do cuidado' },
+        { id:'clinical-patients', label:'Pacientes', icon:'patients', hint:'Visão clínica dos pacientes ativos' },
+        { id:'clinical-pending', label:'Pendências', icon:'tasks', hint:'Revisões, retornos, planos e assinaturas' },
+        { id:'clinical-protocols', label:'Protocolos', icon:'reports', hint:'Biblioteca clínica por procedimento' },
+        { id:'clinical-documents', label:'Documentos', icon:'reports', hint:'Pedidos, receitas e assinaturas' },
       ] },
     ],
   },
@@ -177,6 +182,10 @@ const TITLES = {
   ads:'Anúncios — Meta Ads',
   tarefas:'Tarefas',
   'clinical-records':'Clínico',
+  'clinical-patients':'Pacientes clínicos',
+  'clinical-pending':'Pendências clínicas',
+  'clinical-protocols':'Protocolos clínicos',
+  'clinical-documents':'Documentos clínicos',
   'Agenda':'Agenda da Clínica',
 }
 
@@ -210,6 +219,10 @@ const SUBTITLES = {
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
   tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, agrupadas por vencimento.',
   'clinical-records':'Agenda do dia e ficha central do paciente em um workspace clínico compacto.',
+  'clinical-patients':'Continuidade do cuidado, últimos atendimentos, próximos compromissos e situação de cada paciente.',
+  'clinical-pending':'Fila clínica baseada em pré-anamneses, retornos, planos, sessões e assinaturas reais.',
+  'clinical-protocols':'Modelos versionados por procedimento para apoiar o atendimento sem automatizar condutas.',
+  'clinical-documents':'Pedidos e receitas de todos os pacientes com a situação real das assinaturas.',
 }
 
 const PAGES = {
@@ -241,7 +254,11 @@ const PAGES = {
   inbox:WhatsAppInbox,
   ads:MetaAdsDashboard,
   tarefas:TasksPanel,
-  'clinical-records':ClinicalRecords,
+  'clinical-records':props => <ClinicalRecords {...props} initialView="today" />,
+  'clinical-patients':props => <ClinicalRecords {...props} initialView="patients" />,
+  'clinical-pending':props => <ClinicalRecords {...props} initialView="pending" />,
+  'clinical-protocols':props => <ClinicalRecords {...props} initialView="protocols" />,
+  'clinical-documents':props => <ClinicalRecords {...props} initialView="documents" />,
 }
 
 const FINANCE_ALIASES = new Set(['cashflow', 'dre', 'balance'])
@@ -1049,6 +1066,7 @@ export function FinanceWorkspace() {
   const compactForShortHeight = desktopCompactNav && viewportHeight < 860
   const ultraCompactDesktop = desktopCompactNav && viewportHeight < 760
   const isInboxPage = page === 'inbox'
+  const isClinicalPage = CLINICAL_SECTIONS.has(page)
   const sidebarStats = isMobile
     ? sidebarQuickStats
     : sidebarQuickStats.slice(0, ultraCompactDesktop ? 0 : (compactForShortHeight ? 1 : 2))
@@ -1332,7 +1350,7 @@ export function FinanceWorkspace() {
                 <span>Busca</span>
                 {!isMobile && <kbd style={getKbdSmall()}>⌘K</kbd>}
               </button>
-              {!isMobile && page !== 'clinical-records' && quickLinks.map(item => {
+              {!isMobile && !isClinicalPage && quickLinks.map(item => {
                 const active = item.id === page
                 return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...getChipButton(), border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
               })}
@@ -1351,7 +1369,7 @@ export function FinanceWorkspace() {
           </div>
         )}
 
-        {isMobile && !isInboxPage && page !== 'clinical-records' && (
+        {isMobile && !isInboxPage && !isClinicalPage && (
           <Card style={{ marginBottom:16, padding:14 }}>
             <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10, fontWeight:700 }}>
               Acesso rapido
@@ -1382,12 +1400,12 @@ export function FinanceWorkspace() {
         )}
 
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
-        {!hasData && !isInboxPage && page !== 'clinical-records' && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Operação vazia</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>{canAccess('finance') ? 'Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O restante alimenta os indicadores automaticamente.' : 'Cadastre pacientes e registre os atendimentos disponíveis para o seu perfil.'}</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:{canAccess('plans') && <div>1. Procedimentos</div>}{canAccess('sales') && <div>2. Cirurgias</div>}<div>{canAccess('sales') ? '3' : '1'}. Consultas e produtos</div>{canAccess('finance') && <div>4. Despesas e metas</div>}</div></div></Card>}
+        {!hasData && !isInboxPage && !isClinicalPage && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Operação vazia</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>{canAccess('finance') ? 'Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O restante alimenta os indicadores automaticamente.' : 'Cadastre pacientes e registre os atendimentos disponíveis para o seu perfil.'}</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:{canAccess('plans') && <div>1. Procedimentos</div>}{canAccess('sales') && <div>2. Cirurgias</div>}<div>{canAccess('sales') ? '3' : '1'}. Consultas e produtos</div>{canAccess('finance') && <div>4. Despesas e metas</div>}</div></div></Card>}
         <Suspense fallback={<div style={{ display:'grid', gap:12 }}><SkeletonBlock w="36%" h={26} /><SkeletonBlock w="100%" h={180} /><SkeletonBlock w="100%" h={220} /></div>}>
           <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
         </Suspense>
-        {page !== 'inbox' && page !== 'clinical-records' && canAccess('ai') && <CopilotWidget data={safeData} />}
-        {page !== 'inbox' && page !== 'clinical-records' && <FAB currentPage={page} />}
+        {page !== 'inbox' && !isClinicalPage && canAccess('ai') && <CopilotWidget data={safeData} />}
+        {page !== 'inbox' && !isClinicalPage && <FAB currentPage={page} />}
       </main>
       </div>
 

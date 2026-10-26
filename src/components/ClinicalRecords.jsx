@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { Btn } from './UI.jsx'
 import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
@@ -8,6 +9,14 @@ import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
 import { ClinicalProtocols } from './ClinicalProtocols.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
+import {
+  ClinicalDocumentsCenter,
+  ClinicalPatientSummary,
+  ClinicalPatientTimeline,
+  ClinicalPatientsView,
+  ClinicalPendingView,
+  ClinicalTodayInsights,
+} from './ClinicalWorkspaceViews.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -21,10 +30,22 @@ import {
   patientInitials,
   resolveSchedulePatient,
 } from '../lib/clinicalWorkspace.js'
+import { buildClinicalWorkspaceIndex } from '../lib/clinicalWorkspaceIndex.js'
+import { emptyClinicalWorkspaceSources, loadClinicalWorkspaceSources } from '../lib/clinicalWorkspaceIndexClient.js'
 import './ClinicalRecords.css'
 
+const CLINICAL_MODULES = [
+  { id:'today', route:'clinical-records', label:'Hoje' },
+  { id:'patients', route:'clinical-patients', label:'Pacientes' },
+  { id:'pending', route:'clinical-pending', label:'Pendências' },
+  { id:'protocols', route:'clinical-protocols', label:'Protocolos' },
+  { id:'documents', route:'clinical-documents', label:'Documentos' },
+]
+
 const CLINICAL_TABS = [
+  { id:'overview', label:'Resumo' },
   { id:'record', label:'Prontuário' },
+  { id:'timeline', label:'Linha do tempo' },
   { id:'summary', label:'Anamnese' },
   { id:'intake', label:'Pré-anamnese e termos' },
   { id:'prescriptions', label:'Exames e receitas' },
@@ -32,17 +53,18 @@ const CLINICAL_TABS = [
   { id:'treatment', label:'Plano e retorno' },
 ]
 
-export function ClinicalRecords({ data, setData }) {
+export function ClinicalRecords({ data, setData, initialView = 'today' }) {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
   const [selected, setSelected] = useState(null)
-  const [showProtocols, setShowProtocols] = useState(false)
+  const [moduleView, setModuleView] = useState(initialView)
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('record')
+  const [tab, setTab] = useState('overview')
   const [clinicalProfile, setClinicalProfile] = useState(null)
   const [anamnesisDraft, setAnamnesisDraft] = useState(null)
   const [clinicalAccessStatus, setClinicalAccessStatus] = useState('idle')
@@ -52,12 +74,29 @@ export function ClinicalRecords({ data, setData }) {
   const [author, setAuthor] = useState({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
   const [secureProfile, setSecureProfile] = useState(null)
   const [secureProfileStatus, setSecureProfileStatus] = useState('loading')
+  const [workspaceSources, setWorkspaceSources] = useState(emptyClinicalWorkspaceSources)
+  const [workspaceStatus, setWorkspaceStatus] = useState('loading')
   const searchWrapRef = useRef(null)
   const daySchedule = useMemo(() => buildClinicalDaySchedule(data, currentDate), [data, currentDate])
+  const workspaceIndex = useMemo(() => buildClinicalWorkspaceIndex({
+    ...workspaceSources,
+    patients,
+    data,
+  }), [workspaceSources, patients, data])
+
+  useEffect(() => {
+    setModuleView(initialView)
+    setSelected(null)
+    setClinicalProfile(null)
+    setClinicalAccessStatus('idle')
+    setProfileStatus('idle')
+    setTab('overview')
+  }, [initialView])
 
   useEffect(() => {
     if (!ownerId) return
     loadPatients()
+    loadWorkspaceIndex()
   }, [ownerId])
 
   useEffect(() => {
@@ -183,15 +222,23 @@ export function ClinicalRecords({ data, setData }) {
     setLoading(false)
   }
 
-  function selectPatient(patient) {
-    setShowProtocols(false)
+  async function loadWorkspaceIndex() {
+    if (!ownerId) return
+    setWorkspaceStatus('loading')
+    const sources = await loadClinicalWorkspaceSources(ownerId)
+    setWorkspaceSources(sources)
+    setWorkspaceStatus('ready')
+  }
+
+  function selectPatient(patient, initialTab = 'overview') {
+    setModuleView('patient')
     setClinicalAccessStatus('auditing')
     setProfileStatus('loading')
     setClinicalProfile(null)
     setAnamnesisDraft(null)
     setOpenAttempt(value => value + 1)
     setSelected(patient)
-    setTab('record')
+    setTab(initialTab)
     setSearch('')
     setSearchOpen(false)
     setError('')
@@ -205,18 +252,22 @@ export function ClinicalRecords({ data, setData }) {
       setError('Este atendimento não está vinculado a um paciente ativo. Selecione o cadastro correto pela busca; a agenda não abrirá prontuários automaticamente pelo nome.')
       return
     }
-    selectPatient(patient)
+    selectPatient(patient, 'record')
   }
 
-  function returnToAgenda() {
-    setShowProtocols(false)
+  function navigateModule(view) {
+    const module = CLINICAL_MODULES.find(item => item.id === view)
+    if (!module) return
+    setModuleView(view)
     setSelected(null)
     setClinicalProfile(null)
     setAnamnesisDraft(null)
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
-    setTab('record')
+    setTab('overview')
     setError('')
+    if (view !== 'protocols') loadWorkspaceIndex()
+    navigate(`/app/${module.route}`)
   }
 
   const filteredPatients = useMemo(() => {
@@ -231,6 +282,14 @@ export function ClinicalRecords({ data, setData }) {
     if (!selected) return []
     return daySchedule.filter(item => item.patientId === selected.id)
   }, [daySchedule, selected])
+  const selectedIndex = selected ? workspaceIndex.patientItems.find(item => item.id === selected.id) : null
+  const selectedTimeline = selected ? workspaceIndex.timelineByPatient.get(selected.id) || [] : []
+  const moduleCounts = {
+    today:daySchedule.length,
+    patients:patients.length,
+    pending:workspaceIndex.pendingItems.length,
+    documents:workspaceIndex.documents.length,
+  }
 
   const themeVars = {
     '--clinical-bg':C.bg,
@@ -252,9 +311,9 @@ export function ClinicalRecords({ data, setData }) {
   return (
     <div className="clinical-workspace" data-testid="clinical-records-page" style={themeVars}>
       <div className="clinical-toolbar">
-        <button type="button" className={`clinical-home-button${selected ? '' : ' is-active'}`} onClick={returnToAgenda}>
-          <span className="clinical-home-button__icon">▦</span>
-          <span><strong>Agenda do dia</strong><small>{daySchedule.length} atendimento{daySchedule.length === 1 ? '' : 's'}</small></span>
+        <button type="button" className="clinical-home-button is-active" onClick={() => navigateModule('today')}>
+          <span className="clinical-home-button__icon">✚</span>
+          <span><strong>Workspace clínico</strong><small>Cuidado e continuidade</small></span>
         </button>
 
         <div className="clinical-patient-search" ref={searchWrapRef}>
@@ -271,7 +330,7 @@ export function ClinicalRecords({ data, setData }) {
               {loading && <div className="clinical-search-empty">Carregando pacientes…</div>}
               {!loading && filteredPatients.length === 0 && <div className="clinical-search-empty">Nenhum paciente encontrado.</div>}
               {filteredPatients.map(patient => (
-                <button key={patient.id} type="button" role="option" aria-selected={selected?.id === patient.id} onClick={() => selectPatient(patient)}>
+                <button key={patient.id} type="button" role="option" aria-selected={selected?.id === patient.id} onClick={() => selectPatient(patient, 'overview')}>
                   <PatientAvatar patient={patient} small />
                   <span><strong>{patient.full_name}</strong><small>{patient.phone || patient.email || 'Contato não informado'}</small></span>
                 </button>
@@ -280,20 +339,24 @@ export function ClinicalRecords({ data, setData }) {
           )}
         </div>
 
-        <button type="button" className={`clinical-protocols-button${showProtocols ? ' is-active' : ''}`} onClick={() => { setSelected(null); setShowProtocols(true); setError('') }}>
-          <span>▤</span><strong>Protocolos</strong>
-        </button>
-
-        {selected && <div className="clinical-toolbar-context"><span>Ficha aberta</span><strong>{selected.full_name}</strong></div>}
+        <div className="clinical-toolbar-context"><span>{selected ? 'Ficha aberta' : 'Área clínica'}</span><strong>{selected?.full_name || 'Visão geral da operação'}</strong></div>
       </div>
+
+      <nav className="clinical-module-tabs" aria-label="Módulos clínicos">
+        {CLINICAL_MODULES.map(item => <button key={item.id} type="button" className={moduleView === item.id ? 'is-active' : ''} onClick={() => navigateModule(item.id)}><span>{item.label}</span>{moduleCounts[item.id] !== undefined && <small>{moduleCounts[item.id]}</small>}</button>)}
+      </nav>
 
       {error && <div className="clinical-alert" role="alert">{error}</div>}
 
-      {showProtocols ? (
-        <ClinicalProtocols ownerId={ownerId} canManage={isOwner || role === 'admin'} onClose={returnToAgenda} />
-      ) : !selected ? (
-        <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={selectPatient} />
-      ) : (
+      {moduleView === 'protocols' && <ClinicalProtocols ownerId={ownerId} canManage={isOwner || role === 'admin'} onClose={() => navigateModule('today')} />}
+      {moduleView === 'today' && <>
+        <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={(patient) => selectPatient(patient, 'overview')} />
+        <ClinicalTodayInsights index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onNavigate={navigateModule} onRefresh={loadWorkspaceIndex} />
+      </>}
+      {moduleView === 'patients' && <ClinicalPatientsView index={workspaceIndex} loading={loading || workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={() => { loadPatients(); loadWorkspaceIndex() }} />}
+      {moduleView === 'pending' && <ClinicalPendingView index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
+      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
+      {moduleView === 'patient' && selected && (
         <div className="clinical-patient-workspace">
           <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} />
           {clinicalAccessStatus === 'auditing' && <div className="clinical-loading">Abrindo ficha com auditoria…</div>}
@@ -308,7 +371,9 @@ export function ClinicalRecords({ data, setData }) {
                 ))}
               </nav>
               <div className="clinical-tab-content">
+                {tab === 'overview' && <ClinicalPatientSummary patient={selected} profile={clinicalProfile} patientIndex={selectedIndex} timeline={selectedTimeline} onOpenTab={setTab} />}
                 {tab === 'record' && <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />}
+                {tab === 'timeline' && <ClinicalPatientTimeline timeline={selectedTimeline} loading={workspaceStatus === 'loading'} onRefresh={loadWorkspaceIndex} />}
                 {tab === 'summary' && profileStatus === 'loading' && <div className="clinical-loading">Carregando anamnese…</div>}
                 {tab === 'summary' && profileStatus === 'error' && <div className="clinical-empty-panel">Anamnese indisponível no momento.</div>}
                 {tab === 'summary' && profileStatus === 'ready' && (
