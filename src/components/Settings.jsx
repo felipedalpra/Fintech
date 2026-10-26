@@ -14,6 +14,8 @@ import { FollowupRules } from './FollowupRules.jsx'
 import { IntegrationHealth } from './IntegrationHealth.jsx'
 import { BillingConnection } from './BillingConnection.jsx'
 import { isValidCpf } from '../lib/clinicalSignature.js'
+import { ExportPeriodFields } from './ExportPeriodFields.jsx'
+import { emptyExportPeriod } from '../lib/exportPeriod.js'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -379,6 +381,7 @@ function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
   const [exportMessage, setExportMessage] = useState('')
+  const [period, setPeriod] = useState(emptyExportPeriod)
 
   async function runExport() {
     if (exporting) return
@@ -387,10 +390,10 @@ function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
     setExportMessage('')
     try {
       const { exportAllPlatformWorkbook } = await import('../lib/platformExport.js')
-      const result = await exportAllPlatformWorkbook({ data, profile, clinicName, database:supabase })
+      const result = await exportAllPlatformWorkbook({ data, profile, clinicName, database:supabase, period })
       setExportMessage(result.warnings.length
-        ? `Excel gerado com ${result.sheetCount} abas de dados e ${result.warnings.length} aviso(s). Confira a aba “Visão Geral”.`
-        : `Excel gerado com sucesso com ${result.sheetCount} abas de dados.`)
+        ? `Excel de ${result.period.label.toLowerCase()} gerado com ${result.sheetCount} abas de dados e ${result.warnings.length} aviso(s). Confira a aba “Visão Geral”.`
+        : `Excel de ${result.period.label.toLowerCase()} gerado com sucesso com ${result.sheetCount} abas de dados.`)
     } catch (nextError) {
       setExportError(nextError?.message || 'Não foi possível gerar a exportação completa.')
     } finally {
@@ -412,11 +415,14 @@ function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
         <strong style={{ color:C.text }}>Arquivo confidencial.</strong> A planilha é montada localmente no navegador e pode conter dados pessoais, financeiros e de saúde. Guarde-a em local seguro. Senhas, tokens e credenciais de integrações nunca são incluídos.
       </div>
 
-      <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-        <Btn onClick={runExport} disabled={exporting || loadingProfile} style={{ padding:'11px 18px' }}>
-          {exporting ? 'Carregando dados e gerando Excel…' : '↓ Exportar tudo em Excel'}
-        </Btn>
-        <span style={{ color:C.textDim, fontSize:12 }}>Cada assunto é organizado em uma aba própria, com clínica, data e horário da geração.</span>
+      <div style={{ display:'flex', gap:18, alignItems:'flex-end', flexWrap:'wrap' }}>
+        <ExportPeriodFields value={period} onChange={setPeriod} disabled={exporting || loadingProfile} compact />
+        <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'flex-start' }}>
+          <Btn onClick={runExport} disabled={exporting || loadingProfile} style={{ padding:'11px 18px' }}>
+            {exporting ? 'Carregando dados e gerando Excel…' : '↓ Exportar tudo em Excel'}
+          </Btn>
+          <span style={{ color:C.textDim, fontSize:12, maxWidth:430 }}>Cada assunto é organizado em uma aba própria, com clínica, período, data e horário da geração.</span>
+        </div>
       </div>
 
       {exportMessage ? <Feedback color={C.green} text={exportMessage} /> : null}

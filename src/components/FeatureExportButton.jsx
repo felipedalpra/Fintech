@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
+import { Btn, Modal } from './UI.jsx'
+import { ExportPeriodFields } from './ExportPeriodFields.jsx'
+import { emptyExportPeriod } from '../lib/exportPeriod.js'
 
 const EXPORTABLE_PAGES = new Set([
   'plans', 'sales', 'consultations', 'calendar', 'products', 'finance', 'cashflow', 'dre', 'balance',
@@ -11,6 +14,8 @@ const EXPORTABLE_PAGES = new Set([
 export function FeatureExportButton({ page, data, clinicName, compact = false }) {
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  const [open, setOpen] = useState(false)
+  const [period, setPeriod] = useState(emptyExportPeriod)
 
   if (!EXPORTABLE_PAGES.has(page)) return null
 
@@ -20,7 +25,8 @@ export function FeatureExportButton({ page, data, clinicName, compact = false })
     setError('')
     try {
       const { exportFeatureWorkbook } = await import('../lib/platformExport.js')
-      await exportFeatureWorkbook({ featureId:page, data, clinicName, database:supabase })
+      await exportFeatureWorkbook({ featureId:page, data, clinicName, database:supabase, period })
+      setOpen(false)
     } catch (nextError) {
       setError(nextError?.message || 'Não foi possível gerar o Excel.')
     } finally {
@@ -32,10 +38,10 @@ export function FeatureExportButton({ page, data, clinicName, compact = false })
     <div style={{ display:'flex', alignItems:'center', gap:7 }}>
       <button
         type="button"
-        onClick={run}
+        onClick={() => { setError(''); setOpen(true) }}
         disabled={exporting}
-        title={error || 'Baixar os dados desta funcionalidade em Excel'}
-        aria-label={error || 'Exportar esta funcionalidade em Excel'}
+        title={error || 'Escolher o período e baixar os dados desta funcionalidade em Excel'}
+        aria-label={error || 'Escolher período para exportar esta funcionalidade em Excel'}
         style={{
           border:`1px solid ${error ? C.red : C.border}`,
           background:error ? C.red+'12' : 'transparent',
@@ -54,6 +60,19 @@ export function FeatureExportButton({ page, data, clinicName, compact = false })
         {exporting ? 'Gerando…' : error ? 'Falha — tentar novamente' : compact ? '↓ Excel' : '↓ Exportar Excel'}
       </button>
       {error && !compact ? <span role="alert" style={{ color:C.red, fontSize:11, maxWidth:220 }}>{error}</span> : null}
+      <Modal open={open} onClose={() => !exporting && setOpen(false)} title="Exportar dados em Excel" width={460} trackDirty={false} closeOnBackdrop={!exporting}>
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          <p style={{ color:C.textSub, fontSize:13, lineHeight:1.6, margin:0 }}>
+            Escolha quais datas devem entrar na planilha desta funcionalidade.
+          </p>
+          <ExportPeriodFields value={period} onChange={setPeriod} disabled={exporting} />
+          {error ? <span role="alert" style={{ color:C.red, fontSize:12 }}>{error}</span> : null}
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:10, flexWrap:'wrap' }}>
+            <Btn variant="ghost" onClick={() => setOpen(false)} disabled={exporting}>Cancelar</Btn>
+            <Btn onClick={run} disabled={exporting}>{exporting ? 'Gerando Excel…' : '↓ Baixar Excel'}</Btn>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
