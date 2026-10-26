@@ -1,6 +1,6 @@
 import XLSXStyle from 'xlsx-js-style'
+import { EXPORT_TIME_ZONE, filterRowsByPeriod, resolveExportPeriod } from './exportPeriod.js'
 
-const EXPORT_TIME_ZONE = 'America/Sao_Paulo'
 const PAGE_SIZE = 1000
 const MAX_ROWS_PER_SHEET = 200000
 const MAX_CELL_LENGTH = 32760
@@ -35,17 +35,24 @@ const STYLES = {
 
 const LOCAL_SOURCES = [
   local('procedures', 'Procedimentos', ['plans']),
-  local('surgeries', 'Cirurgias', ['sales', 'calendar']),
-  local('consultations', 'Consultas', ['consultations', 'calendar']),
+  local('surgeries', 'Cirurgias', ['sales', 'calendar'], ['date', 'competenceDate', 'created_at']),
+  local('consultations', 'Consultas', ['consultations', 'calendar'], ['date', 'competenceDate', 'created_at']),
   local('products', 'Produtos', ['products']),
-  local('productSales', 'Vendas de produtos', ['products']),
-  local('productPurchases', 'Compras de produtos', ['products']),
-  local('extraRevenues', 'Receitas extras', ['finance', 'cashflow', 'dre']),
-  local('expenses', 'Despesas', ['finance', 'cashflow', 'dre']),
-  local('assets', 'Ativos', ['finance', 'balance']),
-  local('liabilities', 'Passivos', ['finance', 'balance']),
-  local('goals', 'Metas', ['goals']),
+  local('productSales', 'Vendas de produtos', ['products'], ['saleDate', 'competenceDate', 'created_at']),
+  local('productPurchases', 'Compras de produtos', ['products'], ['purchaseDate', 'competenceDate', 'created_at']),
+  local('extraRevenues', 'Receitas extras', ['finance', 'cashflow', 'dre'], ['competenceDate', 'date', 'dueDate', 'created_at']),
+  local('expenses', 'Despesas', ['finance', 'cashflow', 'dre'], ['competenceDate', 'dueDate', 'paymentDate', 'created_at']),
+  local('assets', 'Ativos', ['finance', 'balance'], ['date', 'acquisitionDate', 'created_at']),
+  local('liabilities', 'Passivos', ['finance', 'balance'], ['date', 'dueDate', 'created_at']),
+  local('goals', 'Metas', ['goals'], ['dueDate', 'created_at']),
   local('chartAccounts', 'Plano de contas', ['chart-of-accounts']),
+]
+
+const DEFAULT_REMOTE_DATE_FIELDS = [
+  'date_start', 'date', 'competence_date', 'transaction_date', 'recorded_at', 'occurred_at',
+  'start_date', 'due_date', 'payment_date', 'settlement_date', 'sale_date', 'purchase_date',
+  'scheduled_at', 'sent_at', 'timestamp', 'changed_at', 'accepted_at', 'signed_at',
+  'submitted_at', 'completed_at', 'issued_at', 'imported_at', 'connected_at', 'created_at', 'updated_at',
 ]
 
 const REMOTE_SOURCES = [
@@ -160,74 +167,83 @@ const FIELD_LABELS = {
 const BLOCKED_FIELD = /(^|_)(access_token|refresh_token|api_token|webhook_secret|verify_token|app_secret|client_secret|password|credential|credentials|private_key|encryption_key|encrypted_secret|instance_url)$/i
 const BINARY_FIELD = /(^|_)(logo_?data_?url|data_?url|file_?blob|binary_?data)$/i
 
-function local(key, title, features) {
-  return { key, title, features, kind:'local' }
+function local(key, title, features, dateFields = []) {
+  return { key, title, features, dateFields, kind:'local' }
 }
 
 function remote(key, table, title, features, options = {}) {
-  return { key, table, title, features, kind:'remote', ...options }
+  return { key, table, title, features, dateFields:DEFAULT_REMOTE_DATE_FIELDS, kind:'remote', ...options }
 }
 
 export function canExportFeature(featureId) {
   return Boolean(FEATURE_TITLES[featureId])
 }
 
-export async function exportFeatureWorkbook({ featureId, data = {}, clinicName = '', database = null, generatedAt = new Date().toISOString() }) {
+export async function exportFeatureWorkbook({ featureId, data = {}, clinicName = '', database = null, generatedAt = new Date().toISOString(), period:periodValue = {} }) {
   if (!canExportFeature(featureId)) throw new Error('Esta funcionalidade ainda não possui exportação em Excel.')
-  const localSheets = buildLocalSheets(data, featureId)
+  const period = resolveExportPeriod(periodValue, generatedAt)
+  const localSheets = buildLocalSheets(data, featureId, period)
   const remoteDefinitions = REMOTE_SOURCES.filter(source => source.features.includes(featureId))
-  const { sheets:remoteSheets, warnings } = await loadRemoteSheets(remoteDefinitions, database)
+  const { sheets:remoteSheets, warnings } = await loadRemoteSheets(remoteDefinitions, database, period)
   const sheets = deduplicateSheets([...localSheets, ...remoteSheets])
   const workbook = createPlatformWorkbook({
     title:FEATURE_TITLES[featureId],
     clinicName,
     generatedAt,
+    period,
     sheets,
     warnings,
   })
-  const filename = buildFilename(clinicName, FEATURE_TITLES[featureId], generatedAt)
+  const filename = buildFilename(clinicName, FEATURE_TITLES[featureId], generatedAt, period)
   XLSXStyle.writeFile(workbook, filename)
-  return { filename, warnings, sheetCount:sheets.length }
+  return { filename, warnings, sheetCount:sheets.length, period }
 }
 
-export async function exportAllPlatformWorkbook({ data = {}, profile = {}, clinicName = '', database = null, generatedAt = new Date().toISOString() }) {
+export async function exportAllPlatformWorkbook({ data = {}, profile = {}, clinicName = '', database = null, generatedAt = new Date().toISOString(), period:periodValue = {} }) {
   const effectiveClinicName = profile?.clinic?.tradeName || profile?.clinic?.legalName || clinicName
-  const localSheets = buildLocalSheets(data)
+  const period = resolveExportPeriod(periodValue, generatedAt)
+  const localSheets = buildLocalSheets(data, '', period)
   const profileSheets = buildProfileSheets(profile)
-  const { sheets:remoteSheets, warnings } = await loadRemoteSheets(REMOTE_SOURCES, database)
+  const { sheets:remoteSheets, warnings } = await loadRemoteSheets(REMOTE_SOURCES, database, period)
   const sheets = deduplicateSheets([...profileSheets, ...localSheets, ...remoteSheets])
   const workbook = createPlatformWorkbook({
     title:'Exportação completa da plataforma',
     clinicName:effectiveClinicName,
     generatedAt,
+    period,
     sheets,
     warnings,
   })
-  const filename = buildFilename(effectiveClinicName, 'Dados completos', generatedAt)
+  const filename = buildFilename(effectiveClinicName, 'Dados completos', generatedAt, period)
   XLSXStyle.writeFile(workbook, filename)
-  return { filename, warnings, sheetCount:sheets.length }
+  return { filename, warnings, sheetCount:sheets.length, period }
 }
 
-export function buildLocalSheets(data = {}, featureId = '') {
+export function buildLocalSheets(data = {}, featureId = '', periodValue = {}) {
+  const period = resolveExportPeriod(periodValue)
   const definitions = featureId ? LOCAL_SOURCES.filter(source => source.features.includes(featureId)) : LOCAL_SOURCES
-  const sheets = definitions.map(source => ({ title:source.title, rows:sanitizeRows(data[source.key] || []) }))
+  const sheets = definitions.map(source => ({
+    title:source.title,
+    rows:sanitizeRows(filterRowsByPeriod(data[source.key] || [], period, source.dateFields)),
+  }))
 
   if (!featureId || ['finance', 'dre', 'balance'].includes(featureId)) {
     const indicatorRows = Object.entries(data.indicatorInputs || {}).map(([field, value]) => ({ field, value }))
     const periodRows = Object.entries(data.indicatorInputsByPeriod || {}).map(([period, values]) => ({ period, values }))
     sheets.push({ title:'Indicadores manuais', rows:sanitizeRows(indicatorRows) })
-    sheets.push({ title:'Indicadores por período', rows:sanitizeRows(periodRows) })
+    sheets.push({ title:'Indicadores por período', rows:sanitizeRows(filterRowsByPeriod(periodRows, period, ['period'])) })
   }
 
   return sheets
 }
 
-export async function loadRemoteSheets(definitions, database = null) {
+export async function loadRemoteSheets(definitions, database = null, periodValue = {}) {
+  const period = resolveExportPeriod(periodValue)
   if (!database) return { sheets:[], warnings:['A conexão com o banco não está configurada; somente os dados já carregados na tela foram exportados.'] }
   const results = await mapWithConcurrency(definitions, 4, async source => {
     try {
       const rows = await fetchAllRows(database, source)
-      return { sheet:{ title:source.title, rows:sanitizeRows(rows) }, warning:'' }
+      return { sheet:{ title:source.title, rows:sanitizeRows(filterRowsByPeriod(rows, period, source.dateFields)) }, warning:'' }
     } catch (error) {
       return {
         sheet:{ title:source.title, rows:[] },
@@ -278,16 +294,17 @@ export function sanitizeObject(value) {
   }))
 }
 
-export function createPlatformWorkbook({ title, clinicName = '', generatedAt = new Date().toISOString(), sheets = [], warnings = [] }) {
+export function createPlatformWorkbook({ title, clinicName = '', generatedAt = new Date().toISOString(), period:periodValue = {}, sheets = [], warnings = [] }) {
+  const period = resolveExportPeriod(periodValue, generatedAt)
   const workbook = XLSXStyle.utils.book_new()
   const normalizedSheets = expandLargeSheets(sheets)
-  XLSXStyle.utils.book_append_sheet(workbook, buildOverviewSheet({ title, clinicName, generatedAt, sheets:normalizedSheets, warnings }), 'Visão Geral')
+  XLSXStyle.utils.book_append_sheet(workbook, buildOverviewSheet({ title, clinicName, generatedAt, period, sheets:normalizedSheets, warnings }), 'Visão Geral')
 
   const usedNames = new Set(['Visão Geral'])
   normalizedSheets.forEach(sheet => {
     const sheetName = uniqueSheetName(sheet.title, usedNames)
     usedNames.add(sheetName)
-    XLSXStyle.utils.book_append_sheet(workbook, buildDataSheet(sheet, { clinicName, generatedAt }), sheetName)
+    XLSXStyle.utils.book_append_sheet(workbook, buildDataSheet(sheet, { clinicName, generatedAt, period }), sheetName)
   })
   return workbook
 }
@@ -301,11 +318,12 @@ function buildProfileSheets(profile = {}) {
   ]
 }
 
-function buildOverviewSheet({ title, clinicName, generatedAt, sheets, warnings }) {
+function buildOverviewSheet({ title, clinicName, generatedAt, period, sheets, warnings }) {
   const rows = [
     [`SURGIMETRICS — ${clinicName || 'Clínica não identificada'}`],
     [title],
     [`Gerado em ${formatTimestamp(generatedAt)} · Fuso horário: ${EXPORT_TIME_ZONE}`],
+    [`Período exportado: ${period.label}`],
     ['Arquivo gerado localmente no navegador. Proteja-o, pois pode conter dados pessoais, financeiros e clínicos.'],
     [],
     ['Aba', 'Registros'],
@@ -318,17 +336,18 @@ function buildOverviewSheet({ title, clinicName, generatedAt, sheets, warnings }
   styleMergedRow(ws, 0, STYLES.title, 2)
   styleMergedRow(ws, 1, STYLES.section, 2)
   styleMergedRow(ws, 2, STYLES.subtitle, 2)
-  styleMergedRow(ws, 3, STYLES.warning, 2)
-  styleRow(ws, 5, STYLES.header, 2)
+  styleMergedRow(ws, 3, STYLES.subtitle, 2)
+  styleMergedRow(ws, 4, STYLES.warning, 2)
+  styleRow(ws, 6, STYLES.header, 2)
   sheets.forEach((_sheet, index) => {
-    setStyle(ws, index + 6, 0, index % 2 ? STYLES.alternate : STYLES.text)
-    setStyle(ws, index + 6, 1, STYLES.integer)
+    setStyle(ws, index + 7, 0, index % 2 ? STYLES.alternate : STYLES.text)
+    setStyle(ws, index + 7, 1, STYLES.integer)
   })
-  const warningHeader = 7 + sheets.length
+  const warningHeader = 8 + sheets.length
   styleMergedRow(ws, warningHeader, STYLES.header, 2)
   for (let row = warningHeader + 1; row < rows.length; row += 1) styleMergedRow(ws, row, warnings.length ? STYLES.warning : STYLES.success, 2)
   ws['!cols'] = [{ wch:48 }, { wch:18 }]
-  ws['!rows'] = [{ hpt:30 }, { hpt:24 }, { hpt:20 }, { hpt:34 }]
+  ws['!rows'] = [{ hpt:30 }, { hpt:24 }, { hpt:20 }, { hpt:20 }, { hpt:34 }]
   return ws
 }
 
@@ -338,7 +357,7 @@ function buildDataSheet(sheet, metadata) {
   const width = Math.max(3, columns.length)
   const aoa = [
     [`SURGIMETRICS — ${metadata.clinicName || 'Clínica não identificada'} — ${sheet.title}`],
-    [`Gerado em ${formatTimestamp(metadata.generatedAt)} · ${rows.length.toLocaleString('pt-BR')} registro(s)`],
+    [`Gerado em ${formatTimestamp(metadata.generatedAt)} · Período: ${metadata.period.label} · ${rows.length.toLocaleString('pt-BR')} registro(s)`],
     [],
     columns.length ? columns.map(column => labelForField(column)) : ['Sem registros', '', ''],
     ...rows.map(row => columns.map(column => normalizeCellValue(row[column], column))),
@@ -464,13 +483,14 @@ function formatTimestamp(value) {
   }).format(date)
 }
 
-function buildFilename(clinicName, title, generatedAt) {
+function buildFilename(clinicName, title, generatedAt, period = {}) {
   const date = new Date(generatedAt)
   const stamp = new Intl.DateTimeFormat('sv-SE', {
     timeZone:EXPORT_TIME_ZONE,
     year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit',
   }).format(date).replace(' ', '_').replace(':', '-')
-  return `${safeFilename(clinicName || 'Clinica')}_${safeFilename(title)}_${stamp}.xlsx`
+  const periodSuffix = period.filenameSuffix ? `_${safeFilename(period.filenameSuffix)}` : ''
+  return `${safeFilename(clinicName || 'Clinica')}_${safeFilename(title)}${periodSuffix}_${stamp}.xlsx`
 }
 
 function truncateCell(value) {
