@@ -249,7 +249,7 @@ export function MetaAdsDashboard() {
       </div>
 
       {subtab === 'analises' ? (
-        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} />
+        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} customRange={customRange} />
       ) : (
         <>
           <div style={s.bar}>
@@ -353,7 +353,7 @@ export function MetaAdsDashboard() {
 }
 
 // Aba Análises: leitura por IA das campanhas. Lê o cache (meta_analyses) ao abrir e regenera sob demanda.
-function AnalysisView({ uid, period, setPeriod }) {
+function AnalysisView({ uid, period, setPeriod, customRange }) {
   // Dentro do componente (lê C no render) — nunca no nível de módulo, senão não acompanha o tema.
   const TIPO = {
     escalar:  { icon: '↑', color: C.green,       bg: 'rgba(16,185,129,.14)' },
@@ -368,13 +368,18 @@ function AnalysisView({ uid, period, setPeriod }) {
   const [error, setError] = useState(null)
   const [empty, setEmpty] = useState(false)
 
+  // meta_analyses tem UNIQUE(user_id, period) sem colunas since/until — codifica o intervalo
+  // direto na string pra cada combinação de datas ter seu próprio cache (ver parseMetaAnalysisPeriod
+  // em api/financial-assistant.js, que decodifica o mesmo formato).
+  const analysisPeriod = period === 'custom' ? `custom:${customRange.since}:${customRange.until}` : period
+
   useEffect(() => {
     if (!uid) return
     let mounted = true
     async function loadCache() {
       setLoading(true); setError(null); setEmpty(false)
       const { data, error: err } = await supabase.from('meta_analyses')
-        .select('generated_at, payload').eq('user_id', uid).eq('period', period).maybeSingle()
+        .select('generated_at, payload').eq('user_id', uid).eq('period', analysisPeriod).maybeSingle()
       if (!mounted) return
       if (err) { setError(err.message); setLoading(false); return }
       setItems(data?.payload?.items ?? [])
@@ -383,12 +388,12 @@ function AnalysisView({ uid, period, setPeriod }) {
     }
     loadCache()
     return () => { mounted = false }
-  }, [uid, period])
+  }, [uid, analysisPeriod])
 
   async function reanalyze() {
     if (running) return
     setRunning(true); setError(null); setEmpty(false)
-    const r = await requestMetaAnalysis({ period })
+    const r = await requestMetaAnalysis({ period: analysisPeriod })
     setRunning(false)
     if (r?.error) { setError(r.error); return }
     if (r?.empty) { setItems([]); setGeneratedAt(null); setEmpty(true); return }
@@ -414,15 +419,14 @@ function AnalysisView({ uid, period, setPeriod }) {
     detail: { color: C.textSub, fontSize: 12.5, marginTop: 2, lineHeight: 1.5 },
     empty: { textAlign: 'center', padding: '44px 20px', color: C.textSub, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, lineHeight: 1.5 },
     disclaimer: { fontSize: 11.5, color: C.textDim, marginTop: 14, display: 'flex', gap: 8, alignItems: 'flex-start' },
+    customNote: { fontSize: 12, color: C.textSub, marginBottom: 14 },
   }
 
   return (
     <div>
       <div style={st.bar}>
         <div style={st.pills}>
-          {/* 'custom' fica de fora aqui: a análise por IA é cacheada por período fixo no
-              backend (meta_analyses), que ainda não sabe lidar com intervalo arbitrário. */}
-          {PERIODS.filter(p => p.key !== 'custom').map(p => (
+          {PERIODS.map(p => (
             <span key={p.key} style={st.pill(period === p.key)} onClick={() => setPeriod(p.key)}>{p.label}</span>
           ))}
         </div>
@@ -431,6 +435,10 @@ function AnalysisView({ uid, period, setPeriod }) {
           <button style={st.btn} onClick={reanalyze} disabled={running}>{running ? 'Analisando…' : 'Reanalisar'}</button>
         </div>
       </div>
+
+      {period === 'custom' && (
+        <div style={st.customNote}>Analisando {customRange.since} até {customRange.until} — ajuste as datas na aba Desempenho.</div>
+      )}
 
       {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 

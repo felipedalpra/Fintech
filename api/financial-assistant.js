@@ -148,11 +148,35 @@ export default async function handler(req, res) {
 // ---- Meta Ads: análise por IA das campanhas (aba Análises) ----
 const META_PERIOD_LABEL = { month:'Este mês', '30d':'Últimos 30 dias', quarter:'Trimestre' }
 
-function metaRangeSince(period) {
-  const now = new Date()
-  if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+// todayIso injetável pra teste determinístico (segue o padrão de metaConnectionStatusAfterSync
+// em api/_lib/metaInsights.js, que também aceita `now` em vez de ler o relógio direto).
+function metaRangeSince(period, todayIso) {
+  const until = new Date(`${todayIso}T00:00:00Z`)
+  if (period === 'month') return new Date(Date.UTC(until.getUTCFullYear(), until.getUTCMonth(), 1)).toISOString().slice(0, 10)
   const days = period === 'quarter' ? 89 : 29
-  return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  return new Date(until.getTime() - days * 86400000).toISOString().slice(0, 10)
+}
+
+// Período personalizado chega como string "custom:YYYY-MM-DD:YYYY-MM-DD" — o cache
+// meta_analyses só tem UNIQUE(user_id, period), sem colunas since/until; codificar o
+// intervalo direto no texto evita migration e mantém cada combinação de datas com seu
+// próprio cache (period='custom' sozinho colidiria entre intervalos diferentes).
+const CUSTOM_PERIOD_RE = /^custom:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})$/
+const MAX_ANALYSIS_RANGE_DAYS = 400
+
+// Pura e testável: normaliza o period pedido pra { key, since, until, label }, ou null se
+// inválido (chamador cai pro padrão 'month' nesse caso, igual ao comportamento anterior).
+export function parseMetaAnalysisPeriod(period, todayIso) {
+  if (period === 'month' || period === '30d' || period === 'quarter') {
+    return { key: period, since: metaRangeSince(period, todayIso), until: todayIso, label: META_PERIOD_LABEL[period] }
+  }
+  const m = CUSTOM_PERIOD_RE.exec(String(period || ''))
+  if (!m) return null
+  const [, since, until] = m
+  if (since > until || until > todayIso) return null
+  const spanDays = Math.round((new Date(`${until}T00:00:00Z`) - new Date(`${since}T00:00:00Z`)) / 86400000)
+  if (spanDays > MAX_ANALYSIS_RANGE_DAYS) return null
+  return { key: period, since, until, label: `Personalizado (${since} a ${until})` }
 }
 
 function round2(n) { return Math.round(Number(n || 0) * 100) / 100 }
@@ -163,15 +187,17 @@ async function handleMetaAnalysis(req, res) {
   try {
     const auth = await authenticateFinancialRequest(req)
     const supabase = auth.supabase
-    const period = ['month', '30d', 'quarter'].includes(req.body?.period) ? req.body.period : 'month'
+    const todayIso = new Date().toISOString().slice(0, 10)
+    const parsedPeriod = parseMetaAnalysisPeriod(req.body?.period, todayIso) || parseMetaAnalysisPeriod('month', todayIso)
+    const period = parsedPeriod.key
 
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) throw new AssistantError(503, 'AI_NOT_CONFIGURED', 'Assistente não configurado.')
 
-    const since = metaRangeSince(period)
+    const { since, until } = parsedPeriod
     // RLS garante que só vêm os insights da clínica do usuário.
     const [insRes, campRes] = await Promise.all([
-      supabase.from('meta_insights').select('user_id, ref_id, spend, impressions, clicks, leads').eq('level', 'campaign').gte('date', since),
+      supabase.from('meta_insights').select('user_id, ref_id, spend, impressions, clicks, leads').eq('level', 'campaign').gte('date', since).lte('date', until),
       supabase.from('meta_campaigns').select('campaign_id, name, status'),
     ])
     if (insRes.error) throw new AssistantError(500, 'META_READ_ERROR', insRes.error.message)
@@ -205,8 +231,8 @@ async function handleMetaAnalysis(req, res) {
     })
 
     const input = [
-      { role: 'system', content: buildMetaAnalysisPrompt(META_PERIOD_LABEL[period]) },
-      { role: 'user', content: JSON.stringify({ periodo: META_PERIOD_LABEL[period], campanhas: campaigns }) },
+      { role: 'system', content: buildMetaAnalysisPrompt(parsedPeriod.label) },
+      { role: 'user', content: JSON.stringify({ periodo: parsedPeriod.label, campanhas: campaigns }) },
     ]
     const response = await callOpenAI(apiKey, { model, input, max_output_tokens: 700 }, startedAt + REQUEST_TIMEOUT_MS)
     const text = extractResponseText(response)
