@@ -12,17 +12,17 @@ import {
 } from '../lib/clinicalTreatment.js'
 import { loadTreatmentWorkspace } from '../lib/clinicalTreatmentClient.js'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
-import { applyProtocolToTreatment } from '../lib/clinicalProtocols.js'
+import { applyProtocolToTreatment, scheduleProtocolSessions } from '../lib/clinicalProtocols.js'
 
 const EMPTY_PLAN = {
   title:'', indication:'', diagnosticSummary:'', objectives:'', plannedTreatment:'', guidance:'',
   expectedStartOn:'', reviewOn:'',
 }
 
-const EMPTY_SESSION = { sessionType:'procedure', title:'', instructions:'', scheduledStart:'', durationMinutes:30 }
+const EMPTY_SESSION = { sessionType:'procedure', title:'', instructions:'', scheduledStart:'', durationMinutes:30, offsetDays:null }
 const createSessionDraft = () => ({ ...EMPTY_SESSION, requestId:newRequestId() })
 
-export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
+export function ClinicalTreatmentPlan({ patient, ownerId, data, setData, initialProtocolApplication, onProtocolApplicationConsumed }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -55,6 +55,18 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
     loadClinicalProtocols(ownerId, { activeOnly:true }).then(rows => { if (active) setProtocols(rows) }).catch(() => { if (active) setProtocols([]) })
     return () => { active = false }
   }, [ownerId])
+  useEffect(() => {
+    if (!initialProtocolApplication) return
+    const applied = applyProtocolToTreatment(initialProtocolApplication.version, { ...EMPTY_PLAN }, '')
+    setEditor({
+      mode:'create',
+      requestId:newRequestId(),
+      values:applied.values,
+      sessions:applied.sessions.length ? applied.sessions.map(item => ({ ...item, requestId:newRequestId() })) : [createSessionDraft()],
+    })
+    setError('')
+    onProtocolApplicationConsumed?.()
+  }, [initialProtocolApplication?.id, patient.id])
 
   const selectedPlan = useMemo(
     () => plans.find(plan => plan.id === selectedPlanId) || plans[0] || null,
@@ -293,8 +305,12 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
 }
 
 function PlanEditor({ editor, setEditor, protocols, busy, onSave, onCancel }) {
-  const update = (key, value) => setEditor(current => ({ ...current, values:{ ...current.values, [key]:value } }))
-  const updateSession = (index, key, value) => setEditor(current => ({ ...current, sessions:current.sessions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]:value } : item) }))
+  const update = (key, value) => setEditor(current => ({
+    ...current,
+    values:{ ...current.values, [key]:value },
+    sessions:key === 'expectedStartOn' ? scheduleProtocolSessions(current.sessions, value) : current.sessions,
+  }))
+  const updateSession = (index, key, value) => setEditor(current => ({ ...current, sessions:current.sessions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]:value, ...(key === 'scheduledStart' ? { offsetDays:null } : {}) } : item) }))
   const applyProtocol = versionId => {
     const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
     if (!version) return

@@ -31,6 +31,10 @@ test('converte a anamnese legada sem perder antecedentes', () => {
   expect(form.personal_history).toContain('Cirurgias anteriores: Apendicectomia')
 })
 
+test('cria rascunho vazio quando o paciente ainda não possui perfil clínico', () => {
+  expect(clinicalAnamnesisFromLegacy(null, '2026-10-27')).toMatchObject({ session_date:'2026-10-27', personal_history:'', therapeutic_plan:'' })
+})
+
 test('preserva perfil legado que contém somente alertas clínicos ou TCLE', () => {
   expect(hasLegacyClinicalAnamnesis({ allergies:'Dipirona' })).toBe(true)
   expect(hasLegacyClinicalAnamnesis({ current_medications:'Losartana' })).toBe(true)

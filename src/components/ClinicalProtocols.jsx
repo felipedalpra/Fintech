@@ -11,6 +11,15 @@ import {
 
 const splitLines = value => String(value || '').split('\n').map(item => item.trim()).filter(Boolean)
 const joinLines = items => (items || []).join('\n')
+const formatDate = value => value ? new Date(value).toLocaleDateString('pt-BR') : 'Data não informada'
+const formatBirthDate = value => value ? new Date(`${String(value).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'não informada'
+
+const APPLICATION_DESTINATIONS = [
+  { id:'anamnesis', label:'Anamnese', description:'Plano terapêutico e perguntas complementares' },
+  { id:'exams', label:'Pedido de exames', description:'Kit de exames, indicação e orientações' },
+  { id:'prescription', label:'Receita simples', description:'Medicamentos favoritos e modo de usar' },
+  { id:'treatment', label:'Plano e retorno', description:'Tratamento, objetivos e etapas de acompanhamento' },
+]
 
 function formForEditor(version) {
   const base = version ? protocolVersionToForm(version) : { ...EMPTY_CLINICAL_PROTOCOL }
@@ -41,12 +50,16 @@ function editorPayload(form) {
   }
 }
 
-export function ClinicalProtocols({ ownerId, canManage = false, onClose }) {
+export function ClinicalProtocols({ ownerId, patients = [], canManage = false, canPrescribe = false, onApplyProtocol, onClose }) {
   const [protocols, setProtocols] = useState([])
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [editor, setEditor] = useState(null)
+  const [viewer, setViewer] = useState(null)
+  const [applying, setApplying] = useState(null)
+  const [applicationBusy, setApplicationBusy] = useState(false)
+  const [applicationError, setApplicationError] = useState('')
   const [saving, setSaving] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
@@ -61,7 +74,35 @@ export function ClinicalProtocols({ ownerId, canManage = false, onClose }) {
   const update = (field, value) => setEditor(current => ({ ...current, form:{ ...current.form, [field]:value } }))
 
   function startCreate() { setEditor({ protocolId:null, requestId:newRequestId(), form:formForEditor() }); setError(''); setNotice('') }
-  function startRevision(protocol) { setEditor({ protocolId:protocol.id, requestId:newRequestId(), form:formForEditor(protocol.currentVersion) }); setError(''); setNotice('') }
+  function startRevision(protocol, version = protocol.currentVersion) { setEditor({ protocolId:protocol.id, requestId:newRequestId(), form:formForEditor(version) }); setError(''); setNotice('') }
+  function startDuplicate(protocol, version = protocol.currentVersion) {
+    const form = formForEditor(version)
+    setViewer(null)
+    setEditor({ protocolId:null, requestId:newRequestId(), form:{ ...form, name:`Cópia de ${form.name}` } })
+    setError(''); setNotice('')
+  }
+  function startApplication(protocol, version = protocol.currentVersion) {
+    setApplying({ protocol, version })
+    setApplicationError('')
+  }
+
+  async function confirmApplication({ patient, destination }) {
+    if (applicationBusy || !applying) return
+    setApplicationBusy(true)
+    setApplicationError('')
+    try {
+      const activeProtocols = await loadClinicalProtocols(ownerId, { activeOnly:true })
+      const freshProtocol = activeProtocols.find(item => item.id === applying.protocol.id)
+      const freshVersion = freshProtocol?.versions.find(item => item.id === applying.version.id)
+      if (!freshProtocol || !freshVersion) throw new Error('Este protocolo foi arquivado ou a versão não está mais disponível. Atualize a biblioteca antes de aplicar.')
+      onApplyProtocol?.({ patient, destination, version:freshVersion })
+      setApplying(null)
+    } catch (applyError) {
+      setApplicationError(applyError.message || 'Não foi possível confirmar o protocolo ativo. Tente novamente.')
+    } finally {
+      setApplicationBusy(false)
+    }
+  }
 
   async function save() {
     if (saving) return
@@ -91,6 +132,16 @@ export function ClinicalProtocols({ ownerId, canManage = false, onClose }) {
 
   if (editor) return <ProtocolEditor editor={editor} update={update} saving={saving} error={error} onCancel={() => setEditor(null)} onSave={save} />
 
+  if (viewer) return <ProtocolDetail
+    protocol={viewer}
+    canManage={canManage}
+    onBack={() => setViewer(null)}
+    onApply={version => { setViewer(null); startApplication(viewer, version) }}
+    onRevise={version => { setViewer(null); startRevision(viewer, version) }}
+    onDuplicate={version => startDuplicate(viewer, version)}
+    onStatus={() => { setViewer(null); changeStatus(viewer) }}
+  />
+
   return <section className="clinical-protocols" data-testid="clinical-protocols">
     <header className="clinical-protocols__hero"><div><span>Biblioteca da clínica</span><h2>Protocolos por procedimento</h2><p>Padronize o atendimento sem substituir a avaliação e a decisão do profissional.</p></div><div><Btn variant="ghost" onClick={onClose}>← Agenda clínica</Btn>{canManage && <Btn onClick={startCreate}>+ Novo protocolo</Btn>}</div></header>
     <div className="clinical-protocols__guardrail"><strong>Modelo, não automação clínica</strong><span>Ao aplicar um protocolo, o sistema apenas preenche um rascunho. O profissional revisa e confirma antes de registrar.</span></div>
@@ -100,17 +151,75 @@ export function ClinicalProtocols({ ownerId, canManage = false, onClose }) {
     {status === 'loading' && <div className="clinical-loading">Carregando protocolos…</div>}
     {status === 'error' && <div className="clinical-empty-panel"><Btn variant="ghost" onClick={reload}>Tentar novamente</Btn></div>}
     {status === 'ready' && visible.length === 0 && <div className="treatment-empty"><span>▤</span><h4>Nenhum protocolo configurado</h4><p>{canManage ? 'Crie o primeiro modelo da clínica.' : 'Um administrador clínico ainda não publicou modelos.'}</p>{canManage && <Btn onClick={startCreate}>Criar protocolo</Btn>}</div>}
-    <div className="clinical-protocol-grid">{visible.map(protocol => <ProtocolCard key={protocol.id} protocol={protocol} canManage={canManage} onRevise={() => startRevision(protocol)} onStatus={() => changeStatus(protocol)} />)}</div>
+    <div className="clinical-protocol-grid">{visible.map(protocol => <ProtocolCard
+      key={protocol.id}
+      protocol={protocol}
+      canManage={canManage}
+      onView={() => setViewer(protocol)}
+      onApply={() => startApplication(protocol)}
+      onRevise={() => startRevision(protocol)}
+      onDuplicate={() => startDuplicate(protocol)}
+      onStatus={() => changeStatus(protocol)}
+    />)}</div>
+    {applying && <ProtocolApplyFlow
+      version={applying.version}
+      patients={patients}
+      canPrescribe={canPrescribe}
+      busy={applicationBusy}
+      error={applicationError}
+      onCancel={() => { if (!applicationBusy) setApplying(null) }}
+      onApply={confirmApplication}
+    />}
   </section>
 }
 
-function ProtocolCard({ protocol, canManage, onRevise, onStatus }) {
+function ProtocolCard({ protocol, canManage, onView, onApply, onRevise, onDuplicate, onStatus }) {
   const version = protocol.currentVersion
   const counts = [
     `${version.anamnesis_prompts?.length || 0} perguntas`, `${version.exam_kit?.length || 0} exames`,
     `${version.photo_requirements?.length || 0} fotos`, `${version.return_schedule?.length || 0} etapas`,
   ]
-  return <article className={`clinical-protocol-card is-${protocol.currentStatus}`}><header><div><span>{version.procedure_name}</span><h3>{version.name}</h3></div><em>{protocol.currentStatus === 'active' ? 'Ativo' : 'Arquivado'} · v{version.version_number}</em></header>{version.description && <p>{version.description}</p>}<div className="clinical-protocol-card__counts">{counts.map(item => <span key={item}>{item}</span>)}</div><div className="clinical-protocol-card__summary"><div><strong>Tratamento-base</strong><p>{version.planned_treatment}</p></div><div><strong>Orientações</strong><p>{version.guidance}</p></div></div><footer><small>Por {version.author_name} · {version.author_council} {version.author_registration}</small>{canManage && <div><Btn variant="ghost" onClick={onRevise}>Nova versão</Btn><button type="button" onClick={onStatus}>{protocol.currentStatus === 'active' ? 'Arquivar' : 'Reativar'}</button></div>}</footer></article>
+  return <article className={`clinical-protocol-card is-${protocol.currentStatus}`}><header><div><span>{version.procedure_name}</span><h3>{version.name}</h3></div><em>{protocol.currentStatus === 'active' ? 'Ativo' : 'Arquivado'} · v{version.version_number}</em></header>{version.description && <p>{version.description}</p>}<div className="clinical-protocol-card__counts">{counts.map(item => <span key={item}>{item}</span>)}</div><div className="clinical-protocol-card__summary"><div><strong>Tratamento-base</strong><p>{version.planned_treatment}</p></div><div><strong>Orientações</strong><p>{version.guidance}</p></div></div><footer><small>Por {version.author_name} · {version.author_council} {version.author_registration}</small><div className="clinical-protocol-card__actions"><Btn variant="ghost" onClick={onView}>Visualizar</Btn>{protocol.currentStatus === 'active' && <Btn onClick={onApply}>Aplicar em paciente</Btn>}{canManage && <><Btn variant="ghost" onClick={onRevise}>Nova versão</Btn><details><summary>Mais ações</summary><div><button type="button" onClick={onDuplicate}>Duplicar</button><button type="button" onClick={onStatus}>{protocol.currentStatus === 'active' ? 'Arquivar' : 'Reativar'}</button></div></details></>}</div></footer></article>
+}
+
+function ProtocolDetail({ protocol, canManage, onBack, onApply, onRevise, onDuplicate, onStatus }) {
+  const [versionId, setVersionId] = useState(protocol.currentVersion.id)
+  const version = protocol.versions.find(item => item.id === versionId) || protocol.currentVersion
+  const protocolData = protocolVersionToForm(version)
+  const lists = [
+    ['Perguntas da anamnese', protocolData.anamnesisPrompts.map(item => `${item.required ? 'Obrigatória · ' : ''}${item.label}`)],
+    ['Kit de exames', protocolData.examKit],
+    ['Medicamentos favoritos', protocolData.medicationFavorites.map(item => [item.medication, item.presentation, item.quantity, item.directions].filter(Boolean).join(' · '))],
+    ['Fotos necessárias', protocolData.photoRequirements],
+    ['Etapas e retornos', protocolData.returnSchedule.map(item => `${item.days} dias · ${item.title}${item.instructions ? ` — ${item.instructions}` : ''}`)],
+  ]
+  return <section className="clinical-protocol-detail" data-testid="clinical-protocol-detail">
+    <header><button type="button" onClick={onBack}>← Biblioteca</button><div><span>{version.procedure_name}</span><h2>{version.name}</h2><p>{version.description || 'Sem descrição interna.'}</p></div><em>{protocol.currentStatus === 'active' ? 'Ativo' : 'Arquivado'} · v{version.version_number}</em></header>
+    <div className="clinical-protocol-detail__actions"><Btn variant="ghost" onClick={onBack}>Voltar</Btn>{protocol.currentStatus === 'active' && <Btn onClick={() => onApply(version)}>Aplicar esta versão</Btn>}{canManage && <><Btn variant="ghost" onClick={() => onRevise(version)}>Nova versão a partir desta</Btn><Btn variant="ghost" onClick={() => onDuplicate(version)}>Duplicar esta versão</Btn><button type="button" onClick={onStatus}>{protocol.currentStatus === 'active' ? 'Arquivar' : 'Reativar'}</button></>}</div>
+    <div className="clinical-protocol-detail__summary"><section><strong>Indicação clínica-base</strong><p>{version.indication}</p></section><section><strong>Objetivos</strong><p>{version.objectives}</p></section><section><strong>Tratamento proposto</strong><p>{version.planned_treatment}</p></section><section><strong>Orientações, riscos e decisão compartilhada</strong><p>{version.guidance}</p></section></div>
+    <div className="clinical-protocol-detail__lists">{lists.map(([label, items]) => <section key={label}><strong>{label}</strong>{items.length ? <ul>{items.map((item, index) => <li key={`${label}:${index}`}>{item}</li>)}</ul> : <p>Nenhum item configurado.</p>}</section>)}</div>
+    <section className="clinical-protocol-history"><header><div><span>Histórico preservado</span><strong>Versões do protocolo</strong></div><select aria-label="Versão visualizada" value={version.id} onChange={event => setVersionId(event.target.value)}>{protocol.versions.map(item => <option key={item.id} value={item.id}>Versão {item.version_number}</option>)}</select></header>{protocol.versions.map(item => <button key={item.id} type="button" className={item.id === version.id ? 'is-active' : ''} onClick={() => setVersionId(item.id)}><strong>Versão {item.version_number}</strong><span>{item.author_name} · {item.author_council} {item.author_registration}</span><small>{formatDate(item.recorded_at)}</small></button>)}</section>
+  </section>
+}
+
+function ProtocolApplyFlow({ version, patients, canPrescribe, busy, error, onCancel, onApply }) {
+  const [query, setQuery] = useState('')
+  const [patientId, setPatientId] = useState('')
+  const [destination, setDestination] = useState('anamnesis')
+  const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
+  const visiblePatients = patients.filter(patient => !normalizedQuery || [patient.full_name, patient.phone, patient.email].some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(normalizedQuery))).slice(0, 20)
+  const destinationAvailable = id => {
+    if (id === 'exams') return Boolean(version.exam_kit?.length)
+    if (id === 'prescription') return canPrescribe && Boolean(version.medication_favorites?.length)
+    return true
+  }
+  const selectedPatient = patients.find(patient => patient.id === patientId)
+  return <div className="clinical-protocol-apply-modal" role="dialog" aria-modal="true" aria-labelledby="protocol-apply-title"><div>
+    <header><div><span>Aplicar como rascunho · versão {version.version_number}</span><h3 id="protocol-apply-title">{version.name}</h3><p>Escolha o paciente e onde deseja continuar. Nada será registrado automaticamente.</p></div><button type="button" onClick={onCancel} disabled={busy} aria-label="Fechar">×</button></header>
+    {error && <div className="clinical-alert clinical-protocol-apply-error" role="alert">{error}</div>}
+    <div className="clinical-protocol-apply-grid"><section><label><span>Buscar paciente</span><input aria-label="Buscar paciente para o protocolo" value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome, telefone ou e-mail" /></label><div className="clinical-protocol-patient-list">{visiblePatients.map(patient => <button key={patient.id} type="button" className={patient.id === patientId ? 'is-active' : ''} onClick={() => setPatientId(patient.id)}><strong>{patient.full_name}</strong><span>Nascimento: {formatBirthDate(patient.date_of_birth)} · {patient.phone || patient.email || 'contato não informado'}</span></button>)}{visiblePatients.length === 0 && <p>Nenhum paciente encontrado.</p>}</div>{selectedPatient && <div className="clinical-protocol-selected-patient"><span>Paciente selecionado</span><strong>{selectedPatient.full_name}</strong><small>Nascimento: {formatBirthDate(selectedPatient.date_of_birth)} · {selectedPatient.phone || selectedPatient.email || 'contato não informado'}</small></div>}</section><section><span>Destino do rascunho</span><div className="clinical-protocol-destinations">{APPLICATION_DESTINATIONS.map(item => { const available = destinationAvailable(item.id); return <button key={item.id} type="button" disabled={!available} className={destination === item.id ? 'is-active' : ''} onClick={() => setDestination(item.id)}><strong>{item.label}</strong><span>{available ? item.description : item.id === 'prescription' && !canPrescribe ? 'Seu perfil não pode emitir receitas' : 'Este protocolo não possui itens para este destino'}</span></button> })}</div></section></div>
+    <footer><Btn variant="ghost" disabled={busy} onClick={onCancel}>Cancelar</Btn><Btn disabled={busy || !selectedPatient || !destinationAvailable(destination)} onClick={() => onApply({ patient:selectedPatient, destination })}>{busy ? 'Confirmando protocolo…' : 'Abrir rascunho'}</Btn></footer>
+  </div></div>
 }
 
 function ProtocolEditor({ editor, update, saving, error, onCancel, onSave }) {

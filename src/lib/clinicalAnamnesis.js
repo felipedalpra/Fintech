@@ -46,14 +46,15 @@ export function emptyClinicalAnamnesis(sessionDate = '') {
 }
 
 function joinedHistory(profile = {}) {
+  const source = profile || {}
   return [
-    ['Doenças crônicas', profile.chronic_diseases],
-    ['Cirurgias anteriores', profile.previous_surgeries],
-    ['Internações', profile.hospitalizations],
-    ['Antecedentes ginecológicos', profile.gynecological_history],
-    ['Tabagismo', profile.smoking],
-    ['Etilismo', profile.alcohol],
-    ['Atividade física', profile.physical_activity],
+    ['Doenças crônicas', source.chronic_diseases],
+    ['Cirurgias anteriores', source.previous_surgeries],
+    ['Internações', source.hospitalizations],
+    ['Antecedentes ginecológicos', source.gynecological_history],
+    ['Tabagismo', source.smoking],
+    ['Etilismo', source.alcohol],
+    ['Atividade física', source.physical_activity],
   ].filter(([, value]) => String(value || '').trim())
     .map(([label, value]) => `${label}: ${String(value).trim()}`)
     .join('\n')
