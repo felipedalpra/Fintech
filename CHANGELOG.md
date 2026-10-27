@@ -5,6 +5,13 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-27
+### Added
+- **Protocolos aplicáveis diretamente a pacientes**: cada card da biblioteca agora permite visualizar todo o conteúdo, consultar versões anteriores, duplicar como novo protocolo e iniciar um rascunho para um paciente em Anamnese, Pedido de exames, Receita simples ou Plano e retorno. Destinos sem conteúdo aplicável ficam indisponíveis, receita respeita o perfil autorizado e nenhuma aplicação grava dados automaticamente. (`src/components/ClinicalProtocols.jsx`, `src/components/ClinicalRecords.jsx`, `src/components/ClinicalDocuments.jsx`, `src/components/ClinicalTreatmentPlan.jsx`, `src/lib/clinicalProtocols.js`, `tests/unit/clinicalProtocols.spec.js`, `tests/e2e/clinical-protocols.spec.js`.)
+
+### Changed
+- **Biblioteca de protocolos vira ponto de partida do atendimento**: ações principais ficam explícitas nos cards, enquanto duplicar e arquivar ficam em “Mais ações”; nova versão continua imutável e o histórico permite inspecionar qualquer versão sem alterar registros anteriores. (`src/components/ClinicalProtocols.jsx`, `src/components/ClinicalRecords.css`, `docs/superpowers/specs/2026-10-27-clinical-protocol-application-design.md`.)
+
 ## [Unreleased] - 2026-10-26
 ### Added
 - **Workspace clínico com cinco visões operacionais**: a área Clínico deixa de ter somente “Atendimento” e ganha Hoje, Pacientes, Pendências, Protocolos e Documentos, cada uma com rota protegida por acesso clínico. Hoje preserva a agenda vinculada e acrescenta o pulso de continuidade; Pacientes mostra último contato, próximo compromisso e contagens sem expor conteúdo clínico; Pendências deriva revisões, retornos, planos, sessões e tentativas de assinatura a partir dos registros reais; Documentos consolida pedidos/receitas e o estado da tentativa mais recente. Uma RPC somente leitura expõe apenas metadados mínimos do prontuário, valida proprietário/acesso clínico explicitamente e exclui evolução/conduta; fontes de migrations ainda ausentes degradam de forma explícita sem bloquear a agenda. Aplicar `supabase/clinical_workspace_views_schema.sql` depois da fundação clínica. (`src/pages/FinanceWorkspace.jsx`, `src/components/ClinicalRecords.jsx`, `src/components/ClinicalWorkspaceViews.jsx`, `src/lib/clinicalWorkspaceIndex.js`, `src/lib/clinicalWorkspaceIndexClient.js`, `supabase/clinical_workspace_views_schema.sql`, `tests/unit/clinicalWorkspaceIndex.spec.js`, `tests/postgres/clinicalWorkspaceViews.spec.sql`, `tests/e2e/clinical-records.spec.js`.)

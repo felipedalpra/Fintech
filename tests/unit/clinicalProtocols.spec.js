@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { applyProtocolToTreatment, buildProtocolAnamnesisDraft, buildProtocolWorkspace, normalizeClinicalProtocol, validateClinicalProtocol, validateProtocolResponses } from '../../src/lib/clinicalProtocols.js'
+import { applyProtocolToDocumentDraft, applyProtocolToTreatment, buildProtocolAnamnesisDraft, buildProtocolWorkspace, normalizeClinicalProtocol, validateClinicalProtocol, validateProtocolResponses } from '../../src/lib/clinicalProtocols.js'
 
 const version = { id:'v1', protocol_id:'p1', version_number:1, name:'Mamoplastia', procedure_name:'Mama', indication:'Indicação-base', objectives:'Objetivos-base', planned_treatment:'Tratamento-base', guidance:'Orientações-base', anamnesis_prompts:[{ key:'gestacoes', label:'Gestações anteriores', required:true }], exam_kit:['Hemograma'], medication_favorites:[], photo_requirements:['Frente'], return_schedule:[{ days:7, title:'Retorno de 7 dias', instructions:'Avaliar cicatrização' }] }
 
@@ -32,6 +32,15 @@ test('aplica protocolo no plano sem sobrescrever texto já revisado', () => {
   expect(result.values.title).toBe('Plano individual')
   expect(result.values.indication).toBe('Indicação-base')
   expect(result.sessions[0]).toMatchObject({ sessionType:'return', title:'Retorno de 7 dias', scheduledStart:'2026-10-30T09:00' })
+})
+
+test('aplica kits de exames e medicamentos somente no rascunho correspondente', () => {
+  const withMedication = { ...version, medication_favorites:[{ medication:'Dipirona', presentation:'500 mg', quantity:'1 caixa', directions:'Tomar se dor' }] }
+  const examDraft = applyProtocolToDocumentDraft(withMedication, 'exam_request', { clinical_indication:'Indicação individual', instructions:'' })
+  expect(examDraft).toMatchObject({ exams_text:'Hemograma', clinical_indication:'Indicação individual', instructions:'Orientações-base' })
+  const prescriptionDraft = applyProtocolToDocumentDraft(withMedication, 'simple_prescription', { items:[] })
+  expect(prescriptionDraft.items[0]).toMatchObject({ medication:'Dipirona', directions:'Tomar se dor' })
+  expect(prescriptionDraft.simple_prescription_confirmed).toBe(false)
 })
 
 test('mantém versões e status append-only ao montar a biblioteca', () => {

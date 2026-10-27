@@ -22,7 +22,7 @@ const EMPTY_PLAN = {
 const EMPTY_SESSION = { sessionType:'procedure', title:'', instructions:'', scheduledStart:'', durationMinutes:30 }
 const createSessionDraft = () => ({ ...EMPTY_SESSION, requestId:newRequestId() })
 
-export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
+export function ClinicalTreatmentPlan({ patient, ownerId, data, setData, initialProtocolApplication, onProtocolApplicationConsumed }) {
   const [plans, setPlans] = useState([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -55,6 +55,18 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData }) {
     loadClinicalProtocols(ownerId, { activeOnly:true }).then(rows => { if (active) setProtocols(rows) }).catch(() => { if (active) setProtocols([]) })
     return () => { active = false }
   }, [ownerId])
+  useEffect(() => {
+    if (!initialProtocolApplication) return
+    const applied = applyProtocolToTreatment(initialProtocolApplication.version, { ...EMPTY_PLAN }, '')
+    setEditor({
+      mode:'create',
+      requestId:newRequestId(),
+      values:applied.values,
+      sessions:applied.sessions.length ? applied.sessions.map(item => ({ ...item, requestId:newRequestId() })) : [createSessionDraft()],
+    })
+    setError('')
+    onProtocolApplicationConsumed?.()
+  }, [initialProtocolApplication?.id, patient.id])
 
   const selectedPlan = useMemo(
     () => plans.find(plan => plan.id === selectedPlanId) || plans[0] || null,

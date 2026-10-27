@@ -16,7 +16,7 @@ import {
 } from '../lib/clinicalSignature.js'
 import { Btn } from './UI.jsx'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
-import { protocolVersionToForm } from '../lib/clinicalProtocols.js'
+import { applyProtocolToDocumentDraft } from '../lib/clinicalProtocols.js'
 
 const { EXAM_REQUEST, SIMPLE_PRESCRIPTION } = CLINICAL_DOCUMENT_TYPES
 
@@ -62,7 +62,7 @@ function DocumentSummary({ record }) {
   return <>{(data.exams || []).join(', ') || 'Pedido sem exames disponíveis'}</>
 }
 
-export function ClinicalDocuments({ patient, ownerId, author, profile, profileLoading = false, clinicName, canPrescribe = false }) {
+export function ClinicalDocuments({ patient, ownerId, author, profile, profileLoading = false, clinicName, canPrescribe = false, initialProtocolApplication, onProtocolApplicationConsumed }) {
   const [records, setRecords] = useState([])
   const [signatureByDocument, setSignatureByDocument] = useState({})
   const [signatureEvidenceAvailable, setSignatureEvidenceAvailable] = useState(true)
@@ -101,6 +101,22 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
     return () => { active = false }
   }, [ownerId])
 
+  useEffect(() => {
+    if (!initialProtocolApplication || profileLoading) return
+    const type = initialProtocolApplication.destination === 'prescription' ? SIMPLE_PRESCRIPTION : EXAM_REQUEST
+    if (type === SIMPLE_PRESCRIPTION && !canPrescribe) {
+      setError('Somente o perfil administrador pode emitir receitas.')
+      onProtocolApplicationConsumed?.()
+      return
+    }
+    const defaults = clinicalDocumentDefaults({ type, issueDate:today(), profile, clinicName })
+    setEditingType(type)
+    setRequestId(uid())
+    setForm(applyProtocolToDocumentDraft(initialProtocolApplication.version, type, defaults))
+    setError('')
+    onProtocolApplicationConsumed?.()
+  }, [initialProtocolApplication?.id, profileLoading, patient.id])
+
   const logoDataUrl = profile?.clinic?.logoDataUrl || ''
   const groupedCount = useMemo(() => ({
     exams:records.filter(item => item.document_type === EXAM_REQUEST).length,
@@ -137,12 +153,7 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
   function applyProtocol(versionId) {
     const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
     if (!version) return
-    const protocol = protocolVersionToForm(version)
-    if (editingType === EXAM_REQUEST) {
-      setForm(current => ({ ...current, exams_text:protocol.examKit.join('\n'), clinical_indication:current.clinical_indication || protocol.indication, instructions:current.instructions || protocol.guidance }))
-    } else if (protocol.medicationFavorites.length) {
-      setForm(current => ({ ...current, items:protocol.medicationFavorites, simple_prescription_confirmed:false }))
-    }
+    setForm(current => applyProtocolToDocumentDraft(version, editingType, current))
   }
 
   function removeMedication(index) {

@@ -22,7 +22,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { canIssueClinicalPrescription } from '../lib/roleAccess.js'
 import { fetchSecureProfile } from '../lib/secureProfileClient.js'
-import { formatDateBR, today } from '../utils.js'
+import { formatDateBR, today, uid } from '../utils.js'
 import {
   buildClinicalDaySchedule,
   millisecondsUntilNextLocalDay,
@@ -32,6 +32,7 @@ import {
 } from '../lib/clinicalWorkspace.js'
 import { buildClinicalWorkspaceIndex } from '../lib/clinicalWorkspaceIndex.js'
 import { emptyClinicalWorkspaceSources, loadClinicalWorkspaceSources } from '../lib/clinicalWorkspaceIndexClient.js'
+import { buildProtocolAnamnesisDraft } from '../lib/clinicalProtocols.js'
 import './ClinicalRecords.css'
 
 const CLINICAL_MODULES = [
@@ -67,6 +68,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [tab, setTab] = useState('overview')
   const [clinicalProfile, setClinicalProfile] = useState(null)
   const [anamnesisDraft, setAnamnesisDraft] = useState(null)
+  const [protocolApplication, setProtocolApplication] = useState(null)
   const [clinicalAccessStatus, setClinicalAccessStatus] = useState('idle')
   const [profileStatus, setProfileStatus] = useState('idle')
   const [openAttempt, setOpenAttempt] = useState(0)
@@ -88,6 +90,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setModuleView(initialView)
     setSelected(null)
     setClinicalProfile(null)
+    setProtocolApplication(null)
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('overview')
@@ -231,18 +234,28 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setWorkspaceStatus('ready')
   }
 
-  function selectPatient(patient, initialTab = 'overview') {
+  function selectPatient(patient, initialTab = 'overview', options = {}) {
     setModuleView('patient')
     setClinicalAccessStatus('auditing')
     setProfileStatus('loading')
     setClinicalProfile(null)
-    setAnamnesisDraft(null)
+    setAnamnesisDraft(options.anamnesisDraft || null)
+    setProtocolApplication(options.protocolApplication || null)
     setOpenAttempt(value => value + 1)
     setSelected(patient)
     setTab(initialTab)
     setSearch('')
     setSearchOpen(false)
     setError('')
+  }
+
+  function applyProtocolToPatient({ patient, destination, version }) {
+    const application = { id:uid(), destination, version }
+    if (destination === 'anamnesis') {
+      selectPatient(patient, 'summary', { anamnesisDraft:buildProtocolAnamnesisDraft(version) })
+      return
+    }
+    selectPatient(patient, destination === 'treatment' ? 'treatment' : 'prescriptions', { protocolApplication:application })
   }
 
   function openAppointment(item) {
@@ -263,6 +276,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setSelected(null)
     setClinicalProfile(null)
     setAnamnesisDraft(null)
+    setProtocolApplication(null)
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('overview')
@@ -348,7 +362,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
 
       {error && <div className="clinical-alert" role="alert">{error}</div>}
 
-      {moduleView === 'protocols' && <ClinicalProtocols ownerId={ownerId} canManage={isOwner || role === 'admin'} onClose={() => navigateModule('today')} />}
+      {moduleView === 'protocols' && <ClinicalProtocols ownerId={ownerId} patients={patients} canManage={isOwner || role === 'admin'} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onApplyProtocol={applyProtocolToPatient} onClose={() => navigateModule('today')} />}
       {moduleView === 'today' && <>
         <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={(patient) => selectPatient(patient, 'overview')} />
         <ClinicalTodayInsights index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onNavigate={navigateModule} onRefresh={loadWorkspaceIndex} />
@@ -405,10 +419,12 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     profileLoading={secureProfileStatus === 'loading'}
                     clinicName={clinicName}
                     canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
+                    initialProtocolApplication={protocolApplication?.destination === 'exams' || protocolApplication?.destination === 'prescription' ? protocolApplication : null}
+                    onProtocolApplicationConsumed={() => setProtocolApplication(null)}
                   />
                 )}
                 {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}
-                {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} />}
+                {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} initialProtocolApplication={protocolApplication?.destination === 'treatment' ? protocolApplication : null} onProtocolApplicationConsumed={() => setProtocolApplication(null)} />}
               </div>
             </>
           )}

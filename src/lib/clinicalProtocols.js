@@ -134,6 +134,22 @@ export function validateProtocolResponses(version, responses = {}) {
   return missing ? `Responda ao campo obrigatório do protocolo: ${missing.label}.` : ''
 }
 
+export function applyProtocolToDocumentDraft(version, documentType, current = {}) {
+  const protocol = protocolVersionToForm(version)
+  if (documentType === 'exam_request') {
+    return {
+      ...current,
+      exams_text:protocol.examKit.join('\n'),
+      clinical_indication:text(current.clinical_indication) || protocol.indication,
+      instructions:text(current.instructions) || protocol.guidance,
+    }
+  }
+  if (documentType === 'simple_prescription' && protocol.medicationFavorites.length) {
+    return { ...current, items:protocol.medicationFavorites, simple_prescription_confirmed:false }
+  }
+  return current
+}
+
 export function applyProtocolToTreatment(version, current = {}, startOn = '') {
   const protocol = protocolVersionToForm(version)
   const start = startOn ? new Date(`${startOn}T12:00:00`) : null
