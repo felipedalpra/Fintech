@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async ({ page }) => {
+  let releaseRecordMetadata
+  const recordMetadataGate = new Promise(resolve => { releaseRecordMetadata = resolve })
   await page.setViewportSize({ width:390, height:844 })
   await page.addInitScript(() => {
     const local = new Date()
@@ -23,19 +25,46 @@ test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async
   await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'patient-agenda', full_name:'Ana Agenda', date_of_birth:'1990-04-10', phone:'11999990000', active:true }]) }))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ patient_id:'patient-agenda', user_id:'e2e-user-id', allergies:'Dipirona', consent_signed:false }) }))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
+  await page.route('**/rest/v1/rpc/list_clinical_workspace_record_metadata*', async route => {
+    await recordMetadataGate
+    await route.fulfill({ status:200, contentType:'application/json', body:'[]' })
+  })
   await page.route('**/rest/v1/medical_records*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  for (const table of ['clinical_anamneses', 'clinical_intake_requests', 'clinical_intake_submissions', 'clinical_document_signatures', 'clinical_assets', 'clinical_treatment_plans', 'clinical_treatment_plan_versions', 'clinical_treatment_plan_status_events', 'clinical_treatment_sessions', 'clinical_treatment_session_events']) {
+    await page.route(`**/rest/v1/${table}*`, route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  }
 
   await page.goto('/app/clinical-records')
   await expect(page.getByTestId('clinical-day-agenda')).toBeVisible({ timeout:10000 })
+  const pulse = page.getByRole('region', { name:'Pulso clínico' })
+  await expect(pulse.getByText('Atualizando a visão clínica…')).toBeVisible()
+  await expect(pulse.locator('.clinical-insight-grid strong').first()).toHaveText('—')
+  const modules = page.getByRole('navigation', { name:'Módulos clínicos' })
+  await expect(modules).toContainText('Pacientes')
+  await expect(modules).toContainText('Pendências')
+  await expect(modules).toContainText('Protocolos')
+  await expect(modules).toContainText('Documentos')
+  await modules.getByRole('button', { name:/Pacientes/ }).click()
+  await expect(page).toHaveURL(/\/app\/clinical-patients$/)
+  await expect(page.getByTestId('clinical-patients-view')).toBeVisible()
+  await expect(page.getByTestId('clinical-patients-view').getByText('Atualizando…', { exact:true })).toHaveText('Atualizando…')
+  releaseRecordMetadata()
+  await expect(page.getByText('Atualizando…', { exact:true })).toHaveCount(0)
+  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:/Hoje/ }).click()
+  await expect(page).toHaveURL(/\/app\/clinical-records$/)
   await expect(page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ })).toBeVisible()
   await page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ }).click()
 
   await expect(page.getByRole('heading', { name:'Ana Agenda' })).toBeVisible()
   await expect(page.getByText('Alergias: Dipirona')).toBeVisible()
+  await page.getByRole('button', { name:'Resumo', exact:true }).click()
+  await expect(page.getByTestId('clinical-patient-summary')).toBeVisible()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Linha do tempo', exact:true }).click()
+  await expect(page.getByTestId('clinical-patient-timeline')).toBeVisible()
   await expect(page.getByRole('navigation', { name:'Ficha clínica do paciente' })).toContainText('Exames e receitas')
-  await page.getByRole('button', { name:/Exames e receitas/ }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Exames e receitas', exact:true }).click()
   await expect(page.getByText('Nenhum documento emitido')).toBeVisible()
 })
 
@@ -104,7 +133,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Documentos/ }).click()
-  await page.getByRole('button', { name:'Exames e receitas' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Exames e receitas', exact:true }).click()
 
   await page.getByRole('button', { name:'+ Pedido de exames' }).click()
   await page.getByLabel('Exames solicitados *').fill('Hemograma completo\nCoagulograma')
@@ -197,6 +226,7 @@ test('assina evolução imutável e corrige somente por adendo', async ({ page }
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Prontuário/ }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Prontuário', exact:true }).click()
   await expect(page.getByText('0 evoluções registradas')).toBeVisible()
   await expect(page.getByText('Nenhuma evolução registrada.')).toBeVisible()
   expect(auditActions.filter(action => action === 'view_record')).toHaveLength(1)
@@ -336,6 +366,9 @@ test('mantém o prontuário disponível e não informa ausência de alertas quan
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Perfil/ }).click()
+  await expect(page.getByText('Alertas clínicos indisponíveis no momento.')).toBeVisible()
+  await expect(page.getByText('Nenhum alerta registrado no perfil clínico.')).toHaveCount(0)
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Prontuário', exact:true }).click()
 
   await expect(page.getByText('Alertas indisponíveis')).toBeVisible()
   await expect(page.getByText('Sem alertas registrados')).toHaveCount(0)

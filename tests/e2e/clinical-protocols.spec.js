@@ -54,7 +54,7 @@ test('cria protocolo compartilhado e o aplica como rascunho no plano', async ({ 
 
   await page.getByRole('button', { name:'← Agenda clínica' }).click()
   await page.getByRole('button', { name:/Ana Protocolo/ }).click()
-  await page.getByRole('button', { name:'Plano e retorno' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Plano e retorno', exact:true }).click()
   await page.getByRole('button', { name:'+ Novo plano' }).click()
   await page.getByText('Começar por um protocolo').locator('..').getByRole('combobox').selectOption('version-1')
   await expect(page.getByLabel('Título do plano *')).toHaveValue('Mamoplastia segura')

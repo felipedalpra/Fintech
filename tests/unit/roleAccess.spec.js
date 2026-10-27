@@ -29,6 +29,8 @@ test('perfis operacionais preservam agenda, pacientes, WhatsApp e tarefas', () =
 test('acesso clínico é independente do cargo administrativo', () => {
   expect(canRoleAccess('admin', 'clinical-records')).toBe(false)
   expect(canRoleAccess('admin', 'clinical-records', { clinicalAccess:true })).toBe(true)
+  expect(canRoleAccess('equipe', 'clinical-pending', { clinicalAccess:true })).toBe(true)
+  expect(canRoleAccess('gestao', 'clinical-documents', { clinicalAccess:false })).toBe(false)
   expect(canRoleAccess('gestao', 'clinical-records')).toBe(false)
   expect(canRoleAccess('gestao', 'clinical-records', { clinicalAccess:true })).toBe(true)
   expect(canRoleAccess('equipe', 'clinical-records', { clinicalAccess:true })).toBe(true)

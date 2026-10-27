@@ -15,7 +15,13 @@ export const ROLE_ACCESS = {
   ],
 }
 
-export const CLINICAL_SECTIONS = new Set(['clinical-records'])
+export const CLINICAL_SECTIONS = new Set([
+  'clinical-records',
+  'clinical-patients',
+  'clinical-pending',
+  'clinical-protocols',
+  'clinical-documents',
+])
 
 export function canRoleAccess(role, sectionId, { clinicalAccess = false } = {}) {
   if (CLINICAL_SECTIONS.has(sectionId)) {

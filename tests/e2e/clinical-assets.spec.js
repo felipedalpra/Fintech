@@ -74,7 +74,7 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Imagens/ }).click()
-  await page.getByRole('button', { name:'Fotos e documentos' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Fotos e documentos', exact:true }).click()
   await expect(page.getByText('Comece registrando as fotos pré-procedimento')).toBeVisible()
 
   await page.getByRole('button', { name:'+ Adicionar fotos', exact:true }).first().click()
@@ -102,7 +102,7 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
 
   await page.reload()
   await page.getByRole('button', { name:/Ana Imagens/ }).click()
-  await page.getByRole('button', { name:'Fotos e documentos' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Fotos e documentos', exact:true }).click()
   await page.getByRole('button', { name:'Galeria de fotos' }).click()
   await expect(page.getByText('Abdominoplastia').first()).toBeVisible()
   await expect.poll(() => auditIds.filter(id => id === 'asset-photo').length).toBeGreaterThan(0)
@@ -151,7 +151,7 @@ test('separa fotos de antes e depois e abre a comparação em tela cheia', async
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Imagens/ }).click()
-  await page.getByRole('button', { name:'Fotos e documentos' }).click()
+  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Fotos e documentos', exact:true }).click()
 
   const beforeSelect = page.getByLabel('Foto de antes')
   const afterSelect = page.getByLabel('Foto de depois')
