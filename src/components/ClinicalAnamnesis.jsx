@@ -151,11 +151,17 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
 
   function applyProtocol(versionId) {
     if (!versionId) {
-      setForm(current => ({ ...current, protocol_id:null, protocol_version_id:null, protocol_name:'', protocol_responses:{} }))
+      setForm(current => ({ ...current, protocol_id:null, protocol_version_id:null, protocol_name:'', protocol_snapshot:null, protocol_version_snapshot:null, protocol_responses:{} }))
       return
     }
     const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
     if (version) setForm(current => buildProtocolAnamnesisDraft(version, current))
+  }
+
+  function selectedProtocolVersion() {
+    const snapshot = form.protocol_version_snapshot || form.protocol_snapshot
+    if (snapshot?.id === form.protocol_version_id) return snapshot
+    return protocols.flatMap(item => item.versions || [item.currentVersion]).find(item => item?.id === form.protocol_version_id) || null
   }
 
   async function save() {
@@ -164,7 +170,7 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
     setError('')
     let signatureCompleted = false
     try {
-      const selectedProtocol = protocols.map(item => item.currentVersion).find(item => item?.id === form.protocol_version_id)
+      const selectedProtocol = selectedProtocolVersion()
       const protocolError = selectedProtocol ? validateProtocolResponses(selectedProtocol, form.protocol_responses) : ''
       if (protocolError) throw new Error(protocolError)
       const args = buildClinicalAnamnesisRpcArgs({ patientId, requestId, form, author })
@@ -210,6 +216,9 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
   }
 
   if (editing) {
+    const appliedProtocol = selectedProtocolVersion()
+    const activeProtocolVersions = protocols.map(item => item.currentVersion).filter(Boolean)
+    const appliedVersionIsActive = activeProtocolVersions.some(item => item.id === appliedProtocol?.id)
     return (
       <div className="clinical-anamnesis-editor">
         <header className="clinical-anamnesis-toolbar">
@@ -219,7 +228,7 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
 
         {error && <div className="clinical-form-error" role="alert">{error}</div>}
 
-        {protocols.length > 0 && <section className="clinical-protocol-apply"><div><strong>Protocolo do procedimento</strong><span>Use como roteiro e revise cada informação antes de assinar.</span></div><select aria-label="Protocolo clínico" value={form.protocol_version_id || ''} onChange={event => applyProtocol(event.target.value)}><option value="">Sem protocolo</option>{protocols.map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name} · v{item.currentVersion.version_number}</option>)}</select></section>}
+        {(protocols.length > 0 || appliedProtocol) && <section className="clinical-protocol-apply"><div><strong>Protocolo do procedimento</strong><span>Use como roteiro e revise cada informação antes de assinar.</span></div><select aria-label="Protocolo clínico" value={form.protocol_version_id || ''} onChange={event => applyProtocol(event.target.value)}><option value="">Sem protocolo</option>{appliedProtocol && !appliedVersionIsActive && <option value={appliedProtocol.id}>{appliedProtocol.name} · v{appliedProtocol.version_number} (versão aplicada)</option>}{activeProtocolVersions.map(item => <option key={item.id} value={item.id}>{item.name} · v{item.version_number}</option>)}</select></section>}
 
         {SOAP_SECTIONS.map(section => (
           <section key={section.key} className={`clinical-soap-section is-${section.key}`}>
@@ -241,7 +250,7 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
         ))}
 
         {form.protocol_version_id && (() => {
-          const version = protocols.map(item => item.currentVersion).find(item => item?.id === form.protocol_version_id)
+          const version = selectedProtocolVersion()
           const prompts = version ? protocolVersionToForm(version).anamnesisPrompts : []
           return prompts.length > 0 ? <section className="clinical-soap-section is-protocol"><header><span>+</span><div><strong>Campos do protocolo</strong><small>Complementos específicos de {form.protocol_name}</small></div></header><div className="clinical-soap-fields">{prompts.map(prompt => <label key={prompt.key}><span>{prompt.label}{prompt.required ? ' *' : ''}</span><textarea rows="3" value={form.protocol_responses?.[prompt.key] || ''} onChange={event => setForm(current => ({ ...current, protocol_responses:{ ...current.protocol_responses, [prompt.key]:event.target.value } }))} /></label>)}</div></section> : null
         })()}

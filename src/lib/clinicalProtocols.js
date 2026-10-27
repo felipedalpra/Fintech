@@ -125,6 +125,7 @@ export function buildProtocolAnamnesisDraft(version, current = {}) {
     protocol_id:version.protocol_id || null,
     protocol_version_id:version.id || null,
     protocol_name:protocol.name,
+    protocol_version_snapshot:version,
     protocol_responses:Object.fromEntries(protocol.anamnesisPrompts.map(item => [item.key, ''])),
   }
 }
@@ -150,16 +151,23 @@ export function applyProtocolToDocumentDraft(version, documentType, current = {}
   return current
 }
 
+export function scheduleProtocolSessions(sessions = [], startOn = '') {
+  const start = startOn ? new Date(`${startOn}T12:00:00`) : null
+  return sessions.map(item => {
+    if (!Number.isInteger(item.offsetDays)) return item
+    const date = start && !Number.isNaN(start.getTime()) ? new Date(start.getTime() + item.offsetDays * 86400000) : null
+    return { ...item, scheduledStart:date ? `${date.toISOString().slice(0, 10)}T09:00` : '' }
+  })
+}
+
 export function applyProtocolToTreatment(version, current = {}, startOn = '') {
   const protocol = protocolVersionToForm(version)
-  const start = startOn ? new Date(`${startOn}T12:00:00`) : null
-  const sessions = protocol.returnSchedule.map(item => {
-    const date = start && !Number.isNaN(start.getTime()) ? new Date(start.getTime() + item.days * 86400000) : null
+  const sessions = scheduleProtocolSessions(protocol.returnSchedule.map(item => {
     return {
       sessionType:item.days === 0 ? 'procedure' : 'return', title:item.title,
-      instructions:item.instructions, scheduledStart:date ? `${date.toISOString().slice(0, 10)}T09:00` : '', durationMinutes:30,
+      instructions:item.instructions, scheduledStart:'', durationMinutes:30, offsetDays:item.days,
     }
-  })
+  }), startOn)
   return {
     values:{
       ...current,

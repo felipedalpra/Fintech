@@ -12,14 +12,14 @@ import {
 } from '../lib/clinicalTreatment.js'
 import { loadTreatmentWorkspace } from '../lib/clinicalTreatmentClient.js'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
-import { applyProtocolToTreatment } from '../lib/clinicalProtocols.js'
+import { applyProtocolToTreatment, scheduleProtocolSessions } from '../lib/clinicalProtocols.js'
 
 const EMPTY_PLAN = {
   title:'', indication:'', diagnosticSummary:'', objectives:'', plannedTreatment:'', guidance:'',
   expectedStartOn:'', reviewOn:'',
 }
 
-const EMPTY_SESSION = { sessionType:'procedure', title:'', instructions:'', scheduledStart:'', durationMinutes:30 }
+const EMPTY_SESSION = { sessionType:'procedure', title:'', instructions:'', scheduledStart:'', durationMinutes:30, offsetDays:null }
 const createSessionDraft = () => ({ ...EMPTY_SESSION, requestId:newRequestId() })
 
 export function ClinicalTreatmentPlan({ patient, ownerId, data, setData, initialProtocolApplication, onProtocolApplicationConsumed }) {
@@ -305,8 +305,12 @@ export function ClinicalTreatmentPlan({ patient, ownerId, data, setData, initial
 }
 
 function PlanEditor({ editor, setEditor, protocols, busy, onSave, onCancel }) {
-  const update = (key, value) => setEditor(current => ({ ...current, values:{ ...current.values, [key]:value } }))
-  const updateSession = (index, key, value) => setEditor(current => ({ ...current, sessions:current.sessions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]:value } : item) }))
+  const update = (key, value) => setEditor(current => ({
+    ...current,
+    values:{ ...current.values, [key]:value },
+    sessions:key === 'expectedStartOn' ? scheduleProtocolSessions(current.sessions, value) : current.sessions,
+  }))
+  const updateSession = (index, key, value) => setEditor(current => ({ ...current, sessions:current.sessions.map((item, itemIndex) => itemIndex === index ? { ...item, [key]:value, ...(key === 'scheduledStart' ? { offsetDays:null } : {}) } : item) }))
   const applyProtocol = versionId => {
     const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
     if (!version) return
