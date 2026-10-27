@@ -23,6 +23,8 @@ function WorkspaceState({ loading, unavailableSources, onRefresh }) {
 }
 
 export function ClinicalTodayInsights({ index, loading, unavailableSources, onNavigate, onRefresh }) {
+  const incomplete = Boolean(unavailableSources?.length)
+  const pending = loading || incomplete
   const urgent = index.pendingItems.filter(item => item.tone === 'danger').length
   const reviews = index.pendingItems.filter(item => item.kind === 'intake_review').length
   const returns = index.pendingItems.filter(item => item.kind === 'return').length
@@ -31,16 +33,18 @@ export function ClinicalTodayInsights({ index, loading, unavailableSources, onNa
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
       <header><div><span>Continuidade do cuidado</span><strong>O que pede atenção além da agenda</strong></div><button type="button" onClick={() => onNavigate('pending')}>Ver todas as pendências →</button></header>
       <div className="clinical-insight-grid">
-        <button type="button" onClick={() => onNavigate('pending')}><span>Críticas</span><strong>{urgent}</strong><small>retornos ou sessões vencidas</small></button>
-        <button type="button" onClick={() => onNavigate('pending')}><span>Para revisar</span><strong>{reviews}</strong><small>pré-anamneses recebidas</small></button>
-        <button type="button" onClick={() => onNavigate('pending')}><span>Retornos</span><strong>{returns}</strong><small>sem novo atendimento vinculado</small></button>
-        <button type="button" onClick={() => onNavigate('documents')}><span>Documentos</span><strong>{index.documents.length}</strong><small>pedidos e receitas no histórico</small></button>
+        <button type="button" onClick={() => onNavigate('pending')}><span>Críticas</span><strong>{pending ? '—' : urgent}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'retornos ou sessões vencidas'}</small></button>
+        <button type="button" onClick={() => onNavigate('pending')}><span>Para revisar</span><strong>{pending ? '—' : reviews}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'pré-anamneses recebidas'}</small></button>
+        <button type="button" onClick={() => onNavigate('pending')}><span>Retornos</span><strong>{pending ? '—' : returns}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'sem novo atendimento vinculado'}</small></button>
+        <button type="button" onClick={() => onNavigate('documents')}><span>Documentos</span><strong>{pending ? '—' : index.documents.length}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'pedidos e receitas no histórico'}</small></button>
       </div>
     </section>
   )
 }
 
 export function ClinicalPatientsView({ index, loading, unavailableSources, onOpenPatient, onRefresh }) {
+  const incomplete = Boolean(unavailableSources?.length)
+  const pending = loading || incomplete
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = useMemo(() => index.patientItems.filter(item => !normalizedQuery || includesText([item.full_name, item.phone, item.email], normalizedQuery)), [index.patientItems, normalizedQuery])
@@ -57,10 +61,10 @@ export function ClinicalPatientsView({ index, loading, unavailableSources, onOpe
             <button key={patient.id} type="button" onClick={() => onOpenPatient(patient, 'overview')}>
               <span className="clinical-index-avatar" aria-hidden="true">{String(patient.full_name || 'P').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()}</span>
               <span className="clinical-patient-index__identity"><strong>{patient.full_name}</strong><small>{patient.phone || patient.email || 'Contato não informado'}</small></span>
-              <span><small>Último contato</small><strong>{dateLabel(patient.lastCareAt)}</strong></span>
+              <span><small>Último contato</small><strong>{loading ? 'Atualizando…' : incomplete ? 'Dados incompletos' : dateLabel(patient.lastCareAt)}</strong></span>
               <span><small>Próximo</small><strong>{patient.nextAppointment ? dateLabel(patient.nextAppointment.occurredAt, true) : 'Sem agenda'}</strong></span>
-              <span className="clinical-patient-index__counts"><i>{patient.activePlanCount} plano{patient.activePlanCount === 1 ? '' : 's'}</i><i>{patient.documentCount} doc.</i><i>{patient.assetCount} arquivo{patient.assetCount === 1 ? '' : 's'}</i></span>
-              <span className={patient.pendingCount ? 'clinical-count-badge is-warn' : 'clinical-count-badge'}>{patient.pendingCount ? `${patient.pendingCount} pend.` : 'Em dia'}</span>
+              <span className="clinical-patient-index__counts">{pending ? <i>{loading ? 'Atualizando' : 'Dados incompletos'}</i> : <><i>{patient.activePlanCount} plano{patient.activePlanCount === 1 ? '' : 's'}</i><i>{patient.documentCount} doc.</i><i>{patient.assetCount} arquivo{patient.assetCount === 1 ? '' : 's'}</i></>}</span>
+              <span className={patient.pendingCount && !pending ? 'clinical-count-badge is-warn' : 'clinical-count-badge'}>{pending ? '—' : patient.pendingCount ? `${patient.pendingCount} pend.` : 'Em dia'}</span>
             </button>
           ))}
         </div>
@@ -70,6 +74,8 @@ export function ClinicalPatientsView({ index, loading, unavailableSources, onOpe
 }
 
 export function ClinicalPendingView({ index, loading, unavailableSources, onOpenPatient, onRefresh }) {
+  const incomplete = Boolean(unavailableSources?.length)
+  const pending = loading || incomplete
   const [filter, setFilter] = useState('all')
   const rows = index.pendingItems.filter(item => filter === 'all' || item.kind === filter)
   const filters = [
@@ -80,11 +86,11 @@ export function ClinicalPendingView({ index, loading, unavailableSources, onOpen
     <section className="clinical-index-page" data-testid="clinical-pending-view">
       <header className="clinical-index-header">
         <div><span>Fila de trabalho</span><h2>Pendências clínicas</h2><p>Somente situações derivadas de registros reais; nenhuma conduta é criada automaticamente.</p></div>
-        <div className="clinical-index-total"><strong>{index.pendingItems.length}</strong><span>abertas</span></div>
+        <div className="clinical-index-total"><strong>{pending ? '—' : index.pendingItems.length}</strong><span>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'abertas'}</span></div>
       </header>
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
       <div className="clinical-filter-row" aria-label="Filtrar pendências">{filters.map(([id, label]) => <button key={id} type="button" className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}>{label}</button>)}</div>
-      {!loading && rows.length === 0 ? <div className="clinical-empty-panel"><strong>Nenhuma pendência nesta categoria</strong><p>A fila é atualizada a partir de anamnese, agenda, planos e assinaturas.</p></div> : (
+      {!loading && rows.length === 0 ? <div className="clinical-empty-panel"><strong>{incomplete ? 'Não foi possível confirmar as pendências' : 'Nenhuma pendência nesta categoria'}</strong><p>{incomplete ? 'Tente novamente depois que todas as fontes clínicas estiverem disponíveis.' : 'A fila é atualizada a partir de anamnese, agenda, planos e assinaturas.'}</p></div> : (
         <div className="clinical-work-queue">
           {rows.map(item => (
             <button key={item.id} type="button" onClick={() => {
@@ -104,6 +110,7 @@ export function ClinicalPendingView({ index, loading, unavailableSources, onOpen
 }
 
 export function ClinicalDocumentsCenter({ index, loading, unavailableSources, onOpenPatient, onRefresh }) {
+  const incomplete = Boolean(unavailableSources?.length)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
@@ -121,7 +128,7 @@ export function ClinicalDocumentsCenter({ index, loading, unavailableSources, on
       <div className="clinical-filter-row" aria-label="Filtrar documentos">
         {[['all','Todos'],['signed','Assinados'],['pending','Pendentes'],['failed','Com falha'],['manual','Via manual']].map(([id, label]) => <button key={id} type="button" className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
       </div>
-      {!loading && rows.length === 0 ? <div className="clinical-empty-panel">Nenhum documento encontrado.</div> : (
+      {!loading && rows.length === 0 ? <div className="clinical-empty-panel">{incomplete ? 'Não foi possível confirmar os documentos desta clínica.' : 'Nenhum documento encontrado.'}</div> : (
         <div className="clinical-documents-center-list">
           {rows.map(document => (
             <button key={document.id} type="button" onClick={() => {
@@ -140,7 +147,9 @@ export function ClinicalDocumentsCenter({ index, loading, unavailableSources, on
   )
 }
 
-export function ClinicalPatientSummary({ patient, profile, patientIndex, timeline, onOpenTab }) {
+export function ClinicalPatientSummary({ profile, profileStatus, patientIndex, timeline, workspaceLoading, unavailableSources, onOpenTab, onRefresh }) {
+  const incomplete = Boolean(unavailableSources?.length)
+  const pending = workspaceLoading || incomplete
   const recent = (timeline || []).slice(0, 5)
   const alerts = [
     profile?.allergies ? ['Alergias', profile.allergies, 'danger'] : null,
@@ -149,19 +158,22 @@ export function ClinicalPatientSummary({ patient, profile, patientIndex, timelin
   return (
     <div className="clinical-patient-summary" data-testid="clinical-patient-summary">
       <div className="clinical-summary-kpis">
-        <div><span>Último contato</span><strong>{dateLabel(patientIndex?.lastCareAt)}</strong></div>
+        <div><span>Último contato</span><strong>{workspaceLoading ? 'Atualizando…' : incomplete ? 'Dados incompletos' : dateLabel(patientIndex?.lastCareAt)}</strong></div>
         <div><span>Próximo compromisso</span><strong>{patientIndex?.nextAppointment ? dateLabel(patientIndex.nextAppointment.occurredAt, true) : 'Sem agenda'}</strong></div>
-        <div><span>Plano ativo</span><strong>{patientIndex?.activePlanCount || 0}</strong></div>
-        <div className={patientIndex?.pendingCount ? 'is-warn' : 'is-ok'}><span>Pendências</span><strong>{patientIndex?.pendingCount || 0}</strong></div>
+        <div><span>Plano ativo</span><strong>{pending ? '—' : patientIndex?.activePlanCount || 0}</strong></div>
+        <div className={patientIndex?.pendingCount && !pending ? 'is-warn' : 'is-ok'}><span>Pendências</span><strong>{pending ? '—' : patientIndex?.pendingCount || 0}</strong></div>
       </div>
+      <WorkspaceState loading={workspaceLoading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
       <div className="clinical-summary-columns">
         <section>
           <header><div><span>Segurança</span><strong>Alertas clínicos</strong></div><button type="button" onClick={() => onOpenTab('summary')}>Abrir anamnese →</button></header>
-          {alerts.length ? alerts.map(([label, value, tone]) => <div key={label} className={`clinical-summary-alert is-${tone}`}><strong>{label}</strong><p>{value}</p></div>) : <div className="clinical-summary-empty">Nenhum alerta registrado no perfil clínico.</div>}
+          {profileStatus === 'loading' && <div className="clinical-summary-empty">Verificando alertas clínicos…</div>}
+          {profileStatus === 'error' && <div className="clinical-summary-empty">Alertas clínicos indisponíveis no momento.</div>}
+          {profileStatus === 'ready' && (alerts.length ? alerts.map(([label, value, tone]) => <div key={label} className={`clinical-summary-alert is-${tone}`}><strong>{label}</strong><p>{value}</p></div>) : <div className="clinical-summary-empty">Nenhum alerta registrado no perfil clínico.</div>)}
         </section>
         <section>
           <header><div><span>Histórico</span><strong>Atividade recente</strong></div><button type="button" onClick={() => onOpenTab('timeline')}>Ver linha do tempo →</button></header>
-          {recent.length ? recent.map(event => <div key={event.id} className="clinical-summary-event"><span>{clinicalTimelineLabel(event.type)}</span><strong>{event.title}</strong><small>{dateLabel(event.occurredAt, true)}</small></div>) : <div className="clinical-summary-empty">Ainda não há atividade clínica registrada.</div>}
+          {recent.length ? recent.map(event => <div key={event.id} className="clinical-summary-event"><span>{clinicalTimelineLabel(event.type)}</span><strong>{event.title}</strong><small>{dateLabel(event.occurredAt, true)}</small></div>) : <div className="clinical-summary-empty">{workspaceLoading ? 'Atualizando atividade clínica…' : incomplete ? 'Não foi possível confirmar toda a atividade clínica.' : 'Ainda não há atividade clínica registrada.'}</div>}
         </section>
       </div>
       <section className="clinical-summary-actions"><span>Continuar atendimento</span><div>
@@ -174,13 +186,15 @@ export function ClinicalPatientSummary({ patient, profile, patientIndex, timelin
   )
 }
 
-export function ClinicalPatientTimeline({ timeline, onRefresh, loading }) {
+export function ClinicalPatientTimeline({ timeline, unavailableSources, onRefresh, loading }) {
+  const incomplete = Boolean(unavailableSources?.length)
   return (
     <div className="clinical-patient-timeline" data-testid="clinical-patient-timeline">
       <header><div><span>Histórico consolidado</span><strong>Linha do tempo do paciente</strong><p>Eventos de diferentes módulos permanecem em suas fontes originais.</p></div><Btn variant="ghost" disabled={loading} onClick={onRefresh}>{loading ? 'Atualizando…' : 'Atualizar'}</Btn></header>
-      {!timeline?.length ? <div className="clinical-empty-panel">Ainda não há eventos clínicos para este paciente.</div> : <div className="clinical-timeline-list">
+      <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
+      {!loading && !timeline?.length ? <div className="clinical-empty-panel">{incomplete ? 'Não foi possível confirmar todo o histórico deste paciente.' : 'Ainda não há eventos clínicos para este paciente.'}</div> : timeline?.length ? <div className="clinical-timeline-list">
         {timeline.map(event => <article key={event.id}><span className={`clinical-timeline-dot is-${event.type}`} /><time>{dateLabel(event.occurredAt, true)}</time><div><small>{clinicalTimelineLabel(event.type)}</small><strong>{event.title}</strong><p>{event.detail}</p></div></article>)}
-      </div>}
+      </div> : null}
     </div>
   )
 }

@@ -147,14 +147,17 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
     recordsByPatient.get(record.patient_id).push(record)
   }
   for (const [patientId, records] of recordsByPatient) {
-    const overdue = records
+    const latestReturn = records
       .filter(record => record.next_appointment_date && timeValue(record.next_appointment_date) < referenceDay)
-      .sort((left, right) => timeValue(right.next_appointment_date) - timeValue(left.next_appointment_date))[0]
-    if (!overdue) continue
-    const hasLaterAppointment = appointments.some(item => item.patientId === patientId && timeValue(item.occurredAt) >= timeValue(overdue.next_appointment_date))
+      .sort((left, right) => timeValue(right.recorded_at || right.session_date) - timeValue(left.recorded_at || left.session_date))[0]
+    const newestInstruction = records
+      .filter(record => record.next_appointment_date)
+      .sort((left, right) => timeValue(right.recorded_at || right.session_date) - timeValue(left.recorded_at || left.session_date))[0]
+    if (!latestReturn || newestInstruction?.id !== latestReturn.id) continue
+    const hasLaterAppointment = appointments.some(item => item.patientId === patientId && timeValue(item.occurredAt) >= timeValue(latestReturn.next_appointment_date))
     if (!hasLaterAppointment) pendingItems.push({
-      id:`return:${patientId}:${overdue.id}`, patientId, kind:'return', tone:'danger', title:'Retorno vencido',
-      detail:'Não há novo atendimento vinculado após a data indicada', dueAt:overdue.next_appointment_date,
+      id:`return:${patientId}:${latestReturn.id}`, patientId, kind:'return', tone:'danger', title:'Retorno vencido',
+      detail:'Não há novo atendimento vinculado após a data indicada', dueAt:latestReturn.next_appointment_date,
     })
   }
 

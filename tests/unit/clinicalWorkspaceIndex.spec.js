@@ -39,6 +39,17 @@ test('não cria pendência de retorno quando existe atendimento posterior vincul
   expect(index.patientItems[0].nextAppointment).toMatchObject({ id:'consultation:consultation-1' })
 })
 
+test('uma orientação de retorno futura mais recente substitui o retorno antigo vencido', () => {
+  const index = buildClinicalWorkspaceIndex(bundle({
+    records:[
+      { id:'record-old', patient_id:'patient-1', session_date:'2026-10-10', recorded_at:'2026-10-10T15:00:00Z', next_appointment_date:'2026-10-20' },
+      { id:'record-new', patient_id:'patient-1', session_date:'2026-10-24', recorded_at:'2026-10-24T15:00:00Z', next_appointment_date:'2026-11-20' },
+    ],
+  }), reference)
+
+  expect(index.pendingItems.filter(item => item.kind === 'return')).toHaveLength(0)
+})
+
 test('considera apenas a tentativa de assinatura mais recente', () => {
   const index = buildClinicalWorkspaceIndex(bundle({
     documents:[{ id:'document-1', patient_id:'patient-1', patient_name:'Ana Clínica', document_type:'simple_prescription', issue_date:'2026-10-20', created_at:'2026-10-20T15:10:00Z' }],

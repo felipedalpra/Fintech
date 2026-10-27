@@ -96,8 +96,9 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   useEffect(() => {
     if (!ownerId) return
     loadPatients()
-    loadWorkspaceIndex()
-  }, [ownerId])
+    if (initialView === 'protocols') setWorkspaceStatus('ready')
+    else loadWorkspaceIndex()
+  }, [ownerId, initialView])
 
   useEffect(() => {
     setAuthor({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
@@ -266,7 +267,6 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setProfileStatus('idle')
     setTab('overview')
     setError('')
-    if (view !== 'protocols') loadWorkspaceIndex()
     navigate(`/app/${module.route}`)
   }
 
@@ -371,9 +371,9 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                 ))}
               </nav>
               <div className="clinical-tab-content">
-                {tab === 'overview' && <ClinicalPatientSummary patient={selected} profile={clinicalProfile} patientIndex={selectedIndex} timeline={selectedTimeline} onOpenTab={setTab} />}
+                {tab === 'overview' && <ClinicalPatientSummary profile={clinicalProfile} profileStatus={profileStatus} patientIndex={selectedIndex} timeline={selectedTimeline} workspaceLoading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenTab={setTab} onRefresh={loadWorkspaceIndex} />}
                 {tab === 'record' && <MedicalRecord patientId={selected.id} userId={ownerId} actorId={user?.id} author={author} />}
-                {tab === 'timeline' && <ClinicalPatientTimeline timeline={selectedTimeline} loading={workspaceStatus === 'loading'} onRefresh={loadWorkspaceIndex} />}
+                {tab === 'timeline' && <ClinicalPatientTimeline timeline={selectedTimeline} unavailableSources={workspaceSources.unavailableSources} loading={workspaceStatus === 'loading'} onRefresh={loadWorkspaceIndex} />}
                 {tab === 'summary' && profileStatus === 'loading' && <div className="clinical-loading">Carregando anamnese…</div>}
                 {tab === 'summary' && profileStatus === 'error' && <div className="clinical-empty-panel">Anamnese indisponível no momento.</div>}
                 {tab === 'summary' && profileStatus === 'ready' && (

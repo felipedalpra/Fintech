@@ -66,12 +66,14 @@ grant select on public.medical_records to authenticated;
 insert into auth.users(id) values
   ('10000000-0000-4000-8000-000000000001'),
   ('10000000-0000-4000-8000-000000000002'),
-  ('10000000-0000-4000-8000-000000000003');
+  ('10000000-0000-4000-8000-000000000003'),
+  ('10000000-0000-4000-8000-000000000004');
 insert into public.clinics(id, owner_id) values
   ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000003');
 insert into public.clinic_members(clinic_id, user_id, clinical_access) values
-  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', true);
+  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', true),
+  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000004', false);
 insert into public.patients(id, user_id) values
   ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001'),
   ('30000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000003');
@@ -87,6 +89,26 @@ begin
   if (select count(*) from public.list_clinical_workspace_record_metadata()) <> 1 then
     raise exception 'A projeção não respeitou clínica, acesso ou arquivamento.';
   end if;
+end $$;
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', false);
+do $$
+begin
+  if (select count(*) from public.list_clinical_workspace_record_metadata()) <> 0 then
+    raise exception 'Membro sem acesso clínico recebeu metadados do prontuário.';
+  end if;
+end $$;
+reset role;
+
+set role anon;
+do $$
+begin
+  perform * from public.list_clinical_workspace_record_metadata();
+  raise exception 'Anon executou a projeção clínica.';
+exception when insufficient_privilege then
+  null;
 end $$;
 reset role;
 
