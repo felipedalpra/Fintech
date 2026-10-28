@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { Btn, FInput } from './UI.jsx'
+import { resolveWhatsAppNumberSelection } from '../lib/whatsappNumberAvailability.js'
 
 // Config (admin) das automações de saída de WhatsApp: lembrete e follow-up.
 // O disparo roda no servidor (cron diário); aqui só administramos toggles, templates e timing.
@@ -35,6 +36,7 @@ export function WhatsAppAutomations() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [savedAt, setSavedAt] = useState(null)
+  const [unavailableNumber, setUnavailableNumber] = useState(null)
 
   async function load() {
     setLoading(true); setError(null)
@@ -42,16 +44,22 @@ export function WhatsAppAutomations() {
       supabase.from('whatsapp_automations')
         .select('whatsapp_number_id, reminder_enabled, reminder_days_before, reminder_template, followup_enabled, followup_days_after, followup_template, payment_enabled, payment_offset_days, payment_template, anamnese_enabled, anamnese_days_before, anamnese_link, anamnese_template')
         .maybeSingle(),
-      supabase.from('whatsapp_numbers').select('id, label, phone').order('created_at', { ascending: true }),
+      supabase.from('whatsapp_numbers').select('id, label, phone, active, provider, connection_state, archived_at').order('created_at', { ascending: true }),
     ])
-    if (aRes.error) { setError(aRes.error.message); setLoading(false); return }
-    setCfg({ ...DEFAULTS, ...(aRes.data || {}), whatsapp_number_id: aRes.data?.whatsapp_number_id || '' })
-    setNumbers(nRes.data ?? [])
+    if (aRes.error || nRes.error) { setError(aRes.error?.message || nRes.error.message); setLoading(false); return }
+    const selection = resolveWhatsAppNumberSelection(aRes.data?.whatsapp_number_id, nRes.data)
+    setUnavailableNumber(selection.configuredNumber && !selection.configuredAvailable ? selection.configuredNumber : null)
+    setCfg({ ...DEFAULTS, ...(aRes.data || {}), whatsapp_number_id:selection.selectedId })
+    setNumbers(selection.availableNumbers)
     setLoading(false)
   }
   useEffect(() => { if (effectiveUserId) load() }, [effectiveUserId])
 
-  const set = (field, value) => { setCfg(c => ({ ...c, [field]: value })); setSavedAt(null) }
+  const set = (field, value) => {
+    setCfg(c => ({ ...c, [field]: value }))
+    if (field === 'whatsapp_number_id' && value !== unavailableNumber?.id) setUnavailableNumber(null)
+    setSavedAt(null)
+  }
 
   async function save() {
     if (saving) return
@@ -82,7 +90,8 @@ export function WhatsAppAutomations() {
   if (loading) return <div style={{ color: C.textSub, fontSize: 13, padding: 20 }}>Carregando automações…</div>
 
   const numberOptions = [
-    { v: '', l: numbers.length ? 'Escolha um número…' : 'Nenhum número cadastrado' },
+    { v: '', l: numbers.length ? 'Escolha um número…' : unavailableNumber ? 'Remover número configurado' : 'Nenhum número conectado' },
+    ...(unavailableNumber ? [{ v:unavailableNumber.id, l:`${unavailableNumber.label || unavailableNumber.phone || 'Número configurado'} (indisponível — mantido)` }] : []),
     ...numbers.map(n => ({ v: n.id, l: n.label ? `${n.label} (${n.phone || 's/ número'})` : (n.phone || n.id) })),
   ]
   const hasNumber = !!cfg.whatsapp_number_id
@@ -119,6 +128,7 @@ export function WhatsAppAutomations() {
       <div style={s.card}>
         <FInput label="Número de envio" value={cfg.whatsapp_number_id}
           onChange={v => set('whatsapp_number_id', v)} options={numberOptions} />
+        {unavailableNumber && <div style={{ ...s.vars, marginTop:8, color:C.yellow || '#f59e0b' }}>“{unavailableNumber.label || unavailableNumber.phone}” está indisponível, mas continua configurado. As automações ficam pausadas e retomam quando a conexão voltar; escolha outro número apenas se quiser substituir o remetente.</div>}
         {!hasNumber && (
           <div style={{ ...s.vars, marginTop: 8 }}>
             Sem um número selecionado, nada é enviado — as configurações ficam salvas e prontas.

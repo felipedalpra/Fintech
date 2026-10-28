@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import {
+  conversationReferenceMatches,
   existingSendRequestAction,
   normalizeWhatsAppRequestId,
   payloadCollisionAction,
@@ -58,4 +59,33 @@ test('duas abas com o mesmo texto esperam a reserva viva em vez de reenviar ao p
   expect(payloadCollisionAction({ whatsapp_number_id:'number-1', status:'accepted' }, 'number-1')).toBe('wait')
   expect(payloadCollisionAction({ whatsapp_number_id:'number-2', status:'pending' }, 'number-1')).toBe('conflict')
   expect(payloadCollisionAction(null, 'number-1')).toBe('conflict')
+})
+
+test('referência da conversa prova número e destinatário antes do envio', () => {
+  const reference = {
+    whatsapp_number_id:'number-1',
+    phone:'22093462769770@lid',
+    chat_lid:'22093462769770@lid',
+    contact_phone:'555182452361',
+    is_group:false,
+  }
+  expect(conversationReferenceMatches(reference, {
+    whatsappNumberId:'number-1', phone:'22093462769770@lid', chatLid:'22093462769770@lid', contactPhone:'555182452361', isGroup:false,
+  })).toBe(true)
+  expect(conversationReferenceMatches(reference, {
+    whatsappNumberId:'number-2', phone:'22093462769770@lid', chatLid:'22093462769770@lid', contactPhone:'555182452361', isGroup:false,
+  })).toBe(false)
+  expect(conversationReferenceMatches(reference, {
+    whatsappNumberId:'number-1', phone:'5511999990000', contactPhone:'5511999990000', isGroup:false,
+  })).toBe(false)
+})
+
+test('referência de grupo não pode ser reutilizada em conversa individual', () => {
+  const reference = { whatsapp_number_id:'number-1', phone:'120363001-group', is_group:true }
+  expect(conversationReferenceMatches(reference, {
+    whatsappNumberId:'number-1', phone:'120363001-group', isGroup:true,
+  })).toBe(true)
+  expect(conversationReferenceMatches(reference, {
+    whatsappNumberId:'number-1', phone:'120363001-group', isGroup:false,
+  })).toBe(false)
 })

@@ -10,6 +10,11 @@ begin;
 alter table public.whatsapp_numbers
   add column if not exists archived_at timestamptz;
 
+-- A tabela usa grants por coluna para nunca expor credenciais no navegador.
+-- O estado de arquivamento é metadado operacional seguro e precisa acompanhar
+-- os demais campos públicos usados pelos seletores.
+grant select (archived_at) on public.whatsapp_numbers to authenticated;
+
 create index if not exists idx_whatsapp_numbers_archived
   on public.whatsapp_numbers(user_id, archived_at);
 

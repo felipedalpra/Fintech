@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   addDays, formatBR, renderTemplate, planReminders, planFollowups,
-  formatBRL, receivableDueDate, planPayments, planAnamnese, automationRetryAction,
+  formatBRL, receivableDueDate, planPayments, planAnamnese, automationRetryAction, automationRetryNumber,
 } from '../../api/_lib/whatsappAutomations.js'
 
 test('addDays: soma/subtrai sem drift de fuso, cruza mês e ano', () => {
@@ -111,4 +111,13 @@ test('retry de automação usa backoff e não abandona falha transitória', () =
   expect(automationRetryAction({ status:'failed', attempts:1, last_attempt_at:'2026-10-16T11:57:00Z' }, now)).toBe('skip')
   expect(automationRetryAction({ status:'failed', attempts:1, last_attempt_at:'2026-10-16T11:54:00Z' }, now)).toBe('send')
   expect(automationRetryAction({ status:'pending', attempts:1, last_attempt_at:'2026-10-15T00:00:00Z' }, now)).toBe('skip')
+})
+
+test('retry preserva o número original e nunca migra silenciosamente para a configuração atual', () => {
+  const original = { id:'number-a', active:true, provider:'evolution', provider_instance_name:'instance-a', connection_state:'open' }
+  const configuredNow = { id:'number-b', active:true, provider:'evolution', provider_instance_name:'instance-b', connection_state:'open' }
+  expect(automationRetryNumber({ whatsapp_number_id:'number-a' }, [configuredNow, original])).toBe(original)
+  expect(automationRetryNumber({ whatsapp_number_id:'number-a' }, [configuredNow])).toBeNull()
+  expect(automationRetryNumber({ whatsapp_number_id:'number-a' }, [{ ...original, connection_state:'close' }])).toBeNull()
+  expect(automationRetryNumber({ whatsapp_number_id:'number-a', provider_message_id:'accepted-1' }, [{ ...original, connection_state:'close' }])?.id).toBe('number-a')
 })

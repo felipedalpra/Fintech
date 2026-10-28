@@ -31,6 +31,13 @@ export function providerReady(number) {
     : Boolean(number?.instance_url && number?.api_token)
 }
 
+export function providerAvailable(number) {
+  if (!number?.active || number?.archived_at) return false
+  if (!providerReady(number)) return false
+  if (whatsappProvider(number) === 'evolution') return number.connection_state === 'open'
+  return !['close', 'closed', 'disconnected', 'error', 'connecting'].includes(number.connection_state)
+}
+
 export async function testProviderConnection(number) {
   if (whatsappProvider(number) === 'evolution') {
     const result = await getEvolutionConnection(number.provider_instance_name)

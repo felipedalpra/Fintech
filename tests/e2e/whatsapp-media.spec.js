@@ -7,7 +7,7 @@ const MESSAGES = [
   { id: 'i1', phone: '5551900000001', direction: 'inbound', body: 'minha foto', status: 'read', created_at: '2026-10-13T10:01:00Z', patient_id: 'p1', whatsapp_number_id: 'N1', msg_type: 'image', media_url: 'https://ex/foto.jpg', media_mime: 'image/jpeg', patients: { full_name: 'Ana Paula' } },
   { id: 't1', phone: '5551900000001', direction: 'inbound', body: 'Oi, tudo bem?', status: 'read', created_at: '2026-10-13T10:00:00Z', patient_id: 'p1', whatsapp_number_id: 'N1', msg_type: 'text', media_url: null, media_mime: null, patients: { full_name: 'Ana Paula' } },
 ]
-const NUMBERS = [{ id: 'N1', label: 'Secretária', phone: '5551', assigned_user_id: null }]
+const NUMBERS = [{ id: 'N1', label: 'Secretária', phone: '5551', assigned_user_id: null, active:true, provider:'evolution', connection_state:'open', archived_at:null }]
 const json = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 
 test.beforeEach(async ({ page }) => {

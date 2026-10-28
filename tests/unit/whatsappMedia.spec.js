@@ -123,7 +123,16 @@ test('downloadZApiMedia valida redirect e tamanho antes de persistir', async () 
     status:200,
     headers:{ 'content-type':'image/jpeg', 'content-length':String(17 * 1024 * 1024) },
   })
-  await expect(downloadZApiMedia('https://storage.z-api.io/media/foto.jpg')).rejects.toThrow(/excede 16 MB/i)
+  const declaredError = await downloadZApiMedia('https://storage.z-api.io/media/foto.jpg').catch(error => error)
+  expect(declaredError.message).toMatch(/excede 16 MB/i)
+  expect(declaredError.code).toBe('WHATSAPP_MEDIA_TOO_LARGE')
+
+  globalThis.fetch = async () => new Response(new Uint8Array([1, 2, 3]), {
+    status:200,
+    headers:{ 'content-type':'image/jpeg' },
+  })
+  const streamedError = await downloadZApiMedia('https://storage.z-api.io/media/foto.jpg', { maxBytes:2 }).catch(error => error)
+  expect(streamedError.code).toBe('WHATSAPP_MEDIA_TOO_LARGE')
 })
 
 test('listZApiChats pagina metadados sem expor credenciais', async () => {
