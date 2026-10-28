@@ -173,4 +173,3 @@ documento clínico imutável
 - [ ] Conferir SHA-256, certificado, cadeia, data, autoria e persistência privada do PDF.
 - [ ] Medir créditos consumidos por cada cenário de sucesso, falha, expiração e reenvio.
 - [ ] Manter a via manual disponível até a homologação completa.
-
