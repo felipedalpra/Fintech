@@ -10,10 +10,19 @@ import {
   professionalRegistration,
 } from '../lib/clinicalDocuments.js'
 import {
+  clinicalSignatureActionState,
   clinicalSignerReadiness,
-  clinicalSignaturePresentation,
-  latestClinicalSignatureByDocument,
+  hasCompleteClinicalSignatureEvidence,
+  isClinicalSignatureEligible,
+  latestAttemptByDocument,
 } from '../lib/clinicalSignature.js'
+import {
+  abandonClinicalSignature,
+  fetchClinicalSignatureState,
+  openClinicalSignatureArtifact,
+  reconcileClinicalSignature,
+  requestClinicalSignature,
+} from '../lib/clinicalSignatureBryClient.js'
 import { Btn } from './UI.jsx'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
 import { applyProtocolToDocumentDraft } from '../lib/clinicalProtocols.js'
@@ -43,9 +52,50 @@ async function fetchSignatureEvidence(documents, ownerId) {
   return { rows:data || [], available:true }
 }
 
+// Tentativa lida direto do Supabase (snake_case) normalizada para o mesmo
+// formato que o backend devolve, para a tela ter um unico caminho de render.
+function legacyAttempt(row) {
+  return {
+    id:row.id,
+    documentId:row.document_id,
+    status:row.status,
+    createdAt:row.created_at,
+    envelopeStatus:null,
+    dispatchState:null,
+    evidenceGapCode:null,
+    hasStoredArtifact:Boolean(row.signed_file_path && row.signed_file_sha256),
+    evidenceComplete:hasCompleteClinicalSignatureEvidence(row),
+    failureMessage:null,
+  }
+}
+
+// A fonte de verdade da flag e das tentativas e o backend. Se ele estiver
+// indisponivel, caimos na leitura direta do historico: a integracao aparece
+// como indisponivel e a via manual continua intacta.
+async function fetchSignatureBundle(documents, ownerId) {
+  if (documents.length === 0) {
+    return { integration:{ available:false, reason:'desabilitada' }, attempts:[], available:true }
+  }
+  try {
+    const state = await fetchClinicalSignatureState(documents.map(document => document.id))
+    return {
+      integration:state.integration || { available:false, reason:'desabilitada' },
+      attempts:state.attempts || [],
+      available:state.evidenceAvailable !== false,
+    }
+  } catch {
+    const fallback = await fetchSignatureEvidence(documents, ownerId)
+    return {
+      integration:{ available:false, reason:'indisponivel' },
+      attempts:fallback.rows.map(legacyAttempt),
+      available:fallback.available,
+    }
+  }
+}
+
 async function fetchDocumentBundle(patientId, ownerId) {
   const documents = await fetchDocuments(patientId, ownerId)
-  const signatures = await fetchSignatureEvidence(documents, ownerId)
+  const signatures = await fetchSignatureBundle(documents, ownerId)
   return { documents, signatures }
 }
 
@@ -62,10 +112,15 @@ function DocumentSummary({ record }) {
   return <>{(data.exams || []).join(', ') || 'Pedido sem exames disponíveis'}</>
 }
 
-export function ClinicalDocuments({ patient, ownerId, author, profile, profileLoading = false, clinicName, canPrescribe = false, initialProtocolApplication, onProtocolApplicationConsumed }) {
+export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, profile, profileLoading = false, clinicName, canPrescribe = false, initialProtocolApplication, onProtocolApplicationConsumed }) {
   const [records, setRecords] = useState([])
   const [signatureByDocument, setSignatureByDocument] = useState({})
+  const [signatureIntegration, setSignatureIntegration] = useState({ available:false, reason:'desabilitada' })
   const [signatureEvidenceAvailable, setSignatureEvidenceAvailable] = useState(true)
+  const [signatureBusy, setSignatureBusy] = useState('')
+  const [signatureNotice, setSignatureNotice] = useState('')
+  const [confirmSignatureFor, setConfirmSignatureFor] = useState('')
+  const [confirmAbandonFor, setConfirmAbandonFor] = useState('')
   const [status, setStatus] = useState('loading')
   const [editingType, setEditingType] = useState('')
   const [requestId, setRequestId] = useState('')
@@ -83,7 +138,8 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
       .then(({ documents, signatures }) => {
         if (!active) return
         setRecords(documents)
-        setSignatureByDocument(latestClinicalSignatureByDocument(signatures.rows))
+        setSignatureByDocument(latestAttemptByDocument(signatures.attempts))
+        setSignatureIntegration(signatures.integration)
         setSignatureEvidenceAvailable(signatures.available)
         setStatus('ready')
       })
@@ -181,7 +237,8 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
       setForm(null)
       const fresh = await fetchDocumentBundle(patient.id, ownerId)
       setRecords(fresh.documents)
-      setSignatureByDocument(latestClinicalSignatureByDocument(fresh.signatures.rows))
+      setSignatureByDocument(latestAttemptByDocument(fresh.signatures.attempts))
+      setSignatureIntegration(fresh.signatures.integration)
       setSignatureEvidenceAvailable(fresh.signatures.available)
       setStatus('ready')
     } catch (nextError) {
@@ -202,12 +259,106 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
     try {
       const fresh = await fetchDocumentBundle(patient.id, ownerId)
       setRecords(fresh.documents)
-      setSignatureByDocument(latestClinicalSignatureByDocument(fresh.signatures.rows))
+      setSignatureByDocument(latestAttemptByDocument(fresh.signatures.attempts))
+      setSignatureIntegration(fresh.signatures.integration)
       setSignatureEvidenceAvailable(fresh.signatures.available)
       setStatus('ready')
     } catch {
       setStatus('error')
       setError('Não foi possível carregar os documentos clínicos.')
+    }
+  }
+
+  async function refreshSignatures() {
+    const fresh = await fetchSignatureBundle(records, ownerId)
+    setSignatureByDocument(latestAttemptByDocument(fresh.attempts))
+    setSignatureIntegration(fresh.integration)
+    setSignatureEvidenceAvailable(fresh.available)
+  }
+
+  // Abre a pagina da BRy sem dar acesso a esta janela (window.opener) e sem
+  // nunca renderizar o link no DOM: ele e sensivel.
+  function openExternal(url) {
+    const popup = window.open(url, '_blank', 'noopener,noreferrer')
+    if (popup) {
+      popup.opener = null
+      return true
+    }
+    return false
+  }
+
+  async function startSignature(record) {
+    if (signatureBusy) return
+    setConfirmSignatureFor('')
+    setSignatureBusy(record.id)
+    setSignatureNotice('')
+    setError('')
+    try {
+      // Chave idempotente da solicitacao: um reenvio apos falha de rede nao
+      // cria um segundo envelope nem consome outro credito.
+      const response = await requestClinicalSignature(record.id, uid())
+      await refreshSignatures()
+      if (response.signingUrl) {
+        if (!openExternal(response.signingUrl)) {
+          setSignatureNotice('O navegador bloqueou a janela da BRy. Libere pop-ups e use "Abrir página de assinatura".')
+        }
+      } else {
+        setSignatureNotice('A solicitação foi registrada, mas a BRy não devolveu a página de assinatura. Use "Atualizar status".')
+      }
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível solicitar a assinatura digital.')
+      await refreshSignatures().catch(() => {})
+    } finally {
+      setSignatureBusy('')
+    }
+  }
+
+  async function refreshSignatureStatus(attempt) {
+    if (signatureBusy) return
+    setSignatureBusy(attempt.id)
+    setSignatureNotice('')
+    setError('')
+    try {
+      await reconcileClinicalSignature(attempt.id)
+      await refreshSignatures()
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível atualizar o status da assinatura.')
+    } finally {
+      setSignatureBusy('')
+    }
+  }
+
+  async function abandonSignature(attempt) {
+    if (signatureBusy) return
+    setConfirmAbandonFor('')
+    setSignatureBusy(attempt.id)
+    setSignatureNotice('')
+    setError('')
+    try {
+      await abandonClinicalSignature(attempt.id)
+      await refreshSignatures()
+      setSignatureNotice('Tentativa encerrada. Você já pode solicitar uma nova assinatura.')
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível encerrar a tentativa.')
+    } finally {
+      setSignatureBusy('')
+    }
+  }
+
+  async function openSignedArtifact(attempt, kind) {
+    if (signatureBusy) return
+    setSignatureBusy(attempt.id)
+    setSignatureNotice('')
+    setError('')
+    try {
+      const response = await openClinicalSignatureArtifact(attempt.id, kind)
+      if (!openExternal(response.url)) {
+        setSignatureNotice('O navegador bloqueou a abertura do arquivo. Libere pop-ups e tente novamente.')
+      }
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível abrir o arquivo.')
+    } finally {
+      setSignatureBusy('')
     }
   }
 
@@ -291,16 +442,27 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
 
       {error && <div className="clinical-form-error" role="alert">{error}</div>}
       {profileLoading && <div className="clinical-document-access-note">Carregando dados profissionais e o timbre da clínica…</div>}
-      <div className="clinical-signature-readiness">
+      <div className="clinical-signature-readiness" data-testid="clinical-signature-readiness">
         <div>
-          <strong>Assinatura clínica ICP-Brasil preparada</strong>
-          <span>O documento original permanece imutável; assinatura, hash e certificado serão registrados como evidências separadas quando o provedor for conectado.</span>
+          <strong>Assinatura clínica ICP-Brasil</strong>
+          <span>
+            {signatureIntegration.available
+              ? 'A assinatura acontece na página segura da BRy. O documento original permanece imutável e cada tentativa é registrada como evidência separada.'
+              : 'Integração com a BRy indisponível nesta instalação. Os documentos continuam disponíveis para impressão e assinatura manual.'}
+          </span>
         </div>
         <span className={signerReadiness.ready ? 'is-ready' : 'is-pending'}>
           {signerReadiness.ready ? 'Identidade profissional completa' : `Pendente: ${signerReadiness.missing.join(', ')}`}
         </span>
       </div>
-      <div className="clinical-document-legal-note">Enquanto o provedor não estiver conectado, os PDFs continuam disponíveis para impressão e assinatura manual. Não envie certificado A1 ou senha por esta tela.</div>
+      {/* Nunca prometer assinatura qualificada enquanto a integração não estiver
+          habilitada e homologada. */}
+      <div className="clinical-document-legal-note">
+        {signatureIntegration.available
+          ? 'A assinatura é feita pelo próprio profissional, com o certificado dele, na página da BRy. Esta tela nunca recebe certificado, chave privada ou senha.'
+          : 'Enquanto a integração não estiver disponível, os PDFs continuam disponíveis para impressão e assinatura manual. Não envie certificado A1 ou senha por esta tela.'}
+      </div>
+      {signatureNotice && <div className="clinical-document-access-note" role="status">{signatureNotice}</div>}
       {!signatureEvidenceAvailable && <div className="clinical-document-access-note">O histórico clínico está disponível, mas o status de assinatura digital não pôde ser consultado. A via manual não foi afetada.</div>}
       {!canPrescribe && <div className="clinical-document-access-note">Receitas podem ser emitidas somente por usuários com perfil administrador. Você ainda pode consultar o histórico e emitir pedidos de exames.</div>}
 
@@ -309,17 +471,66 @@ export function ClinicalDocuments({ patient, ownerId, author, profile, profileLo
       ) : (
         <div className="clinical-document-history">
           {records.map(record => {
-            const signature = signatureByDocument[record.id]
-            const signatureState = clinicalSignaturePresentation(signature, { evidenceAvailable:signatureEvidenceAvailable })
-            return <article key={record.id}>
+            const attempt = signatureByDocument[record.id]
+            const signatureState = clinicalSignatureActionState({
+              record,
+              attempt,
+              integration:signatureIntegration,
+              viewerId,
+              evidenceAvailable:signatureEvidenceAvailable,
+            })
+            const busy = Boolean(signatureBusy) && (signatureBusy === record.id || signatureBusy === attempt?.id)
+            const eligible = isClinicalSignatureEligible(record)
+            return <article key={record.id} data-testid={`clinical-document-${record.id}`}>
               <div className={`clinical-document-icon is-${record.document_type}`}>{record.document_type === SIMPLE_PRESCRIPTION ? 'Rx' : 'Ex'}</div>
               <div className="clinical-document-history__body">
                 <span>{clinicalDocumentTypeLabel(record.document_type)} · {dateLabel(record.issue_date)}</span>
                 <strong><DocumentSummary record={record} /></strong>
                 <small>{record.author_name} · {professionalRegistration(record)}</small>
-                <small className={`clinical-signature-status is-${signatureState.tone}`}>{signatureState.label}</small>
+                <small className={`clinical-signature-status is-${signatureState.tone}`} data-testid="clinical-signature-status">{signatureState.label}</small>
+                {signatureState.note && <small className="clinical-signature-note">{signatureState.note}</small>}
+
+                {confirmSignatureFor === record.id ? (
+                  <div className="clinical-signature-confirm" role="group" aria-label="Confirmar assinatura digital">
+                    <span>Esta solicitação consome créditos da BRy e abre a página segura de assinatura em outra aba. Confirmar?</span>
+                    <div>
+                      <Btn variant="ghost" disabled={busy} onClick={() => setConfirmSignatureFor('')}>Cancelar</Btn>
+                      <Btn disabled={busy} onClick={() => startSignature(record)}>{busy ? 'Solicitando…' : 'Confirmar e assinar'}</Btn>
+                    </div>
+                  </div>
+                ) : confirmAbandonFor === attempt?.id ? (
+                  <div className="clinical-signature-confirm" role="group" aria-label="Encerrar tentativa de assinatura">
+                    <span>A BRy não confirmou esta tentativa e o crédito pode já ter sido consumido. Encerrar para liberar uma nova solicitação?</span>
+                    <div>
+                      <Btn variant="ghost" disabled={busy} onClick={() => setConfirmAbandonFor('')}>Voltar</Btn>
+                      <Btn disabled={busy} onClick={() => abandonSignature(attempt)}>{busy ? 'Encerrando…' : 'Encerrar tentativa'}</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="clinical-signature-actions">
+                    {signatureState.canRequest && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => setConfirmSignatureFor(record.id)}>Assinar com BRy</Btn>
+                    )}
+                    {signatureState.canRetry && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => setConfirmSignatureFor(record.id)}>Tentar assinar novamente</Btn>
+                    )}
+                    {signatureState.canReconcile && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => refreshSignatureStatus(attempt)}>{busy ? 'Atualizando…' : 'Atualizar status'}</Btn>
+                    )}
+                    {signatureState.canAbandon && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => setConfirmAbandonFor(attempt.id)}>Encerrar tentativa</Btn>
+                    )}
+                    {signatureState.canOpenSigned && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => openSignedArtifact(attempt, 'signed')}>Abrir PDF assinado</Btn>
+                    )}
+                    {!signatureState.canOpenSigned && signatureState.canOpenArtifact && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => openSignedArtifact(attempt, 'signed')}>Abrir arquivo devolvido pela BRy</Btn>
+                    )}
+                  </div>
+                )}
               </div>
-              <Btn variant="ghost" onClick={() => print(record)}>{signature?.status === 'signed' ? 'Imprimir via manual' : 'Imprimir / salvar PDF'}</Btn>
+              {/* A via manual permanece sempre disponível, separada da digital. */}
+              <Btn variant="ghost" onClick={() => print(record)}>{eligible && attempt?.evidenceComplete ? 'Imprimir via manual' : 'Imprimir / salvar PDF'}</Btn>
             </article>
           })}
         </div>

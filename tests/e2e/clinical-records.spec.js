@@ -112,6 +112,9 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
       id,
       user_id:'e2e-user-id',
       patient_id:'patient-documents',
+      // A RPC real grava created_by = auth.uid(); sem isso o documento seria
+      // tratado como legado e ficaria fora do fluxo de assinatura digital.
+      created_by:'e2e-user-id',
       document_type:payload.p_document_type,
       issue_date:payload.p_issue_date,
       document_data:payload.p_document_data,

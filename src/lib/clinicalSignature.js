@@ -80,3 +80,130 @@ export function clinicalSignerReadiness(profile = {}) {
   }
 }
 
+export const CLINICAL_SIGNATURE_ELIGIBLE_TYPES = ['exam_request', 'simple_prescription']
+
+// Motivo auditavel, devolvido pelo backend, de uma tentativa concluida no
+// provedor nao poder ser declarada assinada. Ver api/_lib/bryEasySign.js.
+export const BRY_EVIDENCE_GAP_MACHINE_READABLE = 'bry_evidence_not_machine_readable'
+
+// Documento elegivel: tipo suportado e autoria rastreavel. Documentos legados
+// sem `created_by` seguem apenas pela via manual.
+export function isClinicalSignatureEligible(record = {}) {
+  return CLINICAL_SIGNATURE_ELIGIBLE_TYPES.includes(record.document_type) && Boolean(record.created_by)
+}
+
+// Decide, de forma pura e testavel, o que a tela pode oferecer.
+// Nenhuma decisao de autorizacao real depende disto: o backend reconfere tudo.
+// Aqui apenas evitamos oferecer acoes que seriam recusadas.
+export function clinicalSignatureActionState({
+  record = {},
+  attempt = null,
+  integration = null,
+  viewerId = '',
+  evidenceAvailable = true,
+} = {}) {
+  const base = {
+    canRequest:false,
+    canReconcile:false,
+    canRetry:false,
+    canAbandon:false,
+    canOpenSigned:false,
+    canOpenArtifact:false,
+    label:'',
+    tone:'muted',
+    note:'',
+  }
+
+  if (!evidenceAvailable) {
+    return { ...base, label:'Status digital indisponível', note:'A via manual não foi afetada.' }
+  }
+  if (!isClinicalSignatureEligible(record)) {
+    return { ...base, label:'Assinatura digital não disponível para este documento', note:'Use a via manual.' }
+  }
+
+  const isAuthor = Boolean(viewerId) && viewerId === record.created_by
+  const available = Boolean(integration?.available)
+
+  if (!attempt) {
+    if (!available) {
+      return {
+        ...base,
+        label:'Assinatura digital não configurada',
+        note:'Enquanto a integração não estiver disponível, imprima e assine manualmente.',
+      }
+    }
+    if (!isAuthor) {
+      return {
+        ...base,
+        label:'Assinatura digital pendente',
+        note:'Somente o profissional que emitiu o documento pode assiná-lo.',
+      }
+    }
+    return { ...base, canRequest:true, label:'Pronta para assinar', tone:'pending' }
+  }
+
+  if (attempt.status === 'pending') {
+    if (attempt.dispatchState === 'unknown') {
+      return {
+        ...base,
+        canReconcile:isAuthor,
+        canAbandon:isAuthor,
+        label:'Resultado desconhecido na BRy',
+        tone:'failed',
+        note:'Não reenviamos automaticamente para não cobrar duas vezes. Atualize o status ou encerre a tentativa.',
+      }
+    }
+    if (attempt.evidenceGapCode) {
+      return {
+        ...base,
+        canReconcile:isAuthor,
+        canOpenArtifact:Boolean(attempt.hasStoredArtifact),
+        label:'Assinada na BRy · evidência pendente de homologação',
+        tone:'pending',
+        note:'O arquivo devolvido pela BRy foi guardado, mas a plataforma ainda não pode declarar assinatura qualificada.',
+      }
+    }
+    return {
+      ...base,
+      canReconcile:isAuthor,
+      label:'Assinatura em processamento',
+      tone:'pending',
+      note:'Conclua a assinatura na página da BRy e atualize o status.',
+    }
+  }
+
+  if (attempt.status === 'signed') {
+    // `evidenceComplete` e calculado no backend sobre a linha do banco.
+    if (!attempt.evidenceComplete) {
+      return { ...base, label:'Evidência digital inconsistente', tone:'failed', note:'Use a via manual até a revisão.' }
+    }
+    return { ...base, canOpenSigned:true, label:'Assinado digitalmente', tone:'signed' }
+  }
+
+  const terminalLabel = attempt.status === 'cancelled' ? 'Assinatura cancelada' : 'Falha na assinatura'
+  return {
+    ...base,
+    canRetry:isAuthor && available,
+    canOpenArtifact:Boolean(attempt.hasStoredArtifact),
+    label:terminalLabel,
+    tone:attempt.status === 'cancelled' ? 'muted' : 'failed',
+    note:attempt.failureMessage || '',
+  }
+}
+
+// Agrupa as tentativas devolvidas pelo backend (camelCase) por documento,
+// preferindo uma assinatura com evidencia completa sobre tentativas mais novas.
+// Assim uma falha posterior nunca esconde uma assinatura valida.
+export function latestAttemptByDocument(attempts = []) {
+  const grouped = attempts.reduce((result, attempt) => {
+    if (!attempt?.documentId) return result
+    if (!result[attempt.documentId]) result[attempt.documentId] = []
+    result[attempt.documentId].push(attempt)
+    return result
+  }, {})
+  return Object.entries(grouped).reduce((result, [documentId, list]) => {
+    const ordered = [...list].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    result[documentId] = ordered.find(attempt => attempt.evidenceComplete) || ordered[0]
+    return result
+  }, {})
+}
