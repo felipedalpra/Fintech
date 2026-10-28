@@ -110,6 +110,11 @@ function isGroupPhone(phone) {
   return /(?:-group|@g\.us)$/i.test(value) || value.replace(/\D/g, '').length > 15
 }
 const conversationKey = operationalConversationKey
+function isSelectableWhatsAppNumber(number) {
+  if (!number?.active) return false
+  if (number.provider === 'evolution') return number.connection_state === 'open'
+  return !['close', 'closed', 'disconnected', 'error', 'connecting'].includes(number.connection_state)
+}
 function Avatar({ name, phone, photo, className='' }) {
   const [failed, setFailed] = useState(false)
   useEffect(() => { setFailed(false) }, [photo])
@@ -150,7 +155,7 @@ export function WhatsAppInbox() {
   const load = useCallback(async ({ silent=false }={}) => {
     silent ? setRefreshing(true) : setLoading(true)
     const [numRes, memRes, stateRes, replyRes] = await Promise.all([
-      supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id, active').order('created_at', { ascending:true }),
+      supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id, active, provider, connection_state').order('created_at', { ascending:true }),
       supabase.rpc('clinic_team'),
       loadConversationStates(ownerId),
       loadSavedReplies(ownerId),
@@ -205,7 +210,7 @@ export function WhatsAppInbox() {
 
   const numberLabel = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.label])), [numbers])
   const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
-  const activeNumbers = useMemo(() => numbers.filter(number => number.active), [numbers])
+  const selectableNumbers = useMemo(() => numbers.filter(isSelectableWhatsAppNumber), [numbers])
   const memberLabel = useMemo(() => Object.fromEntries(members.map(member => [member.user_id, (member.member_email || '').split('@')[0] || member.member_email])), [members])
   const stateMap = useMemo(() => new Map(conversationStates.map(state => [state.conversation_key, state])), [conversationStates])
   const ownerName = useCallback((numberId, assignedUserId) => { const id = assignedUserId || (numberId ? numberOwner[numberId] : null); return id ? (memberLabel[id] || 'Responsável') : null }, [numberOwner, memberLabel])
@@ -287,10 +292,13 @@ export function WhatsAppInbox() {
   }, [thread.length, selectedPhone])
   useEffect(() => {
     if (!current) return
-    setReplyNumberId(activeNumbers.some(number => number.id === current.numberId) ? current.numberId : '')
+    setReplyNumberId(selectableNumbers.some(number => number.id === current.numberId) ? current.numberId : '')
     textSendRequestRef.current = null
     setPendingSend(null)
-  }, [current, activeNumbers])
+  }, [current, selectableNumbers])
+  useEffect(() => {
+    if (filterNumber !== 'all' && !selectableNumbers.some(number => number.id === filterNumber)) setFilterNumber('all')
+  }, [filterNumber, selectableNumbers])
   useEffect(() => { setShowEmoji(false); setContactModal(null); setContactError(null); setSelectedPatientId(''); setPendingSend(null) }, [selectedPhone])
   useEffect(() => {
     if (!current || !ownerId || !current.unreadCount) return
@@ -510,7 +518,7 @@ export function WhatsAppInbox() {
         <div className="wa-sidebar-title"><span className="wa-brand-icon" aria-label="WhatsApp"><WhatsAppLogo size={23}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'conversa' : 'conversas'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={refreshConversations} title="Atualizar mensagens, nomes e fotos" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button></div>
         <label className="wa-search"><Icon name="search" size={17}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar conversa ou mensagem"/>{search && <button type="button" onClick={() => setSearch('')} aria-label="Limpar busca">×</button>}</label>
         <div className="wa-queue-tabs">{[['service','Atendimentos'],['unread','Não lidas'],['leads','Leads'],['patients','Pacientes'],['groups','Grupos'],['archived','Arquivadas']].map(([id,label]) => <button type="button" key={id} className={filterMode === id ? 'is-active' : ''} onClick={() => setFilterMode(id)}>{label}</button>)}</div>
-        <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{numbers.map(number => <option key={number.id} value={number.id}>{number.label}{number.active ? '' : ' (inativo)'}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
+        <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{selectableNumbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
       </div>
       <div className="wa-conversation-list" aria-label="Lista de conversas">{conversations.length === 0 ? <div className="wa-list-empty"><Icon name="search" size={26}/><strong>Nenhuma conversa encontrada</strong><span>Ajuste a busca ou os filtros.</span></div> : conversations.map(conversation => {
         const responsible = ownerName(conversation.numberId, conversation.assignedUserId), active = conversation.key === selectedPhone
@@ -545,7 +553,7 @@ export function WhatsAppInbox() {
         const participant = participantIdentity(message)
         return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}>{current.isGroup && message.direction === 'inbound' && <Avatar className="wa-participant-avatar" name={participant.primary} phone={message.sender_phone || message.sender_lid} photo={message.sender_photo}/>}<div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{current.isGroup && <span className="wa-participant-name">{participant.primary}{participant.secondary ? <small>{participant.secondary}</small> : null}</span>}{renderBody(message)}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span>{message.status === 'failed' && <button type="button" className="wa-retry" onClick={() => retryMessage(message)}>Tentar novamente</button>}</div></div></div>
       })}</div>
-      <form className="wa-composer" onSubmit={send}><div className="wa-composer-tools">{activeNumbers.length > 0 && <label className="wa-reply-number"><span>Enviar por</span><select value={replyNumberId} onChange={event => { setReplyNumberId(event.target.value); textSendRequestRef.current = null; setPendingSend(null) }}><option value="">Selecione um número ativo</option>{activeNumbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select></label>}<select aria-label="Respostas rápidas" defaultValue="" onChange={event => { const reply = savedReplies.find(item => item.id === event.target.value); if (reply) { setReplyText(reply.body); textSendRequestRef.current = null } event.target.value = '' }}><option value="">Respostas rápidas</option>{savedReplies.map(reply => <option key={reply.id} value={reply.id}>{reply.title}</option>)}</select><button type="button" onClick={saveReplyFromComposer}>Salvar resposta atual</button></div><div className="wa-composer-row">
+      <form className="wa-composer" onSubmit={send}><div className="wa-composer-tools">{selectableNumbers.length > 0 && <label className="wa-reply-number"><span>Enviar por</span><select value={replyNumberId} onChange={event => { setReplyNumberId(event.target.value); textSendRequestRef.current = null; setPendingSend(null) }}><option value="">Selecione um número ativo</option>{selectableNumbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select></label>}<select aria-label="Respostas rápidas" defaultValue="" onChange={event => { const reply = savedReplies.find(item => item.id === event.target.value); if (reply) { setReplyText(reply.body); textSendRequestRef.current = null } event.target.value = '' }}><option value="">Respostas rápidas</option>{savedReplies.map(reply => <option key={reply.id} value={reply.id}>{reply.title}</option>)}</select><button type="button" onClick={saveReplyFromComposer}>Salvar resposta atual</button></div><div className="wa-composer-row">
         <input ref={fileRef} type="file" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" hidden onChange={onPickFile}/><button type="button" className="wa-icon-button wa-composer-button" onClick={() => fileRef.current?.click()} disabled={uploading || recording} title="Anexar mídia ou documento" aria-label="Anexar arquivo"><Icon name="attach"/></button>
         <div className="wa-emoji-anchor"><button type="button" className={`wa-icon-button wa-composer-button ${showEmoji ? 'is-active' : ''}`} onClick={() => setShowEmoji(value => !value)} title="Emoji" aria-label="Inserir emoji"><Icon name="smile"/></button>{showEmoji && <div className="wa-emoji-picker"><div className="wa-emoji-tabs">{EMOJI_GROUPS.map(group => <button key={group.id} type="button" className={emojiGroup === group.id ? 'is-active' : ''} onClick={() => setEmojiGroup(group.id)} title={group.label}>{group.icon}</button>)}</div><div className="wa-emoji-title">{activeEmojiGroup.label}</div><div className="wa-emoji-grid">{activeEmojiGroup.items.map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => appendEmoji(emoji)} aria-label={emoji}>{emoji}</button>)}</div></div>}</div>
         <div className="wa-textarea-wrap"><textarea ref={textRef} rows="1" value={replyText} onChange={resizeComposer} onKeyDown={onComposerKeyDown} placeholder={uploading ? 'Enviando arquivo…' : recording ? 'Gravando áudio…' : 'Responder...'} disabled={sending || uploading || recording}/><small>Enter envia • Shift + Enter quebra linha</small></div>
