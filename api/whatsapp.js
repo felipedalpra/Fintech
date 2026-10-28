@@ -35,7 +35,7 @@ import {
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
 import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
-import { existingSendRequestAction, normalizeWhatsAppRequestId, payloadCollisionAction, providerFailureIsDefinitive, whatsappSendRequestFingerprint } from './_lib/whatsappSendRequest.js'
+import { conversationReferenceMatches, existingSendRequestAction, normalizeWhatsAppRequestId, payloadCollisionAction, providerFailureIsDefinitive, whatsappSendRequestFingerprint } from './_lib/whatsappSendRequest.js'
 import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
 import { decryptPayload, encryptPayload } from './_lib/secureProfile.js'
 import { signState, verifyState } from './_lib/oauthState.js'
@@ -1316,7 +1316,7 @@ async function handleSend(req, res) {
   const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { patientId, phone: rawPhone, contactPhone: rawContactPhone, chatLid: rawChatLid, isGroup: groupHint, text, whatsappNumberId, conversationNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
+  const { patientId, phone: rawPhone, contactPhone: rawContactPhone, chatLid: rawChatLid, isGroup: groupHint, text, whatsappNumberId, conversationNumberId, conversationMessageId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
   let requestId
   try { requestId = normalizeWhatsAppRequestId(req.body?.requestId) } catch (error) {
     return res.status(400).json({ error:error.message })
@@ -1343,6 +1343,24 @@ async function handleSend(req, res) {
   const { data: num } = await getWhatsAppNumber(supabase, whatsappNumberId)
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
   if (!providerAvailable(num)) return res.status(409).json({ error: 'Este número está inativo ou desconectado. Reconecte-o antes de enviar mensagens.' })
+
+  if (conversationNumberId) {
+    if (!conversationMessageId) return res.status(409).json({ error:'A referência desta conversa está incompleta. Recarregue o atendimento antes de responder.' })
+    const { data:conversationReference, error:conversationError } = await supabase.from('whatsapp_messages')
+      .select('id, whatsapp_number_id, phone, chat_lid, contact_phone, is_group')
+      .eq('id', conversationMessageId)
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    if (conversationError || !conversationReferenceMatches(conversationReference, {
+      whatsappNumberId,
+      phone,
+      chatLid,
+      contactPhone,
+      isGroup,
+    })) {
+      return res.status(409).json({ error:'A conversa não pertence a este número ou destinatário. Recarregue o atendimento antes de responder.' })
+    }
+  }
 
   // Nunca confia no patientId vindo do navegador: o vínculo só é aceito se o
   // paciente pertencer à mesma clínica autenticada.

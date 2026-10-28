@@ -73,6 +73,7 @@ export function WhatsAppChat({ patient }) {
       if (!token) throw new Error('Sessão inválida. Entre novamente.')
       const requestId = sendRequestRef.current || crypto.randomUUID()
       sendRequestRef.current = requestId
+      const conversationReference = [...messages].reverse().find(message => message.whatsapp_number_id === numberId)
       const res = await fetch('/api/whatsapp?action=message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -81,7 +82,8 @@ export function WhatsAppChat({ patient }) {
           phone,
           text: body,
           whatsappNumberId: numberId,
-          conversationNumberId:messages.some(message => message.whatsapp_number_id === numberId) ? numberId : undefined,
+          conversationNumberId:conversationReference ? numberId : undefined,
+          conversationMessageId:conversationReference?.id,
           requestId,
         }),
       })

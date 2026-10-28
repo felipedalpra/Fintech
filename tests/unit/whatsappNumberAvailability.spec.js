@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { isWhatsAppNumberAvailable, latestAvailableWhatsAppNumberId } from '../../src/lib/whatsappNumberAvailability.js'
+import { isWhatsAppNumberAvailable, latestAvailableWhatsAppNumberId, resolveWhatsAppNumberSelection } from '../../src/lib/whatsappNumberAvailability.js'
 
 test('somente números ativos, não arquivados e conectados ficam disponíveis', () => {
   expect(isWhatsAppNumberAvailable({ active:true, provider:'evolution', connection_state:'open' })).toBe(true)
@@ -22,4 +22,16 @@ test('escolhe o número disponível da mensagem mais recente sem cair no primeir
   ]
   expect(latestAvailableWhatsAppNumberId(messages, numbers)).toBe('n2')
   expect(latestAvailableWhatsAppNumberId([{ whatsapp_number_id:'n3' }], numbers)).toBe('')
+})
+
+test('preserva a configuração de automação durante desconexão temporária', () => {
+  const numbers = [
+    { id:'n1', label:'Recepção', active:true, provider:'evolution', connection_state:'close' },
+    { id:'n2', label:'Financeiro', active:true, provider:'evolution', connection_state:'open' },
+  ]
+  const selection = resolveWhatsAppNumberSelection('n1', numbers)
+  expect(selection.selectedId).toBe('n1')
+  expect(selection.configuredNumber?.label).toBe('Recepção')
+  expect(selection.configuredAvailable).toBe(false)
+  expect(selection.availableNumbers.map(number => number.id)).toEqual(['n2'])
 })

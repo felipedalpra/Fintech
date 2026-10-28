@@ -3,6 +3,10 @@
 -- Idempotente: reaplicar não altera linhas já corrigidas.
 begin;
 
+-- Reaplica o grant em bancos onde whatsapp_numbers_archive_schema.sql já foi
+-- executado antes de archived_at entrar na lista de colunas legíveis.
+grant select (archived_at) on public.whatsapp_numbers to authenticated;
+
 update public.whatsapp_messages
 set
   is_group = true,

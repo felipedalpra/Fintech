@@ -73,6 +73,11 @@ function checkedZApiMediaUrl(raw) {
 // Copia imediatamente a mídia temporária da Z-API para o Storage privado. A
 // allowlist é conferida novamente em cada redirect para impedir SSRF.
 export async function downloadZApiMedia(rawUrl, { maxBytes = 16 * 1024 * 1024 } = {}) {
+  const tooLarge = () => {
+    const error = new Error('A mídia recebida excede 16 MB.')
+    error.code = 'WHATSAPP_MEDIA_TOO_LARGE'
+    return error
+  }
   let url = checkedZApiMediaUrl(rawUrl)
   for (let redirects = 0; redirects <= 3; redirects += 1) {
     const response = await fetch(url, { redirect:'manual' })
@@ -84,7 +89,7 @@ export async function downloadZApiMedia(rawUrl, { maxBytes = 16 * 1024 * 1024 } 
     }
     if (!response.ok) throw new Error(`A Z-API não liberou a mídia recebida (HTTP ${response.status}).`)
     const declaredLength = Number(response.headers.get('content-length') || 0)
-    if (declaredLength > maxBytes) throw new Error('A mídia recebida excede 16 MB.')
+    if (declaredLength > maxBytes) throw tooLarge()
     const reader = response.body?.getReader()
     if (!reader) throw new Error('A Z-API devolveu a mídia sem conteúdo.')
     const chunks = []
@@ -95,7 +100,7 @@ export async function downloadZApiMedia(rawUrl, { maxBytes = 16 * 1024 * 1024 } 
       total += value.byteLength
       if (total > maxBytes) {
         await reader.cancel().catch(() => {})
-        throw new Error('A mídia recebida excede 16 MB.')
+        throw tooLarge()
       }
       chunks.push(Buffer.from(value))
     }

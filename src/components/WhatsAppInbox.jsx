@@ -359,7 +359,7 @@ export function WhatsAppInbox() {
   async function postPayload(extra, target=current, sendingNumberId=replyNumberId) {
     const { data:sessionData } = E2E_BYPASS_AUTH ? { data:{ session:{ access_token:'e2e-token' } } } : await supabase.auth.getSession(); const token = sessionData.session?.access_token
     if (!token) throw new Error('Sessão inválida. Entre novamente.')
-    const response = await fetch('/api/whatsapp?action=message', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body:JSON.stringify({ patientId:target.patientId, contactId:target.contactId, phone:target.phone, chatLid:target.chatLid, contactPhone:target.contactPhone, isGroup:target.isGroup, conversationNumberId:target.numberId, whatsappNumberId:sendingNumberId, requestId:extra.requestId || crypto.randomUUID(), ...extra }) })
+    const response = await fetch('/api/whatsapp?action=message', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body:JSON.stringify({ patientId:target.patientId, contactId:target.contactId, phone:target.phone, chatLid:target.chatLid, contactPhone:target.contactPhone, isGroup:target.isGroup, conversationNumberId:target.numberId, conversationMessageId:target.last.id, whatsappNumberId:sendingNumberId, requestId:extra.requestId || crypto.randomUUID(), ...extra }) })
     const json = await response.json().catch(() => ({})); if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`); if (!json.pending) await load({ silent:true }); return json
   }
   async function patchCurrentState(patch) {

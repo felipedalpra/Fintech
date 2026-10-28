@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { normalizeWhatsAppAddress } from './whatsapp.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -47,4 +48,21 @@ export function providerFailureIsDefinitive(statusCode) {
   const status = Number(statusCode)
   if (!Number.isInteger(status) || status < 400 || status >= 500) return false
   return ![408, 409, 425, 429].includes(status)
+}
+
+export function conversationReferenceMatches(reference, request) {
+  if (!reference || reference.whatsapp_number_id !== request?.whatsappNumberId) return false
+  const referenceIsGroup = reference.is_group === true || /(?:-group|@g\.us)$/i.test(String(reference.phone || ''))
+  if (referenceIsGroup !== (request.isGroup === true)) return false
+
+  if (referenceIsGroup) {
+    return normalizeWhatsAppAddress(reference.phone, true) === normalizeWhatsAppAddress(request.phone, true)
+  }
+
+  const identities = values => new Set(values
+    .map(value => normalizeWhatsAppAddress(value, false))
+    .filter(Boolean))
+  const referenceIdentities = identities([reference.phone, reference.chat_lid, reference.contact_phone])
+  const requestIdentities = identities([request.phone, request.chatLid, request.contactPhone])
+  return [...requestIdentities].some(identity => referenceIdentities.has(identity))
 }

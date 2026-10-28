@@ -287,6 +287,7 @@ test('responde pela instância da conversa quando a clínica possui três númer
 
   await expect.poll(() => sentPayload?.whatsappNumberId).toBe('n3')
   expect(sentPayload.conversationNumberId).toBe('n3')
+  expect(sentPayload.conversationMessageId).toBe('message-n3')
   expect(sentPayload.requestId).toMatch(/^[0-9a-f-]{36}$/i)
   expect(sentPayload.text).toBe('Retorno seguro')
 })
