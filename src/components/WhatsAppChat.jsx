@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { WhatsAppMedia } from './WhatsAppMedia.jsx'
+import { isWhatsAppNumberAvailable, latestAvailableWhatsAppNumberId } from '../lib/whatsappNumberAvailability.js'
 
 // Chat de WhatsApp por paciente (inbox na área Pacientes).
 // Lê o histórico de whatsapp_messages (RLS por data_owner_id) e envia pelo endpoint
@@ -23,14 +24,13 @@ export function WhatsAppChat({ patient }) {
   useEffect(() => {
     let mounted = true
     async function loadNumbers() {
-      const { data } = await supabase
+      const { data, error: numbersError } = await supabase
         .from('whatsapp_numbers')
-        .select('id, label, phone, active')
+        .select('id, label, phone, active, provider, connection_state, archived_at')
         .order('created_at', { ascending: true })
       if (!mounted) return
-      const list = data ?? []
-      setNumbers(list)
-      setNumberId(prev => prev || list.find(number => number.active)?.id || '')
+      if (numbersError) { setError(numbersError.message); return }
+      setNumbers(data ?? [])
     }
     loadNumbers()
     return () => { mounted = false }
@@ -51,10 +51,11 @@ export function WhatsAppChat({ patient }) {
   }
 
   useEffect(() => { setNumberId(''); setPendingSend(null); sendRequestRef.current = null; if (patient?.id) load() }, [patient?.id])
+  const availableNumbers = numbers.filter(isWhatsAppNumberAvailable)
   useEffect(() => {
-    if (numberId && numbers.some(number => number.id === numberId)) return
-    const latestNumberId = [...messages].reverse().find(message => numbers.some(number => number.id === message.whatsapp_number_id))?.whatsapp_number_id
-    setNumberId(latestNumberId || numbers.find(number => number.active)?.id || '')
+    if (numberId && availableNumbers.some(number => number.id === numberId)) return
+    const latestNumberId = latestAvailableWhatsAppNumberId(messages, numbers)
+    setNumberId(latestNumberId || (availableNumbers.length === 1 ? availableNumbers[0].id : ''))
   }, [messages, numbers, numberId])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, loading])
 
@@ -62,8 +63,8 @@ export function WhatsAppChat({ patient }) {
     e.preventDefault()
     const body = text.trim()
     if (!body || !phone || sending) return
-    if (!numberId) { setError('Nenhum número de WhatsApp configurado. Peça ao admin para cadastrar em Configurações → WhatsApp.'); return }
-    if (!numbers.find(number => number.id === numberId)?.active) { setError('Este histórico pertence a um número inativo. Selecione um número ativo para enviar.'); return }
+    if (!numberId) { setError(availableNumbers.length ? 'Escolha explicitamente o número conectado que deve iniciar esta conversa.' : 'Nenhum número conectado está disponível. Peça ao admin para revisar em Configurações → WhatsApp.'); return }
+    if (!availableNumbers.some(number => number.id === numberId)) { setError('Selecione um número conectado para enviar.'); return }
     setSending(true)
     setError(null)
     try {
@@ -75,7 +76,14 @@ export function WhatsAppChat({ patient }) {
       const res = await fetch('/api/whatsapp?action=message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ patientId: patient.id, phone, text: body, whatsappNumberId: numberId, requestId }),
+        body: JSON.stringify({
+          patientId: patient.id,
+          phone,
+          text: body,
+          whatsappNumberId: numberId,
+          conversationNumberId:messages.some(message => message.whatsapp_number_id === numberId) ? numberId : undefined,
+          requestId,
+        }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
@@ -178,17 +186,19 @@ export function WhatsAppChat({ patient }) {
           <div ref={endRef} />
         </div>
         {error && <div style={s.err}>{error}{pendingSend && <button type="button" onClick={releasePendingSend} disabled={sending} style={{ marginLeft:8 }}>Confirmo que não chegou</button>}</div>}
-        {numbers.length > 0 && (
+        {availableNumbers.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px 0', fontSize: 11, color: C.textSub }}>
             Enviar por:
             <select value={numberId} onChange={e => { setNumberId(e.target.value); sendRequestRef.current = null }} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.card, color: C.text, fontFamily: 'inherit' }}>
-              {numbers.map(n => <option key={n.id} value={n.id} disabled={!n.active}>{n.label}{n.active ? '' : ' (inativo)'}</option>)}
+              <option value="">Escolha um número conectado…</option>
+              {availableNumbers.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
             </select>
           </div>
         )}
+        {availableNumbers.length === 0 && <div style={s.err}>Nenhum número conectado está disponível para envio.</div>}
         <form style={s.form} onSubmit={send}>
           <input style={s.input} value={text} onChange={e => { setText(e.target.value); sendRequestRef.current = null }} placeholder="Escreva uma mensagem..." disabled={sending} />
-          <button type="submit" style={s.btn} disabled={sending || !text.trim() || !numbers.find(number => number.id === numberId)?.active}>{sending ? 'Enviando...' : 'Enviar'}</button>
+          <button type="submit" style={s.btn} disabled={sending || !text.trim() || !availableNumbers.some(number => number.id === numberId)}>{sending ? 'Enviando...' : 'Enviar'}</button>
         </form>
       </div>
     </div>

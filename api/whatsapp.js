@@ -11,6 +11,7 @@ import {
   downloadProviderMedia,
   listProviderChats,
   logoutProviderInstance,
+  providerAvailable,
   providerReady,
   resolveProviderPhoneLids,
   sendProviderMedia,
@@ -306,7 +307,11 @@ async function persistInboundMedia(supabase, number, parsed) {
   const encoded = String(media.base64).replace(/^data:[^;]+;base64,/, '')
   const bytes = Buffer.from(encoded, 'base64')
   if (!bytes.length) throw new Error('A mídia recebida está vazia.')
-  if (bytes.length > MAX_WHATSAPP_MEDIA_BYTES) throw new Error('A mídia recebida excede 16 MB.')
+  if (bytes.length > MAX_WHATSAPP_MEDIA_BYTES) {
+    const error = new Error('A mídia recebida excede 16 MB.')
+    error.code = 'WHATSAPP_MEDIA_TOO_LARGE'
+    throw error
+  }
   const mimetype = String(media.mimetype || parsed.mediaMime || 'application/octet-stream').split(';')[0]
   const stableId = String(parsed.providerMessageId || webhookDedupKey(provider, 'media', null, source))
     .replace(/[^a-zA-Z0-9_-]/g, '')
@@ -1311,7 +1316,7 @@ async function handleSend(req, res) {
   const { data: { user } = {}, error: authErr } = await supabase.auth.getUser(authHeader.slice(7))
   if (authErr || !user) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { patientId, phone: rawPhone, contactPhone: rawContactPhone, chatLid: rawChatLid, isGroup: groupHint, text, whatsappNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
+  const { patientId, phone: rawPhone, contactPhone: rawContactPhone, chatLid: rawChatLid, isGroup: groupHint, text, whatsappNumberId, conversationNumberId, type, mediaUrl, mediaMime, caption, fileName } = req.body || {}
   let requestId
   try { requestId = normalizeWhatsAppRequestId(req.body?.requestId) } catch (error) {
     return res.status(400).json({ error:error.message })
@@ -1323,6 +1328,9 @@ async function handleSend(req, res) {
   const isMedia = ['image', 'audio', 'video', 'document'].includes(type)
   if (!phone) return res.status(400).json({ error: 'phone é obrigatório' })
   if (!whatsappNumberId) return res.status(400).json({ error: 'whatsappNumberId é obrigatório' })
+  if (conversationNumberId && conversationNumberId !== whatsappNumberId) {
+    return res.status(409).json({ error:'Esta conversa pertence a outro número. Inicie um novo atendimento para trocar o remetente.' })
+  }
   if (isMedia) {
     if (!mediaUrl) return res.status(400).json({ error: 'mediaUrl é obrigatório para mídia' })
   } else if (!text) {
@@ -1334,7 +1342,7 @@ async function handleSend(req, res) {
   // Credenciais do número escolhido (deve pertencer à clínica).
   const { data: num } = await getWhatsAppNumber(supabase, whatsappNumberId)
   if (!num || num.user_id !== ownerId) return res.status(400).json({ error: 'Número inválido para esta clínica' })
-  if (!num.active) return res.status(409).json({ error: 'Este número está inativo. Ative-o antes de enviar mensagens.' })
+  if (!providerAvailable(num)) return res.status(409).json({ error: 'Este número está inativo ou desconectado. Reconecte-o antes de enviar mensagens.' })
 
   // Nunca confia no patientId vindo do navegador: o vínculo só é aceito se o
   // paciente pertencer à mesma clínica autenticada.
@@ -1777,6 +1785,10 @@ async function handleWebhook(req, res) {
         return res.status(500).json({ error: 'Stored media could not be linked to the message' })
       }
     }
+    if (mediaHydrationError?.code === 'WHATSAPP_MEDIA_TOO_LARGE') {
+      await finishWebhookEvent(supabase, audit.id, 'processed', mediaHydrationError.message)
+      return res.status(200).json({ ok:true, duplicate:true, mediaUnavailable:true })
+    }
     if (mediaHydrationError) {
       await finishWebhookEvent(supabase, audit.id, 'failed', mediaHydrationError.message)
       return res.status(500).json({ error: 'Media persistence failed' })
@@ -1785,6 +1797,10 @@ async function handleWebhook(req, res) {
     return res.status(200).json({ ok: true, duplicate: true })
   }
 
+  if (mediaHydrationError?.code === 'WHATSAPP_MEDIA_TOO_LARGE') {
+    await finishWebhookEvent(supabase, audit.id, 'processed', mediaHydrationError.message)
+    return res.status(200).json({ ok:true, mediaUnavailable:true })
+  }
   if (mediaHydrationError) {
     await finishWebhookEvent(supabase, audit.id, 'failed', mediaHydrationError.message)
     return res.status(500).json({ error: 'Message saved, but media persistence failed' })

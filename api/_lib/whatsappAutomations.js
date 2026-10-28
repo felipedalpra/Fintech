@@ -3,7 +3,7 @@
 // Parte PURA (testável): addDays, formatBR, renderTemplate, planReminders, planFollowups.
 // Parte orquestração: runWhatsAppAutomations(admin, { todayISO }) — lê fontes, agenda, envia.
 // Idempotente: guard-log (índice único) antes de enviar. Fail-safe: nunca lança pra cima.
-import { providerReady, sendProviderText, whatsappProvider } from './whatsappProvider.js'
+import { providerAvailable, sendProviderText, whatsappProvider } from './whatsappProvider.js'
 
 // ---------- Puro ----------
 
@@ -134,6 +134,13 @@ export function automationRetryAction(log, now = Date.now()) {
   return Number.isFinite(lastAttempt) && now - lastAttempt >= delay ? 'send' : 'skip'
 }
 
+export function automationRetryNumber(log, numbers) {
+  const original = (numbers || []).find(number => number.id === log?.whatsapp_number_id) || null
+  if (!original) return null
+  if (log?.provider_message_id) return original
+  return providerAvailable(original) ? original : null
+}
+
 async function fetchEvents(admin, userId, targetDate, { consultations = true, surgeries = true } = {}) {
   const jobs = []
   if (consultations) jobs.push(admin.from('consultations').select(EVENT_SELECT).eq('user_id', userId).eq('date', targetDate).not('patient_id', 'is', null))
@@ -201,8 +208,6 @@ async function dispatchOne(admin, { userId, number, item, automationType, target
         attempts:Number(existing.attempts || 1) + 1,
         last_attempt_at:now,
         error_message:null,
-        whatsapp_number_id:number.id,
-        provider:whatsappProvider(number),
       }).eq('id', existing.id).eq('status', 'failed').eq('attempts', Number(existing.attempts || 1)).select('id').maybeSingle()
       if (claimed.error) throw claimed.error
       if (!claimed.data) { summary.skipped += 1; return }
@@ -256,7 +261,7 @@ async function dispatchOne(admin, { userId, number, item, automationType, target
   summary.sent += 1
 }
 
-async function retryAutomationBacklog(admin, userId, number, summary) {
+async function retryAutomationBacklog(admin, userId, summary) {
   const result = await admin.from('whatsapp_automation_log')
     .select('ref_type,ref_id,target_date,automation_type,patient_id,phone,message_body,whatsapp_number_id,provider,status,attempts,last_attempt_at,created_at,provider_message_id')
     .eq('user_id', userId)
@@ -267,10 +272,29 @@ async function retryAutomationBacklog(admin, userId, number, summary) {
   // Compatibilidade enquanto a migração aditiva ainda não chegou ao banco.
   if (['PGRST204', 'PGRST205', '42703', '42P01'].includes(result.error?.code)) return
   if (result.error) throw result.error
+  const numberIds = [...new Set((result.data || []).map(log => log.whatsapp_number_id).filter(Boolean))]
+  if (!numberIds.length) return
+  let numberResult = await admin.from('whatsapp_numbers')
+    .select('id, active, archived_at, connection_state, instance_url, api_token, provider, provider_instance_name')
+    .eq('user_id', userId)
+    .in('id', numberIds)
+  if (['PGRST204', '42703'].includes(numberResult.error?.code)) {
+    numberResult = await admin.from('whatsapp_numbers')
+      .select('id, active, instance_url, api_token')
+      .eq('user_id', userId)
+      .in('id', numberIds)
+  }
+  if (numberResult.error) throw numberResult.error
+  const numbers = (numberResult.data || []).map(number => ({ provider:'zapi', ...number }))
   for (const log of result.data || []) {
+    const originalNumber = automationRetryNumber(log, numbers)
+    if (!originalNumber) {
+      summary.skipped += 1
+      continue
+    }
     await dispatchOne(admin, {
       userId,
-      number,
+      number:originalNumber,
       automationType:log.automation_type,
       targetDate:log.target_date,
       item:{
@@ -287,11 +311,12 @@ async function retryAutomationBacklog(admin, userId, number, summary) {
 }
 
 async function runForOwner(admin, auto, todayISO, summary) {
+  await retryAutomationBacklog(admin, auto.user_id, summary)
   // Sem número de envio configurado → pronto-pra-credencial: não envia nada (skip silencioso).
   if (!auto.whatsapp_number_id) return
   let numberResult = await admin
     .from('whatsapp_numbers')
-    .select('id, active, instance_url, api_token, provider, provider_instance_name')
+    .select('id, active, archived_at, connection_state, instance_url, api_token, provider, provider_instance_name')
     .eq('id', auto.whatsapp_number_id)
     .eq('user_id', auto.user_id)
     .maybeSingle()
@@ -303,9 +328,7 @@ async function runForOwner(admin, auto, todayISO, summary) {
       .maybeSingle()
   }
   const number = numberResult.data ? { provider: 'zapi', ...numberResult.data } : null
-  if (!number || !number.active || !providerReady(number)) return
-
-  await retryAutomationBacklog(admin, auto.user_id, number, summary)
+  if (!number || !providerAvailable(number)) return
 
   // LEMBRETE: eventos de (hoje + days_before).
   if (auto.reminder_enabled) {

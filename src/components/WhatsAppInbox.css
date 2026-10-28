@@ -344,6 +344,8 @@
 .wa-composer-tools > select, .wa-composer-tools > button { height: 28px; flex: 0 0 auto; padding: 0 9px; border: 1px solid var(--wa-border); border-radius: 8px; background: rgba(17,27,33,.45); color: var(--wa-muted); cursor: pointer; font-size: 10px; }
 .wa-composer-tools .wa-reply-number { padding: 0; }
 .wa-reply-number { display: flex; align-items: center; gap: 8px; padding: 7px 15px 0; color: var(--wa-muted); font-size: 10px; }
+.wa-reply-number strong { padding: 5px 9px; color: #b9f5e7; background: rgba(0,168,132,.15); border: 1px solid rgba(0,168,132,.28); border-radius: 8px; font-size: 10px; }
+.wa-reply-unavailable { flex: 0 0 auto; max-width: 420px; padding: 6px 9px; color: #ffd279; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.24); border-radius: 8px; font-size: 10px; }
 .wa-reply-number select { width: auto; height: 27px; color: var(--wa-text); }
 .wa-composer-row { min-height: 62px; display: flex; align-items: flex-end; gap: 5px; padding: 9px 12px; }
 .wa-composer-button { margin-bottom: 2px; }
