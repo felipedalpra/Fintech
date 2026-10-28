@@ -14,6 +14,10 @@ Preparar pedidos de exames e receituários simples para uma futura assinatura el
 
 Ficam fora desta etapa: upload de `.pfx`/`.p12`, senha do certificado, escolha/contratação do provedor, chamada real de assinatura, prescrição controlada e dispensação.
 
+## Provedor recebido para homologação
+
+Em 28/10/2026, foram recebidos os acessos e as condições comerciais da **BRy Easy Sign Self-Service** para a futura integração. A referência técnica, os pontos ainda não confirmados e o checklist de homologação estão em [BRy Easy Sign — referência para a integração clínica](../../BRY_EASY_SIGN_INTEGRATION.md). O registro do provedor não ativa a integração nem substitui a validação de modo ICP-Brasil, webhook, evidências, retenção, custos e tratamento de dados.
+
 ## Regras de segurança e fidedignidade
 
 1. `clinical_documents` permanece a fonte imutável do conteúdo emitido.
@@ -75,14 +79,14 @@ O retorno normalizado deverá trazer o estado e, para sucesso, bytes/URL tempor�
 - [x] A migration atualiza com segurança a primeira versão: preserva inclusive evidências legadas duplicadas, bloqueia conexões antigas inseguras e terminaliza pendências não verificáveis com motivo auditável.
 - [x] Impressão manual permanece disponível e explicitamente identificada.
 - [x] Nenhuma função serverless nova é criada.
-- [ ] Provedor, política de carimbo do tempo e armazenamento do PDF assinado serão homologados antes da ativação.
+- [ ] BRy Easy Sign, política de carimbo do tempo e armazenamento do PDF assinado serão homologados antes da ativação.
 - [ ] Fluxo real será validado com certificado de homologação antes de produção.
 
 ## Rollout
 
 1. Aplicar `supabase/clinical_signature_readiness_schema.sql` após os SQLs de documentos clínicos.
 2. Publicar frontend e backend compatíveis; a ausência temporária da tabela não bloqueia o histórico/manual.
-3. Escolher provedor compatível com ICP-Brasil e definir cofre de segredo.
+3. Homologar a BRy Easy Sign como provedor compatível com ICP-Brasil e definir cofre de segredo.
 4. Implementar o adaptador dentro de endpoint consolidado existente.
 5. Homologar hash, PAdES, cadeia do certificado, carimbo do tempo, revogação, download e auditoria.
 

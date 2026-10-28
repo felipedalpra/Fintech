@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-10-28
+### Added
+- **Referência para integração clínica com a BRy Easy Sign**: registra os acessos oficiais, as condições comerciais recebidas para o modelo Self-Service, o fluxo técnico confirmado na documentação pública e o encaixe seguro na fundação de assinaturas já existente. O documento também preserva como pendências explícitas a modalidade correta para assinatura médica, a autenticação de webhooks, a disponibilidade real de homologação, os custos por operação e a retenção dos artefatos; nenhum token, crédito ou integração foi ativado nesta etapa. (`docs/BRY_EASY_SIGN_INTEGRATION.md`, `docs/superpowers/specs/2026-10-21-clinical-signature-readiness-design.md`.)
+
 ## [Unreleased] - 2026-10-27
 ### Added
 - **Protocolos aplicáveis diretamente a pacientes**: cada card da biblioteca agora permite visualizar todo o conteúdo, consultar versões anteriores, duplicar como novo protocolo e iniciar um rascunho para um paciente em Anamnese, Pedido de exames, Receita simples ou Plano e retorno. Destinos sem conteúdo aplicável ficam indisponíveis, receita respeita o perfil autorizado e nenhuma aplicação grava dados automaticamente. (`src/components/ClinicalProtocols.jsx`, `src/components/ClinicalRecords.jsx`, `src/components/ClinicalDocuments.jsx`, `src/components/ClinicalTreatmentPlan.jsx`, `src/lib/clinicalProtocols.js`, `tests/unit/clinicalProtocols.spec.js`, `tests/e2e/clinical-protocols.spec.js`.)
