@@ -288,12 +288,16 @@ test('responde pela instância da conversa quando a clínica possui três númer
   expect(sentPayload.text).toBe('Retorno seguro')
 })
 
-test('preserva o histórico de número inativo sem usá-lo silenciosamente para enviar', async ({ page }) => {
+test('preserva o histórico, mas remove números inativos ou desconectados dos seletores', async ({ page }) => {
   await page.unroute('**/rest/v1/whatsapp_numbers*')
   await page.route('**/rest/v1/whatsapp_numbers*', route => route.fulfill({
     status:200,
     contentType:'application/json',
-    body:JSON.stringify([{ ...NUMBERS[0], active:false }, { id:'n2', label:'Atendimento ativo', phone:'5511999990002', active:true }]),
+    body:JSON.stringify([
+      { ...NUMBERS[0], active:false, provider:'evolution', connection_state:'close' },
+      { id:'n2', label:'Atendimento ativo', phone:'5511999990002', active:true, provider:'evolution', connection_state:'open' },
+      { id:'n3', label:'Atendimento desconectado', phone:'5511999990003', active:true, provider:'evolution', connection_state:'close' },
+    ]),
   }))
 
   await page.goto('/app/inbox')
@@ -301,7 +305,8 @@ test('preserva o histórico de número inativo sem usá-lo silenciosamente para 
   await page.locator('.wa-conversation').filter({ hasText:'Ana Silva' }).click()
   await expect(page.locator('.wa-messages')).toContainText('Oi, doutora')
   await expect(page.locator('.wa-reply-number select')).toHaveValue('')
-  await expect(page.locator('.wa-filters select').first()).toContainText('Concierge (inativo)')
+  await expect(page.locator('.wa-filters select').first().locator('option')).toHaveText(['Todos os números', 'Atendimento ativo'])
+  await expect(page.locator('.wa-reply-number select').locator('option')).toHaveText(['Selecione um número ativo', 'Atendimento ativo'])
 })
 
 test('grupo mostra identidade coletiva e identifica cada participante', async ({ page }) => {
