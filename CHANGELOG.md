@@ -16,6 +16,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - **Erros internos do perfil seguro deixam de vazar mensagem crua para o navegador**: respostas 500 de `api/secure-profile.js` passam a usar texto sanitizado, enquanto erros de negócio continuam explicando a causa com o status adequado. Evita expor detalhe de configuração ou de schema na resposta da API. (`api/secure-profile.js`.)
 - **Completude da evidência de assinatura passa a ser decidida no servidor**: a tela consome um booleano calculado sobre a linha do banco em vez de reconstruir a regra no navegador, e deixa de receber hashes do artefato. (`api/_lib/clinicalSignature.js`, `src/lib/clinicalSignature.js`.)
 
+### Changed
+- **`PROJECT_MEMORY.md` registra as migrations de assinatura clínica como aplicadas**: a entrada de 2026-10-21 ainda dizia que `clinical_signature_readiness_schema.sql` faltava aplicar, o que já não era verdade, e a entrada de 2026-10-28 documenta a integração BRy, o bloqueio de evidências e a aplicação de `clinical_signature_bry_schema.sql`. (`PROJECT_MEMORY.md`.)
+
 ### Fixed
 - **Mock de emissão de documento clínico no E2E não refletia a RPC real**: o teste criava documentos sem `created_by`, que a RPC `create_clinical_document` sempre grava com `auth.uid()`. Com o campo ausente o documento era classificado como legado e ficava fora do fluxo de assinatura digital, mascarando o comportamento real. (`tests/e2e/clinical-records.spec.js`.)
 
