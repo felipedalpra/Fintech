@@ -37,6 +37,14 @@ Antes de comprar créditos, confirmar valores, validade, impostos, política de 
 ### Autenticação e ambientes
 
 - A Easy Sign usa um token JWT no cabeçalho `Authorization: Bearer <token>`.
+- **Esse JWT é de vida curta.** A documentação de autenticação diz que o
+  `access_token` “tem validade de alguns minutos” e que a aplicação deve
+  renová-lo automaticamente. Ele é obtido por
+  `POST {cloud}/token-service/jwt`, `application/x-www-form-urlencoded`, com
+  `grant_type=client_credentials`, `client_id` e `client_secret`; a resposta traz
+  `access_token`, `expires_in`, `refresh_token`, `refresh_expires_in` e
+  `token_type`. Hosts: `https://cloud.bry.com.br` e `https://cloud-hom.bry.com.br`.
+  O `client_secret` **não expira** e é segredo de servidor.
 - A documentação de criação de envelope lista `https://easysign.bry.com.br` para produção e `https://easysign.hom.bry.com.br` para homologação.
 - A documentação de obtenção de credenciais por e-mail informa que esse recurso é exclusivo do Quickstart em homologação e direciona contas oficiais para o BRy Cloud.
 - A orientação recebida da BRy diz que o Self-Service começa em produção e que os testes consomem créditos. Portanto, **não presumir que a SurgiMetrics terá sandbox gratuito**; essa disponibilidade precisa ser confirmada.
@@ -214,7 +222,11 @@ Registradas aqui em vez de resolvidas por suposição:
 | --- | --- | --- |
 | `BRY_EASY_SIGN_ENABLED` | Fonte de verdade da feature flag, resolvida no backend | Integração indisponível |
 | `BRY_EASY_SIGN_BASE_URL` | Host da BRy, com allowlist de `easysign.bry.com.br` e `easysign.hom.bry.com.br` | Indisponível — **nunca** cai em produção por omissão |
-| `BRY_EASY_SIGN_TOKEN` | JWT da aplicação, só no header `Authorization` | Indisponível |
+| `BRY_EASY_SIGN_CLIENT_ID` | ID da aplicação, trocado por JWT a cada chamada | Indisponível |
+| `BRY_EASY_SIGN_CLIENT_SECRET` | API-Key da aplicação; não expira, só server-side | Indisponível |
+| `BRY_EASY_SIGN_TOKEN_URL` | Host da autenticação, com allowlist (`cloud` / `cloud-hom`) | Indisponível |
+| `BRY_EASY_SIGN_TOKEN_TIMEOUT_MS` | Timeout da troca de token (padrão 15.000) | Usa 15.000 |
+| `BRY_EASY_SIGN_TOKEN` | Opcional; só para o Quickstart de homologação. Credenciais de aplicação sempre vencem | Ignorado |
 | `BRY_EASY_SIGN_CREDENTIAL_ID` | UUID **opaco** emitido pelo cofre; validado como UUID | Indisponível |
 | `BRY_EASY_SIGN_SIGNATURE_MODE` | `SIMPLE` / `ADVANCED` / `QUALIFIED` | Indisponível |
 | `BRY_EASY_SIGN_SIGNATURE_PROFILE` | Perfil PAdES/carimbo; obrigatório fora de `SIMPLE` | Indisponível |
@@ -238,6 +250,7 @@ manual. Os nomes estão em `.env.example` **sem valores reais**.
 
 | Operação | Chamada |
 | --- | --- |
+| Obter/renovar o JWT | `POST {cloud}/token-service/jwt` |
 | Criar envelope (como rascunho) | `POST /api/service/sign/v1/signatures` |
 | Iniciar o envelope | `POST /api/service/sign/v1/signatures/{requestId}/start` |
 | Consultar envelope | `GET /api/service/sign/v1/signatures/{requestId}` |
@@ -307,9 +320,15 @@ recuperação automática, e isso é intencional.
 
 ### Segurança
 
-- O token BRy existe somente em variável server-side, vai apenas no header
-  `Authorization` e **nunca** em query string, log, banco, telemetria ou resposta
-  de API. Mensagens de erro passam por sanitização que remove `Bearer`, JWTs e URLs.
+- Não existe JWT fixo: o backend troca `client_id` + `client_secret` por um
+  `access_token` de poucos minutos (`api/_lib/bryToken.js`), guarda em cache na
+  memória do processo apenas enquanto vale, renova com 30 s de folga e
+  compartilha uma única troca entre chamadas concorrentes. O token **nunca** é
+  persistido. Se a autenticação falhar, o corpo do erro não é propagado, porque
+  a BRy pode ecoar a requisição — que contém o `client_secret`.
+- O `client_secret` existe somente em variável server-side e **nunca** aparece em
+  query string, log, banco, telemetria ou resposta de API. O token vai apenas no
+  header `Authorization`. Mensagens de erro passam por sanitização que remove `Bearer`, JWTs e URLs.
 - O link individual de assinatura é tratado como sensível: devolvido somente ao
   próprio profissional autor, **nunca persistido** nem registrado em log, e
   aberto com `noopener,noreferrer` (sem aparecer no DOM). Como ele não fica
@@ -455,7 +474,9 @@ documento clínico imutável
 
 ### Passos de ativação, em ordem
 
-1. Criar a aplicação no BRy Cloud e guardar o JWT em cofre; **não** colar em ticket, chat ou repositório.
+1. Criar a aplicação no BRy Cloud, gerar as credenciais e guardar `client_id` e
+   `client_secret`; **não** colar em ticket, chat ou repositório. Não há JWT para
+   guardar: ele é obtido a cada chamada.
 2. Resolver os itens “Ainda depende da BRy” acima — principalmente o host e o custo
    da verificação — e registrar as respostas neste documento.
 3. ~~Aplicar `supabase/clinical_signature_bry_schema.sql`.~~ **Feito em 28/10/2026.**

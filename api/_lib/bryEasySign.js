@@ -19,6 +19,8 @@
 //   GET    /api/service/sign/v1/signatures/{requestId}/documents/{documentNonce}/report
 //   DELETE /api/service/sign/v1/signatures/{requestId}
 
+import { bryTokenConfig, getBryAccessToken } from './bryToken.js'
+
 const PRODUCTION_HOST = 'easysign.bry.com.br'
 const HOMOLOGATION_HOST = 'easysign.hom.bry.com.br'
 
@@ -104,8 +106,10 @@ export function bryEasySignConfig(env = process.env) {
     }
   }
 
-  const token = read('BRY_EASY_SIGN_TOKEN')
-  if (!token) problems.push('BRY_EASY_SIGN_TOKEN nao configurado')
+  // A autenticacao e delegada a api/_lib/bryToken.js: o access_token da BRy dura
+  // poucos minutos e precisa ser renovado, entao nao existe token fixo aqui.
+  const auth = bryTokenConfig(env)
+  problems.push(...auth.problems)
 
   // UUID opaco emitido pelo cofre. Nao e o segredo: e a referencia a ele.
   const credentialId = read('BRY_EASY_SIGN_CREDENTIAL_ID')
@@ -140,7 +144,7 @@ export function bryEasySignConfig(env = process.env) {
     problems,
     baseUrl,
     environment,
-    token,
+    auth,
     credentialId,
     signatureMode,
     signatureProfile,
@@ -351,13 +355,17 @@ async function readLimited(response, maxBytes, { ambiguous = false } = {}) {
 }
 
 // `fetchImpl` existe para os testes: nenhuma chamada real a BRy em teste.
-async function bryRequest(config, { method, path, body, expect = 'json', maxBytes }, { fetchImpl = fetch } = {}) {
+async function bryRequest(config, { method, path, body, expect = 'json', maxBytes }, { fetchImpl = fetch, tokenOptions } = {}) {
   if (!config?.ready) throw configError('Integracao BRy Easy Sign indisponivel.')
   const url = new URL(`${config.baseUrl}${path}`)
   assertAllowedUrl(url)
   // Um POST interrompido pode ter sido processado pela BRy. Sem idempotency key
   // no contrato publico, o resultado e AMBIGUO e nao pode ser reenviado.
   const ambiguousOnFailure = method !== 'GET'
+
+  // Token obtido (e renovado) na hora da chamada. Nunca fica em variavel de
+  // ambiente nem e reaproveitado alem da sua validade.
+  const accessToken = await getBryAccessToken(config.auth, tokenOptions)
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeoutMs)
@@ -367,7 +375,7 @@ async function bryRequest(config, { method, path, body, expect = 'json', maxByte
       method,
       // Token somente em header. Jamais em query string.
       headers:{
-        Authorization:`Bearer ${config.token}`,
+        Authorization:`Bearer ${accessToken}`,
         Accept:expect === 'pdf' ? 'application/pdf' : 'application/json',
         ...(body ? { 'Content-Type':'application/json' } : {}),
       },

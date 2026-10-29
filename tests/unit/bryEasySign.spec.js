@@ -21,6 +21,7 @@ import {
   startEnvelope,
   webhookSecretMatches,
 } from '../../api/_lib/bryEasySign.js'
+import { resetBryTokenCache } from '../../api/_lib/bryToken.js'
 
 const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzdXJnaW1ldHJpY3MifQ.assinatura-secreta-da-bry'
 const CREDENTIAL_ID = '70000000-0000-4000-8000-000000000001'
@@ -557,4 +558,66 @@ test('reconciliacao repetida do mesmo estado e idempotente', () => {
   const first = mapEnvelopeToInternalTransition({ attempt:pending, envelopeState:state })
   const second = mapEnvelopeToInternalTransition({ attempt:pending, envelopeState:state })
   expect(first).toEqual(second)
+})
+
+// ---------------------------------------------------------------------------
+// Autenticacao por client_credentials
+// ---------------------------------------------------------------------------
+
+test('a chamada troca credenciais por JWT e usa o token obtido no header', async () => {
+  resetBryTokenCache()
+  const credentialsEnv = {
+    ...env(),
+    BRY_EASY_SIGN_TOKEN:'',
+    BRY_EASY_SIGN_CLIENT_ID:'fca2d1d1-0000-4000-8000-000000000001',
+    BRY_EASY_SIGN_CLIENT_SECRET:'segredo-da-aplicacao',
+  }
+  const withCredentials = bryEasySignConfig(credentialsEnv)
+  expect(withCredentials.ready).toBe(true)
+
+  const obtained = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvYnRpZG8ifQ.assinatura'
+  let tokenCalls = 0
+  let envelopeAuth = null
+  await createEnvelope(withCredentials, payload(), {
+    tokenOptions:{
+      fetchImpl:async () => {
+        tokenCalls += 1
+        return {
+          ok:true, status:200, headers:new Map(),
+          text:async () => JSON.stringify({ access_token:obtained, expires_in:300 }),
+        }
+      },
+    },
+    fetchImpl:async (url, init) => {
+      envelopeAuth = init.headers.Authorization
+      return jsonResponse(creationResponse, { status:201 })
+    },
+  })
+  expect(tokenCalls).toBe(1)
+  expect(envelopeAuth).toBe(`Bearer ${obtained}`)
+  // O segredo da aplicacao nunca chega ao envelope.
+  expect(JSON.stringify(payload())).not.toContain('segredo-da-aplicacao')
+})
+
+test('sem credenciais nem token a integracao fica indisponivel', () => {
+  const orphan = bryEasySignConfig({
+    ...env(),
+    BRY_EASY_SIGN_TOKEN:'',
+    BRY_EASY_SIGN_CLIENT_ID:'',
+    BRY_EASY_SIGN_CLIENT_SECRET:'',
+  })
+  expect(orphan.ready).toBe(false)
+  expect(orphan.problems.join(' ')).toContain('BRY_EASY_SIGN_CLIENT_ID')
+})
+
+test('o estado publico continua sem expor credencial depois da mudanca de auth', () => {
+  const state = publicBryEasySignState(bryEasySignConfig({
+    ...env(),
+    BRY_EASY_SIGN_TOKEN:'',
+    BRY_EASY_SIGN_CLIENT_ID:'fca2d1d1-0000-4000-8000-000000000001',
+    BRY_EASY_SIGN_CLIENT_SECRET:'segredo-da-aplicacao',
+  }))
+  const serialized = JSON.stringify(state)
+  expect(serialized).not.toContain('segredo-da-aplicacao')
+  expect(serialized).not.toContain('fca2d1d1')
 })
