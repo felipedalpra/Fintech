@@ -22,11 +22,16 @@ function errorMessage(error) {
 
 // A tabela não existe neste banco. É uma ausência estrutural legítima (deploy híbrido: o
 // armazenamento legado pode simplesmente não ter sido criado), e NÃO uma falha de leitura.
+//
+// O casamento por mensagem é restrito a RELAÇÃO de propósito: "does not exist" solto também
+// aparece em erro de coluna (42703) e de função (42883), e tratá-los como tabela ausente
+// mascararia schema divergente como "não tem armazenamento" — e, no audit, como "ignorável".
+const MISSING_RELATION_MESSAGE = /relation\s+"[^"]*"\s+does not exist|could not find the table/
+
 export function isMissingRelationError(error) {
   if (!error) return false
   if (MISSING_RELATION_CODES.has(errorCode(error))) return true
-  const message = errorMessage(error)
-  return message.includes('does not exist') || message.includes('could not find the table')
+  return MISSING_RELATION_MESSAGE.test(errorMessage(error))
 }
 
 // O audit é secundário: se a tabela não existe ou está fora do schema cache, seguir sem registro

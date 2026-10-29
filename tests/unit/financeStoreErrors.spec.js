@@ -27,6 +27,17 @@ test('falha de rede NÃO é ausência de relação', () => {
   expect(isMissingRelationError(null)).toBe(false)
 })
 
+// "does not exist" também aparece em erro de COLUNA e de FUNÇÃO. Tratar esses como ausência de
+// tabela mascararia schema divergente como "não tem armazenamento" e, no audit, como "ignorável".
+test('coluna inexistente NÃO é ausência de relação', () => {
+  expect(isMissingRelationError({ code:'42703', message:'column "origin_label" does not exist' })).toBe(false)
+  expect(isIgnorableAuditLogError({ code:'42703', message:'column "actor_id" does not exist' })).toBe(false)
+})
+
+test('função inexistente NÃO é ausência de relação', () => {
+  expect(isMissingRelationError({ code:'42883', message:'function public.data_owner_id() does not exist' })).toBe(false)
+})
+
 // ---------------------------------------------------------------------------
 // isIgnorableAuditLogError: o audit é secundário e pode faltar no banco, mas
 // uma violação de RLS é um defeito de configuração e precisa ficar VISÍVEL.
