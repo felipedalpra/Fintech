@@ -226,6 +226,7 @@ export function buildEnvelopePayload({
   signatureProfile,
   hashAlgorithm = 'SHA256',
   expirationSeconds = 604_800,
+  startAsDraft = true,
 }) {
   if (!BRY_SIGNATURE_MODES.includes(signatureMode)) {
     throw configError('Modo de assinatura BRy invalido.')
@@ -247,12 +248,18 @@ export function buildEnvelopePayload({
     clientName,
     expiration:expirationSeconds,
     language:'pt-br',
-    startAsDraft:false,
+    // Criado como rascunho e iniciado em uma segunda chamada (orientacao da BRy
+    // em 29/10/2026). Assim, se a criacao der timeout e um envelope duplicado
+    // existir, ele NAO chega ao profissional: rascunho nao notifica ninguem.
+    startAsDraft,
     // A BRy guarda o artefato de forma temporaria; a guarda definitiva e nossa.
     keepDocument:false,
     documents:[{
       filename:fileName,
-      base64document:pdfBase64,
+      // base64Document com "D" maiusculo: confirmado pela BRy em 29/10/2026.
+      // O schema publico grafa `base64document`, mas a API aceita a forma do
+      // Quickstart; a BRy vai corrigir a documentacao.
+      base64Document:pdfBase64,
       // O OID do tipo de documento medico e a CHAVE, com valor vazio.
       metadata:{ [documentTypeOid(documentType)]:'' },
     }],
@@ -426,21 +433,26 @@ export function normalizeEnvelopeCreation(payload) {
   if (!envelopeId || !documentId || !signerId) {
     throw new BryEasySignError('A BRy nao devolveu os identificadores do envelope.', { kind:'invalid_response', ambiguous:true })
   }
-  if (!signingUrl) {
-    throw new BryEasySignError('A BRy nao devolveu o link de assinatura do profissional.', { kind:'invalid_response', ambiguous:true })
+
+  // O link e OPCIONAL na criacao: o envelope nasce como rascunho e so pode ser
+  // assinado depois do /start, entao a BRy pode nao devolve-lo aqui. Quem chama
+  // recupera o link consultando o envelope depois de inicia-lo. Fora da
+  // allowlist, o link e descartado em vez de propagado.
+  let safeSigningUrl = null
+  if (signingUrl) {
+    try {
+      const parsed = new URL(signingUrl)
+      assertAllowedUrl(parsed)
+      safeSigningUrl = parsed.toString()
+    } catch { safeSigningUrl = null }
   }
-  let parsed
-  try { parsed = new URL(signingUrl) } catch {
-    throw new BryEasySignError('A BRy devolveu um link de assinatura invalido.', { kind:'invalid_response', ambiguous:true })
-  }
-  assertAllowedUrl(parsed)
 
   return {
     envelopeId,
     documentId,
     signerId,
     envelopeStatus:normalizeEnvelopeStatus(payload?.status),
-    signingUrl:parsed.toString(),
+    signingUrl:safeSigningUrl,
   }
 }
 
@@ -526,6 +538,18 @@ export async function downloadEvidenceReport(config, envelopeId, documentId, opt
   }, options)
 }
 
+// Inicia um envelope criado como rascunho. Devolve 204 sem corpo.
+// A documentacao nao define o comportamento ao reiniciar um envelope que ja
+// saiu de DRAFT, entao quem chama confere o estado antes de tratar como falha.
+export async function startEnvelope(config, envelopeId, options = {}) {
+  return bryRequest(config, {
+    method:'POST',
+    path:`/api/service/sign/v1/signatures/${encodeURIComponent(envelopeId)}/start`,
+    expect:'none',
+    maxBytes:MAX_JSON_BYTES,
+  }, options)
+}
+
 export async function cancelEnvelope(config, envelopeId, options = {}) {
   return bryRequest(config, {
     method:'DELETE',
@@ -594,19 +618,11 @@ export function webhookSecretMatches(config, provided) {
 // Reconciliacao: estado da BRy -> transicao interna
 // ---------------------------------------------------------------------------
 
-// Motivo auditavel de uma tentativa concluida na BRy nao poder virar `signed`.
-//
-// A documentacao publica da BRy (conferida em 28/10/2026) nao expoe, em campo
-// legivel por maquina, o titular/serial/emissor do certificado, a validade do
-// certificado nem o padrao PAdES efetivamente aplicado. O endpoint de
-// signatarios devolve apenas `signatureConfig.mode/profile` -- que e a
-// configuracao SOLICITADA, nao evidencia do resultado -- e `evidenceDate`. As
-// evidencias completas existem somente como PDF de relatorio.
-//
-// Como o padrao de assinatura nao pode ser deduzido do modo solicitado, e como
-// `signed` exige evidencia completa e verificavel, a tentativa permanece
-// pendente com este codigo ate a BRy confirmar a fonte da evidencia.
-export const BRY_EVIDENCE_GAP_MACHINE_READABLE = 'bry_evidence_not_machine_readable'
+// A evidencia verificavel do certificado NAO vem da Easy Sign. Em 29/10/2026 a
+// BRy orientou baixar o PDF assinado e submete-lo ao servico de verificacao
+// (api/_lib/bryVerify.js), que responde em JSON. Por isso esta transicao apenas
+// manda COLETAR o artefato: quem decide se a tentativa pode virar `signed` e a
+// verificacao, em api/_lib/clinicalSignatureBry.js.
 
 // Pura e testavel. Tolera callback duplicado, atrasado e fora de ordem porque
 // nao olha o payload do webhook: decide apenas pelo estado lido da BRy com JWT.
@@ -652,10 +668,14 @@ export function mapEnvelopeToInternalTransition({ attempt = {}, envelopeState = 
       action:'collect_artifact',
       envelopeStatus,
       signedAt:envelopeState.signedAt || null,
-      evidenceGapCode:BRY_EVIDENCE_GAP_MACHINE_READABLE,
     }
   }
-  if (envelopeStatus === 'DRAFT' || envelopeStatus === 'CREATED' || envelopeStatus === 'ONGOING') {
+  if (envelopeStatus === 'DRAFT') {
+    // Envelope criado mas nunca iniciado: a chamada de inicio falhou ou ficou
+    // ambigua. Ninguem foi notificado, entao reiniciar e seguro.
+    return { action:'start_envelope', envelopeStatus }
+  }
+  if (envelopeStatus === 'CREATED' || envelopeStatus === 'ONGOING') {
     return { action:'none', reason:'aguardando_assinatura', envelopeStatus }
   }
   return { action:'none', reason:'estado_desconhecido', envelopeStatus }

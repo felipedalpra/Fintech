@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test'
 import {
   BRY_CFM_OIDS,
   BRY_DOCUMENT_TYPE_OIDS,
-  BRY_EVIDENCE_GAP_MACHINE_READABLE,
   BryEasySignError,
   bryEasySignConfig,
   buildCfmSignerMetadata,
@@ -19,6 +18,7 @@ import {
   parseProfessionalRegistration,
   publicBryEasySignState,
   sanitizeProviderDetail,
+  startEnvelope,
   webhookSecretMatches,
 } from '../../api/_lib/bryEasySign.js'
 
@@ -172,11 +172,27 @@ test('o envelope leva o OID do documento como chave e os OIDs CFM no signatario'
   const body = payload()
   expect(body.documents[0].metadata).toEqual({ '2.16.76.1.12.1.3':'' })
   expect(body.signersData[0].metadata[BRY_CFM_OIDS.registration]).toBe('12345')
-  expect(body.documents[0].base64document).toBe('JVBERi0=')
+  // base64Document com "D" maiusculo: caixa confirmada pela BRy em 29/10/2026.
+  expect(body.documents[0].base64Document).toBe('JVBERi0=')
+  expect(Object.hasOwn(body.documents[0], 'base64document')).toBe(false)
   // Nunca pedimos para a BRy notificar o paciente ou terceiros.
   expect(body.signersData[0].typeMessaging).toBe('LINK')
   // A guarda definitiva do artefato e nossa, nao da BRy.
   expect(body.keepDocument).toBe(false)
+})
+
+test('o envelope nasce como rascunho, para que um duplicado nunca chegue ao medico', () => {
+  // Orientacao da BRy em 29/10/2026 para o cenario de timeout na criacao.
+  expect(payload().startAsDraft).toBe(true)
+  expect(payload({ startAsDraft:false }).startAsDraft).toBe(false)
+})
+
+test('o modo e o perfil confirmados pela BRy para documento medico passam intactos', () => {
+  // QUALIFIED + SHA256 + TIMESTAMP, confirmado em 29/10/2026.
+  const body = payload({ signatureMode:'QUALIFIED', signatureProfile:'TIMESTAMP', hashAlgorithm:'SHA256' })
+  expect(body.signersData[0].signatureConfig).toEqual({
+    mode:'QUALIFIED', hashAlgorithm:'SHA256', profile:'TIMESTAMP',
+  })
 })
 
 test('o modo qualificado nunca sofre downgrade silencioso', () => {
@@ -222,26 +238,33 @@ test('identificadores do envelope vem de uuid/documentNonce/signerNonce', () => 
   expect(normalized.envelopeStatus).toBe('CREATED')
 })
 
-test('resposta sem identificadores ou com link fora da allowlist e tratada como ambigua', () => {
-  expect(() => normalizeEnvelopeCreation({ ...creationResponse, uuid:'' })).toThrow(/identificadores/)
-  expect(() => normalizeEnvelopeCreation({ ...creationResponse, signers:[{ signerNonce:'s' }] })).toThrow(/link de assinatura/)
-  try {
-    normalizeEnvelopeCreation({
-      ...creationResponse,
-      signers:[{ signerNonce:'s', link:{ href:'https://phishing.test/sign' } }],
-    })
-    throw new Error('deveria recusar')
-  } catch (error) {
+test('resposta sem identificadores do envelope e tratada como ambigua', () => {
+  for (const broken of [
+    { ...creationResponse, uuid:'' },
+    { ...creationResponse, documents:[] },
+    { ...creationResponse, signers:[{}] },
+  ]) {
+    const error = (() => { try { normalizeEnvelopeCreation(broken) } catch (nextError) { return nextError } })()
     expect(error).toBeInstanceOf(BryEasySignError)
-    expect(error.kind).toBe('config')
-  }
-
-  try {
-    normalizeEnvelopeCreation({ ...creationResponse, uuid:'' })
-  } catch (error) {
+    expect(error.kind).toBe('invalid_response')
     // Ambiguo: a BRy pode ter criado o envelope mesmo devolvendo resposta ruim.
     expect(error.ambiguous).toBe(true)
   }
+})
+
+test('o link e opcional na criacao, porque o envelope nasce em rascunho', () => {
+  // Sem link ainda nao e erro: o envelope e iniciado depois e o link e
+  // recuperado na consulta. O que importa e ter os identificadores.
+  const withoutLink = normalizeEnvelopeCreation({ ...creationResponse, signers:[{ signerNonce:'signer-1' }] })
+  expect(withoutLink.signerId).toBe('signer-1')
+  expect(withoutLink.signingUrl).toBeNull()
+
+  // Link fora da allowlist e descartado, nunca propagado.
+  const phishing = normalizeEnvelopeCreation({
+    ...creationResponse,
+    signers:[{ signerNonce:'signer-1', link:{ href:'https://phishing.test/sign' } }],
+  })
+  expect(phishing.signingUrl).toBeNull()
 })
 
 test('o estado do envelope descarta link fora da allowlist e converte evidenceDate', () => {
@@ -470,9 +493,28 @@ test('nenhum estado do callback e aproveitado: ele nao pode marcar assinatura', 
 const pending = { status:'pending' }
 
 test('envelope em andamento nao muda nada', () => {
-  for (const envelopeStatus of ['DRAFT', 'CREATED', 'ONGOING']) {
+  for (const envelopeStatus of ['CREATED', 'ONGOING']) {
     expect(mapEnvelopeToInternalTransition({ attempt:pending, envelopeState:{ envelopeStatus } }).action).toBe('none')
   }
+})
+
+test('envelope preso em rascunho e reiniciado, porque ninguem foi notificado', () => {
+  const transition = mapEnvelopeToInternalTransition({ attempt:pending, envelopeState:{ envelopeStatus:'DRAFT' } })
+  expect(transition.action).toBe('start_envelope')
+  // Mesmo em rascunho, uma tentativa terminal nao e reaberta.
+  expect(mapEnvelopeToInternalTransition({ attempt:{ status:'failed' }, envelopeState:{ envelopeStatus:'DRAFT' } }).action).toBe('none')
+})
+
+test('iniciar envelope usa POST no caminho /start e nao espera corpo', async () => {
+  let captured = null
+  await startEnvelope(config(), '80000000-0000-4000-8000-000000000001', {
+    fetchImpl:async (url, init) => {
+      captured = { url, method:init.method }
+      return { ok:true, status:204, headers:new Map(), arrayBuffer:async () => Buffer.alloc(0), body:null }
+    },
+  })
+  expect(captured.method).toBe('POST')
+  expect(captured.url).toBe('https://easysign.hom.bry.com.br/api/service/sign/v1/signatures/80000000-0000-4000-8000-000000000001/start')
 })
 
 test('envelope concluido coleta o artefato mas nao declara assinatura', () => {
@@ -481,9 +523,10 @@ test('envelope concluido coleta o artefato mas nao declara assinatura', () => {
     envelopeState:{ envelopeStatus:'FINISHED', signerStatus:'SIGNED', signedAt:'2026-10-28T12:00:00.000Z' },
   })
   expect(transition.action).toBe('collect_artifact')
-  expect(transition.evidenceGapCode).toBe(BRY_EVIDENCE_GAP_MACHINE_READABLE)
-  // Em nenhuma hipotese a transicao devolve status `signed`.
+  // A transicao apenas manda COLETAR: quem decide se vira `signed` e a
+  // verificacao do artefato, nunca esta tabela de estados.
   expect(transition.status).toBeUndefined()
+  expect(transition.signedAt).toBe('2026-10-28T12:00:00.000Z')
 })
 
 test('expiracao, cancelamento e recusa terminalizam com causa auditavel', () => {
