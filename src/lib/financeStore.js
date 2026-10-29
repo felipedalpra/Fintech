@@ -488,9 +488,14 @@ async function syncTable(table, userId, rows, baselineRows) {
 // aconteceu quando chegamos aqui). Mas também não pode ficar invisível — o audit trail estava
 // morto por um erro de RLS engolido, e por isso não havia trilha para datar um incidente real.
 async function insertAuditLog(userId, action, details = {}) {
+  // actor_id = quem PRATICOU a ação; user_id = o dono dos dados (a clínica). Para um membro da
+  // clínica os dois são diferentes, e gravar o dono como ator perdia justamente a informação de
+  // quem fez — além de ser rejeitado pela policy de INSERT, que exige actor_id = auth.uid().
+  const { data: session } = await supabase.auth.getSession()
+  const actorId = session?.session?.user?.id || userId
   const { error } = await supabase.from('audit_logs').insert({
     user_id:userId,
-    actor_id:userId,
+    actor_id:actorId,
     action,
     entity_type:'finance_dataset',
     details,
