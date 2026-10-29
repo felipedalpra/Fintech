@@ -33,6 +33,15 @@ Espelha o padrão de conciliação assistida de ERPs: prévia normalizada, confi
 
 ## 6. Modelo de dados e propagação
 
+> **Nota (29/10/2026):** a persistência do lote descrita abaixo em `bank_statement_imports` /
+> `bank_statement_lines` **não foi entregue** para o fluxo retroativo. O commit `ebe8d04` separou o
+> importador retroativo da conciliação e removeu a etapa, provavelmente porque
+> `bank_statement_imports.financial_account_id` é NOT NULL e o fluxo retroativo não tem conta
+> bancária. Consequência: a revisão passou a viver só na memória da aba, e o trabalho de
+> classificação de 188 linhas da clínica foi perdido. A lacuna foi fechada em
+> `2026-10-29-financial-import-review-persistence.md`, com tabelas dedicadas
+> (`financial_import_batches` / `financial_import_lines`) em vez das da conciliação.
+
 - `bank_statement_imports.source_format`: passa a admitir `xlsx`.
 - `bank_statement_lines.source_metadata`: preserva aba, linha, categoria, centro de custo, referência e observação da planilha.
 - `bank_statement_lines.review_status/review_*`: guarda decisão reversível (`pending`/`processing`/`ignored`) e auditoria. `processing` é uma reserva transacional antes da criação da origem financeira, vinculada a um token exclusivo; somente a tentativa portadora desse token pode liberar uma linha ainda sem origem financeira. O arquivamento bloqueia atomicamente enquanto houver reserva.

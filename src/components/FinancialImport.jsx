@@ -1,11 +1,15 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { fmt, formatDateBR } from '../utils.js'
 import { Btn, Card, Modal } from './UI.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
+import { useUserRole } from '../context/UserRoleContext.jsx'
 import { parseStatementFile, statementTotals, updateStatementLine } from '../lib/statementParser.js'
 import { mergeApprovedStatementRecords } from '../lib/statementImportReview.js'
 import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinancialImportLines } from '../lib/financialImport.js'
+import { batchProgress, isBatchComplete, restoreReviewState } from '../lib/financialImportBatch.js'
+import { closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, markLinesApproved, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -26,7 +30,16 @@ function reviewLabel(item, rejected, approved) {
 
 export function FinancialImport({ data, saveDataNow }) {
   const { toast } = useToast()
+  const { user } = useAuth()
+  const { ownerId } = useUserRole()
   const fileRef = useRef(null)
+  // Lote persistido da revisão. null = revisão só em memória (migration ausente ou mapeamento
+  // de colunas ainda pendente). Ver spec 2026-10-29-financial-import-review-persistence.md.
+  const [batch, setBatch] = useState(null)
+  const [reviewPersisted, setReviewPersisted] = useState(true)
+  const [resumable, setResumable] = useState(null)
+  const [resumableProgress, setResumableProgress] = useState(null)
+  const [incompleteBatch, setIncompleteBatch] = useState(null)
   const [sourceFile, setSourceFile] = useState(null)
   const [parsed, setParsed] = useState(null)
   const [lines, setLines] = useState([])
@@ -73,9 +86,25 @@ export function FinancialImport({ data, saveDataNow }) {
     return acc
   }, {}), [reviewItems, rejectedIds, approvedIds])
 
-  function resetReview(result, file) {
+  // Oferece retomar uma revisão deixada pela metade, sem precisar do arquivo em mãos.
+  useEffect(() => {
+    if (!ownerId) return undefined
+    let active = true
+    findResumableBatch(ownerId).then(result => {
+      if (!active) return
+      if (result.schemaMissing) { setReviewPersisted(false); return }
+      if (!result.batch) return
+      setResumable(result.batch)
+      loadBatchStatuses(result.batch.id).then(statuses => {
+        if (active && statuses.rows) setResumableProgress(batchProgress(statuses.rows))
+      }).catch(() => {})
+    }).catch(() => {})
+    return () => { active = false }
+  }, [ownerId])
+
+  function resetReview(result, file, preparedLines) {
     setParsed(result)
-    setLines(prepareFinancialImportLines(result))
+    setLines(preparedLines || prepareFinancialImportLines(result))
     setMapping(result.mapping || {})
     setSourceFile(file)
     setSelectedIds([])
@@ -86,13 +115,112 @@ export function FinancialImport({ data, saveDataNow }) {
     setEditDraft(null)
   }
 
+  // Grava o lote ANTES de liberar a revisão. Se a gravação falhar, a usuária é bloqueada na
+  // entrada com o motivo — é melhor que perder horas de classificação no fim, que foi o que
+  // aconteceu quando a revisão vivia só na memória da aba.
+  async function startReview(result, file) {
+    const preparedLines = prepareFinancialImportLines(result)
+    const parsedWithIds = { ...result, lines:preparedLines }
+    if (!ownerId || !user?.id) throw new Error('Clínica não identificada. Recarregue a página antes de importar.')
+
+    const existing = await findActiveBatch(ownerId, result.fileHash, result.sheetName)
+    if (existing.schemaMissing) {
+      setBatch(null)
+      setReviewPersisted(false)
+      resetReview(result, file, preparedLines)
+      return
+    }
+    if (existing.error) throw new Error('Não foi possível verificar importações anteriores desta planilha. Tente novamente.')
+
+    // Mesmo arquivo+aba já tem lote: retoma as decisões gravadas em vez de começar de novo.
+    if (existing.batch) {
+      // Um lote concluído volta a 'reviewing' para que rejeições possam ser revistas.
+      if (existing.batch.status === 'ready') await reopenBatch(existing.batch.id)
+      await applyPersistedBatch(existing.batch, result, file)
+      return
+    }
+
+    const created = await createBatch({ ownerId, actorId:user.id, parsed:parsedWithIds })
+    if (created.schemaMissing) {
+      setBatch(null)
+      setReviewPersisted(false)
+      resetReview(result, file, preparedLines)
+      return
+    }
+    if (created.error) throw new Error(created.error.message || 'Não foi possível salvar a planilha para revisão. Nada foi importado.')
+    resetReview(result, file, preparedLines)
+    setBatch(created.batch)
+    setReviewPersisted(true)
+    setResumable(null)
+  }
+
   async function parseFile(file, options = {}) {
     if (!file) return
     if (file.size > MAX_FILE_BYTES) throw new Error('O arquivo excede o limite de 10 MB.')
     const result = await parseStatementFile(file, options)
     if (result.format !== 'xlsx') throw new Error('Use uma planilha Excel .xlsx ou .xls neste importador.')
     if (result.lines.length > MAX_LINES) throw new Error('A planilha excede o limite de 50.000 linhas.')
-    resetReview(result, file)
+    // Mapeamento de colunas pendente: ainda não há linha nenhuma para gravar.
+    if (result.requiresMapping) { setBatch(null); resetReview(result, file); return }
+    await startReview(result, file)
+  }
+
+  // Carrega um lote persistido para a tela. Recusa lote INCOMPLETO: se a gravação das linhas foi
+  // interrompida, abrir a revisão como se estivesse inteira esconderia linhas que nunca entrariam
+  // no financeiro — a mesma perda silenciosa que esta feature veio impedir.
+  async function applyPersistedBatch(batchRow, parsedShape, file) {
+    const loaded = await loadBatchLines(batchRow.id)
+    if (loaded.error || loaded.schemaMissing) throw new Error('Não foi possível carregar a revisão em andamento desta planilha.')
+    // 'creating' = a gravação das linhas nunca terminou.
+    if (batchRow.status === 'creating' || !isBatchComplete(loaded.rows, batchRow.line_count)) {
+      setIncompleteBatch({ ...batchRow, loadedCount:loaded.rows.length })
+      throw new Error(`A revisão salva desta planilha está incompleta (${loaded.rows.length} de ${batchRow.line_count} linha(s) gravadas): a gravação foi interrompida. Descarte-a abaixo para subir a planilha de novo.`)
+    }
+    const state = restoreReviewState(loaded.rows)
+    resetReview(parsedShape, file, state.lines)
+    setBatch(batchRow)
+    setApprovedIds(state.approvedIds)
+    setRejectedIds(state.rejectedIds)
+    setReviewPersisted(true)
+    setResumable(null)
+    setResumableProgress(null)
+    toast(`Revisão retomada: ${state.approvedIds.length} já importada(s), ${state.rejectedIds.length} rejeitada(s).`)
+  }
+
+  // Descarta um lote inutilizável (gravação interrompida). Sem isso o usuário ficaria preso: o lote
+  // ocupa o índice único do arquivo, então todo upload novo bateria no mesmo erro.
+  async function discardIncomplete() {
+    if (!incompleteBatch) return
+    setBusy(true)
+    const result = await discardBatch(incompleteBatch.id)
+    setBusy(false)
+    if (result?.error) { setError('Não foi possível descartar a revisão incompleta. Tente novamente.'); return }
+    setIncompleteBatch(null)
+    setResumable(null)
+    setResumableProgress(null)
+    setError('')
+    toast('Revisão incompleta descartada. Suba a planilha novamente.')
+  }
+
+  // Retomada sem o arquivo: as linhas e as decisões já estão no banco.
+  async function resumeBatch(batchRow) {
+    setBusy(true)
+    setError('')
+    try {
+      await applyPersistedBatch(batchRow, { fileName:batchRow.file_name, sheetName:batchRow.sheet_name, sheetNames:[], headers:[], errors:[], requiresMapping:false, mapping:{} }, null)
+    } catch (caught) {
+      setError(caught.message || 'Não foi possível retomar a revisão.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Uma decisão que não grava não pode passar como gravada: avisa e mantém o estado na tela.
+  async function persistDecision(lineIds, decision) {
+    if (!batch || !user?.id || !lineIds.length) return
+    const result = await saveLinesDecision({ batchId:batch.id, lineIds, decision, actorId:user.id })
+    if (result?.schemaMissing) { setReviewPersisted(false); return }
+    if (result?.error) setError('A decisão foi aplicada na tela, mas NÃO foi salva. Recarregue a página para ver o que está salvo de verdade.')
   }
 
   async function onFileChange(event) {
@@ -137,21 +265,27 @@ export function FinancialImport({ data, saveDataNow }) {
     })
   }
 
-  function saveEdit() {
+  async function saveEdit() {
+    const target = lines.find(line => line.id === editingId)
+    if (!target) return
+    let updatedLine
     try {
-      setLines(current => current.map(line => {
-        if (line.id !== editingId) return line
-        const updated = updateStatementLine(line, editDraft)
-        return { ...updated, id:line.id, sourceMetadata:{ ...updated.sourceMetadata, chartAccountId:editDraft.chartAccountId || '' } }
-      }))
-      setRejectedIds(current => current.filter(id => id !== editingId))
-      setApprovedIds(current => current.filter(id => id !== editingId))
-      setEditingId('')
-      setEditDraft(null)
-      setError('')
+      const updated = updateStatementLine(target, editDraft)
+      updatedLine = { ...updated, id:target.id, sourceMetadata:{ ...updated.sourceMetadata, chartAccountId:editDraft.chartAccountId || '' } }
     } catch (caught) {
       setError(caught.message || 'Não foi possível validar a edição.')
+      return
     }
+    setLines(current => current.map(line => (line.id === editingId ? updatedLine : line)))
+    setRejectedIds(current => current.filter(id => id !== editingId))
+    setApprovedIds(current => current.filter(id => id !== editingId))
+    setEditingId('')
+    setEditDraft(null)
+    setError('')
+    if (!batch || !user?.id) return
+    const result = await saveLineEdit({ batchId:batch.id, lineId:updatedLine.id, line:updatedLine, actorId:user.id })
+    if (result?.schemaMissing) setReviewPersisted(false)
+    else if (result?.error) setError('A edição foi aplicada na tela, mas NÃO foi salva. Recarregue a página para ver o que está salvo de verdade.')
   }
 
   function toggleSelection(id, checked) {
@@ -159,13 +293,17 @@ export function FinancialImport({ data, saveDataNow }) {
   }
 
   function reject(items) {
-    const ids = items.map(item => item.line.id).filter(id => !approvedIds.includes(id))
+    // Linha 'existing' já está no financeiro: rejeitá-la não significa nada e só distorceria o
+    // progresso do lote.
+    const ids = items.filter(item => item.reviewStatus !== 'existing').map(item => item.line.id).filter(id => !approvedIds.includes(id))
     setRejectedIds(current => [...new Set([...current, ...ids])])
     setSelectedIds(current => current.filter(id => !ids.includes(id)))
+    persistDecision(ids, 'reject')
   }
 
   function reopen(id) {
     setRejectedIds(current => current.filter(item => item !== id))
+    persistDecision([id], 'reopen')
   }
 
   function requestApproval(items) {
@@ -189,16 +327,30 @@ export function FinancialImport({ data, saveDataNow }) {
     setError('')
     setImportProgress({ status:'running', completed, total:overallTotal })
     try {
+      // `chunk`, não `batch`: `batch` é o lote persistido da revisão.
       for (let offset = 0; offset < creations.length; offset += IMPORT_BATCH_SIZE) {
-        const batch = creations.slice(offset, offset + IMPORT_BATCH_SIZE)
-        const operations = batch.map(item => ({ collection:item.proposal.collection, record:item.proposal.record }))
-        await saveDataNow(current => mergeApprovedStatementRecords(current, batch), { operations })
-        const ids = batch.map(item => item.line.id)
+        const chunk = creations.slice(offset, offset + IMPORT_BATCH_SIZE)
+        const operations = chunk.map(item => ({ collection:item.proposal.collection, record:item.proposal.record }))
+        await saveDataNow(current => mergeApprovedStatementRecords(current, chunk), { operations })
+        const ids = chunk.map(item => item.line.id)
+        // Marca no lote só DEPOIS do bloco confirmado no financeiro. É isso que faz uma
+        // confirmação interrompida no bloco 2 de 4 retomar exatamente nos blocos restantes.
+        if (batch && user?.id) {
+          const marked = await markLinesApproved({ batchId:batch.id, lineIds:ids, actorId:user.id })
+          if (marked?.schemaMissing) setReviewPersisted(false)
+          // O bloco JÁ está no financeiro; só o progresso do lote não gravou. Não é perda de dado
+          // (ao retomar, estas linhas aparecem como "já existe"), mas não pode passar calado.
+          else if (marked?.error) setError('Os lançamentos deste bloco foram importados, mas o progresso da revisão não foi salvo. Ao retomar, eles aparecerão como "já existe".')
+        }
         completed += ids.length
         setApprovedIds(current => [...new Set([...current, ...ids])])
         setSelectedIds(current => current.filter(id => !ids.includes(id)))
         setImportProgress({ status:'running', completed, total:overallTotal })
       }
+      // Lote sem nenhuma linha aguardando decisão vira histórico e para de ser oferecido.
+      const decided = new Set([...approvedIds, ...rejectedIds, ...creations.map(item => item.line.id)])
+      const stillOpen = reviewItems.some(item => item.reviewStatus !== 'existing' && !decided.has(item.line.id))
+      if (batch && !stillOpen) await closeBatch(batch.id)
       setImportProgress({ status:'complete', completed:overallTotal, total:overallTotal })
       toast(`${overallTotal} lançamento(s) importados e confirmados no financeiro.`)
     } catch (caught) {
@@ -223,6 +375,32 @@ export function FinancialImport({ data, saveDataNow }) {
     <div style={s.stack} data-testid="financial-import-page">
       <style>{`@keyframes financialImportSpin { to { transform: rotate(360deg); } }`}</style>
       {error && <div role="alert" style={{ padding:'12px 14px', borderRadius:10, color:C.red, background:`${C.red}12`, border:`1px solid ${C.red}55`, fontSize:13 }}>{error}</div>}
+
+      {!reviewPersisted && <div role="alert" data-testid="financial-import-unsaved-warning" style={{ padding:'12px 14px', borderRadius:10, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}55`, fontSize:13, lineHeight:1.5 }}>
+        <strong>A revisão desta planilha não está sendo salva.</strong> A migração <code>financial_import_batches_schema.sql</code> ainda não foi aplicada neste banco, então as suas decisões existem apenas nesta aba — fechar ou recarregar a página perde o trabalho. Os lançamentos já aprovados estão salvos normalmente no financeiro.
+      </div>}
+
+      {incompleteBatch && <Card data-testid="financial-import-incomplete">
+        <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <div style={{ color:C.red, fontSize:15, fontWeight:900 }}>Revisão salva incompleta</div>
+            <div style={{ ...s.muted, marginTop:5 }}><strong>{incompleteBatch.file_name}</strong> · {incompleteBatch.loadedCount} de {incompleteBatch.line_count} linha(s) gravadas</div>
+            <div style={{ ...s.muted, marginTop:4 }}>Nenhum lançamento foi criado. Descarte para subir a planilha novamente.</div>
+          </div>
+          <Btn variant="ghost" onClick={discardIncomplete} disabled={busy}>Descartar e começar de novo</Btn>
+        </div>
+      </Card>}
+
+      {resumable && !parsed && !incompleteBatch && <Card data-testid="financial-import-resume">
+        <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <div style={{ color:C.text, fontSize:15, fontWeight:900 }}>Você tem uma revisão em andamento</div>
+            <div style={{ ...s.muted, marginTop:5 }}><strong>{resumable.file_name}</strong> · {resumable.line_count} linha(s) · iniciada em {formatDateBR(String(resumable.created_at).slice(0, 10))}</div>
+            <div style={{ ...s.muted, marginTop:4 }}>Continue de onde parou, sem precisar subir a planilha de novo.</div>
+          </div>
+          <Btn variant="success" onClick={() => resumeBatch(resumable)} disabled={busy}>Retomar revisão</Btn>
+        </div>
+      </Card>}
 
       <Card>
         <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
@@ -259,7 +437,8 @@ export function FinancialImport({ data, saveDataNow }) {
       {parsed && !parsed.requiresMapping && <>
         <Card data-testid="financial-import-summary">
           <div style={{ ...s.row, justifyContent:'space-between' }}>
-            <div><strong style={{ color:C.text }}>{parsed.fileName}</strong><div style={{ ...s.muted, marginTop:4 }}>{lines.length} de {lines.length} linhas exibidas · entradas {fmt(totals.receipts)} · saídas {fmt(totals.expenses)} · líquido {fmt(totals.net)}</div></div>
+            <div><strong style={{ color:C.text }}>{parsed.fileName}</strong><div style={{ ...s.muted, marginTop:4 }}>{lines.length} de {lines.length} linhas exibidas · entradas {fmt(totals.receipts)} · saídas {fmt(totals.expenses)} · líquido {fmt(totals.net)}</div>
+              {batch && <div style={{ color:C.green, fontSize:12, fontWeight:700, marginTop:4 }} data-testid="financial-import-saved-review">● Revisão salva — pode fechar a aba e voltar depois</div>}</div>
             <div style={s.row}><Btn variant="ghost" onClick={() => reject(pending)}>Rejeitar todas pendentes</Btn><Btn variant="success" onClick={() => requestApproval(approvable)} disabled={!approvable.length || busy}>Aprovar todas elegíveis ({approvable.length})</Btn></div>
           </div>
           {parsed.errors.length > 0 && <div style={{ color:C.red, fontSize:12, lineHeight:1.6, marginTop:12 }}><strong>{parsed.errors.length} linha(s) inválida(s) não foram incluídas:</strong>{parsed.errors.map(item => <div key={`${item.line}-${item.reason}`}>Linha {item.line}: {item.reason}</div>)}</div>}
