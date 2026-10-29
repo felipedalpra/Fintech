@@ -4,8 +4,9 @@
 
 - Informações comerciais recebidas em **28/10/2026** para a integração da SurgiMetrics com a API BRy Easy Sign no modelo Self-Service.
 - Referência técnica conferida na documentação pública da BRy na mesma data.
-- **28/10/2026 — integração implementada atrás de feature flag, desligada por padrão** (branch `feat/bry-easy-sign-clinical`). Backend, banco, cliente HTTP, PDF determinístico, reconciliação, armazenamento privado e interface estão prontos e testados com mocks. **Nenhuma chamada real foi feita à BRy, nenhuma credencial foi recebida ou armazenada, nenhum crédito foi comprado e nenhuma migration foi aplicada.**
-- **Bloqueio conhecido:** uma tentativa nunca atinge o estado `signed` com a API pública atual. Ver [Lacuna de evidências](#lacuna-de-evidências-bloqueio-de-ativação).
+- **28/10/2026 — integração implementada atrás de feature flag, desligada por padrão** (branch `feat/bry-easy-sign-clinical`). A migration `supabase/clinical_signature_bry_schema.sql` foi aplicada em produção nessa data.
+- **29/10/2026 — respostas da BRy recebidas e incorporadas.** O bloqueio de evidências foi resolvido: a evidência do certificado vem de um **segundo serviço** da BRy, de verificação de assinatura, que responde em JSON. O estado `signed` passou a ser alcançável. Foram corrigidos a caixa de `base64Document` e o fluxo de criação, que agora nasce como rascunho. Ver [Evidência do certificado](#evidência-do-certificado-como-o-signed-é-alcançado).
+- **Nenhuma chamada real foi feita à BRy, nenhuma credencial foi recebida ou armazenada e nenhum crédito foi comprado.** A integração segue desligada por `BRY_EASY_SIGN_ENABLED=false`.
 - Condições comerciais e comportamento da API devem ser reconfirmados com a BRy antes da ativação, pois podem mudar.
 
 ## Acessos oficiais
@@ -102,69 +103,102 @@ Esses valores devem vir do perfil seguro e do snapshot imutável do documento. N
 - O download do PDF assinado é feito por `GET /api/service/sign/v1/signatures/{request_id}/documents/{document_id}/signed`.
 - O guia médico descreve o armazenamento da BRy como temporário. A SurgiMetrics deve baixar e guardar o artefato final e suas evidências assim que o envelope terminar.
 
-## Lacuna de evidências (bloqueio de ativação)
+## Evidência do certificado: como o `signed` é alcançado
 
-Verificado na documentação oficial da BRy em 28/10/2026, no endpoint de signatários
-(`GET /api/service/sign/v1/signatures/{requestId}/signers`): a resposta devolve
-`signerNonce`, `signerUuid`, `name`, `email`, `phone`, `personal_identifier`,
-`status`, `canSign`, `evidenceDate`, `signatureConfig` (`mode`, `hashAlgorithm`,
-`profile`), `link`, `iframe` e `metadata`.
+A Easy Sign **não** devolve, em campo legível por máquina, titular, série,
+emissor ou validade do certificado, nem o padrão PAdES aplicado. O endpoint de
+signatários (`GET /signatures/{requestId}/signers`) traz apenas `status`,
+`evidenceDate` e `signatureConfig{mode, hashAlgorithm, profile}` — e `profile` é
+a configuração **solicitada**, não o resultado. Os relatórios `/report` e
+`/reportunified` são PDFs.
 
-**Não existe, em campo legível por máquina:**
+Em 29/10/2026 a BRy orientou o caminho correto: **baixar o PDF assinado e
+submetê-lo a um serviço de verificação**, que responde em JSON. As duas opções
+indicadas foram o **HUB Signer** (“Verifica uma assinatura PDF/PAdES”) e a
+**API BRy Verifica**. A implementação usa o HUB Signer, cujo contrato é o mais
+completo:
 
-| Evidência exigida pela SurgiMetrics | Disponível na API pública? |
+```
+POST /api/pdf-verification-service/v1/signatures/verify   (multipart/form-data)
+  signatures[0][nonce], signatures[0][content]
+```
+
+| Evidência exigida | Campo na resposta da verificação |
 | --- | --- |
-| Titular (subject) do certificado | ❌ |
-| Número de série do certificado | ❌ |
-| Emissor / cadeia do certificado | ❌ |
-| Validade (início/fim) do certificado | ❌ |
-| Padrão PAdES efetivamente aplicado | ❌ — só `signatureConfig.profile`, que é o **pedido**, não o resultado |
-| Instante da assinatura | ⚠️ `evidenceDate` (Unix timestamp), sem certificado que o sustente |
+| Titular do certificado | `signatureStatus.chainStatus.certificateStatusList[].certificateInfo.subjectDN` (`formattedCn` / `cn` / `dn`) |
+| Número de série | `...certificateInfo.serial` |
+| Emissor | `...certificateInfo.issuerDN` (`cn` / `dn` / `o`) |
+| Validade do certificado | `...certificateInfo.validity.notBefore` / `notAfter` |
+| Instante da assinatura | `signatureStatus.signingTime` |
+| Resultado geral | `generalStatus` (aceitos: `VALID`, `VALID_WITH_ALERT`) |
+| Formato | `signatureFormat` (exigido: `PADES`) |
 
-As evidências completas existem apenas como **PDF de relatório**
-(`/documents/{documentNonce}/report` e `/reportunified`), que serve para
-arquivamento mas não para validação programática.
+### O nível PAdES ainda não vem pronto — e como ele é derivado
 
-Consequência implementada: como o padrão de assinatura **não pode ser deduzido do
-modo solicitado** e `signed` exige evidência completa e verificável, uma tentativa
-concluída na BRy fica **`pending` com `evidence_gap_code = 'bry_evidence_not_machine_readable'`**.
-O PDF assinado e o relatório de evidências são baixados, conferidos, hasheados
-(SHA-256) e guardados em bucket privado; a interface mostra
-“Assinada na BRy · evidência pendente de homologação” e **não** afirma assinatura
-qualificada. A via manual permanece disponível.
+A verificação devolve `signatureFormat: "PADES"`, mas **não** devolve o nível
+(`B-B`, `B-T`, `B-LT`, `B-LTA`). Como o nível não pode ser deduzido do modo
+solicitado, ele é derivado de evidência do próprio artefato:
 
-**Para desbloquear, é preciso que a BRy confirme uma destas opções:**
+- carimbo do tempo **reconhecido pela verificação** → `PAdES-B-T`;
+- sem carimbo reconhecido, e sem carimbo pedido → `PAdES-B-B`;
+- carimbo **pedido** e não confirmado → **nada é declarado**: a tentativa fica
+  pendente com `verify_timestamp_not_verified`, porque isso é uma divergência,
+  não um nível menor;
+- `B-LT` e `B-LTA` **nunca** são declarados: esta resposta não comprova
+  arquivamento. Subdeclarar é seguro; superdeclarar não.
 
-1. um endpoint ou campo que devolva titular, série, emissor, validade do
-   certificado e o padrão PAdES aplicado, em JSON; ou
-2. um relatório de evidências em formato estruturado (não só PDF); ou
-3. a especificação para extrair e validar essas evidências do próprio PAdES do
-   PDF baixado (ByteRange/CMS, carimbo do tempo, DSS/VRI), com o critério oficial
-   de classificação em `PAdES-B-B` / `B-T` / `B-LT` / `B-LTA`.
+### O que ainda precisa de confirmação da BRy
 
-Confirmada qualquer uma, o único ponto a mudar é a função que terminaliza a
-tentativa (`collectArtifact` em `api/_lib/clinicalSignatureBry.js`), que passa a
-preencher as colunas de evidência e marcar `signed`. Os guardrails de banco já
-recusam `signed` incompleto.
+1. **O host oficial do serviço de verificação.** A documentação pública usa
+   `example.com` como placeholder. Por isso `BRY_VERIFY_BASE_URL` é obrigatória
+   e a allowlist aceita apenas o domínio `bry.com.br`; nenhum subdomínio foi
+   inventado.
+2. **Qual entrada de `certificateStatusList` é a do signatário.** A própria
+   documentação pede para confirmar com resposta real. A implementação prefere a
+   entrada marcada como final (`certificateType`/`cpf`), ignora a do carimbo e,
+   na falta de marcação, usa a última da cadeia — sempre conferindo os campos
+   obrigatórios depois.
+3. **Se `signatureStatus` vem como objeto ou lista** quando há mais de uma
+   assinatura. As duas formas são tratadas.
+4. **Se a verificação consome crédito** e qual o custo por documento. É uma
+   segunda API, com cobrança possivelmente separada da Easy Sign.
+5. **Se o certificado precisa ser conferido como ICP-Brasil** a partir de
+   `certificateType`, além do modo `QUALIFIED` solicitado.
+
+Até 1 e 4 estarem resolvidos, a integração permanece desligada.
+
+### Retenção de 30 dias
+
+A BRy informou que o documento assinado e os relatórios ficam disponíveis por
+**até 30 dias**. A reconciliação baixa e arquiva o artefato na primeira vez que
+encontra o envelope concluído, e verificações posteriores releem o PDF do nosso
+bucket privado — não da BRy. Resta um risco operacional: se nenhuma
+reconciliação acontecer dentro de 30 dias (webhook perdido e ninguém clicando em
+“Atualizar status”), o artefato é perdido na origem. Mitigação sugerida, ainda
+**não** implementada: incluir tentativas pendentes antigas na rotina diária de
+alertas que já existe.
 
 ## Divergências registradas na documentação da BRy
 
 Registradas aqui em vez de resolvidas por suposição:
 
-1. **Modo da assinatura médica.** O guia de assinatura médica fala em certificado
-   ICP-Brasil / assinatura qualificada, mas o exemplo usa
-   `"mode": "ADVANCED"` com `"profile": "TIMESTAMP"`. A implementação **não
-   escolhe** o modo: ele vem de `BRY_EASY_SIGN_SIGNATURE_MODE`, e `QUALIFIED`
-   **nunca** é rebaixado automaticamente para `ADVANCED`.
-2. **Caixa do campo do documento em Base64.** O schema do endpoint de criação
-   nomeia `base64document`, enquanto o exemplo “Completo” usa `base64Document`.
-   A implementação envia `base64document` (o schema). **Confirmar com a BRy**
-   qual a API aceita de fato.
+1. ~~**Modo da assinatura médica.**~~ **Resolvido em 29/10/2026.** A BRy
+   confirmou **`QUALIFIED`** para receita e pedido de exame, por exigir
+   certificado ICP-Brasil conforme CFM e ITI, com `hashAlgorithm: SHA256` e
+   `profile: TIMESTAMP` (que também é o padrão quando `profile` é omitido).
+   A implementação continua não escolhendo o modo sozinha — ele vem de
+   `BRY_EASY_SIGN_SIGNATURE_MODE` — e `QUALIFIED` nunca é rebaixado.
+2. ~~**Caixa do campo do documento em Base64.**~~ **Resolvido em 29/10/2026:**
+   o correto é **`base64Document`**, com “D” maiúsculo, como no Quickstart. O
+   schema público grafa `base64document` e a BRy vai corrigir a documentação.
+   A implementação foi corrigida — antes enviava a grafia errada e a primeira
+   chamada real teria falhado.
 3. **Identificador do envelope.** A resposta de criação devolve o envelope em
    `uuid` (descrito como “Request_id criado para o envio”), não em `requestId`.
    A implementação lê `uuid`.
-4. **Autenticação do webhook.** A referência pública declara `authType: NONE`.
-   A implementação trata o callback apenas como notificação, protegida por
+4. **Autenticação do webhook.** A referência pública declara `authType: NONE`,
+   e a BRy **confirmou em 29/10/2026 que não há outra opção hoje**. A
+   implementação trata o callback apenas como notificação, protegida por
    segredo de endpoint próprio, e **sempre** reconsulta a BRy com JWT antes de
    qualquer transição.
 5. **OIDs médicos não têm campo próprio.** O endpoint de criação não define campo
@@ -188,6 +222,15 @@ Registradas aqui em vez de resolvidas por suposição:
 | `BRY_EASY_SIGN_WEBHOOK_SECRET` | Segredo do endpoint de callback, mínimo 32 caracteres | Webhook responde 404 |
 | `BRY_EASY_SIGN_REQUEST_TIMEOUT_MS` | Timeout por chamada (1.000–60.000; padrão 20.000) | Usa 20.000 |
 
+Verificação da assinatura (segunda API, sem a qual nenhuma tentativa vira `signed`):
+
+| Variável | Papel | Comportamento sem valor válido |
+| --- | --- | --- |
+| `BRY_VERIFY_BASE_URL` | Host do serviço de verificação; allowlist do domínio `bry.com.br` | Tentativa fica pendente com `verify_service_not_configured` |
+| `BRY_VERIFY_TOKEN` | JWT do serviço de verificação, só no header | Idem |
+| `BRY_VERIFY_PATH` | Caminho do endpoint (padrão: o documentado) | Usa o padrão |
+| `BRY_VERIFY_REQUEST_TIMEOUT_MS` | Timeout (1.000–60.000; padrão 30.000) | Usa 30.000 |
+
 Sem configuração completa a UI mostra “integração indisponível” e mantém a via
 manual. Os nomes estão em `.env.example` **sem valores reais**.
 
@@ -195,11 +238,14 @@ manual. Os nomes estão em `.env.example` **sem valores reais**.
 
 | Operação | Chamada |
 | --- | --- |
-| Criar envelope | `POST /api/service/sign/v1/signatures` |
+| Criar envelope (como rascunho) | `POST /api/service/sign/v1/signatures` |
+| Iniciar o envelope | `POST /api/service/sign/v1/signatures/{requestId}/start` |
 | Consultar envelope | `GET /api/service/sign/v1/signatures/{requestId}` |
 | Baixar PDF assinado | `GET /api/service/sign/v1/signatures/{requestId}/documents/{documentNonce}/signed` |
 | Relatório de evidências | `GET /api/service/sign/v1/signatures/{requestId}/documents/{documentNonce}/report` |
 | Cancelar envelope | `DELETE /api/service/sign/v1/signatures/{requestId}` |
+| Listagem de envelopes (conferência manual de órfão) | `POST /api/service/list/v1/create` |
+| Verificar a assinatura (**outra API**) | `POST /api/pdf-verification-service/v1/signatures/verify` |
 
 ### Arquitetura
 
@@ -207,11 +253,14 @@ manual. Os nomes estão em `.env.example` **sem valores reais**.
   `api/secure-profile.js` (o projeto está em 12/12 funções no plano Hobby da
   Vercel), roteadas por `?action=`:
   `clinical-signature-state`, `clinical-signature-request`,
-  `clinical-signature-reconcile`, `clinical-signature-abandon`,
-  `clinical-signature-artifact` e `bry-webhook`.
+  `clinical-signature-link`, `clinical-signature-reconcile`,
+  `clinical-signature-abandon`, `clinical-signature-artifact` e `bry-webhook`.
 - **O webhook é roteado antes da autenticação de usuário**; todas as outras
   ações exigem sessão Supabase válida, clínica resolvida por `data_owner_id()` e
   `has_clinical_access()` confirmado.
+- **A verificação é isolada em `api/_lib/bryVerify.js`**, separada do cliente de
+  assinatura porque é outra API, com outro host, outro token e possivelmente
+  outra cobrança. Ela nunca é consultada antes de o artefato existir.
 - **Comunicação externa isolada** em `api/_lib/bryEasySign.js`: allowlist de
   host, `AbortController`, limite de resposta, recusa de redirecionamento,
   verificação de que o download é realmente PDF, classificação de erros
@@ -231,16 +280,30 @@ manual. Os nomes estão em `.env.example` **sem valores reais**.
 
 ### Resultado ambíguo de `POST` (sem idempotency key na BRy)
 
-A API pública não oferece chave de idempotência para a criação de envelope.
-Portanto, timeout, erro de rede ou 5xx em `POST` são classificados como
-**ambíguos** e **nunca** reenviados automaticamente. A tentativa fica
-`pending` com `dispatch_state = 'unknown'` e `failure_code = 'dispatch_result_unknown'`,
-e a interface avisa que o crédito pode ter sido consumido. A única saída é uma
-ação humana explícita (“Encerrar tentativa”), que terminaliza como `failed` com
-`dispatch_result_unknown_abandoned` e libera uma nova solicitação.
+A API não oferece chave de idempotência para a criação de envelope. Seguindo a
+orientação da BRy de 29/10/2026, o envelope é criado com **`startAsDraft: true`**
+e um **`name` único por tentativa** (o id da tentativa), e só depois iniciado por
+`POST /signatures/{uuid}/start`. Consequência: se a criação der timeout e um
+envelope duplicado existir, ele fica em rascunho e **não chega ao profissional** —
+nenhuma notificação é enviada e nada pode ser assinado.
 
-**Pendente com a BRy:** existe forma de listar envelopes por referência externa
-para recuperar um envelope órfão criado nesse cenário?
+Mesmo assim o resultado continua sendo tratado como ambíguo: timeout, erro de
+rede ou 5xx em `POST` **nunca** são reenviados automaticamente. A tentativa fica
+`pending` com `dispatch_state = 'unknown'` e `failure_code = 'dispatch_result_unknown'`,
+e a mensagem ao profissional explica que um envelope órfão, se existir, ficou em
+rascunho e que o risco é crédito consumido. A saída é a ação humana explícita
+“Encerrar tentativa”.
+
+Se a criação funcionar mas o **início** falhar, o envelope já está registrado:
+a tentativa fica com `provider_envelope_status = 'DRAFT'` e
+`failure_code = 'envelope_start_failed'`, o link não é entregue (assinar ainda
+não é possível) e “Atualizar status” reinicia o envelope sem cobrar de novo.
+
+Para localizar um envelope órfão, a BRy indicou a **página de listagem de
+envelopes** da aplicação (`POST /api/service/list/v1/create`, exibível em
+iframe). É uma página para pessoas, não uma busca programática — por isso o
+`name` único por tentativa é o que torna a conferência manual viável. Não há
+recuperação automática, e isso é intencional.
 
 ### Segurança
 
@@ -249,7 +312,11 @@ para recuperar um envelope órfão criado nesse cenário?
   de API. Mensagens de erro passam por sanitização que remove `Bearer`, JWTs e URLs.
 - O link individual de assinatura é tratado como sensível: devolvido somente ao
   próprio profissional autor, **nunca persistido** nem registrado em log, e
-  aberto com `noopener,noreferrer` (sem aparecer no DOM).
+  aberto com `noopener,noreferrer` (sem aparecer no DOM). Como ele não fica
+  guardado, “Abrir página de assinatura” (`clinical-signature-link`) reabre a
+  página consultando o envelope na BRy — sem criar envelope novo e sem consumir
+  crédito. Essa é a saída para pop-up bloqueado ou aba fechada; antes dela, a
+  única alternativa era criar outro envelope.
 - Nenhuma escrita nas tabelas de assinatura parte do navegador: `insert`,
   `update` e `delete` seguem revogados para `authenticated`.
 - Nada enviado pelo frontend é confiado: `ownerId`, autoria, CRM, CPF, caminhos e
@@ -272,13 +339,14 @@ para recuperar um envelope órfão criado nesse cenário?
 
 ### Testes
 
-- Unitários: `tests/unit/bryEasySign.spec.js` (37), `tests/unit/clinicalDocumentPdf.spec.js` (11),
-  `tests/unit/clinicalSignatureBryUi.spec.js` (14), `tests/unit/clinicalSignatureBryBackend.spec.js` (32).
+- Unitários: `tests/unit/bryEasySign.spec.js` (41), `tests/unit/bryVerify.spec.js` (15),
+  `tests/unit/clinicalDocumentPdf.spec.js` (11), `tests/unit/clinicalSignatureBryUi.spec.js` (14),
+  `tests/unit/clinicalSignatureBryBackend.spec.js` (41).
 - PostgreSQL descartável: `tests/postgres/clinicalSignatureBry.spec.sql`
   (instalação limpa, reaplicação, upgrade sem apagar histórico, RLS
   cross-clínica, imutabilidade, unicidade/idempotência, estados terminais,
   políticas do Storage).
-- E2E: `tests/e2e/clinical-signature-bry.spec.js` (12).
+- E2E: `tests/e2e/clinical-signature-bry.spec.js` (13).
 - Mocks existem somente nos testes; **nenhuma requisição real à BRy** é feita.
 
 ## Encaixe na arquitetura clínica existente
@@ -347,8 +415,14 @@ documento clínico imutável
 - [x] Cliente HTTP isolado, com allowlist de host, timeout, limites e erros classificados.
 - [x] Token apenas em header server-side; ausente de log, banco, query string e respostas.
 - [x] PDF determinístico no servidor, com SHA-256 reproduzível e testes.
-- [x] OIDs por tipo de documento e metadados CFM (registro, UF, especialidade).
+- [x] OIDs por tipo de documento e metadados CFM (registro, UF, especialidade), conforme confirmado pela BRy.
 - [x] `QUALIFIED` sem downgrade automático para `ADVANCED`.
+- [x] `base64Document` com a caixa correta.
+- [x] Envelope criado como rascunho e iniciado em segunda chamada, com `name` único por tentativa.
+- [x] Evidência do certificado obtida do serviço de verificação e gravada; `signed` alcançável.
+- [x] Nível PAdES derivado de carimbo verificado, nunca do modo pedido; `B-LT`/`B-LTA` nunca declarados.
+- [x] Artefato relido do bucket privado nas verificações seguintes, sem depender da retenção de 30 dias.
+- [x] Página de assinatura reabrível sem criar envelope novo, para pop-up bloqueado ou aba fechada.
 - [x] Tentativa append-only e idempotente; estados terminais imutáveis.
 - [x] Resultado ambíguo de `POST` sem reenvio cego, com encerramento humano explícito.
 - [x] Webhook tratado como notificação, com segredo de endpoint e reconciliação autenticada.
@@ -357,27 +431,34 @@ documento clínico imutável
 - [x] Via manual preservada em todos os estados.
 - [x] Feature flag desligada por padrão, com falha fechada e mensagens sanitizadas.
 
-### Depende da BRy (bloqueia a ativação)
+### Respondido pela BRy em 29/10/2026
 
-- [ ] **Confirmar a fonte da evidência verificável** (titular, série, emissor, validade do
-      certificado e padrão PAdES aplicado). Sem isso nenhuma tentativa pode virar `signed`.
-      Ver [Lacuna de evidências](#lacuna-de-evidências-bloqueio-de-ativação).
-- [ ] Confirmar o modo correto para documento médico: `QUALIFIED` ou o `ADVANCED` do exemplo,
-      e qual perfil PAdES/carimbo do tempo usar.
-- [ ] Confirmar a caixa do campo Base64 (`base64document` vs `base64Document`).
-- [ ] Confirmar se há proteção de webhook além de `authType: NONE` (assinatura, cabeçalho, allowlist de IP).
-- [ ] Confirmar se existe forma de localizar um envelope órfão após `POST` ambíguo.
+- [x] Fonte da evidência verificável: baixar o PDF assinado e submetê-lo ao serviço de verificação (HUB Signer ou API BRy Verifica), que responde em JSON.
+- [x] Modo para documento médico: `QUALIFIED`, com `SHA256` e `profile: TIMESTAMP`.
+- [x] Caixa do campo Base64: `base64Document`.
+- [x] Proteção do webhook: somente `authType: NONE`.
+- [x] Envelope órfão após `POST` ambíguo: criar como rascunho com `name` único e conferir pela página de listagem antes de repetir.
+- [x] Retenção do documento assinado e dos relatórios: até 30 dias.
+
+### Ainda depende da BRy (bloqueia a ativação)
+
+- [ ] **Host oficial do serviço de verificação.** A documentação pública usa `example.com`;
+      sem ele `BRY_VERIFY_BASE_URL` não pode ser preenchida e `signed` segue inalcançável.
+- [ ] **Se a verificação consome crédito** e qual o custo por documento (é uma segunda API).
+- [ ] Confirmar, com resposta real, qual entrada de `certificateStatusList` é a do signatário
+      e se `signatureStatus` vem como objeto ou lista.
+- [ ] Confirmar se o `/start` é idempotente para um envelope que já saiu de `DRAFT`.
 - [ ] Confirmar contrato, preços por operação, validade dos créditos, impostos e estorno.
 - [ ] Confirmar se há homologação disponível para a conta Self-Service e se usa token/créditos próprios.
-- [ ] Confirmar prazos de retenção do artefato, efeito de `keepDocument`, limites e rate limit.
+- [ ] Confirmar efeito de `keepDocument`, limites de tamanho e rate limit.
 - [ ] Confirmar termos de tratamento de dados de saúde, suboperadores, localização e descarte (LGPD).
 
-### Passos de ativação, em ordem (nenhum feito até aqui)
+### Passos de ativação, em ordem
 
 1. Criar a aplicação no BRy Cloud e guardar o JWT em cofre; **não** colar em ticket, chat ou repositório.
-2. Resolver os itens “Depende da BRy” acima e registrar as respostas neste documento.
-3. Aplicar `supabase/clinical_signature_bry_schema.sql` no Supabase, depois de
-   `clinical_signature_readiness_schema.sql`.
+2. Resolver os itens “Ainda depende da BRy” acima — principalmente o host e o custo
+   da verificação — e registrar as respostas neste documento.
+3. ~~Aplicar `supabase/clinical_signature_bry_schema.sql`.~~ **Feito em 28/10/2026.**
 4. Configurar as variáveis com `BRY_EASY_SIGN_ENABLED=false` e
    `BRY_EASY_SIGN_BASE_URL=https://easysign.hom.bry.com.br`, para validar que a UI
    reporta “indisponível” sem a flag.
@@ -386,11 +467,12 @@ documento clínico imutável
 6. Ativar a flag **somente em homologação** e assinar um pedido de exames de teste com
    certificado autorizado, medindo o crédito consumido.
 7. Conferir no banco: envelope/documento/signatário gravados, `rendered_pdf_sha256`,
-   artefato e relatório no bucket privado, `evidence_gap_code` presente enquanto a
-   evidência não estiver homologada.
+   artefato e relatório no bucket privado e, com o verificador configurado,
+   `status = 'signed'` com certificado, validade, instante e `signature_standard`
+   preenchidos. Sem o verificador, `evidence_gap_code = 'verify_service_not_configured'`.
 8. Exercitar webhook duplicado, atrasado e adulterado, além de timeout e encerramento
    de tentativa ambígua.
 9. Validar a página da BRy no desktop e no celular, com certificado A1, A3 e em nuvem.
-10. Só depois de 2 a 9 resolvidos, implementar a terminalização para `signed` em
-    `collectArtifact` e repetir a validação de evidência.
+10. Validar com resposta real do verificador quais campos vêm preenchidos e ajustar
+    `selectSignerCertificate`/`hasVerifiedTimestamp` se a forma divergir do schema.
 11. Ativar em produção apenas após a clínica aprovar, mantendo a via manual disponível.
