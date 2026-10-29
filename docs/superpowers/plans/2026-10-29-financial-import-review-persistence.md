@@ -1,7 +1,7 @@
 # Persistência da revisão na importação financeira retroativa
 
-> Status: **spec para aprovação**. Não implementada. Depende de uma decisão de modelo de dados
-> (seção 6) que envolve SQL e, pela regra 1 do `SYSTEM_RULES`, precisa de autorização explícita.
+> Status: **opção B aprovada e implementada** (branch `feat/import-review-persistence`).
+> A seção 14 registra as três decisões que mudaram durante a implementação.
 
 ## 1. Goal
 
@@ -96,7 +96,7 @@ financial_import_lines
   posted_date, amount, description, normalized_description, movement_fingerprint,
   source_metadata jsonb (aba, linha física, categoria, centro de custo, referência, observação),
   review_status ('pending' | 'edited' | 'rejected' | 'approved'),
-  chart_account_id (nullable), approved_source_id (nullable → extra_revenues/expenses),
+  chart_account_id (nullable),
   reviewed_by, reviewed_at, created_at, archived_at
 ```
 
@@ -105,7 +105,8 @@ Dois pontos deliberados:
 - **`id` da linha = o UUID determinístico atual** (`financialImportUuid(fileHash:lineKey)`), que já é o
   id da origem financeira criada. Isso mantém a idempotência que existe hoje e dá o vínculo
   linha↔lançamento de graça, sem tabela de ligação.
-- **`approved_source_id`** é o que permite retomar uma confirmação parcial sem duplicar.
+- **A retomada de confirmação parcial** usa `review_status = 'approved'`, gravado só depois de o
+  bloco ser confirmado no financeiro. Ver seção 14, decisão 1.
 
 ### Mapa de propagação
 
@@ -219,3 +220,27 @@ corrigido em `audit_logs` no commit `fe7e769`).
 4. **Não resolve a causa raiz do incidente.** Esta spec garante que o trabalho não se perca e que a
    falha fique visível. Se a confirmação estiver quebrada por outro motivo, ela **continuará
    quebrada** — só deixará de custar a revisão inteira.
+
+## 14. Decisões tomadas durante a implementação
+
+Três ajustes ao desenho desta spec, feitos ao implementar e registrados aqui para o histórico ficar
+honesto:
+
+**1. `approved_source_id` foi removida.** A coluna seria redundante: o id da linha **é** o id da
+origem financeira, por construção (`financialImportUuid`). Pior, ela não poderia ser mantida
+corretamente — marcar N linhas como aprovadas é um `update ... in (ids)`, e o PostgREST não envia
+valor por linha num update em lote; manter a coluna exigiria uma requisição por linha. A retomada
+usa `review_status = 'approved'`, que é gravado só após o bloco ser confirmado no financeiro.
+
+**2. A identidade do lote é o par (arquivo, aba), não só o arquivo.** Um `.xlsx` com várias abas tem
+o **mesmo** `file_hash` em todas elas. Com a chave só no hash, trocar de aba depois de criar o lote
+faria a tela "retomar" as linhas da aba anterior — silenciosamente, com os dados errados. O índice
+único passou a ser `(user_id, file_hash, coalesce(sheet_name, ''))`, e `sheet_name` é gravado como
+string vazia (nunca NULL, que não casaria nem com o índice nem com a busca).
+
+**3. Migration ausente degrada com aviso, não bloqueia.** A spec dizia bloquear a revisão até o lote
+estar gravado. Aplicado ao pé da letra, isso quebraria o importador para todos entre o deploy do
+código e a execução do SQL — violando a regra 2 do `SYSTEM_RULES`. O comportamento implementado:
+se as tabelas não existem, a revisão continua em memória (como hoje) **com faixa amarela explícita**
+dizendo que o trabalho não está sendo salvo e qual migration falta. Qualquer OUTRA falha de gravação
+bloqueia, como a spec previa. A distinção usa `isMissingRelationError`, do commit `ed38d00`.
