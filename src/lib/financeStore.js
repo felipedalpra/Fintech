@@ -4,6 +4,7 @@ import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
 import { isChartSchemaMissing } from './chartOfAccountsStore.js'
+import { aggregateTableSyncFailures, isIgnorableAuditLogError, isMissingRelationError } from './financeStoreErrors.js'
 
 const LEGACY_APP_KEY = 'startupfinance_v1'
 const LOCAL_USERS_KEY = 'startupfinance_users_v1'
@@ -59,6 +60,14 @@ async function canUseRelationalBackend() {
 }
 
 
+// Devolve:
+//   null                -> o armazenamento legado NÃO existe neste banco (ausência estrutural)
+//   dataset normalizado -> leitura bem-sucedida (pode ser legitimamente vazia, p.ex. conta nova)
+// e LANÇA em qualquer outra falha (RLS, permissão, rede).
+//
+// Antes, QUALQUER erro virava `createEmptyData()` em silêncio: um blip na sonda do backend
+// relacional fazia o financeiro inteiro aparecer zerado, sem aviso nenhum, indistinguível de
+// "a clínica não tem lançamentos". Essa era a forma mais perigosa de dado errado.
 async function fetchLegacyPayload(userId) {
   const { data, error } = await supabase
     .from('user_finance_data')
@@ -66,7 +75,10 @@ async function fetchLegacyPayload(userId) {
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (error) return createEmptyData()
+  if (error) {
+    if (isMissingRelationError(error)) return null
+    throw error
+  }
   return normalizeData(data?.payload ?? createEmptyData())
 }
 
@@ -472,6 +484,9 @@ async function syncTable(table, userId, rows, baselineRows) {
   }
 }
 
+// O audit é SECUNDÁRIO: falhar em registrar nunca pode custar uma gravação financeira (ela já
+// aconteceu quando chegamos aqui). Mas também não pode ficar invisível — o audit trail estava
+// morto por um erro de RLS engolido, e por isso não havia trilha para datar um incidente real.
 async function insertAuditLog(userId, action, details = {}) {
   const { error } = await supabase.from('audit_logs').insert({
     user_id:userId,
@@ -481,7 +496,8 @@ async function insertAuditLog(userId, action, details = {}) {
     details,
   })
 
-  if (error && !isIgnorableAuditLogError(error)) throw error
+  if (!error || isIgnorableAuditLogError(error)) return
+  console.warn('[SurgiMetrics] audit_logs nao registrou (a gravacao financeira NAO foi afetada):', error.message || error)
 }
 
 export async function fetchFinanceData(userId) {
@@ -489,7 +505,14 @@ export async function fetchFinanceData(userId) {
     return fetchRelationalData(userId)
   }
 
-  return fetchLegacyPayload(userId)
+  // A sonda do backend relacional falhou. Se o armazenamento legado também não existe, NÃO
+  // sabemos o que a clínica tem — e devolver vazio aqui faria a tela mostrar o financeiro
+  // zerado como se fosse verdade. Erra alto para a carga ser tratada como falha.
+  const legacy = await fetchLegacyPayload(userId)
+  if (legacy === null) {
+    throw new Error('Nao foi possivel carregar o financeiro: o banco relacional nao respondeu e nao existe armazenamento legado neste projeto. Nenhum dado foi perdido — recarregue a pagina.')
+  }
+  return legacy
 }
 
 export async function saveFinanceData(userId, financeData, baselineData = null) {
@@ -514,7 +537,14 @@ export async function saveFinanceData(userId, financeData, baselineData = null) 
         { onConflict:'user_id' },
       )
 
-    if (error) throw error
+    if (error) {
+      // Backend relacional fora E armazenamento legado ausente: não há para onde gravar. Erra
+      // com mensagem clara em vez de propagar um "relation does not exist" cru para a tela.
+      if (isMissingRelationError(error)) {
+        throw new Error('Nao foi possivel salvar: o banco relacional nao respondeu e nao existe armazenamento legado neste projeto. NADA foi gravado — tente novamente.')
+      }
+      throw error
+    }
     return
   }
 
@@ -537,10 +567,15 @@ export async function saveFinanceData(userId, financeData, baselineData = null) 
   ]
 
   try {
-    await Promise.all(tables.map(([table, mapRows]) => {
+    // allSettled, não all: as 11 tabelas gravam em paralelo, então quando uma falha as outras já
+    // estão em voo e podem ter gravado. Com `Promise.all` o erro da primeira escondia o resto e a
+    // tela não tinha como dizer O QUE falhou nem que a gravação ficou parcial.
+    const results = await Promise.allSettled(tables.map(([table, mapRows]) => {
       const baselineRows = base ? mapRows(base) : null
       return syncTable(table, userId, mapRows(payload), baselineRows)
     }))
+    const tableFailure = aggregateTableSyncFailures(tables.map(([table]) => table), results)
+    if (tableFailure) throw tableFailure
     // Write-through idempotente depois das origens operacionais. Títulos e parcelas removidos da
     // origem são apenas arquivados, nunca apagados fisicamente.
     await syncFinancialLedger(supabase, userId, payload, base)
@@ -613,12 +648,4 @@ export async function forceImportBrowserData(user, ownerId = user?.id) {
   return { imported: added, message: `${added} lançamento(s) importado(s) deste navegador para a nuvem.` }
 }
 
-function isIgnorableAuditLogError(error) {
-  const code = String(error?.code || '')
-  const message = String(error?.message || '').toLowerCase()
-  return code === '42P01'
-    || code === 'PGRST204'
-    || message.includes('audit_logs')
-    || message.includes('schema cache')
-}
 
