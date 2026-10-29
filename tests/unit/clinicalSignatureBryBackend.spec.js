@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   abandonClinicalSignature,
+  clinicalSignatureLink,
   clinicalSignatureState,
   handleBryWebhook,
   openClinicalSignatureArtifact,
@@ -8,6 +9,7 @@ import {
   requestClinicalSignature,
 } from '../../api/_lib/clinicalSignatureBry.js'
 import { BryEasySignError, bryEasySignConfig } from '../../api/_lib/bryEasySign.js'
+import { BryVerifyError } from '../../api/_lib/bryVerify.js'
 import {
   buildClinicalSignatureEnvelope,
   hashClinicalSignatureEnvelope,
@@ -98,7 +100,14 @@ function fakeSupabase(tables = {}, { storage = {}, failTables = {} } = {}) {
         return {
           async upload(path, buffer, options) {
             calls.uploads.push({ bucket, path, bytes:buffer?.length ?? 0, options })
+            if (!storage.files) storage.files = {}
+            storage.files[path] = buffer
             return storage.uploadError ? { error:storage.uploadError } : { data:{ path }, error:null }
+          },
+          async download(path) {
+            const stored = storage.files?.[path]
+            if (!stored) return { data:null, error:{ message:'not found' } }
+            return { data:{ arrayBuffer:async () => stored }, error:null }
           },
           async createSignedUrl(path, ttl) {
             calls.signedUrls.push({ bucket, path, ttl })
@@ -199,13 +208,51 @@ function config(overrides = {}) {
   })
 }
 
-function deps({ admin, user = { id:AUTHOR }, ownerId = OWNER, configFactory = config(), bry = {}, renderPdf, signer } = {}) {
+// Verificador desligado por padrao: o caminho normal dos testes antigos e o de
+// evidencia pendente. Os testes do estado `signed` injetam um verificador.
+function verifyOff() {
+  return { ready:false, configured:false, problems:['BRY_VERIFY_BASE_URL nao configurada'] }
+}
+
+function verifyOn() {
+  return { ready:true, configured:true, problems:[], baseUrl:'https://hom.bry.com.br', token:'jwt', path:'/verify', timeoutMs:5000 }
+}
+
+function verificationPayload(overrides = {}) {
+  return {
+    generalStatus:'VALID',
+    signatureFormat:'PADES',
+    signatureStatus:{
+      signingTime:'2026-10-28T12:00:00.000Z',
+      chainStatus:{
+        certificateStatusList:[
+          { statusType:'TIMESTAMP', certificateInfo:{ serial:'TS', subjectDN:{ cn:'AC Tempo' }, issuerDN:{ cn:'AC Tempo' }, validity:{ notBefore:'2026-01-01T00:00:00Z', notAfter:'2027-01-01T00:00:00Z' } } },
+          { type:'ChainCertificate', certificateInfo:{ serial:'AC01', subjectDN:{ cn:'AC Raiz' }, issuerDN:{ cn:'AC Raiz' }, validity:{ notBefore:'2020-01-01T00:00:00Z', notAfter:'2030-01-01T00:00:00Z' } } },
+          { type:'FinalCertificate', certificateInfo:{
+            cpf:'52998224725',
+            certificateType:'A3',
+            serial:'0A1B2C',
+            subjectDN:{ cn:'VITORIA RIBEIRO:52998224725', formattedCn:'VITORIA RIBEIRO' },
+            issuerDN:{ cn:'AC Exemplo ICP-Brasil', o:'ICP-Brasil' },
+            validity:{ notBefore:'2026-01-01T00:00:00Z', notAfter:'2027-01-01T00:00:00Z' },
+          } },
+        ],
+      },
+    },
+    ...overrides,
+  }
+}
+
+function deps({ admin, user = { id:AUTHOR }, ownerId = OWNER, configFactory = config(), bry = {}, renderPdf, signer, verifyConfigFactory = verifyOff, verifyImpl } = {}) {
   return {
     context:async () => ({ user, ownerId, admin, scoped:null }),
     config:configFactory,
     loadSigner:async () => signer || { ...signerIdentity, userId:user.id },
     renderPdf:renderPdf || (async () => ({ buffer:Buffer.from('%PDF-1.7 teste'), sha256:'c'.repeat(64) })),
+    verifyConfig:verifyConfigFactory,
+    verify:{ verifySignedPdf:verifyImpl || (async () => verificationPayload()) },
     bry:{
+      startEnvelope:async () => null,
       createEnvelope:async () => ({
         envelopeId:ENVELOPE, documentId:'doc-1', signerId:'signer-1',
         envelopeStatus:'CREATED',
@@ -284,7 +331,7 @@ test('o estado devolvido ao navegador nunca inclui segredo nem caminho de storag
       ...pendingAttempt,
       signed_file_path:`clinical-signatures/${OWNER}/${DOCUMENT}/${ATTEMPT}.pdf`,
       signed_file_sha256:'d'.repeat(64),
-      evidence_gap_code:'bry_evidence_not_machine_readable',
+      evidence_gap_code:'verify_service_not_configured',
     }],
   })
   const state = await clinicalSignatureState({ admin, ownerId:OWNER, documentIds:[DOCUMENT], deps:deps({ admin }) })
@@ -518,7 +565,8 @@ test('envelope concluido guarda o PDF e o relatorio, mas nao declara assinatura'
   const row = admin.db.clinical_document_signatures[0]
   // Nunca `signed` sem evidencia verificavel do certificado.
   expect(row.status).toBe('pending')
-  expect(row.evidence_gap_code).toBe('bry_evidence_not_machine_readable')
+  // Verificador desligado nesta instalacao: motivo auditavel, nao assinatura.
+  expect(row.evidence_gap_code).toBe('verify_service_not_configured')
   expect(row.signed_file_path).toBe(`clinical-signatures/${OWNER}/${DOCUMENT}/${ATTEMPT}.pdf`)
   expect(row.signed_file_sha256).toMatch(/^[0-9a-f]{64}$/)
   expect(row.evidence_report_sha256).toMatch(/^[0-9a-f]{64}$/)
@@ -701,7 +749,7 @@ test('webhook valido apenas dispara reconciliacao autenticada', async () => {
   expect(queried).toBe(1)
   // O estado veio da consulta, nao do corpo do callback.
   expect(admin.db.clinical_document_signatures[0].status).toBe('pending')
-  expect(admin.db.clinical_document_signatures[0].evidence_gap_code).toBe('bry_evidence_not_machine_readable')
+  expect(admin.db.clinical_document_signatures[0].evidence_gap_code).toBe('verify_service_not_configured')
 })
 
 test('callback duplicado nao duplica trabalho nem artefato', async () => {
@@ -776,4 +824,276 @@ test('webhook com integracao desabilitada e aceito e descartado', async () => {
   expect(result.statusCode).toBe(202)
   expect(result.body.ignored).toBe('integracao_indisponivel')
   expect(admin.calls.updates).toHaveLength(0)
+})
+
+// ---------------------------------------------------------------------------
+// Rascunho e inicio do envelope (orientacao da BRy em 29/10/2026)
+// ---------------------------------------------------------------------------
+
+test('a criacao inicia o envelope em seguida e nomeia o envelope pela tentativa', async () => {
+  const admin = fakeSupabase({
+    clinical_documents:[documentRow],
+    clinical_signature_connections:[connectionRow],
+  })
+  let payload = null
+  let started = null
+  await requestClinicalSignature(requestBody(), deps({
+    admin,
+    bry:{
+      createEnvelope:async (_config, body) => {
+        payload = body
+        return {
+          envelopeId:ENVELOPE, documentId:'doc-1', signerId:'signer-1',
+          envelopeStatus:'DRAFT',
+          signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1`,
+        }
+      },
+      startEnvelope:async (_config, envelopeId) => { started = envelopeId },
+    },
+  }))
+
+  expect(payload.startAsDraft).toBe(true)
+  // Nome unico por tentativa: e por ele que um envelope orfao e localizado.
+  expect(payload.name).toContain(admin.db.clinical_document_signatures[0].id)
+  expect(started).toBe(ENVELOPE)
+  expect(admin.db.clinical_document_signatures[0].provider_envelope_status).toBe('CREATED')
+})
+
+test('falha ao iniciar preserva o envelope registrado e nao entrega o link', async () => {
+  const admin = fakeSupabase({
+    clinical_documents:[documentRow],
+    clinical_signature_connections:[connectionRow],
+  })
+  const error = await requestClinicalSignature(requestBody(), deps({
+    admin,
+    bry:{ startEnvelope:async () => { throw new BryEasySignError('indisponivel', { kind:'provider' }) } },
+  })).catch(nextError => nextError)
+
+  expect(error.publicCode).toBe('envelope_nao_iniciado')
+  const row = admin.db.clinical_document_signatures[0]
+  // A tentativa continua pendente e rastreada: nada de cobrar de novo.
+  expect(row.status).toBe('pending')
+  expect(row.provider_request_id).toBe(ENVELOPE)
+  expect(row.provider_envelope_status).toBe('DRAFT')
+  expect(row.failure_code).toBe('envelope_start_failed')
+})
+
+test('reconciliacao reinicia envelope preso em rascunho', async () => {
+  const admin = fakeSupabase({
+    clinical_document_signatures:[{ ...pendingAttempt, provider_envelope_status:'DRAFT', failure_code:'envelope_start_failed' }],
+  })
+  let started = 0
+  const result = await reconcileClinicalSignature(
+    { headers:{ authorization:'Bearer s' }, query:{}, body:{ attemptId:ATTEMPT } },
+    deps({
+      admin,
+      bry:{
+        fetchEnvelope:async () => ({ envelopeStatus:'DRAFT', signerStatus:'PENDING' }),
+        startEnvelope:async () => { started += 1 },
+      },
+    }),
+  )
+  expect(result.outcome).toBe('envelope_iniciado')
+  expect(started).toBe(1)
+  const row = admin.db.clinical_document_signatures[0]
+  expect(row.provider_envelope_status).toBe('CREATED')
+  expect(row.failure_code).toBeNull()
+})
+
+// ---------------------------------------------------------------------------
+// Terminalizacao com evidencia verificada
+// ---------------------------------------------------------------------------
+
+function finishedDeps(overrides = {}) {
+  return deps({
+    bry:{ fetchEnvelope:async () => ({ envelopeStatus:'FINISHED', signerStatus:'SIGNED', signedAt:'2026-10-28T12:00:00Z' }) },
+    verifyConfigFactory:verifyOn,
+    ...overrides,
+  })
+}
+
+const reconcileRequest = { headers:{ authorization:'Bearer s' }, query:{}, body:{ attemptId:ATTEMPT } }
+
+test('evidencia verificada terminaliza a tentativa como assinada', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const result = await reconcileClinicalSignature(reconcileRequest, finishedDeps({ admin }))
+
+  expect(result.outcome).toBe('signed')
+  const row = admin.db.clinical_document_signatures[0]
+  expect(row.status).toBe('signed')
+  expect(row.signature_standard).toBe('PAdES-B-T')
+  expect(row.certificate_subject).toBe('VITORIA RIBEIRO')
+  expect(row.certificate_serial).toBe('0A1B2C')
+  expect(row.certificate_issuer).toBe('AC Exemplo ICP-Brasil')
+  expect(row.signed_at).toBe('2026-10-28T12:00:00.000Z')
+  expect(row.evidence_gap_code).toBeNull()
+  expect(row.signed_file_path).toBe(`clinical-signatures/${OWNER}/${DOCUMENT}/${ATTEMPT}.pdf`)
+  expect(result.attempt.evidenceComplete).toBe(true)
+})
+
+test('o padrao gravado vem da verificacao, nao do modo pedido', async () => {
+  // Pedimos QUALIFIED/TIMESTAMP, mas a verificacao nao confirma carimbo:
+  // a tentativa NAO vira assinada.
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const result = await reconcileClinicalSignature(reconcileRequest, finishedDeps({
+    admin,
+    verifyImpl:async () => {
+      const response = verificationPayload()
+      response.signatureStatus.chainStatus.certificateStatusList =
+        response.signatureStatus.chainStatus.certificateStatusList.filter(entry => entry.statusType !== 'TIMESTAMP')
+      return response
+    },
+  }))
+  expect(result.outcome).toBe('evidencia_pendente')
+  const row = admin.db.clinical_document_signatures[0]
+  expect(row.status).toBe('pending')
+  expect(row.evidence_gap_code).toBe('verify_timestamp_not_verified')
+  expect(row.signature_standard).toBeUndefined()
+})
+
+test('assinatura reprovada pela verificacao nunca vira assinada', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const result = await reconcileClinicalSignature(reconcileRequest, finishedDeps({
+    admin,
+    verifyImpl:async () => verificationPayload({ generalStatus:'INVALID_WITH_INTEGRITY_ERROR' }),
+  }))
+  expect(result.outcome).toBe('evidencia_pendente')
+  const row = admin.db.clinical_document_signatures[0]
+  expect(row.status).toBe('pending')
+  expect(row.evidence_gap_code).toBe('verify_signature_invalid')
+  // O artefato continua guardado para analise.
+  expect(row.signed_file_sha256).toMatch(/^[0-9a-f]{64}$/)
+})
+
+test('verificador indisponivel preserva o artefato e permite tentar depois', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const failing = finishedDeps({
+    admin,
+    verifyImpl:async () => { throw new BryVerifyError('fora do ar', { kind:'network' }) },
+  })
+  const first = await reconcileClinicalSignature(reconcileRequest, failing)
+  expect(first.outcome).toBe('evidencia_pendente')
+  expect(admin.db.clinical_document_signatures[0].evidence_gap_code).toBe('verify_service_unavailable')
+
+  // Nova reconciliacao, agora com o verificador de pe: rele o artefato do
+  // bucket (sem depender da retencao de 30 dias da BRy) e conclui.
+  let downloads = 0
+  const recovering = finishedDeps({
+    admin,
+    bry:{
+      fetchEnvelope:async () => ({ envelopeStatus:'FINISHED', signerStatus:'SIGNED' }),
+      downloadSignedDocument:async () => { downloads += 1; return Buffer.from('%PDF-1.7 assinado') },
+    },
+  })
+  const second = await reconcileClinicalSignature(reconcileRequest, recovering)
+  expect(second.outcome).toBe('signed')
+  expect(downloads).toBe(0)
+  expect(admin.db.clinical_document_signatures[0].status).toBe('signed')
+})
+
+test('reconciliar de novo uma tentativa assinada nao reescreve a evidencia', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  await reconcileClinicalSignature(reconcileRequest, finishedDeps({ admin }))
+  const signedRow = { ...admin.db.clinical_document_signatures[0] }
+
+  const again = await reconcileClinicalSignature(reconcileRequest, finishedDeps({ admin }))
+  expect(again.outcome).toBe('ja_terminal')
+  expect(admin.db.clinical_document_signatures[0]).toEqual(signedRow)
+})
+
+test('o webhook tambem conclui a assinatura, mas so apos verificar o artefato', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const result = await handleBryWebhook(
+    webhookRequest('s'.repeat(40), { uuid:ENVELOPE }),
+    { uuid:ENVELOPE, status:'FINISHED', signatureStandard:'PAdES-B-LTA', certificateSubject:'CN=Invasor' },
+    { ...finishedDeps({ admin }), adminFactory:() => admin },
+  )
+  expect(result.statusCode).toBe(200)
+  const row = admin.db.clinical_document_signatures[0]
+  expect(row.status).toBe('signed')
+  // Nada do payload do callback entrou na evidencia.
+  expect(row.signature_standard).toBe('PAdES-B-T')
+  expect(row.certificate_subject).toBe('VITORIA RIBEIRO')
+})
+
+// ---------------------------------------------------------------------------
+// Reabrir a pagina de assinatura
+// ---------------------------------------------------------------------------
+
+test('reabrir a pagina consulta o envelope e nao cria outro', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  let created = 0
+  const response = await clinicalSignatureLink(
+    { headers:{ authorization:'Bearer s' }, query:{}, body:{ attemptId:ATTEMPT } },
+    deps({
+      admin,
+      bry:{
+        createEnvelope:async () => { created += 1 },
+        fetchEnvelope:async () => ({
+          envelopeStatus:'ONGOING', signerStatus:'PENDING',
+          signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1`,
+        }),
+      },
+    }),
+  )
+  expect(created).toBe(0)
+  expect(response.signingUrl).toContain('/sign/signer-1')
+  // O link continua fora do banco e fora da auditoria.
+  expect(JSON.stringify(admin.db.clinical_document_signatures[0])).not.toContain('/sign/')
+  const log = admin.calls.inserts.find(entry => entry.table === 'audit_logs')
+  expect(log.row.action).toBe('open_clinical_signature_page')
+  expect(JSON.stringify(log.row)).not.toContain('/sign/')
+})
+
+test('reabrir a pagina e negado para nao-autor, outra clinica e tentativa encerrada', async () => {
+  const request = { headers:{ authorization:'Bearer s' }, query:{}, body:{ attemptId:ATTEMPT } }
+
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const notAuthor = await clinicalSignatureLink(request, deps({ admin, user:{ id:OTHER_DOCTOR } })).catch(error => error)
+  expect(notAuthor.publicCode).toBe('nao_autor')
+
+  const foreign = fakeSupabase({ clinical_document_signatures:[{ ...pendingAttempt, user_id:'11111111-0000-4000-8000-000000000009' }] })
+  const notFound = await clinicalSignatureLink(request, deps({ admin:foreign })).catch(error => error)
+  expect(notFound.statusCode).toBe(404)
+
+  const terminal = fakeSupabase({ clinical_document_signatures:[{ ...pendingAttempt, status:'failed' }] })
+  const closed = await clinicalSignatureLink(request, deps({ admin:terminal })).catch(error => error)
+  expect(closed.publicCode).toBe('sem_assinatura_pendente')
+
+  const off = await clinicalSignatureLink(request, deps({ admin, configFactory:config({ BRY_EASY_SIGN_ENABLED:'false' }) })).catch(error => error)
+  expect(off.publicCode).toBe('integracao_indisponivel')
+})
+
+test('envelope sem link devolvido orienta atualizar o status', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const error = await clinicalSignatureLink(
+    { headers:{ authorization:'Bearer s' }, query:{}, body:{ attemptId:ATTEMPT } },
+    deps({ admin, bry:{ fetchEnvelope:async () => ({ envelopeStatus:'ONGOING', signingUrl:null }) } }),
+  ).catch(nextError => nextError)
+  expect(error.publicCode).toBe('sem_link')
+})
+
+test('criacao sem link recupera a pagina de assinatura apos iniciar o envelope', async () => {
+  const admin = fakeSupabase({
+    clinical_documents:[documentRow],
+    clinical_signature_connections:[connectionRow],
+  })
+  const order = []
+  const response = await requestClinicalSignature(requestBody(), deps({
+    admin,
+    bry:{
+      createEnvelope:async () => {
+        order.push('create')
+        // Rascunho sem link: cenario esperado com startAsDraft.
+        return { envelopeId:ENVELOPE, documentId:'doc-1', signerId:'signer-1', envelopeStatus:'DRAFT', signingUrl:null }
+      },
+      startEnvelope:async () => { order.push('start') },
+      fetchEnvelope:async () => {
+        order.push('fetch')
+        return { envelopeStatus:'CREATED', signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1` }
+      },
+    },
+  }))
+  expect(order).toEqual(['create', 'start', 'fetch'])
+  expect(response.signingUrl).toContain('/sign/signer-1')
 })

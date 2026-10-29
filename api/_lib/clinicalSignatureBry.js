@@ -7,10 +7,11 @@
 //  - o documento clinico (`clinical_documents`) nunca e alterado;
 //  - cada envio e uma tentativa append-only e idempotente;
 //  - o webhook nao e fonte de verdade: so dispara reconciliacao autenticada;
-//  - uma tentativa so poderia virar `signed` com PDF persistido, SHA-256 e
-//    evidencias completas do certificado -- hoje impossivel (ver
-//    BRY_EVIDENCE_GAP_MACHINE_READABLE), entao ela permanece pendente com
-//    motivo auditavel em vez de declarar assinatura que nao pode comprovar;
+//  - uma tentativa so vira `signed` com PDF persistido, SHA-256 e evidencias
+//    completas do certificado, obtidas do servico de verificacao da BRy sobre o
+//    proprio artefato. Sem isso ela permanece pendente com `evidence_gap_code`
+//    em vez de declarar assinatura que nao pode comprovar;
+//  - o padrao PAdES nunca e deduzido do modo solicitado: vem da verificacao;
 //  - o link individual de assinatura e sensivel: devolvido somente ao proprio
 //    profissional, nunca persistido nem registrado em log.
 
@@ -21,7 +22,6 @@ import {
   getAuthenticatedUser,
 } from './secureProfile.js'
 import {
-  BRY_EVIDENCE_GAP_MACHINE_READABLE,
   BryEasySignError,
   bryEasySignConfig,
   buildEnvelopePayload,
@@ -32,8 +32,16 @@ import {
   mapEnvelopeToInternalTransition,
   parseBryWebhookNotification,
   publicBryEasySignState,
+  startEnvelope,
   webhookSecretMatches,
 } from './bryEasySign.js'
+import {
+  bryVerifyConfig,
+  BryVerifyError,
+  normalizeVerificationEvidence,
+  VERIFY_GAPS,
+  verifySignedPdf,
+} from './bryVerify.js'
 import {
   assertSafeClinicalSignatureConnection,
   buildClinicalSignatureEnvelope,
@@ -56,9 +64,13 @@ const ARTIFACT_URL_TTL_SECONDS = 60
 export const defaultClinicalSignatureDeps = Object.freeze({
   context:clinicalSignatureContext,
   config:bryEasySignConfig,
+  verifyConfig:bryVerifyConfig,
   loadSigner:loadSignerIdentity,
   renderPdf:renderClinicalDocumentPdf,
-  bry:Object.freeze({ createEnvelope, fetchEnvelope, downloadSignedDocument, downloadEvidenceReport }),
+  bry:Object.freeze({
+    createEnvelope, fetchEnvelope, downloadSignedDocument, downloadEvidenceReport, startEnvelope,
+  }),
+  verify:Object.freeze({ verifySignedPdf }),
 })
 
 const ATTEMPT_PUBLIC_FIELDS = [
@@ -377,7 +389,10 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
       documentType:document.document_type,
       fileName:`${document.document_type}-${document.id}.pdf`,
       pdfBase64:rendered.buffer.toString('base64'),
-      envelopeName:`SurgiMetrics ${document.document_type} ${document.id}`,
+      // Nome unico por TENTATIVA. E o unico identificador nosso que aparece na
+      // pagina de listagem de envelopes da BRy, por onde um envelope orfao
+      // (criado em um POST ambiguo) pode ser localizado e descartado.
+      envelopeName:`SurgiMetrics ${document.document_type} ${attempt.id}`,
       clientName:String(document.clinic_name || document.author_name || 'SurgiMetrics').slice(0, 120),
       signer,
       signatureMode:config.signatureMode,
@@ -407,7 +422,9 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
       await updatePending(admin, attempt.id, {
         dispatch_state:'unknown',
         failure_code:'dispatch_result_unknown',
-        failure_message:'A BRy nao confirmou a criacao do envelope. O credito pode ter sido consumido.',
+        // O envelope nasce como rascunho: um duplicado nao notifica nem chega ao
+        // profissional. O risco e credito consumido, nao assinatura duplicada.
+        failure_message:'A BRy nao confirmou a criacao do envelope. Se ele existir, ficou em rascunho e nao chegou ao profissional; o credito pode ter sido consumido.',
       })
       await audit(admin, ownerId, user.id, 'request_clinical_signature', {
         document_id:documentId, attempt_id:attempt.id, outcome:'ambiguous',
@@ -428,6 +445,8 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
     throw httpError(error?.message || 'A BRy recusou a solicitacao.', 502, 'provedor_recusou')
   }
 
+  // Grava os identificadores ANTES de iniciar: se o inicio falhar, a
+  // reconciliacao encontra o envelope em DRAFT e reinicia com seguranca.
   await updatePending(admin, attempt.id, {
     provider_request_id:creation.envelopeId,
     provider_document_id:creation.documentId,
@@ -437,16 +456,90 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
     failure_code:null,
     failure_message:null,
   })
+
+  // --- inicio do envelope (sai de rascunho e notifica o signatario) --------
+  try {
+    await deps.bry.startEnvelope(config, creation.envelopeId)
+  } catch (error) {
+    // O envelope existe e esta registrado; so nao saiu de rascunho. Nao
+    // terminalizamos nem entregamos o link, porque assinar ainda nao e
+    // possivel: "Atualizar status" reinicia.
+    await updatePending(admin, attempt.id, {
+      provider_envelope_status:'DRAFT',
+      failure_code:'envelope_start_failed',
+      failure_message:'O envelope foi criado, mas nao foi iniciado. Use "Atualizar status" para liberar a assinatura.',
+    })
+    await audit(admin, ownerId, user.id, 'request_clinical_signature', {
+      document_id:documentId, attempt_id:attempt.id, outcome:'draft_not_started',
+    })
+    throw httpError(
+      'O envelope foi criado na BRy, mas nao foi iniciado. Use "Atualizar status" para liberar a assinatura; nao sera cobrado de novo.',
+      502, 'envelope_nao_iniciado',
+    )
+  }
+
+  await updatePending(admin, attempt.id, { provider_envelope_status:'CREATED' })
   await audit(admin, ownerId, user.id, 'request_clinical_signature', {
     document_id:documentId, attempt_id:attempt.id, outcome:'sent', environment:config.environment,
   })
+
+  // Criado em rascunho, a BRy pode nao ter devolvido o link junto. Depois do
+  // /start ele existe, e a consulta do envelope o recupera.
+  let signingUrl = creation.signingUrl
+  if (!signingUrl) {
+    try {
+      const state = await deps.bry.fetchEnvelope(config, creation.envelopeId)
+      signingUrl = state?.signingUrl || null
+    } catch { signingUrl = null }
+  }
 
   attempt = await loadAttempt(admin, ownerId, attempt.id)
   return {
     attempt:publicAttempt(attempt),
     // Unico lugar em que o link sai do servidor, e so para o proprio autor.
-    signingUrl:creation.signingUrl,
+    signingUrl,
   }
+}
+
+// Reabre a pagina de assinatura de uma tentativa pendente sem criar envelope
+// novo e sem consumir credito. Existe porque o link e sensivel e nunca fica
+// guardado: se a aba for fechada ou o pop-up bloqueado, este e o caminho de
+// volta -- antes dele, a unica saida era criar outro envelope.
+export async function clinicalSignatureLink(req, deps = defaultClinicalSignatureDeps) {
+  const { user, ownerId, admin } = await deps.context(req)
+  const config = deps.config()
+  if (!config.ready) {
+    throw httpError('A assinatura digital pela BRy nao esta disponivel.', 409, 'integracao_indisponivel')
+  }
+
+  const attemptId = String(req.body?.attemptId || '').trim()
+  if (!UUID_PATTERN.test(attemptId)) throw httpError('Tentativa invalida.', 400)
+
+  const attempt = await loadAttempt(admin, ownerId, attemptId)
+  if (!attempt) throw httpError('Tentativa de assinatura nao encontrada nesta clinica.', 404)
+  if (attempt.signer_user_id !== user.id) {
+    throw httpError('Somente o profissional signatario pode abrir a pagina de assinatura.', 403, 'nao_autor')
+  }
+  if (attempt.status !== 'pending' || !attempt.provider_request_id) {
+    throw httpError('Esta tentativa nao esta aguardando assinatura.', 409, 'sem_assinatura_pendente')
+  }
+
+  const state = await deps.bry.fetchEnvelope(config, attempt.provider_request_id)
+  if (state?.envelopeStatus && state.envelopeStatus !== attempt.provider_envelope_status) {
+    await updatePending(admin, attempt.id, { provider_envelope_status:state.envelopeStatus })
+  }
+  if (!state?.signingUrl) {
+    throw httpError(
+      'A BRy nao devolveu a pagina de assinatura desta tentativa. Use "Atualizar status".',
+      409, 'sem_link',
+    )
+  }
+
+  await audit(admin, ownerId, user.id, 'open_clinical_signature_page', {
+    attempt_id:attemptId, document_id:attempt.document_id,
+  })
+  // O link nao e persistido nem registrado: so devolvido ao proprio signatario.
+  return { signingUrl:state.signingUrl }
 }
 
 async function reserveAttempt({ admin, ownerId, user, document, connection, requestId, payloadSha256, config }) {
@@ -575,9 +668,32 @@ export async function reconcileAttempt({ admin, ownerId, attempt, deps = default
     return { outcome:transition.status }
   }
 
+  if (transition.action === 'start_envelope') {
+    // Envelope preso em rascunho: reiniciar e seguro porque ninguem foi
+    // notificado e nenhum novo envelope e criado.
+    try {
+      await deps.bry.startEnvelope(config, attempt.provider_request_id)
+    } catch {
+      await updatePending(admin, attempt.id, {
+        provider_envelope_status:'DRAFT',
+        failure_code:'envelope_start_failed',
+        reconciled_at:new Date().toISOString(),
+      })
+      return { outcome:'rascunho_nao_iniciado' }
+    }
+    await updatePending(admin, attempt.id, {
+      provider_envelope_status:'CREATED',
+      failure_code:null,
+      failure_message:null,
+      reconciled_at:new Date().toISOString(),
+    })
+    return { outcome:'envelope_iniciado' }
+  }
+
   if (transition.action === 'collect_artifact') {
     await collectArtifact({ admin, ownerId, attempt, config, transition, deps })
-    return { outcome:'evidencia_pendente' }
+    const fresh = await loadAttempt(admin, ownerId, attempt.id)
+    return { outcome:fresh?.status === 'signed' ? 'signed' : 'evidencia_pendente' }
   }
 
   await updatePending(admin, attempt.id, {
@@ -587,17 +703,19 @@ export async function reconcileAttempt({ admin, ownerId, attempt, deps = default
   return { outcome:'aguardando' }
 }
 
-// Baixa, confere e guarda o artefato final em bucket privado -- sem declarar
-// assinatura concluida, porque a evidencia verificavel do certificado nao esta
-// disponivel na API publica da BRy.
+// Baixa, confere e guarda o artefato final em bucket privado e, somente com
+// evidencia verificavel do certificado, terminaliza a tentativa como `signed`.
+// A evidencia nao vem da Easy Sign: ela vem do servico de verificacao, que le o
+// proprio PDF assinado (orientacao da BRy em 29/10/2026).
 async function collectArtifact({ admin, ownerId, attempt, config, transition, deps = defaultClinicalSignatureDeps }) {
+  let signedPdf = null
   const alreadyStored = Boolean(attempt.signed_file_path && attempt.signed_file_sha256)
   if (!alreadyStored) {
-    const pdf = await deps.bry.downloadSignedDocument(config, attempt.provider_request_id, attempt.provider_document_id)
+    signedPdf = await deps.bry.downloadSignedDocument(config, attempt.provider_request_id, attempt.provider_document_id)
     const path = buildClinicalSignedFilePath({
       ownerId, documentId:attempt.document_id, signatureId:attempt.id,
     })
-    const { error:uploadError } = await admin.storage.from(SIGNED_BUCKET).upload(path, pdf, {
+    const { error:uploadError } = await admin.storage.from(SIGNED_BUCKET).upload(path, signedPdf, {
       contentType:'application/pdf',
       // Nunca sobrescreve artefato ja assinado.
       upsert:false,
@@ -607,7 +725,7 @@ async function collectArtifact({ admin, ownerId, attempt, config, transition, de
     }
     await updatePending(admin, attempt.id, {
       signed_file_path:path,
-      signed_file_sha256:sha256Hex(pdf),
+      signed_file_sha256:sha256Hex(signedPdf),
     })
   }
 
@@ -633,11 +751,88 @@ async function collectArtifact({ admin, ownerId, attempt, config, transition, de
 
   await updatePending(admin, attempt.id, {
     provider_envelope_status:transition.envelopeStatus,
-    // Nao gravamos `signed_at` da BRy como evidencia terminal: ele e apenas o
-    // instante informado, sem certificado verificavel que o sustente.
-    evidence_gap_code:transition.evidenceGapCode || BRY_EVIDENCE_GAP_MACHINE_READABLE,
     reconciled_at:new Date().toISOString(),
   })
+
+  // --- evidencia verificavel -----------------------------------------------
+  const verifyConfig = deps.verifyConfig()
+  if (!verifyConfig.ready) {
+    // Falha fechada: sem verificador configurado nao existe evidencia, e a
+    // tentativa permanece pendente com motivo auditavel.
+    await updatePending(admin, attempt.id, { evidence_gap_code:VERIFY_GAPS.NOT_CONFIGURED })
+    return
+  }
+
+  // O artefato pode ja estar guardado de uma reconciliacao anterior; nesse caso
+  // relemos do bucket em vez de baixar de novo da BRy (que o retem 30 dias).
+  if (!signedPdf) {
+    signedPdf = await downloadStoredArtifact(admin, attempt)
+    if (!signedPdf) {
+      await updatePending(admin, attempt.id, { evidence_gap_code:VERIFY_GAPS.SERVICE_UNAVAILABLE })
+      return
+    }
+  }
+
+  let verification
+  try {
+    verification = await deps.verify.verifySignedPdf(verifyConfig, signedPdf, {
+      fileName:`${attempt.document_id}.pdf`,
+    })
+  } catch (error) {
+    // Indisponibilidade do verificador nao invalida o artefato guardado nem
+    // declara assinatura: a reconciliacao pode ser repetida depois.
+    await updatePending(admin, attempt.id, {
+      evidence_gap_code:error instanceof BryVerifyError && error.kind === 'config'
+        ? VERIFY_GAPS.NOT_CONFIGURED
+        : VERIFY_GAPS.SERVICE_UNAVAILABLE,
+    })
+    return
+  }
+
+  const normalized = normalizeVerificationEvidence(verification, {
+    requestedProfile:config.signatureProfile,
+  })
+  if (!normalized.ok) {
+    await updatePending(admin, attempt.id, { evidence_gap_code:normalized.gap })
+    return
+  }
+
+  // Confere o hash do artefato verificado contra o que esta persistido: a
+  // evidencia precisa valer para ESTE arquivo, nao para outro.
+  const fresh = await loadAttempt(admin, attempt.user_id, attempt.id)
+  if (!fresh || fresh.status !== 'pending' || fresh.signed_file_sha256 !== sha256Hex(signedPdf)) {
+    return
+  }
+
+  const evidence = normalized.evidence
+  const { error } = await admin
+    .from('clinical_document_signatures')
+    .update({
+      status:'signed',
+      signature_standard:evidence.signatureStandard,
+      certificate_subject:evidence.certificateSubject,
+      certificate_serial:evidence.certificateSerial,
+      certificate_issuer:evidence.certificateIssuer,
+      certificate_valid_from:evidence.certificateValidFrom,
+      certificate_valid_until:evidence.certificateValidUntil,
+      signed_at:evidence.signedAt,
+      evidence_gap_code:null,
+      failure_code:null,
+      failure_message:null,
+      reconciled_at:new Date().toISOString(),
+    })
+    .eq('id', attempt.id)
+    .eq('status', 'pending')
+  if (error) throw translateDatabaseError(error)
+}
+
+// Rele o artefato ja guardado para verificar sem depender da retencao de 30
+// dias da BRy. Nenhum caminho vindo do provedor e usado.
+async function downloadStoredArtifact(admin, attempt) {
+  if (!attempt.signed_file_path) return null
+  const { data, error } = await admin.storage.from(SIGNED_BUCKET).download(attempt.signed_file_path)
+  if (error || !data) return null
+  return Buffer.from(await data.arrayBuffer())
 }
 
 async function updatePending(admin, attemptId, patch) {
