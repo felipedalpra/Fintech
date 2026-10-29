@@ -244,3 +244,54 @@ código e a execução do SQL — violando a regra 2 do `SYSTEM_RULES`. O compor
 se as tabelas não existem, a revisão continua em memória (como hoje) **com faixa amarela explícita**
 dizendo que o trabalho não está sendo salvo e qual migration falta. Qualquer OUTRA falha de gravação
 bloqueia, como a spec previa. A distinção usa `isMissingRelationError`, do commit `ed38d00`.
+
+## 15. Correções da revisão de código (29/10)
+
+A revisão encontrou dois bloqueadores e um alto, todos confirmados. O que mudou:
+
+**4. O lote nasce `creating` e só é promovido a `reviewing` depois do read-back do último bloco.**
+Antes, o lote era criado como `reviewing` **antes** das linhas: uma gravação interrompida no bloco 2
+(arquivos acima de 500 linhas) deixava um lote retomável com linhas faltando, e nada comparava
+`rows.length` com `line_count`. A revisão abriria incompleta **em silêncio** — a mesma perda que
+esta feature veio impedir. Agora `isBatchComplete` (puro, testado) valida a contagem na retomada, e
+um lote incompleto é recusado com um card de **"Descartar e começar de novo"**. Esse card é
+obrigatório: o lote ocupa o índice único do arquivo, então sem ele o usuário ficaria preso.
+
+**5. A PK das linhas passou a ser `(batch_id, id)`, não só `id`.** O id é determinístico
+(`fileHash:lineKey`), então o mesmo id aparece legitimamente em lotes diferentes: abas distintas do
+mesmo arquivo, clínicas distintas importando o mesmo arquivo, e um novo lote após um descartado.
+Com PK só em `id`, o rollback deixava as linhas do primeiro bloco vivas e **todo upload futuro
+daquele arquivo falhava por violação de chave, para sempre**. O descarte agora arquiva lote **e**
+linhas. A migração inclui um bloco idempotente que corrige a PK em bancos onde a versão anterior
+já foi aplicada.
+
+**6. Reimportar um lote `ready` deixou de estourar erro cru.** O índice único cobre tudo que não
+está arquivado, inclusive `ready`, mas a busca só olhava `reviewing` — então subir de novo um
+arquivo já concluído dava `duplicate key` na cara do usuário, quando antes desta feature o upload
+funcionava e mostrava as linhas como já existentes. Agora a busca inclui `creating`, `reviewing` e
+`ready`, e um lote `ready` é reaberto (`reopenBatch`), o que também devolve a possibilidade de
+rever rejeições depois de recarregar a página.
+
+**7. Leitura paginada.** O PostgREST corta a resposta em 1.000 linhas por padrão. Um lote de 1.500
+voltava truncado **sem erro**, e o limite da tela é 50.000. As leituras agora paginam com `.range()`
+até esgotar.
+
+**8. Atualização por lista de ids em blocos de 120.** Cada UUID ocupa ~39 caracteres na URL;
+"rejeitar todas pendentes" com centenas de linhas estouraria o limite do gateway. O caso real da
+clínica (188 linhas) passava raspando.
+
+**9. Fingerprint recalculado na edição.** `updateStatementLine` não recalcula
+`movementFingerprint`, então a coluna mantinha o valor dos dados ORIGINAIS enquanto a memória usava
+o dos dados editados. Resultado: a detecção de duplicados dava resultado diferente antes e depois
+de retomar. `saveLineEdit` passa a gravar o fingerprint e o `source_line_key` recalculados, com
+teste de round-trip pós-edição. O `externalId`, que não tem coluna própria, passou a viajar no
+`source_metadata`.
+
+**10. Decisão não sobrescreve linha aprovada.** `reject`/`edit`/`reopen` agora levam
+`.neq('review_status','approved')`: uma linha já no financeiro não pode voltar a "rejeitada" no
+lote por ação de outra aba ou de outro usuário. Rejeitar em massa também passou a ignorar linhas
+`existing`, que já estão no financeiro e só distorceriam o progresso.
+
+**11. Falha ao marcar o progresso da aprovação agora aparece.** Não é perda de dado — a
+idempotência segura: ao retomar, essas linhas aparecem como "já existe". Mas era descartada em
+silêncio e agora é avisada.

@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { statementMovementFingerprint, updateStatementLine } from '../../src/lib/statementParser.js'
 import {
   batchProgress,
+  isBatchComplete,
   buildBatchLineRows,
   buildBatchRecord,
   lineDecisionPatch,
@@ -191,4 +193,50 @@ test('lote inteiro aprovado não deixa resto (base para fechar o lote)', () => {
   rows.forEach(row => { row.review_status = 'approved' })
   expect(batchProgress(rows).remaining).toBe(0)
   expect(linesPendingApproval(rows)).toEqual([])
+})
+
+// ---------------------------------------------------------------------------
+// Completude: retomar um lote incompleto é a perda silenciosa que isto previne
+// ---------------------------------------------------------------------------
+test('lote com todas as linhas é completo', () => {
+  const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines:parsedFixture().lines })
+  expect(isBatchComplete(rows, 2)).toBe(true)
+})
+
+test('lote com linha faltando NÃO é completo (gravação interrompida)', () => {
+  const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines:parsedFixture().lines })
+  expect(isBatchComplete(rows.slice(0, 1), 2)).toBe(false)
+})
+
+test('linha arquivada não conta para a completude', () => {
+  const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines:parsedFixture().lines })
+  rows[1].archived_at = '2026-10-29T12:00:00Z'
+  expect(isBatchComplete(rows, 2)).toBe(false)
+})
+
+// ---------------------------------------------------------------------------
+// Round-trip pós-edição: a assinatura do movimento não pode divergir entre a
+// revisão em memória e a MESMA revisão depois de retomada, senão a detecção de
+// duplicados muda de resultado só por ter recarregado a página.
+// ---------------------------------------------------------------------------
+test('round-trip pós-edição preserva a assinatura do movimento', () => {
+  const [line] = parsedFixture().lines
+  const edited = updateStatementLine(line, { postedDate:'2026-09-20', amount:'5000', description:'PIX CORRIGIDO' })
+  const editedLine = { ...edited, id:line.id }
+  // É assim que o store grava a linha editada: fingerprint recalculado sobre os valores novos.
+  const stored = {
+    ...buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines:[editedLine] })[0],
+    movement_fingerprint:statementMovementFingerprint(editedLine),
+  }
+  const { lines } = restoreReviewState([stored])
+  expect(lines[0].movementFingerprint).toBe(statementMovementFingerprint(editedLine))
+  expect(lines[0].amount).toBe(5000)
+  expect(lines[0].postedDate).toBe('2026-09-20')
+})
+
+test('externalId sobrevive ao round-trip (chave de linha estável após retomar)', () => {
+  const lines = parsedFixture().lines.map(line => ({ ...line, externalId:`ext-${line.lineIndex}` }))
+  const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines })
+  expect(rows[0].source_metadata.externalId).toBe('ext-2')
+  expect(restoreReviewState(rows)["lines"][0].externalId).toBe('ext-2')
 })

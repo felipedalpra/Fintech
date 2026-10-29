@@ -8,8 +8,8 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { parseStatementFile, statementTotals, updateStatementLine } from '../lib/statementParser.js'
 import { mergeApprovedStatementRecords } from '../lib/statementImportReview.js'
 import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinancialImportLines } from '../lib/financialImport.js'
-import { batchProgress, restoreReviewState } from '../lib/financialImportBatch.js'
-import { closeBatch, createBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, markLinesApproved, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
+import { batchProgress, isBatchComplete, restoreReviewState } from '../lib/financialImportBatch.js'
+import { closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, markLinesApproved, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -39,6 +39,7 @@ export function FinancialImport({ data, saveDataNow }) {
   const [reviewPersisted, setReviewPersisted] = useState(true)
   const [resumable, setResumable] = useState(null)
   const [resumableProgress, setResumableProgress] = useState(null)
+  const [incompleteBatch, setIncompleteBatch] = useState(null)
   const [sourceFile, setSourceFile] = useState(null)
   const [parsed, setParsed] = useState(null)
   const [lines, setLines] = useState([])
@@ -131,18 +132,11 @@ export function FinancialImport({ data, saveDataNow }) {
     }
     if (existing.error) throw new Error('Não foi possível verificar importações anteriores desta planilha. Tente novamente.')
 
-    // Mesmo arquivo já em revisão: retoma as decisões gravadas em vez de começar de novo.
+    // Mesmo arquivo+aba já tem lote: retoma as decisões gravadas em vez de começar de novo.
     if (existing.batch) {
-      const loaded = await loadBatchLines(existing.batch.id)
-      if (loaded.error || loaded.schemaMissing) throw new Error('Não foi possível carregar a revisão em andamento desta planilha.')
-      const state = restoreReviewState(loaded.rows)
-      resetReview(result, file, state.lines)
-      setBatch(existing.batch)
-      setApprovedIds(state.approvedIds)
-      setRejectedIds(state.rejectedIds)
-      setReviewPersisted(true)
-      setResumable(null)
-      toast(`Revisão retomada: ${state.approvedIds.length} já importada(s), ${state.rejectedIds.length} rejeitada(s).`)
+      // Um lote concluído volta a 'reviewing' para que rejeições possam ser revistas.
+      if (existing.batch.status === 'ready') await reopenBatch(existing.batch.id)
+      await applyPersistedBatch(existing.batch, result, file)
       return
     }
 
@@ -171,21 +165,49 @@ export function FinancialImport({ data, saveDataNow }) {
     await startReview(result, file)
   }
 
+  // Carrega um lote persistido para a tela. Recusa lote INCOMPLETO: se a gravação das linhas foi
+  // interrompida, abrir a revisão como se estivesse inteira esconderia linhas que nunca entrariam
+  // no financeiro — a mesma perda silenciosa que esta feature veio impedir.
+  async function applyPersistedBatch(batchRow, parsedShape, file) {
+    const loaded = await loadBatchLines(batchRow.id)
+    if (loaded.error || loaded.schemaMissing) throw new Error('Não foi possível carregar a revisão em andamento desta planilha.')
+    // 'creating' = a gravação das linhas nunca terminou.
+    if (batchRow.status === 'creating' || !isBatchComplete(loaded.rows, batchRow.line_count)) {
+      setIncompleteBatch({ ...batchRow, loadedCount:loaded.rows.length })
+      throw new Error(`A revisão salva desta planilha está incompleta (${loaded.rows.length} de ${batchRow.line_count} linha(s) gravadas): a gravação foi interrompida. Descarte-a abaixo para subir a planilha de novo.`)
+    }
+    const state = restoreReviewState(loaded.rows)
+    resetReview(parsedShape, file, state.lines)
+    setBatch(batchRow)
+    setApprovedIds(state.approvedIds)
+    setRejectedIds(state.rejectedIds)
+    setReviewPersisted(true)
+    setResumable(null)
+    setResumableProgress(null)
+    toast(`Revisão retomada: ${state.approvedIds.length} já importada(s), ${state.rejectedIds.length} rejeitada(s).`)
+  }
+
+  // Descarta um lote inutilizável (gravação interrompida). Sem isso o usuário ficaria preso: o lote
+  // ocupa o índice único do arquivo, então todo upload novo bateria no mesmo erro.
+  async function discardIncomplete() {
+    if (!incompleteBatch) return
+    setBusy(true)
+    const result = await discardBatch(incompleteBatch.id)
+    setBusy(false)
+    if (result?.error) { setError('Não foi possível descartar a revisão incompleta. Tente novamente.'); return }
+    setIncompleteBatch(null)
+    setResumable(null)
+    setResumableProgress(null)
+    setError('')
+    toast('Revisão incompleta descartada. Suba a planilha novamente.')
+  }
+
   // Retomada sem o arquivo: as linhas e as decisões já estão no banco.
   async function resumeBatch(batchRow) {
     setBusy(true)
     setError('')
     try {
-      const loaded = await loadBatchLines(batchRow.id)
-      if (loaded.error || loaded.schemaMissing) throw new Error('Não foi possível carregar a revisão em andamento.')
-      const state = restoreReviewState(loaded.rows)
-      resetReview({ fileName:batchRow.file_name, sheetName:batchRow.sheet_name, sheetNames:[], headers:[], errors:[], requiresMapping:false, mapping:{} }, null, state.lines)
-      setBatch(batchRow)
-      setApprovedIds(state.approvedIds)
-      setRejectedIds(state.rejectedIds)
-      setReviewPersisted(true)
-      setResumable(null)
-      setResumableProgress(null)
+      await applyPersistedBatch(batchRow, { fileName:batchRow.file_name, sheetName:batchRow.sheet_name, sheetNames:[], headers:[], errors:[], requiresMapping:false, mapping:{} }, null)
     } catch (caught) {
       setError(caught.message || 'Não foi possível retomar a revisão.')
     } finally {
@@ -196,7 +218,7 @@ export function FinancialImport({ data, saveDataNow }) {
   // Uma decisão que não grava não pode passar como gravada: avisa e mantém o estado na tela.
   async function persistDecision(lineIds, decision) {
     if (!batch || !user?.id || !lineIds.length) return
-    const result = await saveLinesDecision({ lineIds, decision, actorId:user.id })
+    const result = await saveLinesDecision({ batchId:batch.id, lineIds, decision, actorId:user.id })
     if (result?.schemaMissing) { setReviewPersisted(false); return }
     if (result?.error) setError('A decisão foi aplicada na tela, mas NÃO foi salva. Recarregue a página para ver o que está salvo de verdade.')
   }
@@ -261,7 +283,7 @@ export function FinancialImport({ data, saveDataNow }) {
     setEditDraft(null)
     setError('')
     if (!batch || !user?.id) return
-    const result = await saveLineEdit({ lineId:updatedLine.id, line:updatedLine, actorId:user.id })
+    const result = await saveLineEdit({ batchId:batch.id, lineId:updatedLine.id, line:updatedLine, actorId:user.id })
     if (result?.schemaMissing) setReviewPersisted(false)
     else if (result?.error) setError('A edição foi aplicada na tela, mas NÃO foi salva. Recarregue a página para ver o que está salvo de verdade.')
   }
@@ -271,7 +293,9 @@ export function FinancialImport({ data, saveDataNow }) {
   }
 
   function reject(items) {
-    const ids = items.map(item => item.line.id).filter(id => !approvedIds.includes(id))
+    // Linha 'existing' já está no financeiro: rejeitá-la não significa nada e só distorceria o
+    // progresso do lote.
+    const ids = items.filter(item => item.reviewStatus !== 'existing').map(item => item.line.id).filter(id => !approvedIds.includes(id))
     setRejectedIds(current => [...new Set([...current, ...ids])])
     setSelectedIds(current => current.filter(id => !ids.includes(id)))
     persistDecision(ids, 'reject')
@@ -312,8 +336,11 @@ export function FinancialImport({ data, saveDataNow }) {
         // Marca no lote só DEPOIS do bloco confirmado no financeiro. É isso que faz uma
         // confirmação interrompida no bloco 2 de 4 retomar exatamente nos blocos restantes.
         if (batch && user?.id) {
-          const marked = await markLinesApproved({ lineIds:ids, actorId:user.id })
+          const marked = await markLinesApproved({ batchId:batch.id, lineIds:ids, actorId:user.id })
           if (marked?.schemaMissing) setReviewPersisted(false)
+          // O bloco JÁ está no financeiro; só o progresso do lote não gravou. Não é perda de dado
+          // (ao retomar, estas linhas aparecem como "já existe"), mas não pode passar calado.
+          else if (marked?.error) setError('Os lançamentos deste bloco foram importados, mas o progresso da revisão não foi salvo. Ao retomar, eles aparecerão como "já existe".')
         }
         completed += ids.length
         setApprovedIds(current => [...new Set([...current, ...ids])])
@@ -353,7 +380,18 @@ export function FinancialImport({ data, saveDataNow }) {
         <strong>A revisão desta planilha não está sendo salva.</strong> A migração <code>financial_import_batches_schema.sql</code> ainda não foi aplicada neste banco, então as suas decisões existem apenas nesta aba — fechar ou recarregar a página perde o trabalho. Os lançamentos já aprovados estão salvos normalmente no financeiro.
       </div>}
 
-      {resumable && !parsed && <Card data-testid="financial-import-resume">
+      {incompleteBatch && <Card data-testid="financial-import-incomplete">
+        <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <div style={{ color:C.red, fontSize:15, fontWeight:900 }}>Revisão salva incompleta</div>
+            <div style={{ ...s.muted, marginTop:5 }}><strong>{incompleteBatch.file_name}</strong> · {incompleteBatch.loadedCount} de {incompleteBatch.line_count} linha(s) gravadas</div>
+            <div style={{ ...s.muted, marginTop:4 }}>Nenhum lançamento foi criado. Descarte para subir a planilha novamente.</div>
+          </div>
+          <Btn variant="ghost" onClick={discardIncomplete} disabled={busy}>Descartar e começar de novo</Btn>
+        </div>
+      </Card>}
+
+      {resumable && !parsed && !incompleteBatch && <Card data-testid="financial-import-resume">
         <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
           <div>
             <div style={{ color:C.text, fontSize:15, fontWeight:900 }}>Você tem uma revisão em andamento</div>

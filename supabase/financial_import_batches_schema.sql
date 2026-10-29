@@ -27,8 +27,11 @@ create table if not exists public.financial_import_batches (
   column_mapping      jsonb not null default '{}'::jsonb,
   expected_line_count integer not null check (expected_line_count between 0 and 50000),
   line_count          integer not null default 0 check (line_count >= 0),
-  status              text not null default 'reviewing'
-                      check (status in ('reviewing', 'ready', 'archived')),
+  -- 'creating' = lote aberto mas AINDA SEM todas as linhas gravadas. Só é promovido a 'reviewing'
+  -- depois do read-back do último bloco. Isso impede que uma gravação interrompida no meio deixe
+  -- um lote retomável com linhas faltando (revisão incompleta aberta em silêncio).
+  status              text not null default 'creating'
+                      check (status in ('creating', 'reviewing', 'ready', 'archived')),
   period_start        date,
   period_end          date,
   created_at          timestamptz not null default timezone('utc', now()),
@@ -43,7 +46,7 @@ create table if not exists public.financial_import_batches (
 -- que já é o id da origem financeira criada na aprovação. Isso preserva a idempotência existente e
 -- dá o vínculo linha↔lançamento sem tabela de ligação.
 create table if not exists public.financial_import_lines (
-  id                     uuid primary key,
+  id                     uuid not null,
   user_id                uuid not null references auth.users(id) on delete cascade,
   batch_id               uuid not null references public.financial_import_batches(id) on delete cascade,
   source_line_key        text not null,
@@ -60,8 +63,26 @@ create table if not exists public.financial_import_lines (
   reviewed_by            uuid references auth.users(id) on delete restrict,
   reviewed_at            timestamptz,
   created_at             timestamptz not null default timezone('utc', now()),
-  archived_at            timestamptz
+  archived_at            timestamptz,
+  -- PK COMPOSTA, não só `id`. O id é determinístico (hash do arquivo + linha), então o MESMO id
+  -- aparece legitimamente em lotes diferentes: abas distintas do mesmo arquivo, clínicas distintas
+  -- importando o mesmo arquivo, e um novo lote após um lote descartado. Com PK só em `id`, o
+  -- primeiro desses casos travava o arquivo para sempre por violação de chave.
+  primary key (batch_id, id)
 );
+
+-- Corrige bancos onde uma versão anterior desta migração criou a PK apenas em `id`.
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+              where table_schema = 'public' and table_name = 'financial_import_lines')
+     and exists (select 1 from pg_constraint
+                  where conrelid = 'public.financial_import_lines'::regclass
+                    and contype = 'p' and array_length(conkey, 1) = 1) then
+    alter table public.financial_import_lines drop constraint financial_import_lines_pkey;
+    alter table public.financial_import_lines add primary key (batch_id, id);
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- 3. Índices
@@ -81,6 +102,9 @@ create index if not exists idx_financial_import_lines_batch
 create index if not exists idx_financial_import_lines_pending
   on public.financial_import_lines(batch_id)
   where archived_at is null and review_status <> 'approved';
+-- Leitura paginada da revisão depende desta ordem.
+create index if not exists idx_financial_import_lines_batch_id
+  on public.financial_import_lines(batch_id, id);
 
 -- ---------------------------------------------------------------------------
 -- 4. RLS — mesmo escopo do núcleo financeiro (dono da clínica + admin/gestão)

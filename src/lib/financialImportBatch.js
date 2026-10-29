@@ -55,7 +55,9 @@ export function buildBatchLineRows({ ownerId, batchId, lines = [] }) {
     description:line.description || '',
     normalized_description:line.normalizedDescription || '',
     movement_fingerprint:line.movementFingerprint || statementMovementFingerprint(line),
-    source_metadata:metadataOf(line),
+    // externalId entra no metadata porque nao tem coluna propria e, sem ele, uma edicao
+    // feita APOS retomar recalcularia sourceLineKey diferente do original.
+    source_metadata:{ ...metadataOf(line), ...(line.externalId ? { externalId:line.externalId } : {}) },
     review_status:'pending',
     chart_account_id:metadataOf(line).chartAccountId || null,
     reviewed_by:null,
@@ -70,6 +72,7 @@ export function restoreReviewState(rows = []) {
   return {
     lines:active.map(row => ({
       id:row.id,
+      externalId:(row.source_metadata || {}).externalId || undefined,
       sourceLineKey:row.source_line_key,
       lineIndex:row.line_index,
       postedDate:row.posted_date,
@@ -129,4 +132,11 @@ export function batchProgress(rows = []) {
     reviewed:approved + rejected,
     remaining:linesPendingApproval(active).length,
   }
+}
+
+// O lote só pode ser retomado se TODAS as linhas esperadas estiverem no banco. Uma gravação
+// interrompida no meio deixaria a revisão incompleta — e abrir isso como se estivesse completo
+// repetiria a perda silenciosa que esta feature veio impedir.
+export function isBatchComplete(rows = [], expectedLineCount = 0) {
+  return rows.filter(row => !row.archived_at).length === Number(expectedLineCount || 0)
 }
