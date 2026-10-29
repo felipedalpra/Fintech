@@ -72,13 +72,28 @@ export function UserRoleProvider({ children }) {
       setLoading(true)
 
       // 1. Verificar se já é owner de uma clínica.
-      const { data: ownedClinic } = await supabase
+      // NUNCA usar maybeSingle aqui: ele ERRA quando há mais de uma linha, e com o erro descartado
+      // o fluxo caía no passo 3 e criava OUTRA clínica a cada carregamento — bug auto-alimentado
+      // que fez uma conta acumular ~100 clínicas vazias. Pega a mais antiga (a real), sem ambiguidade.
+      const { data: ownedClinics, error: ownedError } = await supabase
         .from('clinics')
         .select('id, name, clinical_professional_name, clinical_professional_registration, clinical_professional_council')
         .eq('owner_id', user.id)
-        .maybeSingle()
+        .order('created_at', { ascending:true })
+        .limit(1)
 
       if (!mounted) return
+
+      // A consulta falhou: não sabemos se já existe clínica. Criar uma agora duplicaria o escopo
+      // e espalharia o dado. Bloqueia e avisa; recarregar tenta de novo.
+      if (ownedError) {
+        console.error('[UserRoleContext] falha ao resolver a clinica do dono:', ownedError)
+        setScopeError(true)
+        setLoading(false)
+        return
+      }
+
+      const ownedClinic = ownedClinics?.[0] || null
 
       if (ownedClinic) {
         setClinicId(ownedClinic.id)
@@ -95,13 +110,25 @@ export function UserRoleProvider({ children }) {
       }
 
       // 2. Verificar se é membro de alguma clínica.
-      const { data: membership } = await supabase
+      // Mesma armadilha do passo 1: membro de duas clínicas fazia o maybeSingle errar, o fluxo
+      // seguia para o passo 3 e criava uma clínica para quem já era membro de uma.
+      const { data: memberships, error: membershipError } = await supabase
         .from('clinic_members')
         .select('clinic_id, role, clinical_access, professional_name, professional_registration, professional_council')
         .eq('user_id', user.id)
-        .maybeSingle()
+        .order('created_at', { ascending:true })
+        .limit(1)
 
       if (!mounted) return
+
+      if (membershipError) {
+        console.error('[UserRoleContext] falha ao resolver o vinculo do membro:', membershipError)
+        setScopeError(true)
+        setLoading(false)
+        return
+      }
+
+      const membership = memberships?.[0] || null
 
       if (membership) {
         setClinicId(membership.clinic_id)
@@ -140,6 +167,8 @@ export function UserRoleProvider({ children }) {
       }
 
       // 3. Primeiro acesso: criar clínica automaticamente.
+      // Só chega aqui com as DUAS consultas acima bem-sucedidas e vazias — ou seja, com certeza
+      // de que este usuário não é dono nem membro de nenhuma clínica.
       const { data: newClinic, error } = await supabase
         .from('clinics')
         .insert({ owner_id: user.id, name: 'Minha Clínica' })
@@ -155,6 +184,11 @@ export function UserRoleProvider({ children }) {
         setRole('admin')
         setIsOwner(true)
         setClinicalAccess(true)
+      } else {
+        // Sem clínica criada não há escopo: seguir em silêncio deixaria o app sem ownerId e o
+        // usuário sem entender por que nada carrega nem salva.
+        console.error('[UserRoleContext] falha ao criar a clinica no primeiro acesso:', error)
+        setScopeError(true)
       }
 
       setLoading(false)
