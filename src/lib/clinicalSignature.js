@@ -82,9 +82,20 @@ export function clinicalSignerReadiness(profile = {}) {
 
 export const CLINICAL_SIGNATURE_ELIGIBLE_TYPES = ['exam_request', 'simple_prescription']
 
-// Motivo auditavel, devolvido pelo backend, de uma tentativa concluida no
-// provedor nao poder ser declarada assinada. Ver api/_lib/bryEasySign.js.
-export const BRY_EVIDENCE_GAP_MACHINE_READABLE = 'bry_evidence_not_machine_readable'
+// Explicacao, para o profissional, de cada motivo auditavel de uma assinatura
+// concluida no provedor ainda nao poder ser declarada. Ver api/_lib/bryVerify.js.
+const EVIDENCE_GAP_NOTES = {
+  verify_service_not_configured:'A verificação da assinatura ainda não está configurada nesta instalação.',
+  verify_service_unavailable:'O serviço de verificação da BRy não respondeu. Tente atualizar o status mais tarde.',
+  verify_signature_invalid:'A verificação da BRy não considerou a assinatura válida. Não use este documento como assinado.',
+  verify_signature_not_pades:'O arquivo devolvido não tem assinatura no padrão PAdES.',
+  verify_certificate_evidence_incomplete:'A verificação não devolveu os dados completos do certificado.',
+  verify_timestamp_not_verified:'Foi pedido carimbo do tempo, mas a verificação não o confirmou.',
+}
+
+export function clinicalSignatureEvidenceGapNote(code) {
+  return EVIDENCE_GAP_NOTES[code] || 'A evidência da assinatura ainda não pôde ser confirmada.'
+}
 
 // Documento elegivel: tipo suportado e autoria rastreavel. Documentos legados
 // sem `created_by` seguem apenas pela via manual.
@@ -104,6 +115,7 @@ export function clinicalSignatureActionState({
 } = {}) {
   const base = {
     canRequest:false,
+    canOpenSigningPage:false,
     canReconcile:false,
     canRetry:false,
     canAbandon:false,
@@ -154,17 +166,23 @@ export function clinicalSignatureActionState({
       }
     }
     if (attempt.evidenceGapCode) {
+      // Assinada no provedor, mas sem evidência verificável do certificado:
+      // o arquivo é preservado e a tela diz exatamente o que falta.
+      const invalid = attempt.evidenceGapCode === 'verify_signature_invalid'
       return {
         ...base,
         canReconcile:isAuthor,
         canOpenArtifact:Boolean(attempt.hasStoredArtifact),
-        label:'Assinada na BRy · evidência pendente de homologação',
-        tone:'pending',
-        note:'O arquivo devolvido pela BRy foi guardado, mas a plataforma ainda não pode declarar assinatura qualificada.',
+        label:invalid ? 'Assinatura não validada pela BRy' : 'Assinada na BRy · evidência pendente',
+        tone:invalid ? 'failed' : 'pending',
+        note:clinicalSignatureEvidenceGapNote(attempt.evidenceGapCode),
       }
     }
     return {
       ...base,
+      // O link não fica guardado: reabrir a página é uma consulta ao provedor,
+      // sem criar envelope novo nem consumir crédito.
+      canOpenSigningPage:isAuthor,
       canReconcile:isAuthor,
       label:'Assinatura em processamento',
       tone:'pending',

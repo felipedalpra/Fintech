@@ -339,7 +339,7 @@ set signed_file_path = 'clinical-signatures/10000000-0000-0000-0000-000000000001
     signed_file_sha256 = repeat('e', 64),
     evidence_report_path = 'clinical-signatures/10000000-0000-0000-0000-000000000001/30000000-0000-0000-0000-000000000001/60000000-0000-0000-0000-000000000001-report.pdf',
     evidence_report_sha256 = repeat('f', 64),
-    evidence_gap_code = 'bry_evidence_not_machine_readable',
+    evidence_gap_code = 'verify_service_unavailable',
     provider_envelope_status = 'FINISHED'
 where id = '60000000-0000-0000-0000-000000000001';
 

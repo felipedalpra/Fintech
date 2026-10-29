@@ -18,6 +18,7 @@ import {
 } from '../lib/clinicalSignature.js'
 import {
   abandonClinicalSignature,
+  fetchClinicalSignatureLink,
   fetchClinicalSignatureState,
   openClinicalSignatureArtifact,
   reconcileClinicalSignature,
@@ -313,6 +314,23 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     }
   }
 
+  async function openSigningPage(attempt) {
+    if (signatureBusy) return
+    setSignatureBusy(attempt.id)
+    setSignatureNotice('')
+    setError('')
+    try {
+      const response = await fetchClinicalSignatureLink(attempt.id)
+      if (!openExternal(response.signingUrl)) {
+        setSignatureNotice('O navegador bloqueou a janela da BRy. Libere pop-ups e tente novamente.')
+      }
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível abrir a página de assinatura.')
+    } finally {
+      setSignatureBusy('')
+    }
+  }
+
   async function refreshSignatureStatus(attempt) {
     if (signatureBusy) return
     setSignatureBusy(attempt.id)
@@ -513,6 +531,9 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
                     )}
                     {signatureState.canRetry && (
                       <Btn variant="ghost" disabled={busy} onClick={() => setConfirmSignatureFor(record.id)}>Tentar assinar novamente</Btn>
+                    )}
+                    {signatureState.canOpenSigningPage && (
+                      <Btn variant="ghost" disabled={busy} onClick={() => openSigningPage(attempt)}>Abrir página de assinatura</Btn>
                     )}
                     {signatureState.canReconcile && (
                       <Btn variant="ghost" disabled={busy} onClick={() => refreshSignatureStatus(attempt)}>{busy ? 'Atualizando…' : 'Atualizar status'}</Btn>

@@ -36,6 +36,12 @@ export function requestClinicalSignature(documentId, requestId) {
   return authFetch('clinical-signature-request', { documentId, requestId })
 }
 
+// Reabre a pagina de assinatura de uma tentativa pendente, sem criar envelope
+// novo. O link nunca e guardado no navegador.
+export function fetchClinicalSignatureLink(attemptId) {
+  return authFetch('clinical-signature-link', { attemptId })
+}
+
 export function reconcileClinicalSignature(attemptId) {
   return authFetch('clinical-signature-reconcile', { attemptId })
 }

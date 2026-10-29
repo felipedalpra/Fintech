@@ -71,13 +71,14 @@ test('evidencia pendente de homologacao nao vira assinatura concluida', () => {
   const gap = state({
     attempt:{
       id:'a1', documentId:DOCUMENT, status:'pending',
-      evidenceGapCode:'bry_evidence_not_machine_readable',
+      evidenceGapCode:'verify_service_unavailable',
       hasStoredArtifact:true,
     },
   })
   expect(gap.canOpenSigned).toBe(false)
   expect(gap.canOpenArtifact).toBe(true)
   expect(gap.label).toContain('evidência pendente')
+  expect(gap.note).toContain('não respondeu')
   expect(gap.label).not.toContain('Assinado digitalmente')
 })
 
@@ -177,5 +178,24 @@ test('evidencia completa exige artefato, hash, padrao PAdES, certificado e insta
 test('nenhum estado diferente de signed e considerado evidencia completa', () => {
   for (const status of ['pending', 'failed', 'cancelled']) {
     expect(clinicalSignatureEvidenceComplete({ ...completeEvidence, status }), status).toBe(false)
+  }
+})
+
+test('tentativa pendente permite reabrir a pagina de assinatura sem novo envelope', () => {
+  const pendingAttempt = { id:'a1', documentId:DOCUMENT, status:'pending' }
+  const pending = state({ attempt:pendingAttempt })
+  expect(pending.canOpenSigningPage).toBe(true)
+  expect(pending.canRequest).toBe(false)
+
+  // Nao-autor nao reabre a pagina de outro profissional.
+  expect(state({ attempt:pendingAttempt, viewerId:OTHER }).canOpenSigningPage).toBe(false)
+
+  // Resultado desconhecido e evidencia pendente nao oferecem a pagina: nao ha
+  // o que assinar nesses estados.
+  expect(state({ attempt:{ ...pendingAttempt, dispatchState:'unknown' } }).canOpenSigningPage).toBe(false)
+  expect(state({ attempt:{ ...pendingAttempt, evidenceGapCode:'verify_service_unavailable' } }).canOpenSigningPage).toBe(false)
+  // Terminais tambem nao.
+  for (const status of ['signed', 'failed', 'cancelled']) {
+    expect(state({ attempt:{ ...pendingAttempt, status, evidenceComplete:status === 'signed' } }).canOpenSigningPage, status).toBe(false)
   }
 })

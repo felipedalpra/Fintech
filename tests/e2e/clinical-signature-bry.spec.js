@@ -56,6 +56,7 @@ async function openDocuments(page, {
   calls = {},
   requestHandler,
   reconcileHandler,
+  linkHandler,
   artifactHandler,
   abandonHandler,
 } = {}) {
@@ -96,6 +97,12 @@ async function openDocuments(page, {
       contentType:'application/json',
       body:JSON.stringify({ attempt:state.attempts[0], signingUrl:SIGNING_URL }),
     })
+  })
+
+  await page.route('**/api/secure-profile?action=clinical-signature-link', async route => {
+    calls.link = (calls.link || 0) + 1
+    if (linkHandler) return linkHandler(route, state, calls)
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ signingUrl:SIGNING_URL }) })
   })
 
   await page.route('**/api/secure-profile?action=clinical-signature-reconcile', async route => {
@@ -237,7 +244,7 @@ test('atualizar status mostra evidência pendente e nunca promete assinatura qua
     reconcileHandler:async (route, state) => {
       state.attempts = [attempt({
         envelopeStatus:'FINISHED',
-        evidenceGapCode:'bry_evidence_not_machine_readable',
+        evidenceGapCode:'verify_service_unavailable',
         hasStoredArtifact:true,
       })]
       await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ attempt:state.attempts[0], outcome:'evidencia_pendente' }) })
@@ -246,13 +253,35 @@ test('atualizar status mostra evidência pendente e nunca promete assinatura qua
   const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
 
   await card.getByRole('button', { name:'Atualizar status' }).click()
-  await expect(card.getByTestId('clinical-signature-status')).toContainText('evidência pendente de homologação')
+  await expect(card.getByTestId('clinical-signature-status')).toContainText('evidência pendente')
+  // O motivo auditável é explicado ao profissional, não escondido.
+  await expect(card).toContainText('serviço de verificação da BRy não respondeu')
   expect(calls.reconcile).toBe(1)
 
   // O artefato devolvido pode ser aberto, mas sem ser chamado de assinatura concluída.
   await expect(card.getByRole('button', { name:'Abrir arquivo devolvido pela BRy' })).toBeVisible()
   await expect(card.getByRole('button', { name:'Abrir PDF assinado' })).toHaveCount(0)
   await expect(card).not.toContainText('Assinado digitalmente')
+})
+
+test('assinatura reprovada pela verificação é sinalizada, não tratada como válida', async ({ page }) => {
+  const calls = {}
+  await openDocuments(page, {
+    calls,
+    attempts:[attempt({
+      envelopeStatus:'FINISHED',
+      evidenceGapCode:'verify_signature_invalid',
+      hasStoredArtifact:true,
+    })],
+  })
+  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+
+  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura não validada pela BRy')
+  await expect(card).toContainText('Não use este documento como assinado')
+  await expect(card.getByRole('button', { name:'Abrir PDF assinado' })).toHaveCount(0)
+  await expect(card).not.toContainText('Assinado digitalmente')
+  // A via manual continua sendo a saída.
+  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
 })
 
 test('assinatura com evidência completa abre o PDF assinado e mantém a via manual', async ({ page }) => {
@@ -351,6 +380,14 @@ test('pop-up bloqueado avisa sem expor o link e falha de rede não quebra a tela
   await card.getByRole('button', { name:'Confirmar e assinar' }).click()
   await expect(page.getByText(/bloqueou a janela da BRy/)).toBeVisible()
   expect(await page.content()).not.toContain(SIGNING_URL)
+
+  // A saída prometida na mensagem existe de verdade: reabrir a página sem
+  // criar outro envelope.
+  await page.evaluate(() => { window.__popupBlocked = false })
+  await card.getByRole('button', { name:'Abrir página de assinatura' }).click()
+  await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
+  expect(calls.link).toBe(1)
+  expect(calls.request).toBe(1)
 
   // Falha de rede na reconciliação mostra mensagem sanitizada e mantém o card.
   await page.route('**/api/secure-profile?action=clinical-signature-reconcile', route => route.fulfill({
