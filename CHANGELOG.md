@@ -6,6 +6,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-10-29
+### Added
+- **Spec da persistência da revisão na importação financeira retroativa**: documenta que a etapa de revisão vive hoje só na memória da aba (`FinancialImport.jsx` não tem nenhuma chamada ao banco), por isso fechar a aba apaga todo o trabalho de classificação — foi o que custou a revisão de 188 linhas da gestora da clínica. Registra que isso é divergência da spec aprovada em 15/10, cuja seção 6 já previa persistir o lote, e que o commit `ebe8d04` removeu a etapa ao separar o fluxo retroativo da conciliação. Traz o mapa de propagação (a etapa nova fica inteiramente antes da fonte canônica e não produz nenhum valor financeiro), o checklist de fidedignidade, três opções de modelo de dados com recomendação e os riscos de regressão. Não implementada: depende de autorização de SQL (regra 1). (`docs/superpowers/plans/2026-10-29-financial-import-review-persistence.md`.)
+
 ### Changed
 - **Auditoria do financeiro registra quem agiu, não o dono dos dados**: `insertAuditLog` gravava `actor_id` com o id do dono da clínica, perdendo a informação de qual usuário praticou a ação — e sendo rejeitado pela nova policy de INSERT, que exige `actor_id = auth.uid()`. Agora o ator vem da sessão (`supabase.auth.getSession()`, sem chamada de rede) e `user_id` continua sendo o escopo da clínica. (`src/lib/financeStore.js`.)
 
