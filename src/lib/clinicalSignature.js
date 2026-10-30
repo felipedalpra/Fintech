@@ -68,11 +68,28 @@ export function isValidCpf(value) {
   return checkDigit(9) === Number(digits[9]) && checkDigit(10) === Number(digits[10])
 }
 
+const BRAZIL_STATES = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+  'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+]
+
+// A UF do registro é obrigatória no documento assinado (OID 2.16.76.1.4.2.2.2).
+// O servidor recusa a assinatura sem ela, em vez de mandar uma UF errada num
+// documento médico — então a tela precisa cobrar a mesma coisa, senão o
+// profissional vê "identidade completa" e toma erro só na hora de assinar.
+export function hasProfessionalState(profile = {}) {
+  const registration = String(profile?.doctor?.registrationId || '').toUpperCase()
+  const clinicState = String(profile?.clinic?.state || '').trim().toUpperCase()
+  const match = registration.match(/\b([A-Z]{2})\b/)
+  return Boolean((match && BRAZIL_STATES.includes(match[1])) || BRAZIL_STATES.includes(clinicState))
+}
+
 export function clinicalSignerReadiness(profile = {}) {
   const doctor = profile?.doctor || {}
   const missing = []
   if (!String(doctor.fullName || '').trim()) missing.push('nome completo')
   if (!String(doctor.registrationId || '').trim()) missing.push('CRM')
+  else if (!hasProfessionalState(profile)) missing.push('UF no CRM (ex.: CRM-RS 12345)')
   if (!isValidCpf(doctor.cpf)) missing.push('CPF válido')
   return {
     ready:missing.length === 0,

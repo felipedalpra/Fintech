@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   clinicalSignatureActionState,
+  clinicalSignerReadiness,
   isClinicalSignatureEligible,
   latestAttemptByDocument,
 } from '../../src/lib/clinicalSignature.js'
@@ -198,4 +199,30 @@ test('tentativa pendente permite reabrir a pagina de assinatura sem novo envelop
   for (const status of ['signed', 'failed', 'cancelled']) {
     expect(state({ attempt:{ ...pendingAttempt, status, evidenceComplete:status === 'signed' } }).canOpenSigningPage, status).toBe(false)
   }
+})
+
+test('a prontidao do signatario cobra a UF, como o servidor cobra', () => {
+  // Sem UF o servidor recusa a assinatura (OID 2.16.76.1.4.2.2.2). Se a tela
+  // dissesse "identidade completa", a médica só descobriria ao tentar assinar.
+  const base = { doctor:{ fullName:'Dra. Vitória', cpf:'529.982.247-25' } }
+
+  const semUf = clinicalSignerReadiness({ doctor:{ ...base.doctor, registrationId:'12345' } })
+  expect(semUf.ready).toBe(false)
+  expect(semUf.missing.join(' ')).toContain('UF')
+
+  // UF no próprio CRM.
+  expect(clinicalSignerReadiness({ doctor:{ ...base.doctor, registrationId:'CRM-RS 12345' } }).ready).toBe(true)
+  expect(clinicalSignerReadiness({ doctor:{ ...base.doctor, registrationId:'CRM/SP 9988' } }).ready).toBe(true)
+
+  // UF vinda do endereço da clínica, que é o fallback do servidor.
+  expect(clinicalSignerReadiness({
+    doctor:{ ...base.doctor, registrationId:'12345' }, clinic:{ state:'MG' },
+  }).ready).toBe(true)
+
+  // Sigla que não é UF brasileira não vale.
+  expect(clinicalSignerReadiness({ doctor:{ ...base.doctor, registrationId:'CRM-XX 12345' } }).ready).toBe(false)
+
+  // As outras exigências continuam valendo.
+  expect(clinicalSignerReadiness({ doctor:{ registrationId:'CRM-RS 1', cpf:'529.982.247-25' } }).missing).toContain('nome completo')
+  expect(clinicalSignerReadiness({ doctor:{ fullName:'X', registrationId:'CRM-RS 1', cpf:'111' } }).missing).toContain('CPF válido')
 })
