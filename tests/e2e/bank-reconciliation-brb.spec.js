@@ -72,6 +72,12 @@ test('importa o extrato do BRB em texto e persiste exatamente o que mostrou', as
     const fulfill = body => route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/1' }, body:JSON.stringify(body) })
 
     if (path.endsWith('/rpc/start_bank_statement_import')) {
+      // Espelha o guard do SQL: se o cliente mandar um formato que o banco não
+      // aceita, a importação falha — foi exatamente o que passou despercebido.
+      const body = request.postDataJSON()
+      if (!['ofx', 'csv', 'xlsx', 'brb'].includes(body.p_format)) {
+        return route.fulfill({ status:400, contentType:'application/json', body:JSON.stringify({ message:'Formato de extrato inválido.' }) })
+      }
       return fulfill({ id:IMPORT_ID, user_id:USER_ID, financial_account_id:ACCOUNT_ID, status:'importing', expected_line_count:4, line_count:0 })
     }
     if (path.endsWith('/rpc/finalize_bank_statement_import')) {
@@ -143,10 +149,11 @@ test('importa o extrato do BRB em texto e persiste exatamente o que mostrou', as
   // A contraparte chegou na coluna certa, sem o código de canal.
   expect(duplicadas[0].counterparty_name).toBe('FULANO DE TAL AAAA')
 
-  // DOC 000000 não vira identificador; DOC real vira.
+  // Nenhuma linha vira external_id: o DOC não é único entre tipos e uma
+  // colisão derrubaria a importação inteira. O número fica em source_metadata.
+  expect(persisted.every(row => row.external_id === null)).toBe(true)
   const ted = persisted.find(row => Number(row.amount) === 500)
-  expect(ted.external_id).toBe('brb:821925')
-  expect(duplicadas[0].external_id).toBeNull()
+  expect(ted.source_metadata.docNumber).toBe('821925')
 
   // A contagem declarada na finalização bate com o que foi gravado.
   expect(finalized).toBeTruthy()
@@ -165,6 +172,12 @@ test('importa o extrato do BRB em PDF, remontando as colunas pela posição', as
     const fulfill = body => route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/1' }, body:JSON.stringify(body) })
 
     if (path.endsWith('/rpc/start_bank_statement_import')) {
+      // Espelha o guard do SQL: se o cliente mandar um formato que o banco não
+      // aceita, a importação falha — foi exatamente o que passou despercebido.
+      const body = request.postDataJSON()
+      if (!['ofx', 'csv', 'xlsx', 'brb'].includes(body.p_format)) {
+        return route.fulfill({ status:400, contentType:'application/json', body:JSON.stringify({ message:'Formato de extrato inválido.' }) })
+      }
       return fulfill({ id:IMPORT_ID, user_id:USER_ID, financial_account_id:ACCOUNT_ID, status:'importing', expected_line_count:4, line_count:0 })
     }
     if (path.endsWith('/rpc/finalize_bank_statement_import')) {
@@ -216,7 +229,8 @@ test('importa o extrato do BRB em PDF, remontando as colunas pela posição', as
 
   const ted = persisted.find(row => Number(row.amount) === 500)
   expect(ted.posted_date).toBe('2026-10-07')
-  expect(ted.external_id).toBe('brb:821925')
+  expect(ted.external_id).toBeNull()
+  expect(ted.source_metadata.docNumber).toBe('821925')
 
   const tarifa = persisted.find(row => Number(row.amount) < 0)
   expect(tarifa.amount).toBe(-9)

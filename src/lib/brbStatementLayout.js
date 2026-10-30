@@ -28,6 +28,8 @@ const DAY = /^(\d{2})\/(\d{2})\b/
 const AMOUNT = /R\$\s*([+−-])?\s*([\d.]+,\d{2})/
 // `CREDITO PIX – DOC: 000000`
 const HISTORY = /^(.*?)\s*[–-]\s*DOC:\s*(\d+)\s*$/
+// Linhas que nunca sao movimento nem contraparte.
+const IGNORED_LINE = /^(Dia|Hist[óo]rico|Valor|Extrato|P[áa]gina\b|Total\b|Saldo\b|Ag[êe]ncia\b|Conta\b)/i
 
 // Um extrato do BRB tem estes marcadores; sem eles nao tentamos interpretar.
 export function looksLikeBrbStatement(content) {
@@ -107,9 +109,24 @@ export function parseBrbStatementText(content, options = {}) {
       return
     }
 
-    // A SEÇÃO manda no sinal: `ENTRADAS` é sempre entrada, `SAÍDAS` sempre
-    // saída. O sinal impresso na linha é só confirmação.
+    // A SEÇÃO manda no sinal. Sem seção reconhecida nao ha como saber se e
+    // entrada ou saida, e assumir entrada transformaria um debito em credito
+    // silenciosamente -- erro que so apareceria no fluxo de caixa.
+    if (direction !== 'in' && direction !== 'out') {
+      errors.push({ line:physicalLine, reason:'Movimento fora de ENTRADAS/SAÍDAS: não é possível saber se é entrada ou saída.' })
+      return
+    }
     const signed = direction === 'out' ? -Math.abs(amount) : Math.abs(amount)
+
+    // O sinal impresso na linha e redundante com a secao. Quando os dois se
+    // contradizem, alguma leitura esta errada: avisamos em vez de escolher.
+    if (amount < 0 !== (direction === 'out')) {
+      errors.push({
+        line:physicalLine,
+        reason:`Sinal do valor contradiz a seção ${direction === 'out' ? 'SAÍDAS' : 'ENTRADAS'}: confira esta linha no extrato.`,
+      })
+      return
+    }
 
     // O codigo de canal (`— 0136`) nao diz nada para quem concilia e atrapalha
     // o casamento por nome, entao sai tambem da descricao.
@@ -125,8 +142,12 @@ export function parseBrbStatementText(content, options = {}) {
 
     lines.push({
       sourceLineKey:`brb:${base}#${seen}`,
-      // `DOC: 000000` não identifica nada; só expomos quando é número real.
-      externalId:doc && !/^0+$/.test(doc) ? `brb:${doc}` : null,
+      // Nenhum external_id para o BRB. O `DOC` nao e unico entre tipos de
+      // operacao, e o indice unico de external_id derrubaria a importacao
+      // INTEIRA numa colisao -- inclusive ao reimportar um periodo sobreposto.
+      // O numero fica em source_metadata para conferencia humana, e a
+      // deduplicacao usa a chave derivada e o fingerprint.
+      externalId:null,
       postedDate,
       amount:Math.round(signed * 100) / 100,
       description,
@@ -160,16 +181,30 @@ export function parseBrbStatementText(content, options = {}) {
       return
     }
 
-    if (/^ENTRADAS$/i.test(line)) { flush(physicalLine); direction = 'in'; return }
-    if (/^SA[IÍ]DAS$/i.test(line)) { flush(physicalLine); direction = 'out'; return }
-    // Cabeçalho da tabela e rodapés não são movimento.
-    if (/^(Dia|Histórico|Valor|Extrato)\b/i.test(line)) return
+    // `\b` e nao `$`: a remontagem por posicao pode colar outro texto na
+    // mesma linha do marcador (ex.: "SAÍDAS  Total").
+    if (/^ENTRADAS\b/i.test(line)) { flush(physicalLine); direction = 'in'; return }
+    if (/^SA[IÍ]DAS\b/i.test(line)) { flush(physicalLine); direction = 'out'; return }
+    // Cabecalho, rodape e totais nao sao movimento. Isso importa mais do que
+    // parece: a contraparte entra na chave de deduplicacao, entao deixar um
+    // "Pagina 2 de 7" virar contraparte faria a MESMA transacao gerar chaves
+    // diferentes em extratos paginados de formas diferentes.
+    if (IGNORED_LINE.test(line)) return
 
     const dayMatch = DAY.exec(line)
     if (dayMatch) {
       flush(physicalLine)
       if (!period) {
         errors.push({ line:physicalLine, reason:'Movimento antes do cabeçalho de mês: não é possível saber o ano.' })
+        return
+      }
+      if (Number(dayMatch[2]) !== period.month) {
+        // Somar o ano da secao a um mes diferente produziria data com meses de
+        // erro -- e a data de caixa alimenta fluxo e DRE.
+        errors.push({
+          line:physicalLine,
+          reason:`Mês da linha (${dayMatch[2]}) diferente do mês da seção (${String(period.month).padStart(2, '0')}).`,
+        })
         return
       }
       const rest = line.slice(dayMatch[0].length).trim()
@@ -210,6 +245,12 @@ export function parseBrbStatementText(content, options = {}) {
   return { lines, errors, sections }
 }
 
+// Uma linha de continuacao so vale como contraparte se parecer nome: letras.
+// Um fragmento solto de valor ou um numero perdido nao viram nome.
+function looksLikeName(text) {
+  return /[A-Za-zÀ-ÿ]{3}/.test(text) && !/R\$/.test(text)
+}
+
 function applyHistory(target, text) {
   const historyMatch = HISTORY.exec(text)
   if (historyMatch) {
@@ -219,6 +260,8 @@ function applyHistory(target, text) {
     return
   }
   // Sem `DOC:`, é a linha da contraparte — ou o tipo, se ainda não veio.
-  if (!target.kind) target.kind = text.trim()
-  else if (!target.counterparty) target.counterparty = text.trim()
+  const value = text.trim()
+  if (!looksLikeName(value) && !/^\d{3,4}$/.test(value)) return
+  if (!target.kind) target.kind = value
+  else if (!target.counterparty) target.counterparty = value
 }

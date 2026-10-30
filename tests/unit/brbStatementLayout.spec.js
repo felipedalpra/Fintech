@@ -125,14 +125,78 @@ test('a mesma linha lida de novo gera a mesma chave, para dedupe entre importaç
   expect(comCabecalhoExtra.map(line => line.sourceLineKey)).toEqual(primeira.map(line => line.sourceLineKey))
 })
 
-test('DOC 000000 não vira identificador, mas DOC real vira', () => {
+test('nenhuma linha vira external_id, porque o DOC não é único entre tipos', () => {
+  // O índice único de external_id derrubaria a importação INTEIRA numa colisão,
+  // inclusive ao reimportar um período sobreposto. O número fica em
+  // source_metadata para conferência, e a dedupe usa a chave derivada.
   const { lines } = parseBrbStatementText(EXTRATO)
-  const pix = lines.find(line => line.sourceMetadata.kind.includes('CREDITO PIX'))
+  expect(lines.every(line => line.externalId === null)).toBe(true)
+
   const ted = lines.find(line => line.sourceMetadata.kind.includes('TED'))
-  const tributo = lines.find(line => line.sourceMetadata.kind.includes('TRIBUTO'))
-  expect(pix.externalId).toBeNull()
-  expect(ted.externalId).toBe('brb:821925')
-  expect(tributo.externalId).toBe('brb:649808')
+  expect(ted.sourceMetadata.docNumber).toBe('821925')
+  const pix = lines.find(line => line.sourceMetadata.kind.includes('CREDITO PIX'))
+  expect(pix.sourceMetadata.docNumber).toBe('000000')
+})
+
+test('movimento fora de ENTRADAS/SAÍDAS é recusado, nunca vira entrada por omissão', () => {
+  const semSecao = `OUTUBRO/2026
+Dia Histórico Valor
+01/10 DEBITO PIX – DOC: 000000
+R$ −500,00`
+  const { lines, errors } = parseBrbStatementText(semSecao)
+  expect(lines).toHaveLength(0)
+  expect(errors[0].reason).toContain('não é possível saber se é entrada ou saída')
+})
+
+test('sinal impresso que contradiz a seção vira erro, não escolha silenciosa', () => {
+  const contraditorio = `ENTRADAS
+OUTUBRO/2026
+Dia Histórico Valor
+01/10 CREDITO PIX – DOC: 000000
+R$ −500,00`
+  const { lines, errors } = parseBrbStatementText(contraditorio)
+  expect(lines).toHaveLength(0)
+  expect(errors[0].reason).toContain('contradiz a seção')
+})
+
+test('mês da linha diferente do mês da seção é recusado', () => {
+  // Somar o ano da seção a outro mês geraria data com meses de erro, e a data
+  // de caixa alimenta fluxo e DRE.
+  const inconsistente = `ENTRADAS
+JANEIRO/2027
+Dia Histórico Valor
+31/12 CREDITO PIX – DOC: 000000
+R$ +100,00`
+  const { lines, errors } = parseBrbStatementText(inconsistente)
+  expect(lines).toHaveLength(0)
+  expect(errors[0].reason).toContain('diferente do mês da seção')
+})
+
+test('rodapé e totais não viram contraparte, porque ela entra na chave de dedupe', () => {
+  const comRodape = `ENTRADAS
+OUTUBRO/2026
+Dia Histórico Valor
+01/10 CREDITO PIX – DOC: 000000
+Página 2 de 7
+R$ +100,00
+02/10 CREDITO PIX – DOC: 000000
+Total do mês
+R$ +200,00`
+  const { lines } = parseBrbStatementText(comRodape)
+  expect(lines).toHaveLength(2)
+  expect(lines.every(line => line.sourceMetadata.counterpartyName === null)).toBe(true)
+})
+
+test('marcador de seção colado a outro texto ainda é reconhecido', () => {
+  // A remontagem por posição pode juntar "SAÍDAS" com um total na mesma linha.
+  const colado = `SAÍDAS   Total do período
+OUTUBRO/2026
+Dia Histórico Valor
+02/10 DEBITO PIX – DOC: 000000
+R$ −9,00`
+  const { lines } = parseBrbStatementText(colado)
+  expect(lines).toHaveLength(1)
+  expect(lines[0].amount).toBe(-9)
 })
 
 test('tipo e contraparte são separados, e o código de canal sai do nome', () => {

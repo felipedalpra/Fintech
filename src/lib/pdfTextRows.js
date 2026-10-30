@@ -36,7 +36,11 @@ export function groupTextItemsIntoRows(items, { toleranceRatio = DEFAULT_TOLERAN
   const rows = []
   let current = null
   for (const item of ordered) {
-    const tolerance = Math.max(item.height, 1) * toleranceRatio
+    // A tolerancia usa a MAIOR das duas alturas. Com a altura so do item, um
+    // fragmento que chega com altura zero (fonte sem escala) reduziria a
+    // tolerancia a meio ponto e partiria a linha, desalinhando o valor.
+    const anchorHeight = current ? Math.max(...current.items.map(entry => entry.height), 0) : 0
+    const tolerance = Math.max(item.height, anchorHeight, 6) * toleranceRatio
     if (current && Math.abs(current.y - item.y) <= tolerance) {
       current.items.push(item)
       // A linha fica ancorada no primeiro fragmento, para que uma sequencia de
@@ -119,6 +123,9 @@ export async function extractPdfTextRows(buffer, { maxPages = 100 } = {}) {
       const content = await page.getTextContent()
       const items = content.items
         .filter(item => typeof item.str === 'string')
+        // Texto rotacionado (marca d'agua) tem b/c != 0 e entraria como linha
+        // propria, no meio dos movimentos.
+        .filter(item => Math.abs(item.transform[1]) < 0.01 && Math.abs(item.transform[2]) < 0.01)
         .map(item => ({
           text:item.str,
           // transform = [a, b, c, d, e, f]: e/f sao a posicao.

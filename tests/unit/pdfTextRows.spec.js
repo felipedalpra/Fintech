@@ -126,7 +126,8 @@ test('o PDF remontado atravessa o parser e vira lançamentos corretos', async ()
   expect(primeira.sourceMetadata.counterpartyName).toBe('FULANO DE TAL AAAA')
 
   expect(segunda.postedDate).toBe('2026-10-07')
-  expect(segunda.externalId).toBe('brb:821925')
+  expect(segunda.sourceMetadata.docNumber).toBe('821925')
+  expect(segunda.externalId).toBeNull()
   expect(segunda.sourceMetadata.counterpartyName).toBe('BELTRANO DA SILVA')
 
   // A seção decidiu o sinal.
