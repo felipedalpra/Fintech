@@ -1259,3 +1259,107 @@ test('falha ao renderizar encerra TODAS as tentativas do lote', async () => {
     expect(row.failure_code).toBe('render_failed')
   }
 })
+
+// ---------------------------------------------------------------------------
+// Defeitos encontrados na revisao de codigo (30/10/2026)
+// ---------------------------------------------------------------------------
+
+test('o contrato do cliente aceita um id solto, nao so lista', async () => {
+  // A ficha do paciente passava `record.id` (string) para um backend que exige
+  // lista: Array.isArray falhava e TODA assinatura de documento unico dava 400.
+  const admin = batchSupabase({
+    clinical_documents:[documentRow],
+    clinical_signature_connections:[connectionRow],
+  })
+  const response = await requestClinicalSignature(batchBody([DOCUMENT]), deps({ admin }))
+  expect(response.attempts).toHaveLength(1)
+  expect(admin.db.clinical_document_signatures[0].provider_request_id).toBe(ENVELOPE)
+})
+
+test('documento ja em andamento recusa o lote ANTES de reservar qualquer tentativa', async () => {
+  // Sem a pre-checagem, a reserva estourava no meio e as tentativas ja criadas
+  // ficavam pendentes para sempre: a fila as escondia, o banco recusava nova
+  // tentativa e o encerramento nao as alcancava.
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, documentRow2],
+    clinical_signature_connections:[connectionRow],
+    clinical_document_signatures:[{
+      ...pendingAttempt, id:'60000000-0000-4000-8000-0000000000ee',
+      document_id:DOCUMENT_2, request_id:'90000000-0000-4000-8000-0000000000ee',
+    }],
+  })
+  let criou = false
+  const error = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({
+    admin, bry:{ createEnvelope:async () => { criou = true } },
+  })).catch(nextError => nextError)
+
+  expect(error.publicCode).toBe('tentativa_em_andamento')
+  expect(criou).toBe(false)
+  // Nenhuma tentativa nova foi criada: o documento livre nao ficou bloqueado.
+  expect(admin.db.clinical_document_signatures).toHaveLength(1)
+})
+
+test('documento ja assinado recusa o lote com mensagem propria', async () => {
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, documentRow2],
+    clinical_signature_connections:[connectionRow],
+    clinical_document_signatures:[{
+      ...pendingAttempt, id:'60000000-0000-4000-8000-0000000000ef',
+      document_id:DOCUMENT_2, status:'signed', request_id:'90000000-0000-4000-8000-0000000000ef',
+    }],
+  })
+  const error = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({ admin }))
+    .catch(nextError => nextError)
+  expect(error.publicCode).toBe('tentativa_em_andamento')
+  expect(error.message).toContain('assinatura valida')
+})
+
+test('lote misto no reuso falha fechado em vez de deixar documento fora do envelope', async () => {
+  // Reapresentar a mesma chave com um conjunto diferente deixaria a tentativa
+  // nova fora do envelope: assinada na BRy e nunca concluida aqui.
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, documentRow2],
+    clinical_signature_connections:[connectionRow],
+    clinical_document_signatures:[{
+      ...pendingAttempt, id:'60000000-0000-4000-8000-0000000000f1',
+      document_id:DOCUMENT, request_id:REQUEST_ID, provider_request_id:ENVELOPE,
+      document_payload_sha256:PAYLOAD_SHA256,
+    }],
+  })
+  const error = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({ admin }))
+    .catch(nextError => nextError)
+  expect(error.publicCode).toBe('lote_divergente')
+})
+
+test('dois despachos simultaneos nao criam dois envelopes nem gastam credito em dobro', async () => {
+  const admin = batchSupabase({
+    clinical_documents:[documentRow],
+    clinical_signature_connections:[connectionRow],
+  })
+  let envelopes = 0
+  const slowCreate = deps({
+    admin,
+    bry:{
+      createEnvelope:async (_config, body) => {
+        envelopes += 1
+        await new Promise(resolve => setTimeout(resolve, 30))
+        return {
+          envelopeId:ENVELOPE, signerId:'signer-1', envelopeStatus:'DRAFT',
+          documentsByNonce:new Map(body.documents.map(d => [d.documentNonce, { documentId:d.documentNonce }])),
+          signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1`,
+        }
+      },
+    },
+  })
+
+  const [first, second] = await Promise.allSettled([
+    requestClinicalSignature(batchBody([DOCUMENT]), slowCreate),
+    requestClinicalSignature(batchBody([DOCUMENT]), slowCreate),
+  ])
+  const outcomes = [first, second]
+  // Um envelope só, custe o que custar a corrida.
+  expect(envelopes).toBe(1)
+  expect(outcomes.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  const loser = outcomes.find(result => result.status === 'rejected')
+  expect(loser.reason.publicCode).toBe('despacho_em_andamento')
+})

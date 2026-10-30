@@ -56,3 +56,56 @@ create index if not exists idx_clinical_signature_batch
   on public.clinical_document_signatures(user_id, request_id);
 
 commit;
+
+-- ---------------------------------------------------------------------------
+-- 3. O mesmo DOCUMENTO CLINICO nao entra duas vezes no mesmo envelope
+-- ---------------------------------------------------------------------------
+-- O indice da secao 1 e por `provider_document_id`, que e o id da tentativa e
+-- portanto unico por construcao: ele garante o vinculo, mas NAO impede que o
+-- mesmo documento clinico apareca duas vezes no envelope (por exemplo, uma
+-- tentativa terminal e outra nova, ou duas chaves idempotentes distintas).
+-- Sem esta regra, dois PDFs assinados do mesmo documento conviveriam no mesmo
+-- envelope e a escolha de qual vale seria ambigua.
+begin;
+
+create unique index if not exists uq_clinical_signature_envelope_document
+  on public.clinical_document_signatures(user_id, provider, provider_request_id, document_id)
+  where provider_request_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- 4. Claim do despacho: dois POSTs simultaneos nao criam dois envelopes
+-- ---------------------------------------------------------------------------
+-- Sem isto, duas abas (ou um retry de rede) com a mesma chave idempotente
+-- chamam a criacao do envelope em paralelo. A segunda esbarra na imutabilidade
+-- ao gravar outro envelope, mas o envelope dela ja foi criado e cobrado:
+-- R$ 7,50 jogados fora e um envelope orfao em rascunho.
+-- `sending` e o estado intermediario que so um dos concorrentes consegue tomar.
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.clinical_document_signatures'::regclass
+      and conname = 'clinical_document_signatures_dispatch_state_check'
+  ) then
+    alter table public.clinical_document_signatures
+      drop constraint clinical_document_signatures_dispatch_state_check;
+  end if;
+
+  alter table public.clinical_document_signatures
+    add constraint clinical_document_signatures_dispatch_state_check
+    check (dispatch_state is null or dispatch_state in ('reserved', 'sending', 'sent', 'unknown')) not valid;
+end $$;
+
+comment on column public.clinical_document_signatures.dispatch_state is
+  'reserved = criada sem chamar a BRy; sending = despacho em curso (claim contra corrida); sent = envelope confirmado; unknown = POST ambiguo, exige acao humana.';
+
+commit;
+
+-- ---------------------------------------------------------------------------
+-- ATENCAO DE ORDEM
+-- ---------------------------------------------------------------------------
+-- `clinical_signature_readiness_schema.sql` recria o indice
+-- `uq_clinical_signature_provider_request` na forma antiga (envelope unico por
+-- tentativa). Se aquela migration for reexecutada DEPOIS desta, a assinatura em
+-- lote volta a ser bloqueada. Reaplicando as migrations em sequencia, esta
+-- precisa ser a ultima.

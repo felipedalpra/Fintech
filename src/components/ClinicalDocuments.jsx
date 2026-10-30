@@ -297,7 +297,8 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     try {
       // Chave idempotente da solicitacao: um reenvio apos falha de rede nao
       // cria um segundo envelope nem consome outro credito.
-      const response = await requestClinicalSignature(record.id, uid())
+      // Lote de um: a ficha do paciente assina um documento por vez.
+      const response = await requestClinicalSignature([record.id], uid())
       await refreshSignatures()
       if (response.signingUrl) {
         if (!openExternal(response.signingUrl)) {

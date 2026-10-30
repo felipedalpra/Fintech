@@ -39,7 +39,10 @@ export function fetchClinicalSignatureQueue() {
 // autoridade nenhuma e e revalidada no servidor.
 // Um envelope por LOTE: a BRy cobra por envelope, entao assinar dez documentos
 // de uma vez custa o mesmo que assinar um.
-export function requestClinicalSignature(documentIds, requestId) {
+// Aceita um id ou uma lista: o backend so entende lista, e passar uma string
+// por engano devolvia 400 silenciosamente em vez de assinar.
+export function requestClinicalSignature(documents, requestId) {
+  const documentIds = Array.isArray(documents) ? documents : [documents]
   return authFetch('clinical-signature-request', { documentIds, requestId })
 }
 

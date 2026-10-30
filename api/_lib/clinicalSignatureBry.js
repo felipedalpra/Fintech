@@ -376,16 +376,61 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
   const connection = await ensureConnection({ admin, ownerId, user, signer, config })
 
   // --- reserva idempotente das tentativas do lote --------------------------
-  let attempts = []
-  for (const document of documents) {
-    attempts.push(await reserveAttempt({
-      admin, ownerId, user, document, connection, requestId,
-      payloadSha256:payloadHashes.get(document.id), config,
-    }))
+  // Pre-checagem ANTES de reservar qualquer uma: se um documento do lote ja
+  // tem tentativa pendente ou assinatura valida, o trigger recusaria a reserva
+  // no meio do caminho e as anteriores ficariam pendentes para sempre, sem
+  // envelope e sem saida -- a fila as esconde e o encerramento nao as alcanca.
+  const { data:existingAttempts, error:existingError } = await admin
+    .from('clinical_document_signatures')
+    .select('document_id, status, request_id')
+    .eq('user_id', ownerId)
+    .in('document_id', documentIds)
+    .in('status', ['pending', 'signed'])
+  if (existingError && !missingRelation(existingError)) throw translateDatabaseError(existingError)
+  const blocking = (existingAttempts || []).filter(attempt => attempt.request_id !== requestId)
+  if (blocking.length > 0) {
+    throw httpError(
+      blocking.some(attempt => attempt.status === 'signed')
+        ? 'Um dos documentos selecionados ja tem assinatura valida.'
+        : 'Um dos documentos selecionados ja tem uma assinatura em andamento.',
+      409, 'tentativa_em_andamento',
+    )
+  }
+
+  // Mesmo com a pre-checagem, uma corrida pode derrubar a reserva no meio. Se
+  // isso acontecer, encerramos as que acabaram de ser criadas neste request
+  // para nao deixar documento bloqueado.
+  const attempts = []
+  try {
+    for (const document of documents) {
+      attempts.push(await reserveAttempt({
+        admin, ownerId, user, document, connection, requestId,
+        payloadSha256:payloadHashes.get(document.id), config,
+      }))
+    }
+  } catch (error) {
+    await terminalizeBatch(admin, attempts.filter(attempt => !attempt.provider_request_id), {
+      status:'failed',
+      failureCode:'batch_reserve_failed',
+      failureMessage:'O lote nao pode ser reservado por completo. Nenhum envelope foi criado.',
+    })
+    throw error
   }
 
   const alreadySent = attempts.find(attempt => attempt.provider_request_id)
   if (alreadySent) {
+    // Lote misto: parte ja tem envelope e parte nao. Isso significa que a
+    // reapresentacao mudou o conjunto de documentos, ou que a gravacao dos
+    // identificadores foi interrompida. Nos dois casos, seguir em frente
+    // deixaria tentativas fora do envelope, assinadas na BRy e nunca
+    // concluidas aqui. Falha fechada.
+    const divergent = attempts.filter(attempt => attempt.provider_request_id !== alreadySent.provider_request_id)
+    if (divergent.length > 0) {
+      throw httpError(
+        'Esta solicitacao ja foi enviada com outro conjunto de documentos. Atualize o status e refaca a selecao.',
+        409, 'lote_divergente',
+      )
+    }
     // Mesmo lote reapresentado e envelope ja criado: nao reenvia e nao consome
     // outro credito. Recupera o link na BRy para o proprio profissional.
     const reused = await recoverSigningLink({ admin, ownerId, attempt:alreadySent, config, deps })
@@ -453,6 +498,35 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
 
   for (const item of envelopeDocuments) {
     await updatePending(admin, item.attemptId, { rendered_pdf_sha256:item.sha256 })
+  }
+
+  // --- claim do despacho ---------------------------------------------------
+  // Duas abas (ou um retry de rede) com a mesma chave idempotente chamariam a
+  // criacao do envelope em paralelo: dois envelopes criados, dois creditos
+  // gastos e um orfao em rascunho. Só quem consegue mover TODAS as tentativas
+  // de `reserved` para `sending` segue adiante.
+  const claimed = []
+  for (const attempt of attempts) {
+    const { data:rows, error:claimError } = await admin
+      .from('clinical_document_signatures')
+      .update({ dispatch_state:'sending' })
+      .eq('id', attempt.id)
+      .eq('status', 'pending')
+      .eq('dispatch_state', 'reserved')
+      .select('id')
+    if (claimError) throw translateDatabaseError(claimError)
+    if ((rows || []).length > 0) claimed.push(attempt)
+  }
+  if (claimed.length !== attempts.length) {
+    // Outro request ja esta despachando este lote. Nao criamos um segundo
+    // envelope: devolvemos a quem perdeu a corrida que ja esta em andamento.
+    for (const attempt of claimed) {
+      await updatePending(admin, attempt.id, { dispatch_state:'reserved' })
+    }
+    throw httpError(
+      'Esta solicitacao ja esta sendo enviada. Aguarde e use "Atualizar status".',
+      409, 'despacho_em_andamento',
+    )
   }
 
   // --- criacao do envelope na BRy -----------------------------------------
