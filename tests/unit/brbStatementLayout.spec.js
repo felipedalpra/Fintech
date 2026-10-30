@@ -313,16 +313,133 @@ test('o carimbo de geração do extrato não vira lançamento', () => {
 })
 
 test('o tipo pendente não atravessa a troca de seção', () => {
-  // Um historico orfao no fim das ENTRADAS nao pode ser adotado pelo primeiro
-  // movimento das SAIDAS -- seria um lancamento com o tipo de outra secao.
+  // Este teste nasceu VAZIO: a versão anterior punha um `DEBITO PIX – DOC:`
+  // depois da troca de seção, que sobrescrevia o cabeçalho pendente de
+  // qualquer forma -- então ele passava mesmo sem o reset que dizia testar.
+  // Agora o movimento das SAÍDAS vem SEM cabeçalho: ele não pode herdar o
+  // `CREDITO PIX` órfão das ENTRADAS, que é de outra seção.
   const { lines, errors } = parseBrbStatementText(`ENTRADAS
 OUTUBRO/2026
 CREDITO PIX – DOC: 000000
 SAÍDAS
 OUTUBRO/2026
-DEBITO PIX – DOC: 000000
 02/10 R$ −9,00`)
-  expect(errors).toEqual([])
+  expect(lines).toHaveLength(0)
+  expect(errors.map(error => error.reason)).toEqual([
+    expect.stringContaining('sem movimento correspondente'),
+    expect.stringContaining('Movimento sem tipo de operação'),
+  ])
+})
+
+test('movimento sem histórico é recusado, nunca gravado sem tipo', () => {
+  // O tipo entra na chave de deduplicação. Um movimento sem tipo gravado em
+  // silêncio corrompe a chave: reimportar o período duplicaria lançamentos.
+  const { lines, errors } = parseBrbStatementText(`ENTRADAS
+OUTUBRO/2026
+01/10 R$ +10,00
+FULANO DE TAL — 0136`)
+  expect(lines).toHaveLength(0)
+  expect(errors[0].reason).toContain('Movimento sem tipo de operação')
+})
+
+test('texto livre nunca é promovido a tipo, mesmo sem histórico na frente', () => {
+  // Era o bug original: a contraparte tomava o lugar do tipo. Aqui o primeiro
+  // movimento é recusado, e o SEGUNDO (com cabeçalho) sai correto -- provando
+  // que a falha de um não contamina o outro.
+  const { lines, errors } = parseBrbStatementText(`ENTRADAS
+OUTUBRO/2026
+01/10 R$ +10,00
+FULANO DE TAL — 0136
+CREDITO PIX – DOC: 000000
+02/10 R$ +5,00
+BELTRANO — 0136`)
+  expect(errors).toHaveLength(1)
   expect(lines).toHaveLength(1)
-  expect(lines[0].sourceMetadata.kind).toBe('DEBITO PIX')
+  expect(lines[0].sourceMetadata.kind).toBe('CREDITO PIX')
+  expect(lines[0].sourceMetadata.counterpartyName).toBe('BELTRANO')
+})
+
+test('contraparte que começa com palavra de rótulo não é descartada', () => {
+  // `Conta\b`, `Dia`, `Total\b` casavam por PREFIXO e engoliam contrapartes
+  // reais. A contraparte entra na chave de dedupe, então perdê-la faz duas
+  // transferências de mesmo valor e dia para fornecedores diferentes
+  // compartilharem a mesma base de chave.
+  const nomes = ['CONTA AZUL SA', 'DIAGNOSTICOS DO BRASIL', 'TOTAL SAUDE LTDA', 'VALORIZE SERVICOS', 'SALDAO DA CONSTRUCAO']
+  for (const nome of nomes) {
+    const { lines, errors } = parseBrbStatementText(`SAÍDAS
+OUTUBRO/2026
+DEBITO PIX – DOC: 000000
+01/10 R$ −10,00
+${nome} — 0136`)
+    expect(errors, nome).toEqual([])
+    expect(lines[0].sourceMetadata.counterpartyName, nome).toBe(nome)
+  }
+})
+
+test('rótulo de rodapé continua sendo descartado, agora pela forma exata', () => {
+  const rotulos = ['Extrato', 'Dia Histórico Valor', 'Total do mês', 'Total', 'Saldo anterior',
+    'Conta Corrente: 100.000.000-0', 'Agência: 100 — Conta Corrente: 100.000.000-0',
+    'Página 2 de 7', '29/10/2026 14:22']
+  for (const rotulo of rotulos) {
+    const { lines, errors } = parseBrbStatementText(`SAÍDAS
+OUTUBRO/2026
+DEBITO PIX – DOC: 000000
+01/10 R$ −10,00
+${rotulo}`)
+    expect(errors, rotulo).toEqual([])
+    expect(lines, rotulo).toHaveLength(1)
+    expect(lines[0].sourceMetadata.counterpartyName, rotulo).toBeNull()
+  }
+})
+
+test('dois históricos seguidos não fazem o primeiro desaparecer', () => {
+  const { lines, errors } = parseBrbStatementText(`ENTRADAS
+OUTUBRO/2026
+CREDITO PIX – DOC: 111
+CREDITO DE TED PAG C.CORRENTE – DOC: 222
+01/10 R$ +10,00`)
+  expect(lines).toHaveLength(1)
+  expect(lines[0].sourceMetadata.kind).toBe('CREDITO DE TED PAG C.CORRENTE')
+  expect(errors[0].reason).toContain('CREDITO PIX')
+  expect(errors[0].reason).toContain('sem movimento correspondente')
+})
+
+test('histórico órfão no fim do arquivo é avisado, não engolido', () => {
+  // Um histórico sem movimento significa que a leitura perdeu uma linha: o
+  // extrato ficaria com um lançamento de menos sem ninguém notar.
+  const { lines, errors } = parseBrbStatementText(`ENTRADAS
+OUTUBRO/2026
+CREDITO PIX – DOC: 111
+01/10 R$ +10,00
+DEBITO PIX – DOC: 222`)
+  expect(lines).toHaveLength(1)
+  expect(errors[0].reason).toContain('sem movimento correspondente')
+})
+
+test('segunda linha de texto no mesmo movimento vira erro, não escolha', () => {
+  // Se duas linhas disputam o papel de contraparte, a chave de dedupe passaria
+  // a depender de onde a página quebrou. Avisar é melhor que escolher.
+  const { errors } = parseBrbStatementText(`SAÍDAS
+OUTUBRO/2026
+DEBITO PIX – DOC: 000000
+01/10 R$ −10,00
+FULANO DE TAL — 0136
+BELTRANO DA SILVA`)
+  expect(errors[0].reason).toContain('Linha inesperada dentro de um movimento')
+})
+
+test('a mesma transação gera a mesma chave com paginação diferente', () => {
+  // Fidedignidade cross-importação: reimportar o mesmo período com o extrato
+  // paginado de outra forma não pode mudar a chave de deduplicação, senão a
+  // reimportação duplica tudo.
+  const movimento = `DEBITO PIX – DOC: 000000
+01/10 R$ −10,00
+FULANO DE TAL — 0136`
+  const semQuebra = parseBrbStatementText(`SAÍDAS\nOUTUBRO/2026\n${movimento}`)
+  const comQuebra = parseBrbStatementText(
+    `SAÍDAS\nOUTUBRO/2026\nPágina 1 de 2\n${movimento}\nPágina 2 de 2\nDia Histórico Valor`,
+  )
+  expect(semQuebra.errors).toEqual([])
+  expect(comQuebra.errors).toEqual([])
+  expect(comQuebra.lines[0].sourceLineKey).toBe(semQuebra.lines[0].sourceLineKey)
 })

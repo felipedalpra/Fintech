@@ -30,7 +30,29 @@ const AMOUNT = /R\$\s*([+−-])?\s*([\d.]+,\d{2})/
 // `CREDITO PIX – DOC: 000000`
 const HISTORY = /^(.*?)\s*[–-]\s*DOC:\s*(\d+)\s*$/
 // Linhas que nunca sao movimento nem contraparte.
-const IGNORED_LINE = /^(Dia|Hist[óo]rico|Valor|Extrato|P[áa]gina\b|Total\b|Saldo\b|Ag[êe]ncia\b|Conta\b)/i
+//
+// Casar por PREFIXO de palavra aqui era um erro silencioso: `Conta\b` descarta
+// `CONTA AZUL SA`, `Dia` descarta `DIAGNOSTICOS DO BRASIL`, `Total\b` descarta
+// `TOTAL SAUDE LTDA` -- todas contrapartes plausiveis, e a contraparte entra na
+// chave de deduplicacao. Por isso cada rotulo e ancorado na forma em que o
+// extrato realmente o imprime: sozinho, seguido de valor, ou com dois-pontos.
+const IGNORED_LINE_PATTERNS = [
+  /^Extrato$/i,
+  /^P[áa]gina\b/i,
+  // Cabecalho da tabela, junto ou em fragmentos separados.
+  /^Dia\s+Hist[óo]rico\s+Valor$/i,
+  /^(Dia|Hist[óo]rico|Valor)$/i,
+  // Rotulo de rodape/cabecalho: nada alfabetico depois dele.
+  /^(Total|Saldo|Ag[êe]ncia|Conta(?:\s+Corrente)?)\b[^A-Za-zÀ-ÿ]*$/i,
+  /^(Total|Saldo)\s+(do|da|de|geral|m[êe]s|per[íi]odo|anterior|atual)\b/i,
+  /^Ag[êe]ncia\b.*\bConta\b/i,
+  // Carimbo de geracao do extrato: `29/10/2026 14:22`.
+  /^\d{2}\/\d{2}\/\d{4}(\s+\d{2}:\d{2})?$/,
+]
+
+function isIgnoredLine(line) {
+  return IGNORED_LINE_PATTERNS.some(pattern => pattern.test(line))
+}
 
 // Um extrato do BRB tem estes marcadores; sem eles nao tentamos interpretar.
 export function looksLikeBrbStatement(content) {
@@ -99,6 +121,18 @@ export function parseBrbStatementText(content, options = {}) {
   let pendingHeader = null
   const occurrences = new Map()
 
+  // Um cabecalho de historico que nunca encontra o seu movimento significa que
+  // a leitura perdeu uma linha. Descartar em silencio deixaria o extrato com um
+  // lancamento de menos sem ninguem notar.
+  function discardPendingHeader(physicalLine) {
+    if (!pendingHeader) return
+    errors.push({
+      line:physicalLine,
+      reason:`Histórico "${pendingHeader.kind}" sem movimento correspondente: confira esta parte do extrato.`,
+    })
+    pendingHeader = null
+  }
+
   function flush(physicalLine) {
     if (!pending) return
     const { day, month, year, amount, kind, doc, counterparty, lineIndex } = pending
@@ -111,6 +145,18 @@ export function parseBrbStatementText(content, options = {}) {
     }
     if (amount == null || amount === 0) {
       errors.push({ line:physicalLine, reason:'Valor ausente ou igual a zero.' })
+      return
+    }
+
+    // O tipo entra na descricao E na chave de deduplicacao. Gravar um
+    // movimento sem tipo (ou com a contraparte no lugar do tipo) corrompe a
+    // chave: reimportar o mesmo periodo duplicaria lancamentos. Falhar aberto
+    // aqui foi o que escondeu o bug do layout real.
+    if (!kind) {
+      errors.push({
+        line:physicalLine,
+        reason:'Movimento sem tipo de operação: nenhum histórico com "DOC:" foi encontrado para esta linha.',
+      })
       return
     }
 
@@ -180,7 +226,7 @@ export function parseBrbStatementText(content, options = {}) {
       const month = MONTHS[periodMatch[1].toLocaleUpperCase('pt-BR')]
       if (month) {
         flush(physicalLine)
-        pendingHeader = null
+        discardPendingHeader(physicalLine)
         period = { year:Number(periodMatch[2]), month }
         sections.push({ year:period.year, month, direction })
       }
@@ -189,13 +235,13 @@ export function parseBrbStatementText(content, options = {}) {
 
     // `\b` e nao `$`: a remontagem por posicao pode colar outro texto na
     // mesma linha do marcador (ex.: "SAÍDAS  Total").
-    if (/^ENTRADAS\b/i.test(line)) { flush(physicalLine); pendingHeader = null; direction = 'in'; return }
-    if (/^SA[IÍ]DAS\b/i.test(line)) { flush(physicalLine); pendingHeader = null; direction = 'out'; return }
+    if (/^ENTRADAS\b/i.test(line)) { flush(physicalLine); discardPendingHeader(physicalLine); direction = 'in'; return }
+    if (/^SA[IÍ]DAS\b/i.test(line)) { flush(physicalLine); discardPendingHeader(physicalLine); direction = 'out'; return }
     // Cabecalho, rodape e totais nao sao movimento. Isso importa mais do que
     // parece: a contraparte entra na chave de deduplicacao, entao deixar um
     // "Pagina 2 de 7" virar contraparte faria a MESMA transacao gerar chaves
     // diferentes em extratos paginados de formas diferentes.
-    if (IGNORED_LINE.test(line)) return
+    if (isIgnoredLine(line)) return
 
     const dayMatch = DAY.exec(line)
     if (dayMatch) {
@@ -229,14 +275,22 @@ export function parseBrbStatementText(content, options = {}) {
       pendingHeader = null
       // O restante da linha pode já trazer o histórico.
       const withoutAmount = rest.replace(AMOUNT, '').trim()
-      if (withoutAmount) applyHistory(pending, withoutAmount)
+      if (withoutAmount) {
+        const problem = applyHistory(pending, withoutAmount)
+        if (problem) errors.push({ line:physicalLine, reason:problem })
+      }
       return
     }
 
-    // Linha com `DOC:` que nao completa o movimento aberto e o cabecalho do
-    // PROXIMO movimento, que no PDF vem antes da linha do dia.
+    // Um historico em linha PROPRIA e sempre o cabecalho do PROXIMO movimento.
+    // No layout em que o historico pertence a linha do dia, ele vem colado ao
+    // dia e e tratado ali (`withoutAmount`) -- nunca chega aqui. Deixar um
+    // historico solto ser adotado pelo movimento anterior que esta sem tipo
+    // daria a ele o tipo do movimento SEGUINTE, e deixaria o seguinte sem tipo.
     const headerMatch = HISTORY.exec(line)
-    if (headerMatch && (!pending || pending.kind)) {
+    if (headerMatch) {
+      // Dois cabecalhos seguidos: o primeiro ficaria sem movimento.
+      discardPendingHeader(physicalLine)
       pendingHeader = { kind:headerMatch[1].trim(), doc:headerMatch[2] }
       return
     }
@@ -248,14 +302,21 @@ export function parseBrbStatementText(content, options = {}) {
         if (amount != null) {
           pending.amount = amount
           const rest = line.replace(AMOUNT, '').trim()
-          if (rest) applyHistory(pending, rest)
+          if (rest) {
+            const problem = applyHistory(pending, rest)
+            if (problem) errors.push({ line:physicalLine, reason:problem })
+          }
           return
         }
       }
-      applyHistory(pending, line)
+      const problem = applyHistory(pending, line)
+      if (problem) errors.push({ line:physicalLine, reason:problem })
     }
   })
-  flush(rawLines.length + Number(options.lineIndexOffset || 0))
+  const lastLine = rawLines.length + Number(options.lineIndexOffset || 0)
+  flush(lastLine)
+  // Cabecalho orfao no fim do arquivo.
+  discardPendingHeader(lastLine)
 
   return { lines, errors, sections }
 }
@@ -266,17 +327,27 @@ function looksLikeName(text) {
   return /[A-Za-zÀ-ÿ]{3}/.test(text) && !/R\$/.test(text)
 }
 
+// Devolve null quando a linha foi aproveitada, ou o motivo do erro.
 function applyHistory(target, text) {
   const historyMatch = HISTORY.exec(text)
   if (historyMatch) {
     // `CREDITO PIX – DOC: 000000`
     if (!target.kind) target.kind = historyMatch[1].trim()
     if (!target.doc) target.doc = historyMatch[2]
-    return
+    return null
   }
-  // Sem `DOC:`, é a linha da contraparte — ou o tipo, se ainda não veio.
+  // Sem `DOC:`, e a linha da contraparte. O tipo NUNCA vem daqui: promover
+  // texto livre a tipo era exatamente o bug que corrompia a descricao e a
+  // chave de dedupe -- a contraparte tomava o lugar do tipo sem erro nenhum.
   const value = text.trim()
-  if (!looksLikeName(value) && !/^\d{3,4}$/.test(value)) return
-  if (!target.kind) target.kind = value
-  else if (!target.counterparty) target.counterparty = value
+  const isChannelCode = /^\d{3,4}$/.test(value)
+  if (!isChannelCode && !looksLikeName(value)) return null
+  if (!target.counterparty) {
+    target.counterparty = value
+    return null
+  }
+  // Uma segunda linha de texto no mesmo movimento significa que o layout nao e
+  // o que entendemos. Escolher uma das duas como contraparte mudaria a chave de
+  // dedupe conforme a paginacao, entao avisamos.
+  return `Linha inesperada dentro de um movimento: "${value}".`
 }

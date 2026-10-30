@@ -112,6 +112,17 @@ total por seção, exibidos para o humano confirmar.
   reescreve a competência de um lançamento;
 - conciliar aponta para o lançamento existente; não cria um paralelo.
 
+## Risco residual conhecido
+
+Uma linha de texto inesperada que caia **dentro** de um movimento sem contraparte
+(uma tarifa, por exemplo) é indistinguível de uma contraparte pela forma: há
+contrapartes legítimas sem código de canal (`SYMMETRIA LTDA`), então não dá para
+exigir o formato `NOME — NNNN`. Os rótulos que o extrato realmente imprime estão
+todos cobertos, e uma **segunda** linha de texto no mesmo movimento vira erro.
+O caso que resta — rodapé desconhecido num movimento sem contraparte — não ocorre
+no extrato real analisado, mas mudaria a chave de deduplicação conforme a
+paginação. Se aparecer, o sintoma é contraparte estranha na revisão.
+
 ## Perguntas a fechar com o Felipe
 
 1. O BRB exporta **OFX ou CSV**? O PDF já funciona, mas OFX seria melhor: tem
