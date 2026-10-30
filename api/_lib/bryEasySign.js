@@ -220,10 +220,16 @@ export function documentTypeOid(documentType) {
 // ---------------------------------------------------------------------------
 
 // Puro e testavel: nenhum segredo entra aqui.
+// Quantos documentos cabem num envelope. A BRy cobra POR ENVELOPE, entao este
+// limite e o que separa R$ 7,50 por documento de R$ 0,75.
+export const MAX_DOCUMENTS_PER_ENVELOPE = 10
+
+// `documents` e uma LISTA: cada item vira um documento do mesmo envelope, com
+// `documentNonce` definido por nos (o id da tentativa). Isso e o que permite
+// casar, sem ambiguidade, cada PDF assinado de volta ao documento clinico certo
+// -- nada de confiar em ordem ou em nome de arquivo devolvido pelo provedor.
 export function buildEnvelopePayload({
-  documentType,
-  fileName,
-  pdfBase64,
+  documents,
   envelopeName,
   clientName,
   signer,
@@ -236,7 +242,20 @@ export function buildEnvelopePayload({
   if (!BRY_SIGNATURE_MODES.includes(signatureMode)) {
     throw configError('Modo de assinatura BRy invalido.')
   }
-  if (!pdfBase64) throw configError('PDF do documento clinico ausente.')
+  const items = Array.isArray(documents) ? documents : []
+  if (items.length === 0) throw configError('Nenhum documento clinico para assinar.')
+  if (items.length > MAX_DOCUMENTS_PER_ENVELOPE) {
+    throw configError(`Um envelope aceita no maximo ${MAX_DOCUMENTS_PER_ENVELOPE} documentos.`)
+  }
+  const nonces = new Set()
+  for (const item of items) {
+    if (!item?.pdfBase64) throw configError('PDF do documento clinico ausente.')
+    const nonce = String(item.documentNonce || '').trim()
+    if (!nonce) throw configError('Identificador do documento ausente no envelope.')
+    if (nonces.has(nonce)) throw configError('Documento repetido no mesmo envelope.')
+    nonces.add(nonce)
+    documentTypeOid(item.documentType)
+  }
   if (!String(signer?.name || '').trim()) throw configError('Nome do signatario ausente.')
   const cpf = String(signer?.cpf || '').replace(/\D/g, '')
   if (cpf.length !== 11) throw configError('CPF do signatario invalido.')
@@ -262,15 +281,19 @@ export function buildEnvelopePayload({
     startAsDraft,
     // A BRy guarda o artefato de forma temporaria; a guarda definitiva e nossa.
     keepDocument:false,
-    documents:[{
-      filename:fileName,
+    documents:items.map(item => ({
+      // Identificador NOSSO: a BRy devolve o mesmo valor, e e por ele que o
+      // artefato assinado volta para a tentativa certa.
+      documentNonce:String(item.documentNonce).trim(),
+      filename:item.fileName,
       // base64Document com "D" maiusculo: confirmado pela BRy em 29/10/2026.
       // O schema publico grafa `base64document`, mas a API aceita a forma do
       // Quickstart; a BRy vai corrigir a documentacao.
-      base64Document:pdfBase64,
-      // O OID do tipo de documento medico e a CHAVE, com valor vazio.
-      metadata:{ [documentTypeOid(documentType)]:'' },
-    }],
+      base64Document:item.pdfBase64,
+      // O OID do tipo de documento medico e a CHAVE, com valor vazio. Cada
+      // documento do envelope pode ter o seu (exame e receita juntos).
+      metadata:{ [documentTypeOid(item.documentType)]:'' },
+    })),
     signersData:[{
       name:String(signer.name).trim(),
       personal_identifier:cpf,
@@ -440,12 +463,21 @@ export function normalizeEnvelopeCreation(payload) {
   const envelopeId = String(payload?.uuid || '').trim()
   const documents = Array.isArray(payload?.documents) ? payload.documents : []
   const signers = Array.isArray(payload?.signers) ? payload.signers : []
-  const documentId = String(documents[0]?.documentNonce || '').trim()
   const signer = signers[0] || {}
   const signerId = String(signer.signerNonce || '').trim()
   const signingUrl = String(signer.link?.href || '').trim()
 
-  if (!envelopeId || !documentId || !signerId) {
+  // Mapa documentNonce -> dados do documento. O nonce e o identificador que NOS
+  // enviamos, entao o vinculo e explicito: nada de casar por ordem ou por nome
+  // de arquivo. Quem chama confere que todo documento enviado voltou.
+  const documentsByNonce = new Map()
+  for (const document of documents) {
+    const nonce = String(document?.documentNonce || '').trim()
+    if (!nonce || documentsByNonce.has(nonce)) continue
+    documentsByNonce.set(nonce, { documentId:nonce, documentUuid:String(document?.documentUuid || '').trim() || null })
+  }
+
+  if (!envelopeId || documentsByNonce.size === 0 || !signerId) {
     throw new BryEasySignError('A BRy nao devolveu os identificadores do envelope.', { kind:'invalid_response', ambiguous:true })
   }
 
@@ -464,11 +496,25 @@ export function normalizeEnvelopeCreation(payload) {
 
   return {
     envelopeId,
-    documentId,
+    documentsByNonce,
     signerId,
     envelopeStatus:normalizeEnvelopeStatus(payload?.status),
     signingUrl:safeSigningUrl,
   }
+}
+
+// Confere que CADA documento enviado voltou identificado pelo seu nonce. Se um
+// unico faltar, o lote inteiro e recusado: anexar o PDF assinado ao documento
+// errado colocaria a receita de um paciente na ficha de outro.
+export function assertEnvelopeCoversDocuments(creation, expectedNonces) {
+  const missing = expectedNonces.filter(nonce => !creation.documentsByNonce.has(String(nonce)))
+  if (missing.length > 0) {
+    throw new BryEasySignError(
+      'A BRy nao identificou todos os documentos do envelope.',
+      { kind:'invalid_response', ambiguous:true },
+    )
+  }
+  return expectedNonces.map(nonce => creation.documentsByNonce.get(String(nonce)))
 }
 
 export function normalizeEnvelopeStatus(value) {

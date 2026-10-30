@@ -30,10 +30,17 @@ export function fetchClinicalSignatureState(documentIds) {
   return authFetch('clinical-signature-state', { documentIds })
 }
 
+// Fila de documentos assinaveis agora. Quem decide o que entra e o backend.
+export function fetchClinicalSignatureQueue() {
+  return authFetch('clinical-signature-queue')
+}
+
 // `requestId` e apenas a chave idempotente da solicitacao: nao concede
 // autoridade nenhuma e e revalidada no servidor.
-export function requestClinicalSignature(documentId, requestId) {
-  return authFetch('clinical-signature-request', { documentId, requestId })
+// Um envelope por LOTE: a BRy cobra por envelope, entao assinar dez documentos
+// de uma vez custa o mesmo que assinar um.
+export function requestClinicalSignature(documentIds, requestId) {
+  return authFetch('clinical-signature-request', { documentIds, requestId })
 }
 
 // Reabre a pagina de assinatura de uma tentativa pendente, sem criar envelope

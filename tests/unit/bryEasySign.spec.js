@@ -156,11 +156,16 @@ const signer = {
   specialty:'Cirurgia Plástica',
 }
 
+const DOC_NONCE = '60000000-0000-4000-8000-000000000001'
+
 function payload(overrides = {}) {
   return buildEnvelopePayload({
-    documentType:'exam_request',
-    fileName:'exam.pdf',
-    pdfBase64:'JVBERi0=',
+    documents:[{
+      documentNonce:DOC_NONCE,
+      fileName:'exam.pdf',
+      pdfBase64:'JVBERi0=',
+      documentType:'exam_request',
+    }],
     envelopeName:'envelope',
     clientName:'Clínica',
     signer,
@@ -172,7 +177,10 @@ function payload(overrides = {}) {
 
 test('o envelope leva o OID do documento como chave e os OIDs CFM no signatario', () => {
   const body = payload()
+  expect(body.documents).toHaveLength(1)
   expect(body.documents[0].metadata).toEqual({ '2.16.76.1.12.1.3':'' })
+  // O nonce e NOSSO: e por ele que o artefato assinado volta ao documento certo.
+  expect(body.documents[0].documentNonce).toBe(DOC_NONCE)
   expect(body.signersData[0].metadata[BRY_CFM_OIDS.registration]).toBe('12345')
   // base64Document com "D" maiusculo: caixa confirmada pela BRy em 29/10/2026.
   expect(body.documents[0].base64Document).toBe('JVBERi0=')
@@ -211,7 +219,7 @@ test('o modo qualificado nunca sofre downgrade silencioso', () => {
 
 test('payload recusa CPF invalido, PDF ausente e signatario sem nome', () => {
   expect(() => payload({ signer:{ ...signer, cpf:'123' } })).toThrow(/CPF/)
-  expect(() => payload({ pdfBase64:'' })).toThrow(/PDF/)
+  expect(() => payload({ documents:[{ documentNonce:DOC_NONCE, documentType:'exam_request', pdfBase64:'' }] })).toThrow(/PDF/)
   expect(() => payload({ signer:{ ...signer, name:'  ' } })).toThrow(/Nome/)
 })
 
@@ -229,14 +237,14 @@ test('o payload enviado a BRy nao contem token nem referencia de credencial', ()
 const creationResponse = {
   uuid:'80000000-0000-4000-8000-000000000001',
   status:'CREATED',
-  documents:[{ documentNonce:'doc-1' }],
+  documents:[{ documentNonce:DOC_NONCE, documentUuid:'uuid-1' }],
   signers:[{ signerNonce:'signer-1', link:{ href:'https://easysign.hom.bry.com.br/80000000-0000-4000-8000-000000000001/sign/signer-1' } }],
 }
 
 test('identificadores do envelope vem de uuid/documentNonce/signerNonce', () => {
   const normalized = normalizeEnvelopeCreation(creationResponse)
   expect(normalized.envelopeId).toBe('80000000-0000-4000-8000-000000000001')
-  expect(normalized.documentId).toBe('doc-1')
+  expect(normalized.documentsByNonce.get(DOC_NONCE).documentId).toBe(DOC_NONCE)
   expect(normalized.signerId).toBe('signer-1')
   expect(normalized.envelopeStatus).toBe('CREATED')
 })

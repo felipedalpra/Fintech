@@ -542,3 +542,83 @@ end $$;
 reset role;
 
 select 'clinicalSignatureBry: todos os cenarios passaram' as resultado;
+
+-- ===========================================================================
+-- 10. Lote: varias tentativas compartilham um envelope
+-- ===========================================================================
+-- A BRy cobra por ENVELOPE e aceita 10 documentos, entao as tentativas de um
+-- lote compartilham provider_request_id, cada uma com seu provider_document_id.
+\ir ../../supabase/clinical_signature_batch_schema.sql
+-- Reaplicacao: a migration do lote tambem e idempotente.
+\ir ../../supabase/clinical_signature_batch_schema.sql
+
+insert into public.clinical_documents(id, user_id, patient_id, created_by, author_name, author_registration, author_council) values
+  ('30000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', 'Dra. Membro', 'CRM-RS 200', 'CRM'),
+  ('30000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', 'Dra. Membro', 'CRM-RS 200', 'CRM');
+
+-- Duas tentativas, MESMO envelope e MESMA chave idempotente, documentos distintos.
+insert into public.clinical_document_signatures(
+  id, user_id, document_id, requested_by, signer_user_id, connection_id, request_id,
+  provider, provider_request_id, provider_document_id, status, rendering_version,
+  document_payload_sha256, dispatch_state, provider_environment
+) values
+  ('60000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001',
+   '30000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000002',
+   '10000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000001',
+   '70000000-0000-0000-0000-000000000010', 'bry_easy_sign', 'envelope-lote',
+   '60000000-0000-0000-0000-000000000011', 'pending', 'clinical-pdf-v2',
+   repeat('b', 64), 'sent', 'production'),
+  ('60000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000001',
+   '30000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000002',
+   '10000000-0000-0000-0000-000000000002', '50000000-0000-0000-0000-000000000001',
+   '70000000-0000-0000-0000-000000000010', 'bry_easy_sign', 'envelope-lote',
+   '60000000-0000-0000-0000-000000000012', 'pending', 'clinical-pdf-v2',
+   repeat('b', 64), 'sent', 'production');
+
+do $$
+begin
+  if (select count(*) from public.clinical_document_signatures where provider_request_id = 'envelope-lote') <> 2 then
+    raise exception 'O lote deveria ter duas tentativas no mesmo envelope.';
+  end if;
+end $$;
+
+-- O MESMO documento nao pode aparecer duas vezes no envelope: isso tornaria
+-- ambiguo de qual tentativa e cada PDF assinado.
+do $$
+begin
+  begin
+    insert into public.clinical_document_signatures(
+      user_id, document_id, requested_by, signer_user_id, connection_id, request_id,
+      provider, provider_request_id, provider_document_id, status, rendering_version, document_payload_sha256
+    ) values (
+      '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000011',
+      '10000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002',
+      '50000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000099',
+      'bry_easy_sign', 'envelope-lote', '60000000-0000-0000-0000-000000000011',
+      'pending', 'clinical-pdf-v2', repeat('b', 64)
+    );
+    raise exception 'Era esperado bloquear o mesmo documento do provedor duas vezes no envelope.';
+  exception when unique_violation or insufficient_privilege then null;
+  end;
+end $$;
+
+-- Envelope confirmado sem identificador de documento e recusado: sem ele nao da
+-- para saber de qual documento e o PDF baixado.
+do $$
+begin
+  begin
+    insert into public.clinical_document_signatures(
+      user_id, document_id, requested_by, signer_user_id, connection_id, request_id,
+      provider, provider_request_id, status, rendering_version, document_payload_sha256
+    ) values (
+      '10000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000002',
+      '10000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002',
+      '50000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000098',
+      'bry_easy_sign', 'envelope-sem-documento', 'pending', 'clinical-pdf-v2', repeat('b', 64)
+    );
+    raise exception 'Era esperado exigir provider_document_id junto do envelope.';
+  exception when check_violation or insufficient_privilege then null;
+  end;
+end $$;
+
+select 'clinicalSignatureBry lote: cenarios passaram' as resultado_lote;

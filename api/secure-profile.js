@@ -12,6 +12,7 @@ import {
   abandonClinicalSignature,
   clinicalSignatureContext,
   clinicalSignatureLink,
+  clinicalSignatureQueue,
   clinicalSignatureState,
   handleBryWebhook,
   openClinicalSignatureArtifact,
@@ -27,6 +28,7 @@ import {
 //   get | save                        -> perfil seguro (autenticado)
 //   clinical-signature-state          -> flag + tentativas do documento (autenticado)
 //   clinical-signature-request        -> cria envelope na BRy (autenticado, autor)
+//   clinical-signature-queue          -> documentos que o profissional pode assinar agora
 //   clinical-signature-link           -> reabre a pagina de assinatura (sem novo envelope)
 //   clinical-signature-reconcile      -> reconciliacao autenticada contra a BRy
 //   clinical-signature-abandon        -> encerra tentativa de resultado desconhecido
@@ -83,6 +85,10 @@ export default async function handler(req, res) {
 
     if (action === 'clinical-signature-request') {
       return res.status(200).json(await requestClinicalSignature(req))
+    }
+
+    if (action === 'clinical-signature-queue') {
+      return res.status(200).json(await clinicalSignatureQueue(req))
     }
 
     if (action === 'clinical-signature-link') {

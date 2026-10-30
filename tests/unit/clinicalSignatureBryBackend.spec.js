@@ -253,8 +253,11 @@ function deps({ admin, user = { id:AUTHOR }, ownerId = OWNER, configFactory = co
     verify:{ verifySignedPdf:verifyImpl || (async () => verificationPayload()) },
     bry:{
       startEnvelope:async () => null,
-      createEnvelope:async () => ({
-        envelopeId:ENVELOPE, documentId:'doc-1', signerId:'signer-1',
+      // Ecoa os nonces recebidos, como a BRy faz de verdade.
+      createEnvelope:async (_config, body) => ({
+        envelopeId:ENVELOPE,
+        documentsByNonce:new Map((body?.documents || []).map(d => [d.documentNonce, { documentId:d.documentNonce, documentUuid:'u' }])),
+        signerId:'signer-1',
         envelopeStatus:'CREATED',
         signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1`,
       }),
@@ -267,7 +270,11 @@ function deps({ admin, user = { id:AUTHOR }, ownerId = OWNER, configFactory = co
 }
 
 function requestBody(overrides = {}) {
-  return { headers:{ authorization:'Bearer sessao' }, query:{}, body:{ documentId:DOCUMENT, requestId:REQUEST_ID, ...overrides } }
+  return {
+    headers:{ authorization:'Bearer sessao' },
+    query:{},
+    body:{ documentIds:[DOCUMENT], requestId:REQUEST_ID, ...overrides },
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -315,7 +322,7 @@ test('feature desabilitada falha fechada antes de qualquer chamada ou escrita', 
 
 test('documento e solicitacao com identificador invalido sao recusados', async () => {
   const admin = fakeSupabase({ clinical_documents:[documentRow] })
-  for (const body of [{ documentId:'nao-uuid' }, { requestId:'nao-uuid' }, { documentId:'../../etc' }]) {
+  for (const body of [{ documentIds:['nao-uuid'] }, { requestId:'nao-uuid' }, { documentIds:['../../etc'] }, { documentIds:[] }]) {
     const error = await requestClinicalSignature(requestBody(body), deps({ admin })).catch(nextError => nextError)
     expect(error.statusCode).toBe(400)
   }
@@ -511,15 +518,15 @@ test('solicitacao bem-sucedida grava identificadores e devolve so o link ao auto
   expect(row.status).toBe('pending')
   expect(row.dispatch_state).toBe('sent')
   expect(row.provider_request_id).toBe(ENVELOPE)
-  expect(row.provider_document_id).toBe('doc-1')
+  expect(row.provider_document_id).toBe(row.id)
   expect(row.rendered_pdf_sha256).toBe('c'.repeat(64))
   expect(row.rendering_version).toBe('clinical-pdf-v2')
   // O link nunca e persistido.
   expect(JSON.stringify(row)).not.toContain('/sign/signer-1')
   expect(response.signingUrl).toContain('/sign/signer-1')
   // Nem o link nem o segredo aparecem no estado publico da tentativa.
-  expect(JSON.stringify(response.attempt)).not.toContain('/sign/')
-  expect(JSON.stringify(response.attempt)).not.toContain(TOKEN)
+  expect(JSON.stringify(response.attempts)).not.toContain('/sign/')
+  expect(JSON.stringify(response.attempts)).not.toContain(TOKEN)
 })
 
 test('a auditoria registra a solicitacao sem link, token ou dado do paciente', async () => {
@@ -530,6 +537,7 @@ test('a auditoria registra a solicitacao sem link, token ou dado do paciente', a
   await requestClinicalSignature(requestBody(), deps({ admin }))
   const log = admin.calls.inserts.find(entry => entry.table === 'audit_logs')
   expect(log.row.action).toBe('request_clinical_signature')
+  expect(log.row.details.document_count).toBe(1)
   expect(log.row.user_id).toBe(OWNER)
   expect(log.row.actor_id).toBe(AUTHOR)
   const serialized = JSON.stringify(log.row)
@@ -830,7 +838,7 @@ test('webhook com integracao desabilitada e aceito e descartado', async () => {
 // Rascunho e inicio do envelope (orientacao da BRy em 29/10/2026)
 // ---------------------------------------------------------------------------
 
-test('a criacao inicia o envelope em seguida e nomeia o envelope pela tentativa', async () => {
+test('a criacao inicia o envelope em seguida e nomeia o envelope pelo lote', async () => {
   const admin = fakeSupabase({
     clinical_documents:[documentRow],
     clinical_signature_connections:[connectionRow],
@@ -843,8 +851,8 @@ test('a criacao inicia o envelope em seguida e nomeia o envelope pela tentativa'
       createEnvelope:async (_config, body) => {
         payload = body
         return {
-          envelopeId:ENVELOPE, documentId:'doc-1', signerId:'signer-1',
-          envelopeStatus:'DRAFT',
+          envelopeId:ENVELOPE, signerId:'signer-1', envelopeStatus:'DRAFT',
+          documentsByNonce:new Map(body.documents.map(d => [d.documentNonce, { documentId:d.documentNonce }])),
           signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1`,
         }
       },
@@ -853,8 +861,12 @@ test('a criacao inicia o envelope em seguida e nomeia o envelope pela tentativa'
   }))
 
   expect(payload.startAsDraft).toBe(true)
-  // Nome unico por tentativa: e por ele que um envelope orfao e localizado.
-  expect(payload.name).toContain(admin.db.clinical_document_signatures[0].id)
+  // Nome unico por LOTE (a chave idempotente): e por ele que um envelope orfao
+  // e localizado na pagina de listagem da BRy.
+  expect(payload.name).toBe(`SurgiMetrics ${REQUEST_ID}`)
+  expect(payload.name.length).toBeLessThanOrEqual(50)
+  // O nonce de cada documento e o id da tentativa.
+  expect(payload.documents[0].documentNonce).toBe(admin.db.clinical_document_signatures[0].id)
   expect(started).toBe(ENVELOPE)
   expect(admin.db.clinical_document_signatures[0].provider_envelope_status).toBe('CREATED')
 })
@@ -1085,7 +1097,10 @@ test('criacao sem link recupera a pagina de assinatura apos iniciar o envelope',
       createEnvelope:async () => {
         order.push('create')
         // Rascunho sem link: cenario esperado com startAsDraft.
-        return { envelopeId:ENVELOPE, documentId:'doc-1', signerId:'signer-1', envelopeStatus:'DRAFT', signingUrl:null }
+        return {
+          envelopeId:ENVELOPE, signerId:'signer-1', envelopeStatus:'DRAFT', signingUrl:null,
+          documentsByNonce:new Map(admin.db.clinical_document_signatures.map(r => [r.id, { documentId:r.id }])),
+        }
       },
       startEnvelope:async () => { order.push('start') },
       fetchEnvelope:async () => {
@@ -1096,4 +1111,151 @@ test('criacao sem link recupera a pagina de assinatura apos iniciar o envelope',
   }))
   expect(order).toEqual(['create', 'start', 'fetch'])
   expect(response.signingUrl).toContain('/sign/signer-1')
+})
+
+// ---------------------------------------------------------------------------
+// Assinatura em lote: ate 10 documentos num envelope
+// ---------------------------------------------------------------------------
+
+const DOCUMENT_2 = '30000000-0000-4000-8000-000000000002'
+const documentRow2 = { ...documentRow, id:DOCUMENT_2, document_type:'simple_prescription',
+  document_data:{ items:[{ medication:'Dipirona', directions:'1x ao dia' }] } }
+
+// O fake atribui sempre o mesmo id; para o lote precisamos de ids distintos.
+function batchSupabase(tables) {
+  const admin = fakeSupabase(tables)
+  let seq = 0
+  const original = admin.from.bind(admin)
+  admin.from = table => {
+    const builder = original(table)
+    if (table !== 'clinical_document_signatures') return builder
+    return {
+      ...builder,
+      insert:payload => {
+        seq += 1
+        return builder.insert({ ...payload, id:`60000000-0000-4000-8000-00000000000${seq}` })
+      },
+    }
+  }
+  return admin
+}
+
+function batchBody(ids) {
+  return { headers:{ authorization:'Bearer sessao' }, query:{}, body:{ documentIds:ids, requestId:REQUEST_ID } }
+}
+
+test('dois documentos viram UM envelope, cada um com seu OID e seu nonce', async () => {
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, documentRow2],
+    clinical_signature_connections:[connectionRow],
+  })
+  let payload = null
+  let envelopesCriados = 0
+  const response = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({
+    admin,
+    bry:{
+      createEnvelope:async (_config, body) => {
+        envelopesCriados += 1
+        payload = body
+        return {
+          envelopeId:ENVELOPE, signerId:'signer-1', envelopeStatus:'DRAFT',
+          documentsByNonce:new Map(body.documents.map(d => [d.documentNonce, { documentId:d.documentNonce }])),
+          signingUrl:`https://easysign.hom.bry.com.br/${ENVELOPE}/sign/signer-1`,
+        }
+      },
+    },
+  }))
+
+  // O ponto economico: UM envelope para dois documentos.
+  expect(envelopesCriados).toBe(1)
+  expect(payload.documents).toHaveLength(2)
+  // Cada documento leva o OID do SEU tipo.
+  expect(Object.keys(payload.documents[0].metadata)[0]).toBe('2.16.76.1.12.1.3')
+  expect(Object.keys(payload.documents[1].metadata)[0]).toBe('2.16.76.1.12.1.1')
+
+  const rows = admin.db.clinical_document_signatures
+  expect(rows).toHaveLength(2)
+  // As duas tentativas compartilham envelope e chave idempotente...
+  expect(new Set(rows.map(r => r.provider_request_id))).toEqual(new Set([ENVELOPE]))
+  expect(new Set(rows.map(r => r.request_id))).toEqual(new Set([REQUEST_ID]))
+  // ...mas cada uma tem o SEU documento no provedor.
+  expect(rows[0].provider_document_id).toBe(rows[0].id)
+  expect(rows[1].provider_document_id).toBe(rows[1].id)
+  expect(rows[0].provider_document_id).not.toBe(rows[1].provider_document_id)
+  expect(response.attempts).toHaveLength(2)
+})
+
+test('se um documento nao voltar identificado, o lote inteiro falha', async () => {
+  // Este e o cenario que colocaria a receita de um paciente na ficha de outro.
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, documentRow2],
+    clinical_signature_connections:[connectionRow],
+  })
+  const error = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({
+    admin,
+    bry:{
+      createEnvelope:async (_config, body) => ({
+        envelopeId:ENVELOPE, signerId:'signer-1', envelopeStatus:'DRAFT',
+        // Devolve so o primeiro documento.
+        documentsByNonce:new Map([[body.documents[0].documentNonce, { documentId:body.documents[0].documentNonce }]]),
+        signingUrl:null,
+      }),
+    },
+  })).catch(nextError => nextError)
+
+  expect(error.publicCode).toBe('resultado_desconhecido')
+  // Nenhuma tentativa recebeu identificador de documento: nada foi vinculado.
+  for (const row of admin.db.clinical_document_signatures) {
+    expect(row.provider_document_id).toBeUndefined()
+    expect(row.dispatch_state).toBe('unknown')
+  }
+})
+
+test('lote acima do limite da BRy e recusado antes de qualquer chamada', async () => {
+  let chamou = false
+  const admin = batchSupabase({ clinical_documents:[documentRow], clinical_signature_connections:[connectionRow] })
+  const ids = Array.from({ length:11 }, (_, index) => `30000000-0000-4000-8000-0000000000${String(index).padStart(2, '0')}`)
+  const error = await requestClinicalSignature(batchBody(ids), deps({
+    admin, bry:{ createEnvelope:async () => { chamou = true } },
+  })).catch(nextError => nextError)
+  expect(error.publicCode).toBe('lote_grande_demais')
+  expect(chamou).toBe(false)
+})
+
+test('documento repetido no mesmo lote nao duplica tentativa', async () => {
+  const admin = batchSupabase({ clinical_documents:[documentRow], clinical_signature_connections:[connectionRow] })
+  const response = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT, DOCUMENT]), deps({ admin }))
+  expect(admin.db.clinical_document_signatures).toHaveLength(1)
+  expect(response.attempts).toHaveLength(1)
+})
+
+test('um documento de outro profissional recusa o lote inteiro', async () => {
+  // Todos serao assinados pela mesma identidade; misturar autoria seria falso.
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, { ...documentRow2, created_by:OTHER_DOCTOR }],
+    clinical_signature_connections:[connectionRow],
+  })
+  const error = await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({ admin }))
+    .catch(nextError => nextError)
+  expect(error.publicCode).toBe('nao_autor')
+  expect(admin.db.clinical_document_signatures ?? []).toHaveLength(0)
+})
+
+test('falha ao renderizar encerra TODAS as tentativas do lote', async () => {
+  const admin = batchSupabase({
+    clinical_documents:[documentRow, documentRow2],
+    clinical_signature_connections:[connectionRow],
+  })
+  let criou = false
+  await requestClinicalSignature(batchBody([DOCUMENT, DOCUMENT_2]), deps({
+    admin,
+    renderPdf:async () => { throw new Error('fonte indisponivel') },
+    bry:{ createEnvelope:async () => { criou = true } },
+  })).catch(() => {})
+  expect(criou).toBe(false)
+  expect(admin.db.clinical_document_signatures).toHaveLength(2)
+  for (const row of admin.db.clinical_document_signatures) {
+    expect(row.status).toBe('failed')
+    expect(row.failure_code).toBe('render_failed')
+  }
 })
