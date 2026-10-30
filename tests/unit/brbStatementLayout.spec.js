@@ -254,3 +254,75 @@ test('o extrato entra pelo caminho normal do parser, sem passar pelo leitor de C
   // E um CSV de verdade continua indo para o leitor de CSV.
   expect(parseStatementText('data;valor\n01/10/2026;10,00', { fileName:'x.csv' }).format).not.toBe('brb')
 })
+
+// ---------------------------------------------------------------------------
+// Layout REAL do PDF: o tipo vem numa linha ACIMA do dia
+// ---------------------------------------------------------------------------
+// O extrato que a clinica usa nao coloca o tipo na mesma linha do dia: o
+// historico fica numa linha propria, ANTES da linha do dia/valor, e a
+// contraparte vem DEPOIS. Ler esse arquivo de verdade foi o que revelou que a
+// primeira versao do parser jogava o tipo fora e gravava a contraparte no lugar
+// dele -- corrompendo a descricao E a chave de dedupe de todo o extrato.
+const EXTRATO_TIPO_ACIMA = `Extrato
+CLINICA EXEMPLO LTDA
+Agência: 100 — Conta Corrente: 100.071.191-6
+29/10/2026 14:22
+ENTRADAS
+OUTUBRO/2026
+Dia Histórico Valor
+CREDITO PIX – DOC: 000000
+01/10 R$ +1.234,00
+0136
+CREDITO PIX – DOC: 000000
+01/10 R$ +2.345,00
+FULANO DE TAL AAAA — 0136
+CREDITO DE TED PAG C.CORRENTE – DOC: 821925
+07/10 R$ +500,00
+BELTRANO DA SILVA
+SAÍDAS
+OUTUBRO/2026
+Dia Histórico Valor
+TARIFA ENVIO VALORES PIX – DOC: 000000
+02/10 R$ −9,00`
+
+test('tipo numa linha acima do dia é preservado — é assim no PDF real', () => {
+  const { lines, errors } = parseBrbStatementText(EXTRATO_TIPO_ACIMA)
+  expect(errors).toEqual([])
+  expect(lines).toHaveLength(4)
+
+  // O tipo NAO pode ser perdido nem substituido pela contraparte.
+  expect(lines.map(line => line.sourceMetadata.kind)).toEqual([
+    'CREDITO PIX',
+    'CREDITO PIX',
+    'CREDITO DE TED PAG C.CORRENTE',
+    'TARIFA ENVIO VALORES PIX',
+  ])
+  // E a contraparte, que vem DEPOIS do dia, continua sendo contraparte.
+  expect(lines[0].sourceMetadata.counterpartyName).toBeNull()
+  expect(lines[1].sourceMetadata.counterpartyName).toBe('FULANO DE TAL AAAA')
+  expect(lines[2].sourceMetadata.counterpartyName).toBe('BELTRANO DA SILVA')
+  expect(lines[2].sourceMetadata.docNumber).toBe('821925')
+})
+
+test('o carimbo de geração do extrato não vira lançamento', () => {
+  // "29/10/2026 14:22" comeca igual a uma linha de dia ("29/10"). Se for lido
+  // como movimento, entra um lancamento inventado em todo extrato importado.
+  const { lines, errors } = parseBrbStatementText(EXTRATO_TIPO_ACIMA)
+  expect(errors).toEqual([])
+  expect(lines.some(line => line.postedDate.endsWith('-10-29'))).toBe(false)
+})
+
+test('o tipo pendente não atravessa a troca de seção', () => {
+  // Um historico orfao no fim das ENTRADAS nao pode ser adotado pelo primeiro
+  // movimento das SAIDAS -- seria um lancamento com o tipo de outra secao.
+  const { lines, errors } = parseBrbStatementText(`ENTRADAS
+OUTUBRO/2026
+CREDITO PIX – DOC: 000000
+SAÍDAS
+OUTUBRO/2026
+DEBITO PIX – DOC: 000000
+02/10 R$ −9,00`)
+  expect(errors).toEqual([])
+  expect(lines).toHaveLength(1)
+  expect(lines[0].sourceMetadata.kind).toBe('DEBITO PIX')
+})

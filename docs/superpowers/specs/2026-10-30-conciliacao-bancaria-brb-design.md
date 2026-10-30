@@ -40,7 +40,20 @@ SAÍDAS
   Dia | Histórico | Valor
 ```
 
-Cada linha tem três campos:
+**A ordem das linhas importa.** No PDF real, um movimento ocupa três linhas
+remontadas, nesta ordem:
+
+```
+CREDITO PIX – DOC: 000000      ← tipo + DOC, numa linha propria
+01/10 R$ +1.234,00             ← dia + valor
+FULANO DE TAL AAAA — 0136      ← contraparte + codigo de canal
+```
+
+O tipo vem **antes** da linha do dia, não na mesma linha. Um parser que só
+aceite os três campos juntos descarta o tipo e grava a contraparte no lugar
+dele — o que corrompe a descrição e a chave de deduplicação de todo o extrato.
+
+Cada movimento tem três campos:
 
 | Campo | Formato | Exemplo ilustrativo |
 | --- | --- | --- |

@@ -22,8 +22,9 @@ const MONTHS = {
 
 // `OUTUBRO/2026`
 const SECTION_PERIOD = /^([A-ZÇ]+)\s*\/\s*(\d{4})$/i
-// `01/10` no comeco da linha
-const DAY = /^(\d{2})\/(\d{2})\b/
+// `01/10` no comeco da linha. O `(?!\/)` evita casar com o carimbo de geracao
+// do extrato ("29/10/2026 14:22"), que comeca igual.
+const DAY = /^(\d{2})\/(\d{2})(?!\/)\b/
 // `R$ +1.234,00` / `R$ −1.234,00` (o PDF usa o sinal U+2212, nao o hifen)
 const AMOUNT = /R\$\s*([+−-])?\s*([\d.]+,\d{2})/
 // `CREDITO PIX – DOC: 000000`
@@ -92,6 +93,10 @@ export function parseBrbStatementText(content, options = {}) {
   let period = null        // { year, month }
   let direction = null     // 'in' | 'out'
   let pending = null       // linha em construcao
+  // No PDF do BRB o tipo da operacao fica numa linha ACIMA da linha do dia.
+  // Guardamos esse cabecalho para a proxima linha de movimento consumir --
+  // sem isso o tipo se perde e a contraparte toma o lugar dele.
+  let pendingHeader = null
   const occurrences = new Map()
 
   function flush(physicalLine) {
@@ -175,6 +180,7 @@ export function parseBrbStatementText(content, options = {}) {
       const month = MONTHS[periodMatch[1].toLocaleUpperCase('pt-BR')]
       if (month) {
         flush(physicalLine)
+        pendingHeader = null
         period = { year:Number(periodMatch[2]), month }
         sections.push({ year:period.year, month, direction })
       }
@@ -183,8 +189,8 @@ export function parseBrbStatementText(content, options = {}) {
 
     // `\b` e nao `$`: a remontagem por posicao pode colar outro texto na
     // mesma linha do marcador (ex.: "SAÍDAS  Total").
-    if (/^ENTRADAS\b/i.test(line)) { flush(physicalLine); direction = 'in'; return }
-    if (/^SA[IÍ]DAS\b/i.test(line)) { flush(physicalLine); direction = 'out'; return }
+    if (/^ENTRADAS\b/i.test(line)) { flush(physicalLine); pendingHeader = null; direction = 'in'; return }
+    if (/^SA[IÍ]DAS\b/i.test(line)) { flush(physicalLine); pendingHeader = null; direction = 'out'; return }
     // Cabecalho, rodape e totais nao sao movimento. Isso importa mais do que
     // parece: a contraparte entra na chave de deduplicacao, entao deixar um
     // "Pagina 2 de 7" virar contraparte faria a MESMA transacao gerar chaves
@@ -215,14 +221,23 @@ export function parseBrbStatementText(content, options = {}) {
         // O mês da linha manda; o ano vem da seção.
         year:period.year,
         amount,
-        kind:'',
-        doc:'',
+        kind:pendingHeader?.kind || '',
+        doc:pendingHeader?.doc || '',
         counterparty:'',
         lineIndex:physicalLine,
       }
+      pendingHeader = null
       // O restante da linha pode já trazer o histórico.
       const withoutAmount = rest.replace(AMOUNT, '').trim()
       if (withoutAmount) applyHistory(pending, withoutAmount)
+      return
+    }
+
+    // Linha com `DOC:` que nao completa o movimento aberto e o cabecalho do
+    // PROXIMO movimento, que no PDF vem antes da linha do dia.
+    const headerMatch = HISTORY.exec(line)
+    if (headerMatch && (!pending || pending.kind)) {
+      pendingHeader = { kind:headerMatch[1].trim(), doc:headerMatch[2] }
       return
     }
 
