@@ -16,7 +16,13 @@ Ficam fora desta etapa: upload de `.pfx`/`.p12`, senha do certificado, escolha/c
 
 ## Provedor recebido para homologação
 
-Em 28/10/2026, foram recebidos os acessos e as condições comerciais da **BRy Easy Sign Self-Service** para a futura integração. A referência técnica, os pontos ainda não confirmados e o checklist de homologação estão em [BRy Easy Sign — referência para a integração clínica](../../BRY_EASY_SIGN_INTEGRATION.md). O registro do provedor não ativa a integração nem substitui a validação de modo ICP-Brasil, webhook, evidências, retenção, custos e tratamento de dados.
+Em 28/10/2026, foram recebidos os acessos e as condições comerciais da **BRy Easy Sign Self-Service**. Na mesma data o adaptador foi implementado atrás de feature flag, desligado por padrão, sem nenhuma chamada real à BRy. A referência técnica, as decisões efetivamente implementadas, as divergências da documentação e o checklist de homologação estão em [BRy Easy Sign — referência para a integração clínica](../../BRY_EASY_SIGN_INTEGRATION.md).
+
+**Mudança de arquitetura desta etapa:** o PDF do documento clínico passou a ser renderizado no servidor de forma determinística (`api/_lib/clinicalDocumentPdf.js`, com `pdf-lib`), em vez de só existir como HTML de impressão no navegador. Por isso `CLINICAL_SIGNATURE_RENDERING_VERSION` evoluiu de `clinical-pdf-v1` para `clinical-pdf-v2`; tentativas v1 preservam a versão antiga. O envelope canônico continua sendo a base do `document_payload_sha256`, e o novo `rendered_pdf_sha256` registra os bytes efetivamente submetidos à assinatura.
+
+**Fonte da evidência (resposta da BRy em 29/10/2026):** a Easy Sign não expõe titular/série/emissor/validade do certificado em campo legível por máquina. A evidência vem de um **segundo serviço** da BRy, de verificação de assinatura PDF/PAdES, que recebe o artefato baixado e responde em JSON (`api/_lib/bryVerify.js`). Com ele, `signed` é alcançável. O **nível** PAdES continua não vindo pronto: é derivado da presença de carimbo do tempo *reconhecido pela verificação*, nunca do modo solicitado, e `B-LT`/`B-LTA` nunca são declarados. Enquanto a verificação não estiver disponível ou não sustentar a evidência, a tentativa permanece `pending` com `evidence_gap_code`, guardando o artefato em bucket privado sem declarar assinatura.
+
+**Criação em duas etapas (resposta da BRy em 29/10/2026):** o envelope é criado como rascunho (`startAsDraft: true`) com `name` único por tentativa e só então iniciado (`POST /signatures/{uuid}/start`). Assim, um envelope duplicado nascido de um `POST` ambíguo não notifica ninguém e não pode ser assinado; o risco passa a ser crédito consumido, não assinatura duplicada.
 
 ## Regras de segurança e fidedignidade
 
@@ -38,10 +44,17 @@ Em 28/10/2026, foram recebidos os acessos e as condições comerciais da **BRy E
 ```text
 sem tentativa ──> integração não configurada / identidade incompleta
                       │
-                      └── futura chamada server-side ──> pending
-                                                        ├── signed (terminal)
-                                                        ├── failed (terminal)
-                                                        └── cancelled (terminal)
+                      └── chamada server-side ──> pending
+                                                   ├── pending + dispatch_state=unknown
+                                                   │     (POST ambíguo; só sai por ação humana)
+                                                   ├── pending + provider_envelope_status=DRAFT
+                                                   │     (criado mas não iniciado; reiniciável)
+                                                   ├── pending + evidence_gap_code
+                                                   │     (concluída na BRy, evidência não sustentada
+                                                   │      pela verificação)
+                                                   ├── signed (terminal; exige evidência completa)
+                                                   ├── failed (terminal)
+                                                   └── cancelled (terminal)
 ```
 
 ## Contrato futuro do provedor
@@ -79,14 +92,26 @@ O retorno normalizado deverá trazer o estado e, para sucesso, bytes/URL tempor�
 - [x] A migration atualiza com segurança a primeira versão: preserva inclusive evidências legadas duplicadas, bloqueia conexões antigas inseguras e terminaliza pendências não verificáveis com motivo auditável.
 - [x] Impressão manual permanece disponível e explicitamente identificada.
 - [x] Nenhuma função serverless nova é criada.
-- [ ] BRy Easy Sign, política de carimbo do tempo e armazenamento do PDF assinado serão homologados antes da ativação.
+- [x] O artefato devolvido pelo provedor é baixado, hasheado e guardado em bucket privado por clínica, com abertura autenticada e auditada.
+- [x] Resultado ambíguo de criação não é reenviado automaticamente e exige encerramento humano auditável.
+- [x] O webhook não é fonte de verdade: toda transição vem de consulta autenticada ao provedor.
+- [x] A evidência do certificado vem de verificação do próprio artefato, não da declaração do provedor.
+- [x] O padrão PAdES nunca é deduzido do modo solicitado, e níveis não comprovados nunca são declarados.
+- [ ] Host e custo do serviço de verificação da BRy serão confirmados antes da ativação.
 - [ ] Fluxo real será validado com certificado de homologação antes de produção.
 
 ## Rollout
 
 1. Aplicar `supabase/clinical_signature_readiness_schema.sql` após os SQLs de documentos clínicos.
-2. Publicar frontend e backend compatíveis; a ausência temporária da tabela não bloqueia o histórico/manual.
-3. Homologar a BRy Easy Sign como provedor compatível com ICP-Brasil e definir cofre de segredo.
-4. Implementar o adaptador dentro de endpoint consolidado existente.
-5. Homologar hash, PAdES, cadeia do certificado, carimbo do tempo, revogação, download e auditoria.
+2. Aplicar `supabase/clinical_signature_bry_schema.sql` (aditiva e idempotente) em seguida.
+3. Publicar frontend e backend compatíveis; a ausência temporária da tabela não bloqueia o histórico/manual.
+4. ~~Implementar o adaptador dentro de endpoint consolidado existente.~~ Feito em
+   `api/secure-profile.js` + `api/_lib/bryEasySign.js` + `api/_lib/clinicalSignatureBry.js`,
+   sem função serverless nova.
+5. Homologar a BRy Easy Sign como provedor compatível com ICP-Brasil e definir cofre de segredo.
+6. Configurar o serviço de verificação (`BRY_VERIFY_*`) assim que a BRy informar o host;
+   sem ele a tentativa não vira `signed` e o motivo fica registrado.
+7. Homologar hash, PAdES, cadeia do certificado, carimbo do tempo, revogação, download e
+   auditoria com resposta real da verificação. O passo a passo está no checklist de
+   [BRY_EASY_SIGN_INTEGRATION.md](../../BRY_EASY_SIGN_INTEGRATION.md).
 

@@ -414,6 +414,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                   <ClinicalDocuments
                     patient={selected}
                     ownerId={ownerId}
+                    viewerId={user?.id}
                     author={author}
                     profile={secureProfile}
                     profileLoading={secureProfileStatus === 'loading'}

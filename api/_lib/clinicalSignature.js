@@ -1,6 +1,10 @@
 import crypto from 'crypto'
 
-export const CLINICAL_SIGNATURE_RENDERING_VERSION = 'clinical-pdf-v1'
+// v1 descrevia a etapa em que nenhum PDF era gerado no servidor e o envelope
+// canonico nao tinha artefato correspondente. A partir da integracao BRy o
+// servidor renderiza o PDF de forma deterministica (api/_lib/clinicalDocumentPdf.js),
+// entao a versao evolui explicitamente. Tentativas v1 preservam a versao antiga.
+export const CLINICAL_SIGNATURE_RENDERING_VERSION = 'clinical-pdf-v2'
 export const CLINICAL_SIGNATURE_TERMINAL_STATUSES = new Set(['signed', 'failed', 'cancelled'])
 export const CLINICAL_SIGNATURE_STANDARDS = new Set(['PAdES-B-B', 'PAdES-B-T', 'PAdES-B-LT', 'PAdES-B-LTA'])
 
@@ -153,3 +157,24 @@ function isValidCpf(value) {
   return digit(9) === Number(digits[9]) && digit(10) === Number(digits[10])
 }
 
+// Fonte autoritativa de "evidencia completa", avaliada no servidor sobre a
+// linha do banco. A UI consome somente o booleano: assim o navegador nao
+// precisa reconstruir a regra nem receber hashes do artefato.
+export function clinicalSignatureEvidenceComplete(row = {}) {
+  if (row.status !== 'signed') return false
+  const validFrom = new Date(row.certificate_valid_from || '')
+  const validUntil = new Date(row.certificate_valid_until || '')
+  const signedAt = new Date(row.signed_at || '')
+  return Boolean(
+    String(row.signed_file_path || '').trim()
+    && /^[0-9a-f]{64}$/.test(String(row.signed_file_sha256 || ''))
+    && CLINICAL_SIGNATURE_STANDARDS.has(row.signature_standard)
+    && String(row.certificate_subject || '').trim()
+    && String(row.certificate_serial || '').trim()
+    && String(row.certificate_issuer || '').trim()
+    && ![validFrom, validUntil, signedAt].some(value => Number.isNaN(value.getTime()))
+    && validUntil > validFrom
+    && signedAt >= validFrom
+    && signedAt <= validUntil
+  )
+}

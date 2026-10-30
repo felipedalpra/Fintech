@@ -80,3 +80,148 @@ export function clinicalSignerReadiness(profile = {}) {
   }
 }
 
+export const CLINICAL_SIGNATURE_ELIGIBLE_TYPES = ['exam_request', 'simple_prescription']
+
+// Explicacao, para o profissional, de cada motivo auditavel de uma assinatura
+// concluida no provedor ainda nao poder ser declarada. Ver api/_lib/bryVerify.js.
+const EVIDENCE_GAP_NOTES = {
+  verify_service_not_configured:'A verificação da assinatura ainda não está configurada nesta instalação.',
+  verify_service_unavailable:'O serviço de verificação da BRy não respondeu. Tente atualizar o status mais tarde.',
+  verify_signature_invalid:'A verificação da BRy não considerou a assinatura válida. Não use este documento como assinado.',
+  verify_signature_not_pades:'O arquivo devolvido não tem assinatura no padrão PAdES.',
+  verify_certificate_evidence_incomplete:'A verificação não devolveu os dados completos do certificado.',
+  verify_timestamp_not_verified:'Foi pedido carimbo do tempo, mas a verificação não o confirmou.',
+}
+
+export function clinicalSignatureEvidenceGapNote(code) {
+  return EVIDENCE_GAP_NOTES[code] || 'A evidência da assinatura ainda não pôde ser confirmada.'
+}
+
+// Documento elegivel: tipo suportado e autoria rastreavel. Documentos legados
+// sem `created_by` seguem apenas pela via manual.
+export function isClinicalSignatureEligible(record = {}) {
+  return CLINICAL_SIGNATURE_ELIGIBLE_TYPES.includes(record.document_type) && Boolean(record.created_by)
+}
+
+// Decide, de forma pura e testavel, o que a tela pode oferecer.
+// Nenhuma decisao de autorizacao real depende disto: o backend reconfere tudo.
+// Aqui apenas evitamos oferecer acoes que seriam recusadas.
+export function clinicalSignatureActionState({
+  record = {},
+  attempt = null,
+  integration = null,
+  viewerId = '',
+  evidenceAvailable = true,
+} = {}) {
+  const base = {
+    canRequest:false,
+    canOpenSigningPage:false,
+    canReconcile:false,
+    canRetry:false,
+    canAbandon:false,
+    canOpenSigned:false,
+    canOpenArtifact:false,
+    label:'',
+    tone:'muted',
+    note:'',
+  }
+
+  if (!evidenceAvailable) {
+    return { ...base, label:'Status digital indisponível', note:'A via manual não foi afetada.' }
+  }
+  if (!isClinicalSignatureEligible(record)) {
+    return { ...base, label:'Assinatura digital não disponível para este documento', note:'Use a via manual.' }
+  }
+
+  const isAuthor = Boolean(viewerId) && viewerId === record.created_by
+  const available = Boolean(integration?.available)
+
+  if (!attempt) {
+    if (!available) {
+      return {
+        ...base,
+        label:'Assinatura digital não configurada',
+        note:'Enquanto a integração não estiver disponível, imprima e assine manualmente.',
+      }
+    }
+    if (!isAuthor) {
+      return {
+        ...base,
+        label:'Assinatura digital pendente',
+        note:'Somente o profissional que emitiu o documento pode assiná-lo.',
+      }
+    }
+    return { ...base, canRequest:true, label:'Pronta para assinar', tone:'pending' }
+  }
+
+  if (attempt.status === 'pending') {
+    if (attempt.dispatchState === 'unknown') {
+      return {
+        ...base,
+        canReconcile:isAuthor,
+        canAbandon:isAuthor,
+        label:'Resultado desconhecido na BRy',
+        tone:'failed',
+        note:'Não reenviamos automaticamente para não cobrar duas vezes. Atualize o status ou encerre a tentativa.',
+      }
+    }
+    if (attempt.evidenceGapCode) {
+      // Assinada no provedor, mas sem evidência verificável do certificado:
+      // o arquivo é preservado e a tela diz exatamente o que falta.
+      const invalid = attempt.evidenceGapCode === 'verify_signature_invalid'
+      return {
+        ...base,
+        canReconcile:isAuthor,
+        canOpenArtifact:Boolean(attempt.hasStoredArtifact),
+        label:invalid ? 'Assinatura não validada pela BRy' : 'Assinada na BRy · evidência pendente',
+        tone:invalid ? 'failed' : 'pending',
+        note:clinicalSignatureEvidenceGapNote(attempt.evidenceGapCode),
+      }
+    }
+    return {
+      ...base,
+      // O link não fica guardado: reabrir a página é uma consulta ao provedor,
+      // sem criar envelope novo nem consumir crédito.
+      canOpenSigningPage:isAuthor,
+      canReconcile:isAuthor,
+      label:'Assinatura em processamento',
+      tone:'pending',
+      note:'Conclua a assinatura na página da BRy e atualize o status.',
+    }
+  }
+
+  if (attempt.status === 'signed') {
+    // `evidenceComplete` e calculado no backend sobre a linha do banco.
+    if (!attempt.evidenceComplete) {
+      return { ...base, label:'Evidência digital inconsistente', tone:'failed', note:'Use a via manual até a revisão.' }
+    }
+    return { ...base, canOpenSigned:true, label:'Assinado digitalmente', tone:'signed' }
+  }
+
+  const terminalLabel = attempt.status === 'cancelled' ? 'Assinatura cancelada' : 'Falha na assinatura'
+  return {
+    ...base,
+    canRetry:isAuthor && available,
+    canOpenArtifact:Boolean(attempt.hasStoredArtifact),
+    label:terminalLabel,
+    tone:attempt.status === 'cancelled' ? 'muted' : 'failed',
+    note:attempt.failureMessage || '',
+  }
+}
+
+// Agrupa as tentativas devolvidas pelo backend (camelCase) por documento,
+// preferindo uma assinatura com evidencia completa sobre tentativas mais novas.
+// Assim uma falha posterior nunca esconde uma assinatura valida.
+export function latestAttemptByDocument(attempts = []) {
+  const grouped = attempts.reduce((result, attempt) => {
+    if (!attempt?.documentId) return result
+    if (!result[attempt.documentId]) result[attempt.documentId] = []
+    result[attempt.documentId].push(attempt)
+    return result
+  }, {})
+  return Object.entries(grouped).reduce((result, [documentId, list]) => {
+    const ordered = [...list].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    result[documentId] = ordered.find(attempt => attempt.evidenceComplete) || ordered[0]
+    return result
+  }, {})
+}
