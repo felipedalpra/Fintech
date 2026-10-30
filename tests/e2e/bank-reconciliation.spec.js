@@ -88,7 +88,7 @@ test('importa, concilia, persiste no reload, desconcilia e abre cadastro real', 
   await page.goto('/app/bank-reconciliation')
   await expect(page.getByRole('heading', { name:'Conciliação Bancária' })).toBeVisible()
   await page.getByLabel('Conta financeira').selectOption(ACCOUNT_ID)
-  await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
+  await page.getByLabel('Arquivo OFX, CSV, Excel ou extrato do BRB').setInputFiles({
     name:'extrato-e2e.ofx',
     mimeType:'application/x-ofx',
     buffer:Buffer.from(`OFXHEADER:100\n<OFX><CURDEF>BRL<BANKACCTFROM><BANKID>341<BRANCHID>1234<ACCTID>00098765<ACCTTYPE>CHECKING</BANKACCTFROM><BANKTRANLIST><DTSTART>20261001000000<DTEND>20261031235959
@@ -143,7 +143,7 @@ test('bloqueia OFX de outra conta e exige identificação no cadastro bancário'
 
   await page.goto('/app/bank-reconciliation')
   await page.getByLabel('Conta financeira').selectOption(ACCOUNT_ID)
-  await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
+  await page.getByLabel('Arquivo OFX, CSV, Excel ou extrato do BRB').setInputFiles({
     name:'conta-errada.ofx',
     mimeType:'application/x-ofx',
     buffer:Buffer.from('OFXHEADER:100\n<OFX><CURDEF>BRL<BANKACCTFROM><BANKID>001<ACCTID>00009999</BANKACCTFROM><BANKTRANLIST><STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013<TRNAMT>100.00<FITID>wrong-1<MEMO>PIX TESTE</STMTTRN></BANKTRANLIST></OFX>'),

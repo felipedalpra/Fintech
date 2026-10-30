@@ -686,8 +686,19 @@ export function BankReconciliation({ data, saveDataNow }) {
           </div>
           <div>
             <label style={s.label}>Arquivo bancário</label>
-            <input ref={fileRef} aria-label="Arquivo OFX ou CSV" type="file" accept=".ofx,.csv,.txt,text/csv,application/x-ofx" onChange={onFileChange} style={{ ...s.input, cursor:'pointer' }} />
-            <div style={{ ...s.muted, marginTop:6 }}>Até 10 MB e 50.000 linhas. O arquivo bruto não é enviado nem guardado.</div>
+            <input ref={fileRef} aria-label="Arquivo OFX, CSV, Excel ou extrato do BRB" type="file" accept=".ofx,.csv,.txt,.xlsx,.xls,text/csv,application/x-ofx" onChange={onFileChange} style={{ ...s.input, cursor:'pointer' }} />
+            <div style={{ ...s.muted, marginTop:6 }}>
+              OFX, CSV, Excel ou o extrato do BRB em texto. Até 10 MB e 50.000 linhas.
+              O arquivo bruto não é enviado nem guardado.
+            </div>
+            {/* O extrato em PDF não traz identificador de transação, então
+                prefira OFX quando o banco oferecer: a conferência fica mais
+                segura e o casamento, mais preciso. */}
+            <div style={{ ...s.muted, marginTop:4 }}>
+              Prefira <strong>OFX</strong> quando o banco oferecer. Para o extrato do BRB em PDF,
+              copie o texto e salve como <strong>.txt</strong> — o PDF não tem identificador
+              de transação, então linhas iguais no mesmo dia são separadas pela ordem.
+            </div>
           </div>
         </div>
 

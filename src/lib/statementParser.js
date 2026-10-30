@@ -11,6 +11,8 @@ const OBSERVATION_HEADERS = ['observacao servico', 'observação serviço', 'obs
 const CASH_PAYMENT_HEADERS = ['pagamento a vista', 'pagamento à vista', 'a vista', 'à vista']
 const INSTALLMENT_HEADERS = ['parcelado se parcelado qual parcela', 'parcelado', 'parcela']
 
+import { looksLikeBrbStatement, parseBrbStatementText } from './brbStatementLayout.js'
+
 function stripBom(value) {
   return String(value || '').replace(/^\uFEFF/, '')
 }
@@ -521,7 +523,23 @@ export function parseOfxStatement(content) {
 export function parseStatementText(content, options = {}) {
   const fileName = String(options.fileName || '').toLowerCase()
   const looksOfx = fileName.endsWith('.ofx') || /OFXHEADER\s*:|<OFX[>\s]/i.test(content)
-  return looksOfx ? parseOfxStatement(content) : parseCsvStatement(content, options)
+  if (looksOfx) return parseOfxStatement(content)
+  // Extrato do BRB em texto (PDF do internet banking copiado como texto).
+  // Nao e tabular, entao nao passa pelo leitor de CSV.
+  if (looksLikeBrbStatement(content)) {
+    const { lines, errors, sections } = parseBrbStatementText(content, options)
+    return {
+      format:'brb',
+      bank:'BRB',
+      lines,
+      errors,
+      sections,
+      requiresMapping:false,
+      mapping:null,
+      totals:statementTotals(lines),
+    }
+  }
+  return parseCsvStatement(content, options)
 }
 
 export function decodeStatementBuffer(buffer) {

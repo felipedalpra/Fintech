@@ -12,7 +12,7 @@ test('persiste importação, vínculo e reversão no PostgreSQL local real', asy
   await page.goto('/app/bank-reconciliation')
   await expect(page.getByRole('heading', { name:'Conciliação Bancária' })).toBeVisible()
   await page.getByLabel('Conta financeira').selectOption(ACCOUNT_ID)
-  await page.getByLabel('Arquivo OFX ou CSV').setInputFiles({
+  await page.getByLabel('Arquivo OFX, CSV, Excel ou extrato do BRB').setInputFiles({
     name:'extrato-real-e2e.ofx',
     mimeType:'application/x-ofx',
     buffer:Buffer.from(`OFXHEADER:100\n<OFX><BANKTRANLIST>
