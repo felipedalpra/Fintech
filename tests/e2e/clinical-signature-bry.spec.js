@@ -95,7 +95,8 @@ async function openDocuments(page, {
     await route.fulfill({
       status:200,
       contentType:'application/json',
-      body:JSON.stringify({ attempt:state.attempts[0], signingUrl:SIGNING_URL }),
+      // O backend responde com `attempts` (lote), nao `attempt`.
+      body:JSON.stringify({ attempts:state.attempts, signingUrl:SIGNING_URL }),
     })
   })
 
@@ -205,7 +206,8 @@ test('duplo clique na confirmação não cria duas solicitações', async ({ pag
       await route.fulfill({
         status:200,
         contentType:'application/json',
-        body:JSON.stringify({ attempt:state.attempts[0], signingUrl:SIGNING_URL }),
+        // O backend responde com `attempts` (lote), nao `attempt`.
+      body:JSON.stringify({ attempts:state.attempts, signingUrl:SIGNING_URL }),
       })
     },
   })

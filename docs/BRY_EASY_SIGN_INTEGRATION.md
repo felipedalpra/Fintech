@@ -28,7 +28,10 @@ Estas informações vieram do contato comercial/técnico, não do contrato nem d
 - créditos adquiridos com validade de **1 ano**;
 - integração, configuração e testes sob responsabilidade da equipe da SurgiMetrics, sem acompanhamento direto da BRy durante o desenvolvimento;
 - acesso diretamente ao ambiente de produção;
-- operações de teste consomem créditos.
+- operações de teste consomem créditos;
+- **criar um envelope consome crédito mesmo que ele seja cancelado em seguida**
+  (confirmado em 29/10/2026: o saldo caiu após 7 envelopes de teste criados e
+  todos cancelados via `DELETE`). Cancelar **não** estorna.
 
 Antes de comprar créditos, confirmar valores, validade, impostos, política de estorno e custo unitário de cada operação usada no fluxo.
 
@@ -185,6 +188,56 @@ reconciliação acontecer dentro de 30 dias (webhook perdido e ninguém clicando
 “Atualizar status”), o artefato é perdido na origem. Mitigação sugerida, ainda
 **não** implementada: incluir tentativas pendentes antigas na rotina diária de
 alertas que já existe.
+
+## Custo e o desenho em lote
+
+**A BRy cobra por envelope, não por documento: R$ 7,50**, e um envelope aceita
+**até 10 documentos**. Isso define a arquitetura:
+
+| Desenho | Custo por documento |
+| --- | --- |
+| Um envelope por documento | **R$ 7,50** |
+| Lote de 10 documentos | **R$ 0,75** |
+
+Por isso a plataforma assina **em lote**: a tela Clínico → Documentos tem a fila
+“Assinar em lote”, onde o profissional seleciona até 10 documentos **de
+pacientes diferentes** e assina todos numa única ida à BRy.
+
+Como o vínculo documento ↔ artefato assinado é mantido sem ambiguidade:
+
+- o `documentNonce` enviado para cada documento é o **id da nossa tentativa**;
+- a BRy devolve o mesmo valor (confirmado em teste real em 30/10/2026);
+- `assertEnvelopeCoversDocuments` recusa o lote inteiro se **qualquer** documento
+  não voltar identificado. Anexar o PDF errado colocaria a receita de um
+  paciente na ficha de outro, então aqui a falha é sempre fechada;
+- no banco, as tentativas do lote compartilham `provider_request_id` e
+  `request_id` (a chave idempotente), e cada uma guarda o seu
+  `provider_document_id`. O índice único passou a ser por documento dentro do
+  envelope, e um documento não pode entrar duas vezes no mesmo envelope.
+
+Aplicar `supabase/clinical_signature_batch_schema.sql` depois de
+`clinical_signature_bry_schema.sql`.
+
+## Custo: o que já se sabe na prática
+
+Confirmado em 29/10/2026, medindo o saldo da conta antes e depois dos testes:
+
+- **criar um envelope consome crédito, e cancelá-lo não estorna.** Foram 7
+  envelopes criados e cancelados durante a investigação do formato da API, e o
+  saldo caiu. **O preço é R$ 7,50 por envelope** (informado pela BRy).
+- consequência direta no produto: cada "Assinar com BRy" custa, **mesmo que o
+  profissional nunca assine**. O fluxo foi desenhado com isso em mente — daí a
+  confirmação explícita antes de criar o envelope, a recusa de reenvio
+  automático após `POST` ambíguo, e a reabertura da página de assinatura sem
+  criar envelope novo.
+- um envelope que **expira** sem assinatura provavelmente também consome; não
+  foi medido. Como a expiração padrão é 7 dias, vale acompanhar.
+- a **verificação** da assinatura é uma segunda API e pode cobrar à parte. Ainda
+  não medido, porque o host não é público.
+
+Com R$ 7,50 por envelope e 10 documentos por envelope, o custo por documento vai
+de R$ 7,50 (um por envelope) para R$ 0,75 (lote cheio) — a razão de existir a
+fila de assinatura em lote.
 
 ## Divergências entre o schema publicado e a API ao vivo
 
@@ -427,7 +480,10 @@ documento clínico imutável
 ### Produto e cobrança
 
 - Qual é o custo por envelope, documento, signatário, modalidade, OTP, WhatsApp, biometria, carimbo do tempo, relatório e download?
-- Uma tentativa que falha, expira ou é cancelada consome créditos? Reenvio consome novamente?
+- ~~Uma tentativa que falha, expira ou é cancelada consome créditos?~~ **Respondido
+  na prática em 29/10/2026: criar o envelope consome crédito e cancelar não
+  estorna.** Falta confirmar com a BRy o custo unitário e se expiração e reenvio
+  cobram de novo.
 - Há homologação disponível para a conta Self-Service? Se houver, ela usa token e créditos diferentes?
 - O crédito inicial e a recarga mínima continuam válidos na data da contratação?
 

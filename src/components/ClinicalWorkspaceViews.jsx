@@ -1,5 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Btn } from './UI.jsx'
+import { uid } from '../utils.js'
+import {
+  fetchClinicalSignatureQueue,
+  requestClinicalSignature,
+} from '../lib/clinicalSignatureBryClient.js'
 import { clinicalPendingLabel, clinicalTimelineLabel } from '../lib/clinicalWorkspaceIndex.js'
 
 const dateLabel = (value, withTime = false) => {
@@ -109,6 +114,128 @@ export function ClinicalPendingView({ index, loading, unavailableSources, onOpen
   )
 }
 
+// Fila de assinatura em lote. A BRy cobra POR ENVELOPE e cada envelope aceita
+// dez documentos: assinar de dez em dez custa um décimo de assinar um a um.
+// O backend decide o que é assinável; esta tela só mostra e deixa escolher.
+function ClinicalSignatureQueue() {
+  const [state, setState] = useState({ status:'loading', documents:[], integration:null, maxPerEnvelope:10 })
+  const [selected, setSelected] = useState([])
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+
+  async function load() {
+    try {
+      const data = await fetchClinicalSignatureQueue()
+      setState({ status:'ready', ...data })
+    } catch {
+      // Fila indisponível não pode esconder o resto da tela nem a via manual.
+      setState({ status:'unavailable', documents:[], integration:null, maxPerEnvelope:10 })
+    }
+  }
+  useEffect(() => { load() }, [])
+
+  const max = state.maxPerEnvelope || 10
+  const available = Boolean(state.integration?.available)
+  function toggle(id) {
+    setSelected(current => current.includes(id)
+      ? current.filter(item => item !== id)
+      : (current.length >= max ? current : [...current, id]))
+  }
+
+  async function sign() {
+    if (busy || selected.length === 0) return
+    setBusy(true); setConfirming(false); setNotice(''); setError('')
+    try {
+      const response = await requestClinicalSignature(selected, uid())
+      setSelected([])
+      await load()
+      if (response.signingUrl) {
+        const popup = window.open(response.signingUrl, '_blank', 'noopener,noreferrer')
+        if (popup) popup.opener = null
+        else setNotice('O navegador bloqueou a janela da BRy. Libere pop-ups e use "Atualizar status" na ficha do paciente.')
+      } else {
+        setNotice('A solicitação foi registrada, mas a BRy não devolveu a página de assinatura.')
+      }
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível solicitar a assinatura.')
+      await load().catch(() => {})
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (state.status === 'loading') return null
+  if (state.status === 'unavailable' || !available || state.documents.length === 0) return null
+
+  return (
+    <section className="clinical-sign-queue" data-testid="clinical-sign-queue">
+      <header>
+        <div>
+          <strong>Assinar em lote</strong>
+          <span>
+            A BRy cobra por envelope, e cada envelope leva até {max} documentos.
+            Assinar vários de uma vez custa o mesmo que assinar um.
+          </span>
+        </div>
+        <b data-testid="clinical-sign-queue-count">{selected.length} de {max} selecionados</b>
+      </header>
+
+      {error && <div className="clinical-form-error" role="alert">{error}</div>}
+      {notice && <div className="clinical-document-access-note" role="status">{notice}</div>}
+
+      <ul>
+        {state.documents.map(document => {
+          const checked = selected.includes(document.id)
+          return (
+            <li key={document.id}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={busy || (!checked && selected.length >= max)}
+                  onChange={() => toggle(document.id)}
+                />
+                <span className={`clinical-document-center-icon is-${document.documentType}`}>
+                  {document.documentType === 'simple_prescription' ? 'Rx' : 'Ex'}
+                </span>
+                <span>
+                  <strong>{document.patientName}</strong>
+                  <small>{document.documentType === 'simple_prescription' ? 'Receita simples' : 'Pedido de exames'} · {dateLabel(document.issueDate)}</small>
+                </span>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+
+      {confirming ? (
+        <div className="clinical-signature-confirm" role="group" aria-label="Confirmar assinatura em lote">
+          <span>
+            Isto cria <strong>um envelope</strong> na BRy com {selected.length} documento(s) e
+            consome crédito, mesmo que você não conclua a assinatura. A página segura da BRy
+            abrirá em outra aba. Confirmar?
+          </span>
+          <div>
+            <Btn variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>Cancelar</Btn>
+            <Btn disabled={busy} onClick={sign}>{busy ? 'Solicitando…' : 'Confirmar e assinar'}</Btn>
+          </div>
+        </div>
+      ) : (
+        <footer>
+          <Btn variant="ghost" disabled={busy || state.documents.length === 0} onClick={() => setSelected(state.documents.slice(0, max).map(item => item.id))}>
+            Selecionar {Math.min(max, state.documents.length)}
+          </Btn>
+          <Btn disabled={busy || selected.length === 0} onClick={() => setConfirming(true)}>
+            Assinar {selected.length > 0 ? `${selected.length} ` : ''}com BRy
+          </Btn>
+        </footer>
+      )}
+    </section>
+  )
+}
+
 export function ClinicalDocumentsCenter({ index, loading, unavailableSources, onOpenPatient, onRefresh }) {
   const incomplete = Boolean(unavailableSources?.length)
   const [query, setQuery] = useState('')
@@ -125,6 +252,7 @@ export function ClinicalDocumentsCenter({ index, loading, unavailableSources, on
         <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente ou profissional" /></label>
       </header>
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
+      <ClinicalSignatureQueue />
       <div className="clinical-filter-row" aria-label="Filtrar documentos">
         {[['all','Todos'],['signed','Assinados'],['pending','Pendentes'],['failed','Com falha'],['manual','Via manual']].map(([id, label]) => <button key={id} type="button" className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
       </div>

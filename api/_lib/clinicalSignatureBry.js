@@ -24,8 +24,10 @@ import {
 import {
   BryEasySignError,
   bryEasySignConfig,
+  assertEnvelopeCoversDocuments,
   buildEnvelopePayload,
   createEnvelope,
+  MAX_DOCUMENTS_PER_ENVELOPE,
   downloadEvidenceReport,
   downloadSignedDocument,
   fetchEnvelope,
@@ -310,6 +312,16 @@ function translateDatabaseError(error) {
 // Solicitar assinatura
 // ---------------------------------------------------------------------------
 
+// Solicita a assinatura de ATE 10 documentos em um unico envelope da BRy.
+//
+// Por que em lote: a BRy cobra por ENVELOPE (R$ 7,50 em 29/10/2026) e aceita 10
+// documentos por envelope. Um envelope por documento faria cada pedido de exame
+// custar o mesmo que dez.
+//
+// O vinculo entre cada PDF assinado e o seu documento clinico e EXPLICITO: o
+// `documentNonce` enviado a BRy e o id da nossa tentativa, e ela o devolve
+// igual. Se um unico documento nao voltar identificado, o lote inteiro falha --
+// anexar o artefato errado colocaria a receita de um paciente na ficha de outro.
 export async function requestClinicalSignature(req, deps = defaultClinicalSignatureDeps) {
   const { user, ownerId, admin } = await deps.context(req)
   const config = deps.config()
@@ -318,64 +330,141 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
     throw httpError('A assinatura digital pela BRy nao esta disponivel. Use a via manual.', 409, 'integracao_indisponivel')
   }
 
-  const documentId = String(req.body?.documentId || '').trim()
   const requestId = String(req.body?.requestId || '').trim()
-  if (!UUID_PATTERN.test(documentId)) throw httpError('Documento invalido.', 400)
   if (!UUID_PATTERN.test(requestId)) throw httpError('Identificador da solicitacao invalido.', 400)
 
-  // O documento e relido do banco: nada do corpo da requisicao e aproveitado.
-  const { data:document, error:documentError } = await admin
+  const requestedIds = Array.isArray(req.body?.documentIds) ? req.body.documentIds : []
+  const documentIds = [...new Set(requestedIds.map(id => String(id || '').trim()))]
+  if (documentIds.length === 0 || !documentIds.every(id => UUID_PATTERN.test(id))) {
+    throw httpError('Documento invalido.', 400)
+  }
+  if (documentIds.length > MAX_DOCUMENTS_PER_ENVELOPE) {
+    throw httpError(`Assine no maximo ${MAX_DOCUMENTS_PER_ENVELOPE} documentos por vez.`, 400, 'lote_grande_demais')
+  }
+
+  // Os documentos sao relidos do banco: nada do corpo da requisicao e aproveitado.
+  const { data:rows, error:documentError } = await admin
     .from('clinical_documents')
     .select('*')
-    .eq('id', documentId)
     .eq('user_id', ownerId)
-    .maybeSingle()
+    .in('id', documentIds)
   if (documentError) throw translateDatabaseError(documentError)
-  if (!document) throw httpError('Documento clinico nao encontrado nesta clinica.', 404)
-  if (document.created_by !== user.id) {
+
+  const documents = documentIds.map(id => (rows || []).find(row => row.id === id))
+  if (documents.some(document => !document)) {
+    throw httpError('Documento clinico nao encontrado nesta clinica.', 404)
+  }
+  if (documents.some(document => document.created_by !== user.id)) {
     throw httpError('Somente o profissional que emitiu o documento pode assina-lo.', 403, 'nao_autor')
   }
 
   const signer = await deps.loadSigner(user)
-  // Confere created_by, nome, conselho, CRM e CPF contra o snapshot imutavel.
-  let envelope
-  try {
-    envelope = buildClinicalSignatureEnvelope({ document, signer })
-  } catch (error) {
-    throw httpError(error.message, 409, 'identidade_divergente')
+  // Confere created_by, nome, conselho, CRM e CPF valido contra o snapshot
+  // imutavel de CADA documento. Um unico divergente recusa o lote: todos serao
+  // assinados pela mesma identidade, no mesmo envelope.
+  const payloadHashes = new Map()
+  for (const document of documents) {
+    try {
+      payloadHashes.set(document.id, hashClinicalSignatureEnvelope(
+        buildClinicalSignatureEnvelope({ document, signer }),
+      ))
+    } catch (error) {
+      throw httpError(error.message, 409, 'identidade_divergente')
+    }
   }
-  const payloadSha256 = hashClinicalSignatureEnvelope(envelope)
 
   const connection = await ensureConnection({ admin, ownerId, user, signer, config })
 
-  // --- reserva idempotente da tentativa ------------------------------------
-  let attempt = await reserveAttempt({
-    admin, ownerId, user, document, connection, requestId, payloadSha256, config,
-  })
-
-  if (attempt.provider_request_id) {
-    // Mesma solicitacao reapresentada e envelope ja criado: nao reenvia e nao
-    // consome credito. Recupera o link na BRy para o proprio profissional.
-    const reused = await recoverSigningLink({ admin, ownerId, attempt, config, deps })
-    await audit(admin, ownerId, user.id, 'request_clinical_signature', {
-      document_id:documentId, attempt_id:attempt.id, outcome:'reused',
-    })
-    return reused
+  // --- reserva idempotente das tentativas do lote --------------------------
+  // Pre-checagem ANTES de reservar qualquer uma: se um documento do lote ja
+  // tem tentativa pendente ou assinatura valida, o trigger recusaria a reserva
+  // no meio do caminho e as anteriores ficariam pendentes para sempre, sem
+  // envelope e sem saida -- a fila as esconde e o encerramento nao as alcanca.
+  const { data:existingAttempts, error:existingError } = await admin
+    .from('clinical_document_signatures')
+    .select('document_id, status, request_id')
+    .eq('user_id', ownerId)
+    .in('document_id', documentIds)
+    .in('status', ['pending', 'signed'])
+  if (existingError && !missingRelation(existingError)) throw translateDatabaseError(existingError)
+  const blocking = (existingAttempts || []).filter(attempt => attempt.request_id !== requestId)
+  if (blocking.length > 0) {
+    throw httpError(
+      blocking.some(attempt => attempt.status === 'signed')
+        ? 'Um dos documentos selecionados ja tem assinatura valida.'
+        : 'Um dos documentos selecionados ja tem uma assinatura em andamento.',
+      409, 'tentativa_em_andamento',
+    )
   }
-  if (attempt.dispatch_state === 'unknown') {
+
+  // Mesmo com a pre-checagem, uma corrida pode derrubar a reserva no meio. Se
+  // isso acontecer, encerramos as que acabaram de ser criadas neste request
+  // para nao deixar documento bloqueado.
+  const attempts = []
+  try {
+    for (const document of documents) {
+      attempts.push(await reserveAttempt({
+        admin, ownerId, user, document, connection, requestId,
+        payloadSha256:payloadHashes.get(document.id), config,
+      }))
+    }
+  } catch (error) {
+    await terminalizeBatch(admin, attempts.filter(attempt => !attempt.provider_request_id), {
+      status:'failed',
+      failureCode:'batch_reserve_failed',
+      failureMessage:'O lote nao pode ser reservado por completo. Nenhum envelope foi criado.',
+    })
+    throw error
+  }
+
+  const alreadySent = attempts.find(attempt => attempt.provider_request_id)
+  if (alreadySent) {
+    // Lote misto: parte ja tem envelope e parte nao. Isso significa que a
+    // reapresentacao mudou o conjunto de documentos, ou que a gravacao dos
+    // identificadores foi interrompida. Nos dois casos, seguir em frente
+    // deixaria tentativas fora do envelope, assinadas na BRy e nunca
+    // concluidas aqui. Falha fechada.
+    const divergent = attempts.filter(attempt => attempt.provider_request_id !== alreadySent.provider_request_id)
+    if (divergent.length > 0) {
+      throw httpError(
+        'Esta solicitacao ja foi enviada com outro conjunto de documentos. Atualize o status e refaca a selecao.',
+        409, 'lote_divergente',
+      )
+    }
+    // Mesmo lote reapresentado e envelope ja criado: nao reenvia e nao consome
+    // outro credito. Recupera o link na BRy para o proprio profissional.
+    const reused = await recoverSigningLink({ admin, ownerId, attempt:alreadySent, config, deps })
+    await audit(admin, ownerId, user.id, 'request_clinical_signature', {
+      document_count:documents.length, request_id:requestId, outcome:'reused',
+    })
+    return { ...reused, attempts:await publicAttemptsOf(admin, ownerId, attempts) }
+  }
+  if (attempts.some(attempt => attempt.dispatch_state === 'unknown')) {
     throw httpError(
       'Esta solicitacao ficou com resultado desconhecido na BRy. Atualize o status ou encerre a tentativa antes de tentar de novo.',
       409, 'resultado_desconhecido',
     )
   }
 
-  // --- PDF deterministico --------------------------------------------------
-  let rendered
+  // --- PDFs deterministicos ------------------------------------------------
+  const envelopeDocuments = []
   try {
-    rendered = await deps.renderPdf(document)
-  } catch (error) {
-    // Nada foi enviado: encerra a tentativa para nao travar o documento.
-    await terminalize(admin, attempt, {
+    for (const document of documents) {
+      const attempt = attempts.find(item => item.document_id === document.id)
+      const rendered = await deps.renderPdf(document)
+      envelopeDocuments.push({
+        // O nonce e o id da tentativa: e por ele que o artefato volta ao
+        // documento certo depois de assinado.
+        documentNonce:attempt.id,
+        fileName:`${document.document_type}-${attempt.id}.pdf`,
+        pdfBase64:rendered.buffer.toString('base64'),
+        documentType:document.document_type,
+        attemptId:attempt.id,
+        sha256:rendered.sha256,
+      })
+    }
+  } catch {
+    await terminalizeBatch(admin, attempts, {
       status:'failed',
       failureCode:'render_failed',
       failureMessage:'Nao foi possivel gerar o PDF do documento para assinatura.',
@@ -386,22 +475,20 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
   let bryPayload
   try {
     bryPayload = buildEnvelopePayload({
-      documentType:document.document_type,
-      fileName:`${document.document_type}-${document.id}.pdf`,
-      pdfBase64:rendered.buffer.toString('base64'),
-      // Nome unico por TENTATIVA, em 49 caracteres: a API corta em 50. E o unico
+      documents:envelopeDocuments,
+      // Nome unico por LOTE, em 49 caracteres: a API corta em 50. E o unico
       // identificador nosso que aparece na pagina de listagem de envelopes da
       // BRy, por onde um envelope orfao (criado em um POST ambiguo) pode ser
       // localizado e descartado.
-      envelopeName:`SurgiMetrics ${attempt.id}`,
-      clientName:String(document.clinic_name || document.author_name || 'SurgiMetrics').slice(0, 120),
+      envelopeName:`SurgiMetrics ${requestId}`,
+      clientName:String(documents[0].clinic_name || documents[0].author_name || 'SurgiMetrics'),
       signer,
       signatureMode:config.signatureMode,
       signatureProfile:config.signatureProfile,
       hashAlgorithm:config.hashAlgorithm,
     })
   } catch (error) {
-    await terminalize(admin, attempt, {
+    await terminalizeBatch(admin, attempts, {
       status:'failed',
       failureCode:'payload_invalid',
       failureMessage:'Dados profissionais insuficientes para montar o envelope.',
@@ -409,69 +496,109 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
     throw httpError(error.message, 409, 'payload_invalido')
   }
 
-  await updatePending(admin, attempt.id, { rendered_pdf_sha256:rendered.sha256 })
+  for (const item of envelopeDocuments) {
+    await updatePending(admin, item.attemptId, { rendered_pdf_sha256:item.sha256 })
+  }
+
+  // --- claim do despacho ---------------------------------------------------
+  // Duas abas (ou um retry de rede) com a mesma chave idempotente chamariam a
+  // criacao do envelope em paralelo: dois envelopes criados, dois creditos
+  // gastos e um orfao em rascunho. Só quem consegue mover TODAS as tentativas
+  // de `reserved` para `sending` segue adiante.
+  const claimed = []
+  for (const attempt of attempts) {
+    const { data:rows, error:claimError } = await admin
+      .from('clinical_document_signatures')
+      .update({ dispatch_state:'sending' })
+      .eq('id', attempt.id)
+      .eq('status', 'pending')
+      .eq('dispatch_state', 'reserved')
+      .select('id')
+    if (claimError) throw translateDatabaseError(claimError)
+    if ((rows || []).length > 0) claimed.push(attempt)
+  }
+  if (claimed.length !== attempts.length) {
+    // Outro request ja esta despachando este lote. Nao criamos um segundo
+    // envelope: devolvemos a quem perdeu a corrida que ja esta em andamento.
+    for (const attempt of claimed) {
+      await updatePending(admin, attempt.id, { dispatch_state:'reserved' })
+    }
+    throw httpError(
+      'Esta solicitacao ja esta sendo enviada. Aguarde e use "Atualizar status".',
+      409, 'despacho_em_andamento',
+    )
+  }
 
   // --- criacao do envelope na BRy -----------------------------------------
   let creation
   try {
     creation = await deps.bry.createEnvelope(config, bryPayload)
+    // Falha fechada: se qualquer documento nao voltou identificado, nao ha como
+    // saber de quem e cada PDF assinado.
+    assertEnvelopeCoversDocuments(creation, envelopeDocuments.map(item => item.documentNonce))
   } catch (error) {
     if (error instanceof BryEasySignError && error.ambiguous) {
       // Sem idempotency key na BRy, NAO reenviamos: gravamos resultado
       // desconhecido e deixamos a reconciliacao/encerramento para uma acao
       // humana explicita.
-      await updatePending(admin, attempt.id, {
-        dispatch_state:'unknown',
-        failure_code:'dispatch_result_unknown',
-        // O envelope nasce como rascunho: um duplicado nao notifica nem chega ao
-        // profissional. O risco e credito consumido, nao assinatura duplicada.
-        failure_message:'A BRy nao confirmou a criacao do envelope. Se ele existir, ficou em rascunho e nao chegou ao profissional; o credito pode ter sido consumido.',
-      })
+      for (const attempt of attempts) {
+        await updatePending(admin, attempt.id, {
+          dispatch_state:'unknown',
+          failure_code:'dispatch_result_unknown',
+          // O envelope nasce como rascunho: um duplicado nao notifica nem chega
+          // ao profissional. O risco e credito consumido, nao assinatura duplicada.
+          failure_message:'A BRy nao confirmou a criacao do envelope. Se ele existir, ficou em rascunho e nao chegou ao profissional; o credito pode ter sido consumido.',
+        })
+      }
       await audit(admin, ownerId, user.id, 'request_clinical_signature', {
-        document_id:documentId, attempt_id:attempt.id, outcome:'ambiguous',
+        document_count:documents.length, request_id:requestId, outcome:'ambiguous',
       })
       throw httpError(
         'A BRy nao confirmou a criacao da assinatura. Nao reenviamos automaticamente para nao duplicar cobranca. Use "Atualizar status" ou encerre a tentativa.',
         504, 'resultado_desconhecido',
       )
     }
-    await terminalize(admin, attempt, {
+    await terminalizeBatch(admin, attempts, {
       status:'failed',
       failureCode:`provider_${error?.kind || 'error'}`,
       failureMessage:error?.message || 'A BRy recusou a solicitacao.',
     })
     await audit(admin, ownerId, user.id, 'request_clinical_signature', {
-      document_id:documentId, attempt_id:attempt.id, outcome:'failed',
+      document_count:documents.length, request_id:requestId, outcome:'failed',
     })
     throw httpError(error?.message || 'A BRy recusou a solicitacao.', 502, 'provedor_recusou')
   }
 
   // Grava os identificadores ANTES de iniciar: se o inicio falhar, a
   // reconciliacao encontra o envelope em DRAFT e reinicia com seguranca.
-  await updatePending(admin, attempt.id, {
-    provider_request_id:creation.envelopeId,
-    provider_document_id:creation.documentId,
-    provider_signer_id:creation.signerId,
-    provider_envelope_status:creation.envelopeStatus,
-    dispatch_state:'sent',
-    failure_code:null,
-    failure_message:null,
-  })
+  for (const item of envelopeDocuments) {
+    await updatePending(admin, item.attemptId, {
+      provider_request_id:creation.envelopeId,
+      provider_document_id:creation.documentsByNonce.get(item.documentNonce).documentId,
+      provider_signer_id:creation.signerId,
+      provider_envelope_status:creation.envelopeStatus,
+      dispatch_state:'sent',
+      failure_code:null,
+      failure_message:null,
+    })
+  }
 
   // --- inicio do envelope (sai de rascunho e notifica o signatario) --------
   try {
     await deps.bry.startEnvelope(config, creation.envelopeId)
-  } catch (error) {
+  } catch {
     // O envelope existe e esta registrado; so nao saiu de rascunho. Nao
     // terminalizamos nem entregamos o link, porque assinar ainda nao e
     // possivel: "Atualizar status" reinicia.
-    await updatePending(admin, attempt.id, {
-      provider_envelope_status:'DRAFT',
-      failure_code:'envelope_start_failed',
-      failure_message:'O envelope foi criado, mas nao foi iniciado. Use "Atualizar status" para liberar a assinatura.',
-    })
+    for (const attempt of attempts) {
+      await updatePending(admin, attempt.id, {
+        provider_envelope_status:'DRAFT',
+        failure_code:'envelope_start_failed',
+        failure_message:'O envelope foi criado, mas nao foi iniciado. Use "Atualizar status" para liberar a assinatura.',
+      })
+    }
     await audit(admin, ownerId, user.id, 'request_clinical_signature', {
-      document_id:documentId, attempt_id:attempt.id, outcome:'draft_not_started',
+      document_count:documents.length, request_id:requestId, outcome:'draft_not_started',
     })
     throw httpError(
       'O envelope foi criado na BRy, mas nao foi iniciado. Use "Atualizar status" para liberar a assinatura; nao sera cobrado de novo.',
@@ -479,9 +606,11 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
     )
   }
 
-  await updatePending(admin, attempt.id, { provider_envelope_status:'CREATED' })
+  for (const attempt of attempts) {
+    await updatePending(admin, attempt.id, { provider_envelope_status:'CREATED' })
+  }
   await audit(admin, ownerId, user.id, 'request_clinical_signature', {
-    document_id:documentId, attempt_id:attempt.id, outcome:'sent', environment:config.environment,
+    document_count:documents.length, request_id:requestId, outcome:'sent', environment:config.environment,
   })
 
   // Criado em rascunho, a BRy pode nao ter devolvido o link junto. Depois do
@@ -494,18 +623,70 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
     } catch { signingUrl = null }
   }
 
-  attempt = await loadAttempt(admin, ownerId, attempt.id)
   return {
-    attempt:publicAttempt(attempt),
+    attempts:await publicAttemptsOf(admin, ownerId, attempts),
     // Unico lugar em que o link sai do servidor, e so para o proprio autor.
     signingUrl,
   }
 }
 
-// Reabre a pagina de assinatura de uma tentativa pendente sem criar envelope
-// novo e sem consumir credito. Existe porque o link e sensivel e nunca fica
-// guardado: se a aba for fechada ou o pop-up bloqueado, este e o caminho de
-// volta -- antes dele, a unica saida era criar outro envelope.
+// Fila de documentos que o profissional pode assinar agora: emitidos por ele,
+// de tipo elegivel e ainda sem tentativa pendente nem assinatura valida.
+// A lista e montada no servidor -- a tela nao decide o que e assinavel.
+export async function clinicalSignatureQueue(req, deps = defaultClinicalSignatureDeps) {
+  const { user, ownerId, admin } = await deps.context(req)
+  const config = deps.config()
+  const integration = publicBryEasySignState(config)
+
+  const { data:documents, error } = await admin
+    .from('clinical_documents')
+    .select('id, document_type, issue_date, patient_id, patient_name, created_at')
+    .eq('user_id', ownerId)
+    .eq('created_by', user.id)
+    .in('document_type', ['exam_request', 'simple_prescription'])
+    .order('created_at', { ascending:false })
+    .limit(200)
+  if (error) {
+    if (missingRelation(error)) return { integration, maxPerEnvelope:MAX_DOCUMENTS_PER_ENVELOPE, documents:[], available:false }
+    throw translateDatabaseError(error)
+  }
+
+  const ids = (documents || []).map(document => document.id)
+  let blocked = new Set()
+  if (ids.length > 0) {
+    const { data:attempts, error:attemptError } = await admin
+      .from('clinical_document_signatures')
+      .select('document_id, status')
+      .eq('user_id', ownerId)
+      .in('document_id', ids)
+      .in('status', ['pending', 'signed'])
+    if (attemptError && !missingRelation(attemptError)) throw translateDatabaseError(attemptError)
+    // Uma tentativa pendente ou uma assinatura valida tira o documento da fila:
+    // e a mesma regra que o banco impoe no insert.
+    blocked = new Set((attempts || []).map(attempt => attempt.document_id))
+  }
+
+  return {
+    integration,
+    maxPerEnvelope:MAX_DOCUMENTS_PER_ENVELOPE,
+    available:true,
+    documents:(documents || [])
+      .filter(document => !blocked.has(document.id))
+      .map(document => ({
+        id:document.id,
+        documentType:document.document_type,
+        issueDate:document.issue_date,
+        patientId:document.patient_id,
+        patientName:document.patient_name,
+        createdAt:document.created_at,
+      })),
+  }
+}
+
+// Reabre a pagina de assinatura de um lote pendente sem criar envelope novo e
+// sem consumir credito. Existe porque o link e sensivel e nunca fica guardado:
+// se a aba for fechada ou o pop-up bloqueado, este e o caminho de volta --
+// antes dele, a unica saida era criar outro envelope e pagar de novo.
 export async function clinicalSignatureLink(req, deps = defaultClinicalSignatureDeps) {
   const { user, ownerId, admin } = await deps.context(req)
   const config = deps.config()
@@ -541,6 +722,21 @@ export async function clinicalSignatureLink(req, deps = defaultClinicalSignature
   })
   // O link nao e persistido nem registrado: so devolvido ao proprio signatario.
   return { signingUrl:state.signingUrl }
+}
+
+// Relê as tentativas do lote em sua forma publica.
+async function publicAttemptsOf(admin, ownerId, attempts) {
+  const fresh = []
+  for (const attempt of attempts) {
+    fresh.push(publicAttempt(await loadAttempt(admin, ownerId, attempt.id)))
+  }
+  return fresh
+}
+
+async function terminalizeBatch(admin, attempts, outcome) {
+  for (const attempt of attempts) {
+    await terminalize(admin, attempt, outcome)
+  }
 }
 
 async function reserveAttempt({ admin, ownerId, user, document, connection, requestId, payloadSha256, config }) {
