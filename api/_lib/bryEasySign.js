@@ -52,6 +52,7 @@ const BRAZIL_STATES = Object.freeze([
   'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
 ])
 
+export const MAX_ENVELOPE_NAME = 50
 const MAX_JSON_BYTES = 2 * 1024 * 1024
 const MAX_PDF_BYTES = 25 * 1024 * 1024
 const DEFAULT_TIMEOUT_MS = 20_000
@@ -248,8 +249,11 @@ export function buildEnvelopePayload({
   }
 
   return {
-    name:envelopeName,
-    clientName,
+    // A API limita `name` e `clientName` a 50 caracteres (confirmado ao vivo em
+    // 29/10/2026; o schema publicado nao documenta o limite). Cortamos aqui para
+    // que um nome de clinica longo nunca derrube a criacao do envelope.
+    name:String(envelopeName || '').slice(0, MAX_ENVELOPE_NAME),
+    clientName:String(clientName || '').slice(0, MAX_ENVELOPE_NAME),
     expiration:expirationSeconds,
     language:'pt-br',
     // Criado como rascunho e iniciado em uma segunda chamada (orientacao da BRy
@@ -271,9 +275,12 @@ export function buildEnvelopePayload({
       name:String(signer.name).trim(),
       personal_identifier:cpf,
       personal_identifier_type:'CPF',
+      // LISTA, nao string: a API ao vivo recusa `typeMessaging` como texto com
+      // "cannot unmarshal string into ... of type []string" (confirmado em
+      // 29/10/2026). O schema publicado descreve um enum simples.
       // LINK: a SurgiMetrics devolve o link apenas ao proprio profissional.
       // Nunca pedimos para a BRy notificar por e-mail/WhatsApp.
-      typeMessaging:'LINK',
+      typeMessaging:['LINK'],
       signatureConfig,
       metadata:buildCfmSignerMetadata({
         registration:signer.registration,
@@ -520,7 +527,9 @@ export function normalizeEnvelopeState(payload) {
     documentId:String(documents[0]?.documentNonce || '').trim() || null,
     signerId:String(signer.signerNonce || '').trim() || null,
     // Modo/perfil AQUI sao o que foi SOLICITADO, nao prova do padrao aplicado.
-    requestedMode:String(signer.signatureConfig?.mode || '').trim().toUpperCase() || null,
+    // A resposta devolve `signatureMode`; o schema publicado usa `mode`.
+    requestedMode:String(signer.signatureConfig?.signatureMode || signer.signatureConfig?.mode || '')
+      .trim().toUpperCase() || null,
     requestedProfile:String(signer.signatureConfig?.profile || '').trim() || null,
   }
 }

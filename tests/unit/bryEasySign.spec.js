@@ -9,6 +9,7 @@ import {
   cancelEnvelope,
   createEnvelope,
   documentTypeOid,
+  MAX_ENVELOPE_NAME,
   downloadSignedDocument,
   fetchEnvelope,
   mapEnvelopeToInternalTransition,
@@ -176,8 +177,9 @@ test('o envelope leva o OID do documento como chave e os OIDs CFM no signatario'
   // base64Document com "D" maiusculo: caixa confirmada pela BRy em 29/10/2026.
   expect(body.documents[0].base64Document).toBe('JVBERi0=')
   expect(Object.hasOwn(body.documents[0], 'base64document')).toBe(false)
-  // Nunca pedimos para a BRy notificar o paciente ou terceiros.
-  expect(body.signersData[0].typeMessaging).toBe('LINK')
+  // LISTA: a API ao vivo recusa string. Nunca pedimos para a BRy notificar o
+  // paciente ou terceiros — LINK devolve o link para a propria aplicacao.
+  expect(body.signersData[0].typeMessaging).toEqual(['LINK'])
   // A guarda definitiva do artefato e nossa, nao da BRy.
   expect(body.keepDocument).toBe(false)
 })
@@ -276,7 +278,7 @@ test('o estado do envelope descarta link fora da allowlist e converte evidenceDa
       signerNonce:'signer-1',
       status:'SIGNED',
       evidenceDate:1_793_000_000,
-      signatureConfig:{ mode:'ADVANCED', profile:'TIMESTAMP' },
+      signatureConfig:{ signatureMode:'ADVANCED', profile:'TIMESTAMP' },
       link:{ href:'https://phishing.test/sign' },
     }],
   })
@@ -284,8 +286,10 @@ test('o estado do envelope descarta link fora da allowlist e converte evidenceDa
   expect(state.signerStatus).toBe('SIGNED')
   expect(state.signingUrl).toBeNull()
   expect(state.signedAt).toBe(new Date(1_793_000_000 * 1000).toISOString())
-  // Modo/perfil aqui sao o SOLICITADO: nao viram evidencia do padrao aplicado.
+  // A resposta devolve `signatureMode`; o schema publicado usa `mode`. Ambos
+  // sao aceitos, e os dois continuam sendo o SOLICITADO, nunca evidencia.
   expect(state.requestedMode).toBe('ADVANCED')
+  expect(normalizeEnvelopeState({ signers:[{ signatureConfig:{ mode:'QUALIFIED' } }] }).requestedMode).toBe('QUALIFIED')
 })
 
 test('status desconhecido do envelope nao e inventado', () => {
@@ -620,4 +624,19 @@ test('o estado publico continua sem expor credencial depois da mudanca de auth',
   const serialized = JSON.stringify(state)
   expect(serialized).not.toContain('segredo-da-aplicacao')
   expect(serialized).not.toContain('fca2d1d1')
+})
+
+test('nome e cliente do envelope respeitam o limite de 50 caracteres da API', () => {
+  // A API ao vivo recusa com "Error validating tag 'max' of field 'Name'".
+  const body = payload({
+    envelopeName:'N'.repeat(120),
+    clientName:'Clínica com um nome institucional bastante longo para caber',
+  })
+  expect(body.name).toHaveLength(MAX_ENVELOPE_NAME)
+  expect(body.clientName.length).toBeLessThanOrEqual(MAX_ENVELOPE_NAME)
+
+  // O formato que o orquestrador usa cabe: "SurgiMetrics " + UUID = 49.
+  const real = `SurgiMetrics 60000000-0000-4000-8000-000000000001`
+  expect(real.length).toBeLessThanOrEqual(MAX_ENVELOPE_NAME)
+  expect(payload({ envelopeName:real }).name).toBe(real)
 })

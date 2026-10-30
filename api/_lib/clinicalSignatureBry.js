@@ -389,10 +389,11 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
       documentType:document.document_type,
       fileName:`${document.document_type}-${document.id}.pdf`,
       pdfBase64:rendered.buffer.toString('base64'),
-      // Nome unico por TENTATIVA. E o unico identificador nosso que aparece na
-      // pagina de listagem de envelopes da BRy, por onde um envelope orfao
-      // (criado em um POST ambiguo) pode ser localizado e descartado.
-      envelopeName:`SurgiMetrics ${document.document_type} ${attempt.id}`,
+      // Nome unico por TENTATIVA, em 49 caracteres: a API corta em 50. E o unico
+      // identificador nosso que aparece na pagina de listagem de envelopes da
+      // BRy, por onde um envelope orfao (criado em um POST ambiguo) pode ser
+      // localizado e descartado.
+      envelopeName:`SurgiMetrics ${attempt.id}`,
       clientName:String(document.clinic_name || document.author_name || 'SurgiMetrics').slice(0, 120),
       signer,
       signatureMode:config.signatureMode,

@@ -186,6 +186,33 @@ reconciliação acontecer dentro de 30 dias (webhook perdido e ninguém clicando
 **não** implementada: incluir tentativas pendentes antigas na rotina diária de
 alertas que já existe.
 
+## Divergências entre o schema publicado e a API ao vivo
+
+Encontradas em **29/10/2026**, em teste real de ponta a ponta contra
+`easysign.bry.com.br`. Cada uma teria derrubado a primeira assinatura de
+verdade. Nenhuma está no OpenAPI publicado.
+
+| Campo | Schema publicado | API ao vivo | Erro que a API devolve |
+| --- | --- | --- | --- |
+| `signersData[].typeMessaging` | string (`LINK`/`EMAIL`/`WHATSAPP`) | **array de string** | `cannot unmarshal string into Go struct field CreateCollection.signersData of type []string` |
+| `documents[].base64document` | `base64document` | **`base64Document`** | — (silenciosamente ignorado) |
+| `name` / `clientName` | sem limite documentado | **máximo 50 caracteres** | `Error validating tag 'max' of field 'Name' in object 'CreateCollection.Name'` |
+| resposta: `signers[].signatureConfig.mode` | `mode` | **`signatureMode`** | — (leitura devolvia `null`) |
+| `metadata` com modo `SIMPLE` | não documentado | **rejeitado** | `signer metadata can't be used with 'SIMPLE' signature mode` |
+| `access_token` | “validade de alguns minutos” | **28.800 s (8 h)** | — |
+
+Observações do mesmo teste:
+
+- os valores de `metadata` são **strings simples**, como no guia médico
+  (`"2.16.76.1.12.1.3": ""`), e não listas;
+- o OID do tipo de documento, os três OIDs do CFM e
+  `signatureConfig: {mode: QUALIFIED, hashAlgorithm: SHA256, profile: TIMESTAMP}`
+  foram **aceitos** e devolvidos pela API;
+- a criação **devolve o link de assinatura mesmo em rascunho**, com
+  `canSign: false`; depois do `/start` o envelope vai para `CREATED` e o
+  signatário fica apto;
+- `DELETE` do envelope funciona e foi usado para limpar todos os testes.
+
 ## Divergências registradas na documentação da BRy
 
 Registradas aqui em vez de resolvidas por suposição:
