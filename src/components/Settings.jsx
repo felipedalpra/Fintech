@@ -13,7 +13,7 @@ import { MetaConnection } from './MetaConnection.jsx'
 import { FollowupRules } from './FollowupRules.jsx'
 import { IntegrationHealth } from './IntegrationHealth.jsx'
 import { BillingConnection } from './BillingConnection.jsx'
-import { isValidCpf } from '../lib/clinicalSignature.js'
+import { clinicalSignerReadiness } from '../lib/clinicalSignature.js'
 import { ExportPeriodFields } from './ExportPeriodFields.jsx'
 import { emptyExportPeriod } from '../lib/exportPeriod.js'
 
@@ -206,13 +206,13 @@ export function Settings({ google, data }) {
                 <SectionCard title="Assinatura clínica ICP-Brasil" subtitle="Base preparada para conectar um provedor de assinatura qualificada sem expor o certificado.">
                   <div style={{ display:'grid', gap:10 }}>
                     <div style={{ padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.surface, color:C.textSub, fontSize:13, lineHeight:1.6 }}>
-                      <strong style={{ display:'block', color:C.text, marginBottom:4 }}>Integração ainda não ativada</strong>
+                      <strong style={{ display:'block', color:C.text, marginBottom:4 }}>Integração com a BRy pronta, aguardando ativação</strong>
                       O certificado A1 e a senha não serão enviados pelo navegador nem gravados no Supabase. Quando o provedor for escolhido, o servidor guardará somente uma referência segura à credencial e os documentos receberão evidências verificáveis de assinatura.
                     </div>
                     <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                      <MiniStatus label="Identidade" value={profile.doctor.fullName && profile.doctor.registrationId && isValidCpf(profile.doctor.cpf) ? 'Completa' : 'Pendente'} />
-                      <MiniStatus label="Certificado" value="Não conectado" />
-                      <MiniStatus label="Provedor" value="A definir" />
+                      <MiniStatus label="Identidade" value={clinicalSignerReadiness(profile).ready ? 'Completa' : `Falta ${clinicalSignerReadiness(profile).missing.join(', ')}`} />
+                      <MiniStatus label="Certificado" value="Na BRy, com o profissional" />
+                      <MiniStatus label="Provedor" value="BRy Easy Sign" />
                     </div>
                   </div>
                 </SectionCard>
