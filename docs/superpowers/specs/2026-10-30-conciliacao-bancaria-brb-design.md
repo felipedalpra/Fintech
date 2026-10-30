@@ -9,6 +9,25 @@ PJ da clínica no **BRB**.
 ilustrativos: o extrato original tem nomes de pacientes e valores reais e não
 entra no repositório.
 
+## Como o PDF é lido
+
+O texto do PDF **não está na ordem de leitura**: a coluna `Histórico` vem num
+bloco e a coluna `Dia`/`Valor` em outro. Copiar e colar embaralha os campos.
+
+Por isso o PDF é lido pela **posição** de cada fragmento
+(`src/lib/pdfTextRows.js`): os fragmentos são agrupados em linhas pela
+coordenada vertical, com tolerância proporcional ao tamanho do texto, e
+ordenados pela horizontal. O resultado é a linha remontada —
+`01/10 | CREDITO PIX – DOC: 000000 | R$ +1.234,00` — que então passa pelo
+parser do layout.
+
+O `pdf.js` é carregado **sob demanda**: quem nunca importa um PDF não paga o
+peso dele. O arquivo bruto é lido no navegador e não é enviado nem guardado,
+como já valia para OFX e CSV.
+
+PDF digitalizado (imagem, sem texto selecionável) é recusado com explicação, em
+vez de importar nada.
+
 ## Formato do extrato
 
 PDF gerado pelo internet banking, organizado em **duas seções por mês**:
@@ -82,8 +101,8 @@ total por seção, exibidos para o humano confirmar.
 
 ## Perguntas a fechar com o Felipe
 
-1. O BRB exporta **OFX ou CSV**? Seria muito melhor: OFX tem `FITID`, que é
-   exatamente o identificador único que falta aqui.
+1. O BRB exporta **OFX ou CSV**? O PDF já funciona, mas OFX seria melhor: tem
+   `FITID`, o identificador único que falta no PDF.
 2. Linha sem par no sistema: vira lançamento novo, ou só fica sinalizada?
 3. Tarifa e juros de CDB viram despesa/receita financeira automática?
 4. Quem revisa: só a Dra. Vitória e a Lunara, ou o Jonas também?

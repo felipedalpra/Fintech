@@ -557,11 +557,49 @@ export async function sha256Hex(value) {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+// O PDF do extrato nao guarda o texto na ordem de leitura: a coluna do
+// historico vem separada da coluna de dia/valor. Por isso ele e remontado pela
+// POSICAO de cada fragmento antes de chegar ao parser -- copiar e colar o PDF
+// embaralharia os campos.
+async function parsePdfStatement(buffer, options = {}) {
+  const { extractPdfTextRows } = await import('./pdfTextRows.js')
+  let rows
+  try {
+    rows = await extractPdfTextRows(buffer)
+  } catch {
+    return {
+      format:'pdf', lines:[], requiresMapping:false, mapping:null,
+      totals:statementTotals([]),
+      errors:[{ line:0, reason:'Não foi possível ler o PDF. Se ele for digitalizado (imagem), exporte o extrato em OFX, CSV ou texto.' }],
+    }
+  }
+  const text = rows.join('\n')
+  if (!rows.length) {
+    return {
+      format:'pdf', lines:[], requiresMapping:false, mapping:null,
+      totals:statementTotals([]),
+      errors:[{ line:0, reason:'O PDF não tem texto selecionável. Provavelmente é digitalizado; exporte o extrato em OFX, CSV ou texto.' }],
+    }
+  }
+  const parsed = parseStatementText(text, { ...options, fileName:'extrato.txt' })
+  if (parsed.format === 'brb') return { ...parsed, format:'brb', sourceFormat:'pdf' }
+  return {
+    format:'pdf', lines:[], requiresMapping:false, mapping:null,
+    totals:statementTotals([]),
+    errors:[{ line:0, reason:'Este PDF não tem o layout de extrato reconhecido. Exporte em OFX, CSV ou Excel.' }],
+  }
+}
+
 export async function parseStatementFile(file, options = {}) {
   const buffer = await file.arrayBuffer()
   const lowerName = String(file.name || '').toLowerCase()
-  const parsed = lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')
-    ? await parseXlsxStatement(buffer, options)
-    : parseStatementText(decodeStatementBuffer(buffer), { ...options, fileName:file.name })
+  let parsed
+  if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+    parsed = await parseXlsxStatement(buffer, options)
+  } else if (lowerName.endsWith('.pdf')) {
+    parsed = await parsePdfStatement(buffer, options)
+  } else {
+    parsed = parseStatementText(decodeStatementBuffer(buffer), { ...options, fileName:file.name })
+  }
   return { ...parsed, fileName:file.name, fileHash:await sha256Hex(buffer), fileSize:file.size }
 }
