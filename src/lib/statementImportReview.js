@@ -185,6 +185,42 @@ export function buildStatementImportReview(matches = [], accounts = [], options 
   })
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+// A competencia de um lancamento criado pela conciliacao.
+//
+// O extrato e data de CAIXA. A competencia (que manda no DRE) e outra coisa, e
+// por padrao assume a mesma data -- mas quem aprova pode informar outra, por
+// exemplo quando o pagamento de outubro se refere a setembro.
+//
+// Esta funcao mexe SOMENTE na competencia. Vencimento, data de pagamento e data
+// de recebimento continuam sendo a data bancaria: trocar uma pela outra quebra
+// a regra das tres datas (competencia -> DRE, vencimento -> contas, caixa ->
+// fluxo) e faria o fluxo de caixa divergir do extrato.
+export function withCompetenceDate(item, competenceDate) {
+  if (!competenceDate) return item
+  if (!ISO_DATE.test(String(competenceDate))) {
+    throw new Error('Data de competência inválida.')
+  }
+  if (item?.reviewStatus !== 'new' || !item?.proposal?.record) return item
+  return {
+    ...item,
+    proposal:{
+      ...item.proposal,
+      record:{ ...item.proposal.record, competenceDate },
+      competenceOverridden:competenceDate !== item.proposal.record.competenceDate,
+    },
+  }
+}
+
+// Aplica a escolha feita na aprovacao a um lote.
+// `mode` 'line' mantem a data de cada linha; 'fixed' usa a mesma competencia
+// para todas. Linhas que nao sao novas passam intactas.
+export function applyCompetenceChoice(items = [], { mode = 'line', competenceDate = null } = {}) {
+  if (mode !== 'fixed') return items
+  return items.map(item => withCompetenceDate(item, competenceDate))
+}
+
 export function mergeApprovedStatementRecords(data, reviewItems = []) {
   const additions = { extraRevenues:[], expenses:[] }
   reviewItems.filter(item => item.reviewStatus === 'new').forEach(item => {
