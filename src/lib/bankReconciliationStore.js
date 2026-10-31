@@ -83,6 +83,27 @@ export async function fetchBankStatementImports(ownerId) {
     .order('created_at', { ascending:false }))
 }
 
+// Uma tentativa de importacao que morreu no meio deixa a linha de cabecalho em
+// `importing` -- e o indice unico (usuario, conta, hash do arquivo) passa a
+// recusar o MESMO arquivo com "Este arquivo ja foi importado", que e enganoso:
+// ele nao foi. A tela so lista importacoes `ready`, entao esse resto ficava
+// invisivel e o usuario ficava preso naquele arquivo para sempre.
+export async function findIncompleteImport(ownerId, accountId, fileHash) {
+  if (!ownerId || !accountId || !fileHash) return null
+  const { data, error } = await supabase
+    .from('bank_statement_imports')
+    .select('id,file_name,status,line_count,expected_line_count,created_at')
+    .eq('user_id', ownerId)
+    .eq('financial_account_id', accountId)
+    .eq('file_hash', String(fileHash).toLowerCase())
+    .is('archived_at', null)
+    .neq('status', 'ready')
+    .order('created_at', { ascending:false })
+    .limit(1)
+  if (error) throw error
+  return data?.[0] || null
+}
+
 function toLineRow(ownerId, accountId, importId, line) {
   const metadata = line.sourceMetadata || {}
   return {
