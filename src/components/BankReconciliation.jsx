@@ -31,6 +31,18 @@ import {
 
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const CLAIM_TIMEOUT_MS = 20_000
+const LOAD_TIMEOUT_MS = 30_000
+
+// Teto de tempo para uma chamada que pode nunca responder. O objetivo nao e
+// "tentar de novo", e transformar silencio em mensagem: um spinner eterno nao
+// diz nada a quem esta esperando, e foi assim que a tela ficou presa em
+// "Atualizando dados confirmados no sistema..." em producao (31/10/2026).
+function withTimeout(promise, ms, mensagem) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => reject(new Error(mensagem)), ms)),
+  ])
+}
 const NAVIGATION_GRACE_MS = 2_000
 export const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -132,10 +144,14 @@ export function BankReconciliation({ data, saveDataNow }) {
     setLoading(true)
     setError('')
     try {
-      const [nextAccounts, nextImports] = await Promise.all([
-        fetchFinancialAccounts(ownerId),
-        fetchBankStatementImports(ownerId),
-      ])
+      const [nextAccounts, nextImports] = await withTimeout(
+        Promise.all([
+          fetchFinancialAccounts(ownerId),
+          fetchBankStatementImports(ownerId),
+        ]),
+        LOAD_TIMEOUT_MS,
+        'A conciliação bancária não respondeu a tempo. Recarregue a página para tentar de novo.',
+      )
       setAccounts(nextAccounts)
       setImports(nextImports)
       setAccountId(current => current || nextAccounts[0]?.id || '')
@@ -162,10 +178,14 @@ export function BankReconciliation({ data, saveDataNow }) {
     setBusy(true)
     setError('')
     try {
-      const [{ lines:nextLines, reconciliations:nextReconciliations, reservedInstallmentIds:nextReservedIds, overlappingFingerprints:nextOverlaps }, nextInstallments] = await Promise.all([
-        fetchBankReconciliations(ownerId, importId),
-        fetchReconciliationInstallments(ownerId),
-      ])
+      const [{ lines:nextLines, reconciliations:nextReconciliations, reservedInstallmentIds:nextReservedIds, overlappingFingerprints:nextOverlaps }, nextInstallments] = await withTimeout(
+        Promise.all([
+          fetchBankReconciliations(ownerId, importId),
+          fetchReconciliationInstallments(ownerId),
+        ]),
+        LOAD_TIMEOUT_MS,
+        'O carregamento das linhas do extrato não respondeu a tempo. Nada foi alterado — recarregue a página para tentar de novo.',
+      )
       setLines(nextLines.map(item => ({
         ...item,
         postedDate:item.posted_date,
@@ -604,16 +624,6 @@ export function BankReconciliation({ data, saveDataNow }) {
     } finally {
       setBusy(false)
     }
-  }
-
-  // Teto de tempo para uma chamada que pode nunca responder. O objetivo nao e
-  // "tentar de novo", e transformar silencio em mensagem: um spinner eterno nao
-  // diz nada a quem esta esperando.
-  function withTimeout(promise, ms, mensagem) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => window.setTimeout(() => reject(new Error(mensagem)), ms)),
-    ])
   }
 
   async function createFromLine(item, allowOverlap = false) {
