@@ -13,6 +13,7 @@ import { evaluateStatementIntegrity, suggestStatementAccount, summarizeReconcili
 import { applyCompetenceChoice, buildStatementImportReview, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
 import {
   archiveBankStatementImport,
+  findIncompleteImport,
   claimBankStatementLinesForCreation,
   confirmBankReconciliation,
   createFinancialAccount,
@@ -105,6 +106,8 @@ export function BankReconciliation({ data, saveDataNow }) {
   const [createdContext, setCreatedContext] = useState(() => readReturnContext())
   const [selectedLineIds, setSelectedLineIds] = useState([])
   const [bulkConfirm, setBulkConfirm] = useState(null)
+  // Resto de uma importacao que morreu no meio e agora bloqueia o mesmo arquivo.
+  const [blockedBy, setBlockedBy] = useState(null)
   // O extrato e data de CAIXA; a competencia manda no DRE. Por padrao ela
   // assume a data bancaria, e quem aprova pode informar outra.
   const [competenceMode, setCompetenceMode] = useState('line')
@@ -309,7 +312,38 @@ export function BankReconciliation({ data, saveDataNow }) {
       await refreshBase(saved.id)
       setSelectedImportId(saved.id)
     } catch (caught) {
+      // O indice unico recusa o mesmo arquivo com "ja foi importado" mesmo
+      // quando a importacao anterior morreu no meio e nao gravou nada. Sem
+      // mostrar esse resto, o usuario fica preso no arquivo sem saida.
+      if (String(caught?.code || '') === '23505' || /já foi importado/i.test(caught?.message || '')) {
+        try {
+          const incompleta = await findIncompleteImport(ownerId, accountId, parsed.fileHash)
+          if (incompleta) {
+            setBlockedBy(incompleta)
+            setError('')
+            return
+          }
+        } catch {
+          // Se a consulta falhar, cai na mensagem original abaixo.
+        }
+      }
       setError(caught.message || 'Não foi possível salvar o extrato.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function discardBlockingImport() {
+    if (!blockedBy) return
+    setBusy(true)
+    setError('')
+    try {
+      await archiveBankStatementImport(blockedBy.id)
+      setBlockedBy(null)
+      toast('Importação incompleta descartada. Pode enviar o arquivo de novo.', 'warning')
+      await refreshBase()
+    } catch (caught) {
+      setError(caught.message || 'Não foi possível descartar a importação incompleta.')
     } finally {
       setBusy(false)
     }
@@ -655,6 +689,22 @@ export function BankReconciliation({ data, saveDataNow }) {
   return (
     <div style={s.stack} data-testid="bank-reconciliation-page">
       {error && <div role="alert" style={{ padding:'12px 14px', borderRadius:10, border:`1px solid ${C.red}55`, background:`${C.red}12`, color:C.red, fontSize:13 }}>{error}</div>}
+
+      {blockedBy && (
+        <div role="alert" style={{ padding:'14px 16px', borderRadius:10, border:`1px solid ${C.yellow}55`, background:`${C.yellow}12`, fontSize:13 }}>
+          <div style={{ color:C.yellow, fontWeight:900 }}>Uma tentativa anterior deste arquivo ficou pela metade</div>
+          <div style={{ color:C.textSub, marginTop:7 }}>
+            O arquivo <strong>{blockedBy.file_name}</strong> foi enviado em {formatDateBR(blockedBy.created_at)} e a importação não chegou ao fim
+            ({Number(blockedBy.line_count) || 0} de {Number(blockedBy.expected_line_count) || 0} linha(s) gravadas).
+            Nada desse envio entrou no financeiro — uma importação incompleta não gera lançamento nem conciliação.
+            Enquanto ela existir, o mesmo arquivo é recusado como se já tivesse sido importado.
+          </div>
+          <div style={{ ...s.row, marginTop:12 }}>
+            <Btn variant="warn" onClick={discardBlockingImport} disabled={busy}>Descartar tentativa incompleta</Btn>
+            <Btn variant="ghost" onClick={() => setBlockedBy(null)} disabled={busy}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
       {selectedImportId && !busy && !ledgerReady && <div role="alert" style={{ padding:'12px 14px', borderRadius:10, border:`1px solid ${C.yellow}55`, background:`${C.yellow}12`, color:C.yellow, fontSize:13 }}>
         O razão persistido ainda não confirmou {missingLedgerInstallments.length} parcela(s) dos lançamentos carregados. As sugestões estão bloqueadas para evitar vínculos incorretos. Volte ao Financeiro, aguarde “Salvo” e tente novamente.
       </div>}
