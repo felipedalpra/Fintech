@@ -682,7 +682,18 @@ export function BankReconciliation({ data, saveDataNow }) {
   if (schemaMissing) return (
     <Card style={{ border:`1px solid ${C.yellow}55` }}>
       <div style={{ color:C.yellow, fontWeight:800, marginBottom:8 }}>Migração necessária</div>
-      <div style={s.muted}>Execute os schemas base da conciliação e depois <code>supabase/bank_reconciliation_robustness_schema.sql</code>. Nenhuma função serverless será criada.</div>
+      {/* Esta dica mandava rodar o schema de robustez. Era conselho perigoso: aquele
+          arquivo recria o CHECK de source_format e o RPC de importação SEM 'brb',
+          desfazendo o suporte ao extrato do BRB em quem já o tinha. A ordem passou a
+          ser explícita, e as migrations do BRB vão por último. */}
+      <div style={s.muted}>
+        Falta aplicar parte do schema da conciliação neste banco. Rode, <strong>nesta ordem</strong>:{' '}
+        <code>bank_reconciliation_schema.sql</code>, <code>bank_reconciliation_robustness_schema.sql</code>,{' '}
+        <code>bank_reconciliation_xlsx_review_schema.sql</code> e, por último,{' '}
+        <code>bank_reconciliation_brb_format.sql</code> + <code>bank_reconciliation_brb_format_overload.sql</code>.
+        Os dois últimos precisam vir depois: os anteriores recriam o formato aceito sem o extrato do BRB.
+        Nenhuma função serverless será criada.
+      </div>
     </Card>
   )
 
