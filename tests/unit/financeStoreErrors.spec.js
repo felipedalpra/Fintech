@@ -100,3 +100,39 @@ test('erro sem mensagem não quebra a agregação', () => {
   expect(error).toBeInstanceOf(Error)
   expect(error.failedTables).toEqual(['expenses'])
 })
+
+// ---------------------------------------------------------------------------
+// O detalhe do Postgres precisa chegar a quem está olhando a tela
+// ---------------------------------------------------------------------------
+// Em 31/10/2026 a Lunara (perfil Gestão) viu "Gravação falhou em 2 de 11
+// tabela(s) ... new row violates row-level security policy". A mensagem não
+// dizia QUAL linha nem de quem era o `user_id` — e numa recusa de RLS é
+// exatamente isso que identifica o escopo errado. O `details` do Postgres traz
+// o `Failing row contains (...)`, e estava sendo descartado.
+
+test('a recusa de RLS chega com o Failing row e o código', () => {
+  const erro = aggregateTableSyncFailures(
+    ['extra_revenues', 'expenses'],
+    [
+      { status:'rejected', reason:{
+        message:'new row violates row-level security policy (USING expression) for table "extra_revenues"',
+        details:'Failing row contains (abc, 56752374-6f77-49f9-b3a0-bf9d8f0e835d, ...).',
+        code:'42501',
+      } },
+      { status:'fulfilled' },
+    ],
+  )
+  expect(erro.message).toContain('Failing row contains')
+  expect(erro.message).toContain('56752374')
+  expect(erro.message).toContain('código 42501')
+  expect(erro.message).toContain('parcialmente salvos')
+})
+
+test('erro sem details continua produzindo mensagem utilizável', () => {
+  const erro = aggregateTableSyncFailures(
+    ['goals'],
+    [{ status:'rejected', reason:{ message:'falha de rede' } }],
+  )
+  expect(erro.message).toContain('falha de rede')
+  expect(erro.message).not.toContain('código')
+})
