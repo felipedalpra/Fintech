@@ -123,6 +123,10 @@ export function BankReconciliation({ data, saveDataNow }) {
   const [bulkConfirm, setBulkConfirm] = useState(null)
   // Resto de uma importacao que morreu no meio e agora bloqueia o mesmo arquivo.
   const [blockedBy, setBlockedBy] = useState(null)
+  // O erro que levou a tela a concluir "falta migration". Guardar e MOSTRAR o
+  // original importa: a conclusao e um palpite, e sem a evidencia ao lado dela
+  // o usuario recebe um conselho que pode nao ter nada a ver com o problema.
+  const [schemaError, setSchemaError] = useState(null)
   // O extrato e data de CAIXA; a competencia manda no DRE. Por padrao ela
   // assume a data bancaria, e quem aprova pode informar outra.
   const [competenceMode, setCompetenceMode] = useState('line')
@@ -138,6 +142,11 @@ export function BankReconciliation({ data, saveDataNow }) {
     lineCard:{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(230px,0.9fr) minmax(300px,1.3fr)', gap:18, padding:16, border:`1px solid ${C.border}`, borderRadius:14, background:C.surface },
     amount:positive => ({ fontSize:16, fontWeight:900, color:positive ? C.green : C.red, fontVariantNumeric:'tabular-nums' }),
     badge:status => { const config = statusConfig(status); return { color:config.color, background:`${config.color}18`, border:`1px solid ${config.color}44`, borderRadius:999, padding:'4px 9px', fontSize:10.5, fontWeight:800 } },
+  }
+
+  function flagSchemaMissing(caught) {
+    setSchemaMissing(true)
+    setSchemaError(describeImportFailure(caught).message || '')
   }
 
   async function refreshBase(preferredImportId) {
@@ -159,8 +168,9 @@ export function BankReconciliation({ data, saveDataNow }) {
       const desired = preferredImportId || selectedImportId || nextImports.find(item => item.status === 'ready')?.id || ''
       setSelectedImportId(desired)
       setSchemaMissing(false)
+      setSchemaError(null)
     } catch (caught) {
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(caught.message || 'Não foi possível carregar a conciliação bancária.')
     } finally {
       setLoading(false)
@@ -206,7 +216,7 @@ export function BankReconciliation({ data, saveDataNow }) {
         }
       }
     } catch (caught) {
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(caught.message || 'Não foi possível carregar as linhas da importação.')
     } finally {
       setBusy(false)
@@ -584,7 +594,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       if (failures.length) throw new Error(`${failures.length} de ${items.length} linha(s) não tiveram o vínculo confirmado. Os lançamentos já salvos foram preservados e podem ser conciliados novamente.`)
       toast(`${items.length} linha(s) aprovadas e confirmadas.`)
     } catch (caught) {
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(describeImportFailure(caught).message || 'Não foi possível aprovar as linhas selecionadas.')
     } finally {
       setBusy(false)
@@ -605,7 +615,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       await refreshImport(selectedImportId)
       toast(`${items.length} linha(s) ignoradas sem alterar o financeiro.`, 'warning')
     } catch (caught) {
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(caught.message || 'Não foi possível ignorar as linhas selecionadas.')
     } finally {
       setBusy(false)
@@ -620,7 +630,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       await refreshImport(selectedImportId)
       toast('Linha reaberta para revisão.')
     } catch (caught) {
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(caught.message || 'Não foi possível reabrir a linha.')
     } finally {
       setBusy(false)
@@ -671,7 +681,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       }, NAVIGATION_GRACE_MS)
     } catch (caught) {
       if (claimToken) await releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       // O banco recusa a reserva por varios motivos diferentes, e so a mensagem
       // dele diz qual. Mostrar apenas "nao foi possivel" obriga quem usa a abrir
       // o DevTools para descobrir -- que foi o que aconteceu em 31/10/2026.
@@ -696,7 +706,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       await refreshImport(selectedImportId)
       toast('Reserva antiga liberada. Revise a linha antes de criar novamente.', 'warning')
     } catch (caught) {
-      if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(caught.message || 'Esta reserva ainda não pode ser recuperada.')
     } finally {
       setBusy(false)
@@ -736,6 +746,15 @@ export function BankReconciliation({ data, saveDataNow }) {
         Os dois últimos precisam vir depois: os anteriores recriam o formato aceito sem o extrato do BRB.
         Nenhuma função serverless será criada.
       </div>
+      {schemaError && (
+        <div style={{ marginTop:10, padding:'10px 12px', borderRadius:8, border:`1px solid ${C.border}`, fontSize:12.5 }}>
+          <div style={{ color:C.textSub, fontWeight:800 }}>O que o banco respondeu</div>
+          <div style={{ color:C.text, marginTop:5, overflowWrap:'anywhere', fontFamily:'ui-monospace, monospace' }}>{schemaError}</div>
+          <div style={{ ...s.muted, marginTop:7 }}>
+            Se as migrations acima já foram aplicadas, o problema é outro — use esta mensagem, não a lista.
+          </div>
+        </div>
+      )}
     </Card>
   )
 
