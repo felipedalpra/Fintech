@@ -59,8 +59,23 @@ export function aggregateTableSyncFailures(tables = [], results = []) {
   if (failures.length === 0) return null
 
   const failedTables = failures.map(item => item.table)
+  // `message` sozinho nao basta para agir. Numa recusa de RLS ele diz apenas
+  // "new row violates row-level security policy", enquanto o `details` do
+  // Postgres traz o `Failing row contains (...)` -- com o `user_id` da linha
+  // recusada, que e exatamente o que identifica o escopo errado. Jogar isso
+  // fora obriga a investigar por tentativa e erro (31/10/2026).
   const reasons = failures
-    .map(item => String(item.result?.reason?.message || '').trim())
+    .map(item => {
+      const reason = item.result?.reason
+      const partes = [reason?.message, reason?.details, reason?.hint]
+        .map(parte => String(parte || '').trim())
+        .filter(Boolean)
+      const unicas = []
+      for (const parte of partes) if (!unicas.includes(parte)) unicas.push(parte)
+      const codigo = String(reason?.code || '').trim()
+      const texto = unicas.join(' · ')
+      return texto && codigo ? `${texto} (código ${codigo})` : texto
+    })
     .filter(Boolean)
   const detail = reasons.length ? ` ${reasons[0]}` : ''
   const error = new Error(

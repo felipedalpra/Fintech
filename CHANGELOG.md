@@ -7,6 +7,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-10-31
 ### Fixed
+- **Erro de gravação parcial no Financeiro não dizia qual linha falhou**: a Lunara (perfil Gestão) viu "Gravação falhou em 2 de 11 tabela(s) … new row violates row-level security policy", sem nada que identificasse a linha recusada. Numa recusa de RLS, o que resolve o caso é o `user_id` da linha — e o Postgres manda exatamente isso no `details` (`Failing row contains (…)`), que a agregação descartava, ficando só com o `message`. Investigar virou tentativa e erro. Agora a mensagem carrega `details`, `hint` e o código, como já fazem a importação do extrato e a reserva de linha. O aviso de gravação parcial continua: as tabelas são gravadas em paralelo, então uma falha no meio deixa as demais possivelmente salvas. (`src/lib/financeStoreErrors.js`, `tests/unit/financeStoreErrors.spec.js`.)
+
 - **Nenhum lançamento podia ser criado a partir do extrato: a restrição de `review_status` não aceitava `processing`**: reservar uma linha para criação **é** gravar `review_status = 'processing'`, e o banco recusava com `violates check constraint "bank_statement_lines_review_status_check"` (23514). A restrição naquele banco era de uma versão antiga do schema, que só permitia `pending` e `ignored`. É a terceira consequência da mesma interrupção de `bank_reconciliation_xlsx_review_schema.sql` — as outras duas foram as colunas ausentes e as funções de reserva apagadas. (`supabase/bank_reconciliation_review_status_constraint.sql`.)
 
 ### Added
