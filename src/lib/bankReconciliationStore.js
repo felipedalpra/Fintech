@@ -1,27 +1,10 @@
 import { supabase } from './supabase.js'
 import { statementMovementFingerprint } from './statementParser.js'
+export { isBankReconciliationSchemaMissing } from './supabaseErrorMessage.js'
 import { describeImportFailure } from './supabaseErrorMessage.js'
 
 const PAGE_SIZE = 500
 
-export function isBankReconciliationSchemaMissing(error) {
-  const code = String(error?.code || '')
-  const message = String(error?.message || '').toLowerCase()
-  return code === '42P01' || code === 'PGRST202' || code === 'PGRST205'
-    || message.includes('bank_statement_') && message.includes('schema cache')
-    || message.includes('review_status')
-    || message.includes('review_claim_token')
-    || message.includes('movement_fingerprint')
-    || message.includes('statement_metadata')
-    || message.includes('verification_status')
-    || message.includes('institution_code')
-    || message.includes('provider_transaction_id')
-    || message.includes('create_financial_bank_account')
-    || message.includes('set_bank_statement_lines_review')
-    || message.includes('claim_bank_statement_lines_for_creation')
-    || message.includes('release_bank_statement_line_claims')
-    || message.includes('recover_bank_statement_line_claim')
-}
 
 async function fetchAll(makeQuery) {
   const rows = []

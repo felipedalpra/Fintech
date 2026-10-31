@@ -23,3 +23,37 @@ export function describeImportFailure(error) {
   detalhado.cause = error
   return detalhado
 }
+
+// Nomes de objetos do schema da conciliacao. Citar um deles NAO basta para
+// concluir "falta migration": a mensagem precisa falar de AUSENCIA.
+const SCHEMA_OBJECT_NAMES = [
+  'bank_statement_', 'bank_reconciliation', 'review_status', 'review_claim_token',
+  'movement_fingerprint', 'statement_metadata', 'verification_status',
+  'institution_code', 'provider_transaction_id', 'create_financial_bank_account',
+  'set_bank_statement_lines_review', 'claim_bank_statement_lines_for_creation',
+  'release_bank_statement_line_claims', 'recover_bank_statement_line_claim',
+]
+
+// Codigos que, por si so, significam objeto ausente.
+const MISSING_OBJECT_CODES = ['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205']
+
+const ABSENCE_WORDING = /(does not exist|schema cache|could not find|undefined (table|column|function)|nao existe|não existe)/
+
+// Decide se o erro significa "este banco esta sem parte do schema".
+//
+// A versao anterior bastava a mensagem CITAR o nome de uma coluna ou funcao.
+// Resultado em producao (31/10/2026): o banco recusou a reserva de uma linha
+// por um motivo de negocio, a mensagem mencionava o nome da funcao, e a tela
+// respondeu "Migracao necessaria" com uma lista de migrations para rodar --
+// todas ja aplicadas. O conselho era errado E escondia a causa real.
+export function isBankReconciliationSchemaMissing(error) {
+  if (!error) return false
+  const code = String(error.code || '')
+  if (MISSING_OBJECT_CODES.includes(code)) return true
+  const text = [error.message, error.details, error.hint]
+    .map(parte => String(parte || '').toLowerCase())
+    .join(' ')
+  // Sem palavra de ausencia, nao e schema faltando -- e um erro de negocio.
+  if (!ABSENCE_WORDING.test(text)) return false
+  return SCHEMA_OBJECT_NAMES.some(nome => text.includes(nome))
+}
