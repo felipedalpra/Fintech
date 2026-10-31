@@ -650,7 +650,7 @@ export function BankReconciliation({ data, saveDataNow }) {
             <div style={{ fontSize:18, fontWeight:900, color:C.text }}>Importar extrato</div>
             <div style={{ ...s.muted, marginTop:5 }}>O extrato é interpretado no navegador e cruzado com os lançamentos já existentes. Para importar uma planilha retroativa, use “Importar lançamentos”.</div>
           </div>
-          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX / CSV · sem Open Finance</span>
+          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX · CSV · PDF do BRB · sem Open Finance</span>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(220px,0.7fr) minmax(280px,1.3fr)', gap:14, marginTop:18 }}>
           <div>

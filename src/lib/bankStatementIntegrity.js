@@ -76,7 +76,12 @@ export function evaluateStatementIntegrity(parsed, account, previousImports = []
     warnings.push('O OFX não informa saldo final; a completude financeira não pôde ser comprovada.')
   }
 
-  if (format !== 'ofx') warnings.push('CSV não comprova sozinho a origem bancária; confirme conta e período antes de importar.')
+  if (format !== 'ofx') {
+    // So o OFX traz os dados da conta de origem. Nomear o formato que o usuario
+    // acabou de enviar evita o aviso chamar um PDF de "CSV".
+    const rotulo = { brb:'O extrato em PDF', xlsx:'A planilha', csv:'O CSV' }[format] || 'Este formato'
+    warnings.push(`${rotulo} não comprova sozinho a origem bancária; confirme conta e período antes de importar.`)
+  }
   if (format === 'ofx' && (!statementInstitution || !statementSuffix)) warnings.push('O OFX não trouxe identificação suficiente da conta.')
 
   const identityVerified = accountInstitution && statementInstitution && accountInstitution === statementInstitution

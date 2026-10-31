@@ -115,7 +115,7 @@ const AREAS = [
         { id:'chart-of-accounts', label:'Plano de contas', icon:'reports', hint:'Estrutura de grupos e categorias financeiras' },
       ] },
       { title:'Cobrança', items:[
-        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Cruze extratos OFX/CSV com lançamentos existentes' },
+        { id:'bank-reconciliation', label:'Conciliação bancária', icon:'finance', hint:'Cruze extratos OFX, CSV ou o PDF do BRB com lançamentos existentes' },
       ] },
       { title:'Análise', items:[
         { id:'goals',    label:'Metas',      icon:'goals',   hint:'Objetivos e acompanhamento' },
@@ -206,7 +206,7 @@ const SUBTITLES = {
   reports:'Exporte dados financeiros, operacionais, de estoque e clientes em Excel.',
   'ledger-check':'Audita a fonte financeira canônica e sua consistência com os indicadores.',
   'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
-  'bank-reconciliation':'Importe um extrato OFX/CSV e cruze com lançamentos já existentes no financeiro.',
+  'bank-reconciliation':'Importe um extrato OFX, CSV ou o PDF do BRB e cruze com lançamentos já existentes no financeiro.',
   'financial-import':'Importe lançamentos retroativos do Excel, revise duplicidades e aprove antes de salvar.',
   'data-quality':'Revise pendências e inconsistências sem alterar automaticamente os lançamentos.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
