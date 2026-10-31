@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { statementMovementFingerprint } from './statementParser.js'
+import { describeImportFailure } from './supabaseErrorMessage.js'
 
 const PAGE_SIZE = 500
 
@@ -146,8 +147,21 @@ export async function importBankStatement({ ownerId, accountId, parsed }) {
     }
     return ready
   } catch (error) {
-    await supabase.rpc('archive_bank_statement_import', { p_import_id:started.id }).catch(() => null)
-    throw error
+    // O rollback NAO pode falar mais alto que a falha que o motivou.
+    //
+    // Aqui havia `supabase.rpc(...).catch(...)`: o builder do supabase-js e
+    // thenable, mas nao e Promise -- ele tem `.then`, nao tem `.catch`. O
+    // rollback estourava `TypeError: rpc(...).catch is not a function` e essa
+    // mensagem SUBSTITUIA o erro real na tela, escondendo a causa de quem
+    // tenta importar. Agora a limpeza falha em silencio e o erro original
+    // sempre chega ao usuario.
+    try {
+      await supabase.rpc('archive_bank_statement_import', { p_import_id:started.id })
+    } catch {
+      // Importacao parcial fica como 'importing' e e descartada depois; nao ha
+      // nada util a dizer ao usuario sobre a limpeza em si.
+    }
+    throw describeImportFailure(error)
   }
 }
 
