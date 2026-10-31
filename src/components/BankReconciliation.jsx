@@ -30,6 +30,8 @@ import {
 } from '../lib/bankReconciliationStore.js'
 
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
+const CLAIM_TIMEOUT_MS = 20_000
+const NAVIGATION_GRACE_MS = 2_000
 export const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -604,6 +606,16 @@ export function BankReconciliation({ data, saveDataNow }) {
     }
   }
 
+  // Teto de tempo para uma chamada que pode nunca responder. O objetivo nao e
+  // "tentar de novo", e transformar silencio em mensagem: um spinner eterno nao
+  // diz nada a quem esta esperando.
+  function withTimeout(promise, ms, mensagem) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => window.setTimeout(() => reject(new Error(mensagem)), ms)),
+    ])
+  }
+
   async function createFromLine(item, allowOverlap = false) {
     const line = item.line
     if (selectedImport?.verification_status === 'mismatch') {
@@ -619,7 +631,14 @@ export function BankReconciliation({ data, saveDataNow }) {
     let claimToken = null
     try {
       claimToken = newClaimToken()
-      await claimBankStatementLinesForCreation([line.id], claimToken, { allowOverlap })
+      // Com teto de tempo: sem ele, uma chamada que nunca responde deixa a tela
+      // girando para sempre, sem erro e sem saida -- foi o que aconteceu em
+      // producao em 31/10/2026.
+      await withTimeout(
+        claimBankStatementLinesForCreation([line.id], claimToken, { allowOverlap }),
+        CLAIM_TIMEOUT_MS,
+        'A reserva desta linha não respondeu a tempo. Nada foi criado; tente de novo.',
+      )
       const isRevenue = Number(line.amount) > 0
       const proposal = proposalForStatementLine(line, data?.chartAccounts || [], selectedImport?.file_name || '')
       const form = selectedImport?.source_format === 'xlsx'
@@ -630,6 +649,15 @@ export function BankReconciliation({ data, saveDataNow }) {
       const reconciliationReturn = { importId:selectedImportId, lineId:line.id, sourceId:line.id, claimToken }
       window.localStorage.setItem(FINANCE_MODAL_DRAFT_KEY, JSON.stringify({ showModal:true, modalType:isRevenue ? 'extra' : 'expense', editing:null, form, reconciliationReturn }))
       navigate('/app/finance')
+      // O caminho de SUCESSO nunca limpava o `busy`: ele contava com a
+      // navegacao desmontar a tela. Quando a navegacao nao acontece, o usuario
+      // fica preso num "carregando" eterno, com a linha ja reservada.
+      setBusy(false)
+      window.setTimeout(() => {
+        if (window.location.pathname.includes('/app/finance')) return
+        releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
+        setError('Não foi possível abrir o formulário de lançamento. A reserva desta linha foi liberada — tente de novo.')
+      }, NAVIGATION_GRACE_MS)
     } catch (caught) {
       if (claimToken) await releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
       if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
@@ -682,7 +710,18 @@ export function BankReconciliation({ data, saveDataNow }) {
   if (schemaMissing) return (
     <Card style={{ border:`1px solid ${C.yellow}55` }}>
       <div style={{ color:C.yellow, fontWeight:800, marginBottom:8 }}>Migração necessária</div>
-      <div style={s.muted}>Execute os schemas base da conciliação e depois <code>supabase/bank_reconciliation_robustness_schema.sql</code>. Nenhuma função serverless será criada.</div>
+      {/* Esta dica mandava rodar o schema de robustez. Era conselho perigoso: aquele
+          arquivo recria o CHECK de source_format e o RPC de importação SEM 'brb',
+          desfazendo o suporte ao extrato do BRB em quem já o tinha. A ordem passou a
+          ser explícita, e as migrations do BRB vão por último. */}
+      <div style={s.muted}>
+        Falta aplicar parte do schema da conciliação neste banco. Rode, <strong>nesta ordem</strong>:{' '}
+        <code>bank_reconciliation_schema.sql</code>, <code>bank_reconciliation_robustness_schema.sql</code>,{' '}
+        <code>bank_reconciliation_xlsx_review_schema.sql</code> e, por último,{' '}
+        <code>bank_reconciliation_brb_format.sql</code> + <code>bank_reconciliation_brb_format_overload.sql</code>.
+        Os dois últimos precisam vir depois: os anteriores recriam o formato aceito sem o extrato do BRB.
+        Nenhuma função serverless será criada.
+      </div>
     </Card>
   )
 

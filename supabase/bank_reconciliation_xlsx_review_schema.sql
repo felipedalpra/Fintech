@@ -1,6 +1,16 @@
 -- Amplia a conciliação bancária existente com importação XLSX e decisão de revisão reversível.
 -- Aditivo e idempotente; não apaga nem altera lançamentos financeiros existentes.
 -- Executar depois de bank_reconciliation_schema.sql.
+--
+-- ⚠ ORDEM IMPORTA. Este arquivo RECRIA o CHECK de `source_format` como
+-- ('ofx','csv','xlsx') e a função `start_bank_statement_import` de 5
+-- parâmetros, ambos SEM 'brb'. Rodá-lo depois das migrations do BRB DESFAZ o
+-- suporte ao extrato do BRB e volta o erro "Formato de extrato inválido".
+-- Se precisar executá-lo, rode em seguida, nesta ordem:
+--   1. bank_reconciliation_brb_format.sql
+--   2. bank_reconciliation_brb_format_overload.sql
+-- Para apenas acrescentar as colunas que faltam, sem mexer em formato nem em
+-- função, use bank_reconciliation_missing_line_columns.sql.
 
 alter table public.bank_statement_imports
   drop constraint if exists bank_statement_imports_source_format_check;
