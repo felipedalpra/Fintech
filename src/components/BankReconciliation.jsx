@@ -28,6 +28,7 @@ import {
   reverseBankReconciliation,
   setBankStatementLinesReview,
 } from '../lib/bankReconciliationStore.js'
+import { describeImportFailure } from '../lib/supabaseErrorMessage.js'
 
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const CLAIM_TIMEOUT_MS = 20_000
@@ -584,7 +585,7 @@ export function BankReconciliation({ data, saveDataNow }) {
       toast(`${items.length} linha(s) aprovadas e confirmadas.`)
     } catch (caught) {
       if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
-      else setError(caught.message || 'Não foi possível aprovar as linhas selecionadas.')
+      else setError(describeImportFailure(caught).message || 'Não foi possível aprovar as linhas selecionadas.')
     } finally {
       setBusy(false)
     }
@@ -671,7 +672,10 @@ export function BankReconciliation({ data, saveDataNow }) {
     } catch (caught) {
       if (claimToken) await releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
       if (isBankReconciliationSchemaMissing(caught)) setSchemaMissing(true)
-      else setError(caught.message || 'Não foi possível reservar esta linha para criação.')
+      // O banco recusa a reserva por varios motivos diferentes, e so a mensagem
+      // dele diz qual. Mostrar apenas "nao foi possivel" obriga quem usa a abrir
+      // o DevTools para descobrir -- que foi o que aconteceu em 31/10/2026.
+      else setError(describeImportFailure(caught).message || 'Não foi possível reservar esta linha para criação.')
       setBusy(false)
     }
   }
