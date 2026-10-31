@@ -21,7 +21,7 @@ export function IntegrationHealth({ google }) {
       { name:'WhatsApp', ok:activeNumbers.length > 0 && !whatsapp.error, detail:activeNumbers.length ? `${activeNumbers.length} número(s) ativo(s)` : 'Nenhum número ativo', action:'whatsapp' },
       { name:'Meta Ads', ok:['configurado','conectado'].includes(meta.data?.status) && !meta.error, detail:meta.data?.status === 'conectado' ? 'Conexão validada' : meta.data?.status === 'configurado' ? 'Credenciais salvas; validação pendente' : 'Não configurado', action:'meta' },
       { name:'Google Agenda', ok:Boolean(google?.status?.connected), detail:google?.status?.connected ? (google.status.email || 'Conectada') : google?.status?.configured ? 'Disponível para conectar' : 'Credenciais do servidor ausentes' },
-      { name:'Banco / conciliação', ok:true, detail:'Importação local OFX/CSV; nenhum provedor externo' },
+      { name:'Banco / conciliação', ok:true, detail:'Importação local OFX, CSV e PDF do BRB; nenhum provedor externo' },
       { name:'Cobranças', ok:billing.connection?.status === 'connected' && billing.connection?.webhookConfigured, detail:billing.connection?.status === 'connected' ? `${billing.connection.provider === 'asaas' ? 'Asaas' : billing.connection.provider === 'direct_bank' ? 'Banco direto' : 'Provedor'} · ${billing.connection.environment === 'production' ? 'Produção' : 'Sandbox'} · webhook ${billing.connection.webhookConfigured ? 'ativo' : 'pendente'}` : 'Nenhum provedor configurado' },
     ])
     setCheckedAt(new Date())

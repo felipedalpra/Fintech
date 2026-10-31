@@ -10,7 +10,7 @@ import { parseStatementFile } from '../lib/statementParser.js'
 import { matchBankStatementLines, validateManualReconciliation } from '../lib/bankReconciliationMatch.js'
 import { missingPersistedLedgerInstallments } from '../lib/bankReconciliationLedger.js'
 import { evaluateStatementIntegrity, suggestStatementAccount, summarizeReconciliationCoverage } from '../lib/bankStatementIntegrity.js'
-import { buildStatementImportReview, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
+import { applyCompetenceChoice, buildStatementImportReview, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
 import {
   archiveBankStatementImport,
   claimBankStatementLinesForCreation,
@@ -105,6 +105,10 @@ export function BankReconciliation({ data, saveDataNow }) {
   const [createdContext, setCreatedContext] = useState(() => readReturnContext())
   const [selectedLineIds, setSelectedLineIds] = useState([])
   const [bulkConfirm, setBulkConfirm] = useState(null)
+  // O extrato e data de CAIXA; a competencia manda no DRE. Por padrao ela
+  // assume a data bancaria, e quem aprova pode informar outra.
+  const [competenceMode, setCompetenceMode] = useState('line')
+  const [competenceDate, setCompetenceDate] = useState('')
   const [ignoreReason, setIgnoreReason] = useState('Transferência interna')
 
   const s = {
@@ -429,6 +433,8 @@ export function BankReconciliation({ data, saveDataNow }) {
       setError('Selecione sugestões seguras. Duplicidades, transferências e linhas sem classificação exigem revisão individual.')
       return
     }
+    setCompetenceMode('line')
+    setCompetenceDate('')
     setBulkConfirm({ type:'approve', items:eligible })
   }
 
@@ -442,9 +448,18 @@ export function BankReconciliation({ data, saveDataNow }) {
     setBulkConfirm({ type:'ignore', items:eligible })
   }
 
-  async function approveReviewItems(items) {
+  async function approveReviewItems(rawItems) {
     if (!ledgerReady) {
       setError('A aprovação está bloqueada até o razão terminar de persistir.')
+      return
+    }
+    // A competencia escolhida vale so para os lancamentos NOVOS, e nao toca nas
+    // datas de caixa. Linhas apenas vinculadas passam intactas.
+    let items
+    try {
+      items = applyCompetenceChoice(rawItems, { mode:competenceMode, competenceDate })
+    } catch (caught) {
+      setError(caught.message)
       return
     }
     setBusy(true)
@@ -650,7 +665,7 @@ export function BankReconciliation({ data, saveDataNow }) {
             <div style={{ fontSize:18, fontWeight:900, color:C.text }}>Importar extrato</div>
             <div style={{ ...s.muted, marginTop:5 }}>O extrato é interpretado no navegador e cruzado com os lançamentos já existentes. Para importar uma planilha retroativa, use “Importar lançamentos”.</div>
           </div>
-          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX / CSV · sem Open Finance</span>
+          <span style={{ ...s.badge('reconciled'), color:C.green }}>OFX · CSV · PDF do BRB · sem Open Finance</span>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(220px,0.7fr) minmax(280px,1.3fr)', gap:14, marginTop:18 }}>
           <div>
@@ -889,6 +904,7 @@ export function BankReconciliation({ data, saveDataNow }) {
                     <div style={{ ...s.muted, marginTop:6 }}>{match.line.amount > 0 ? 'Receita recebida' : 'Despesa paga'} · {match.proposal.accountName}</div>
                     <div style={{ ...s.muted, marginTop:3 }}>Competência, vencimento e caixa: {formatDateBR(match.line.postedDate)} <span style={{ color:C.yellow }}>(data bancária assumida)</span></div>
                     <div style={{ ...s.muted, marginTop:3 }}>{match.proposal.category} · {match.proposal.costCenter}</div>
+                    <div style={{ ...s.muted, marginTop:3 }}>Competência {formatDateBR(match.proposal.record.competenceDate)} · caixa {formatDateBR(match.line.postedDate)}</div>
                     {match.proposal.reasons.map(item => <div key={item} style={{ color:C.yellow, fontSize:11.5, marginTop:4 }}>⚠ {item}</div>)}
                   </div>}
                   <select aria-label={`Lançamento para ${match.line.description || match.line.id}`} value={selectedId} onChange={event => setSelections(current => ({ ...current, [match.line.id]:event.target.value }))} style={{ ...s.input, marginTop:10 }}>
@@ -922,7 +938,34 @@ export function BankReconciliation({ data, saveDataNow }) {
             <div style={{ color:C.text, fontWeight:900 }}>{bulkConfirm.items.length} linha(s)</div>
             <div style={{ ...s.muted, marginTop:5 }}>Entradas {fmt(bulkConfirm.items.filter(item => item.line.amount > 0).reduce((total, item) => total + Number(item.line.amount), 0))} · saídas {fmt(bulkConfirm.items.filter(item => item.line.amount < 0).reduce((total, item) => total + Math.abs(Number(item.line.amount)), 0))}</div>
           </Card>
-          {bulkConfirm.type === 'approve' && bulkConfirm.items.some(item => item.reviewStatus === 'new') && <div style={{ color:C.yellow, fontSize:12 }}>Para novos lançamentos, competência e vencimento usarão a data bancária exibida. Você pode cancelar e usar “Editar e criar” para informar datas diferentes.</div>}
+          {bulkConfirm.type === 'approve' && bulkConfirm.items.some(item => item.reviewStatus === 'new') && (
+            <Card style={{ padding:14 }}>
+              <div style={{ color:C.text, fontWeight:900, fontSize:13 }}>Competência dos novos lançamentos</div>
+              <div style={{ ...s.muted, marginTop:5 }}>
+                A data do extrato é a data de <strong>caixa</strong> e alimenta o fluxo. A competência é o que entra no DRE — por padrão assume a mesma data. O vencimento e as datas de caixa não mudam.
+              </div>
+              <label style={{ ...s.row, marginTop:10, gap:8, cursor:'pointer' }}>
+                <input type="radio" name="competencia" checked={competenceMode === 'line'} onChange={() => setCompetenceMode('line')} />
+                <span style={{ color:C.textSub, fontSize:12.5 }}>Usar a data do extrato de cada linha (padrão)</span>
+              </label>
+              <label style={{ ...s.row, marginTop:7, gap:8, cursor:'pointer' }}>
+                <input type="radio" name="competencia" checked={competenceMode === 'fixed'} onChange={() => setCompetenceMode('fixed')} />
+                <span style={{ color:C.textSub, fontSize:12.5 }}>Usar uma competência única para todas</span>
+              </label>
+              {competenceMode === 'fixed' && (
+                <input
+                  type="date"
+                  aria-label="Competência dos novos lançamentos"
+                  value={competenceDate}
+                  onChange={event => setCompetenceDate(event.target.value)}
+                  style={{ ...s.input, marginTop:9, maxWidth:220 }}
+                />
+              )}
+              {competenceMode === 'fixed' && !competenceDate && (
+                <div style={{ color:C.yellow, fontSize:12, marginTop:7 }}>Informe a competência para continuar.</div>
+              )}
+            </Card>
+          )}
           {bulkConfirm.type === 'create_duplicate' && <div style={{ color:C.yellow, fontSize:12 }}>A confirmação permite criar somente esta linha e ficará registrada pela origem UUID. Nenhum valor existente será alterado.</div>}
           {bulkConfirm.type === 'ignore' && <label style={{ color:C.textSub, fontSize:12 }}>Motivo para ignorar
             <select aria-label="Motivo para ignorar" value={ignoreReason} onChange={event => setIgnoreReason(event.target.value)} style={{ ...s.input, marginTop:6 }}>
@@ -931,7 +974,7 @@ export function BankReconciliation({ data, saveDataNow }) {
           </label>}
           <div style={{ ...s.row, justifyContent:'flex-end' }}>
             <Btn variant="ghost" onClick={() => setBulkConfirm(null)}>Cancelar</Btn>
-            <Btn variant={bulkConfirm.type === 'approve' ? 'success' : bulkConfirm.type === 'create_duplicate' ? 'warn' : 'danger'} onClick={() => {
+            <Btn variant={bulkConfirm.type === 'approve' ? 'success' : bulkConfirm.type === 'create_duplicate' ? 'warn' : 'danger'} disabled={busy || (bulkConfirm.type === 'approve' && competenceMode === 'fixed' && !competenceDate)} onClick={() => {
               if (bulkConfirm.type === 'approve') approveReviewItems(bulkConfirm.items)
               else if (bulkConfirm.type === 'create_duplicate') { const item = bulkConfirm.items[0]; setBulkConfirm(null); createFromLine(item, true) }
               else ignoreReviewItems(bulkConfirm.items)
