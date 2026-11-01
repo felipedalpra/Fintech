@@ -9,6 +9,7 @@ import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
 import { ClinicalProtocols } from './ClinicalProtocols.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
+import { resolveDocumentAuthor } from '../lib/clinicalDocuments.js'
 import {
   ClinicalDocumentsCenter,
   ClinicalPatientSummary,
@@ -74,11 +75,26 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [profileStatus, setProfileStatus] = useState('idle')
   const [openAttempt, setOpenAttempt] = useState(0)
   const [currentDate, setCurrentDate] = useState(today)
-  const [author, setAuthor] = useState({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
   const [secureProfile, setSecureProfile] = useState(null)
   const [secureProfileStatus, setSecureProfileStatus] = useState('loading')
   const [workspaceSources, setWorkspaceSources] = useState(emptyClinicalWorkspaceSources)
   const [workspaceStatus, setWorkspaceStatus] = useState('loading')
+  // Identificação profissional do documento.
+  //
+  // Era estado disputado por dois efeitos, e isso quebrava a emissão de duas
+  // formas (31/10/2026): o perfil seguro só alimentava o autor quando
+  // `isOwner`, então um administrador que NÃO é dono da clínica preenchia tudo
+  // em Configurações e a tela clínica continuava dizendo "Profissional não
+  // configurado"; e o efeito do vínculo de membro podia rodar depois e
+  // sobrescrever um autor bom com vazio, porque o contexto resolve async.
+  //
+  // Agora é DERIVADO, com prioridade explícita: o perfil seguro é de quem está
+  // logado (`fetchEncryptedProfile(user.id)`), então vale para qualquer perfil;
+  // o vínculo de membro é a reserva. Um valor vazio nunca apaga um preenchido.
+  const author = useMemo(() => resolveDocumentAuthor({
+    secureProfile, professionalName, professionalRegistration, professionalCouncil,
+  }), [secureProfile, professionalName, professionalRegistration, professionalCouncil])
+
   const searchWrapRef = useRef(null)
   const daySchedule = useMemo(() => buildClinicalDaySchedule(data, currentDate), [data, currentDate])
   const workspaceIndex = useMemo(() => buildClinicalWorkspaceIndex({
@@ -106,10 +122,6 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   }, [ownerId, initialView])
 
   useEffect(() => {
-    setAuthor({ name:professionalName || '', registration:professionalRegistration || '', council:professionalCouncil || 'CRM' })
-  }, [professionalName, professionalRegistration, professionalCouncil])
-
-  useEffect(() => {
     let active = true
     setSecureProfileStatus('loading')
     fetchSecureProfile()
@@ -132,7 +144,6 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
             })
             .eq('id', clinicId)
           if (syncError) return
-          if (active) setAuthor(nextAuthor)
         }
       })
       .catch(() => {
