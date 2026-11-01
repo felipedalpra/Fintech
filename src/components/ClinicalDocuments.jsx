@@ -113,7 +113,7 @@ function DocumentSummary({ record }) {
   return <>{(data.exams || []).join(', ') || 'Pedido sem exames disponíveis'}</>
 }
 
-export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, profile, profileLoading = false, clinicName, canPrescribe = false, initialProtocolApplication, onProtocolApplicationConsumed }) {
+export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, profile, profileLoading = false, clinicName, canPrescribe = false, initialDocumentType = '', onInitialDocumentTypeConsumed, initialProtocolApplication, onProtocolApplicationConsumed, onDocumentCreated }) {
   const [records, setRecords] = useState([])
   const [signatureByDocument, setSignatureByDocument] = useState({})
   const [signatureIntegration, setSignatureIntegration] = useState({ available:false, reason:'desabilitada' })
@@ -157,6 +157,17 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     loadClinicalProtocols(ownerId, { activeOnly:true }).then(rows => { if (active) setProtocols(rows) }).catch(() => { if (active) setProtocols([]) })
     return () => { active = false }
   }, [ownerId])
+
+  useEffect(() => {
+    if (!initialDocumentType || profileLoading) return
+    if (![EXAM_REQUEST, SIMPLE_PRESCRIPTION].includes(initialDocumentType)) {
+      setError('Selecione um tipo de documento válido.')
+      onInitialDocumentTypeConsumed?.()
+      return
+    }
+    begin(initialDocumentType)
+    onInitialDocumentTypeConsumed?.()
+  }, [initialDocumentType, profileLoading, patient.id])
 
   useEffect(() => {
     if (!initialProtocolApplication || profileLoading) return
@@ -242,6 +253,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
       setSignatureIntegration(fresh.signatures.integration)
       setSignatureEvidenceAvailable(fresh.signatures.available)
       setStatus('ready')
+      Promise.resolve(onDocumentCreated?.()).catch(() => {})
     } catch (nextError) {
       if (issued) {
         setStatus('error')

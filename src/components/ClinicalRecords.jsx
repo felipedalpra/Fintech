@@ -69,6 +69,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [clinicalProfile, setClinicalProfile] = useState(null)
   const [anamnesisDraft, setAnamnesisDraft] = useState(null)
   const [protocolApplication, setProtocolApplication] = useState(null)
+  const [documentDraftType, setDocumentDraftType] = useState('')
   const [clinicalAccessStatus, setClinicalAccessStatus] = useState('idle')
   const [profileStatus, setProfileStatus] = useState('idle')
   const [openAttempt, setOpenAttempt] = useState(0)
@@ -91,6 +92,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setSelected(null)
     setClinicalProfile(null)
     setProtocolApplication(null)
+    setDocumentDraftType('')
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('overview')
@@ -241,6 +243,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setClinicalProfile(null)
     setAnamnesisDraft(options.anamnesisDraft || null)
     setProtocolApplication(options.protocolApplication || null)
+    setDocumentDraftType(options.documentType || '')
     setOpenAttempt(value => value + 1)
     setSelected(patient)
     setTab(initialTab)
@@ -277,6 +280,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setClinicalProfile(null)
     setAnamnesisDraft(null)
     setProtocolApplication(null)
+    setDocumentDraftType('')
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('overview')
@@ -369,7 +373,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
       </>}
       {moduleView === 'patients' && <ClinicalPatientsView index={workspaceIndex} loading={loading || workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={() => { loadPatients(); loadWorkspaceIndex() }} />}
       {moduleView === 'pending' && <ClinicalPendingView index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
-      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
+      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
       {moduleView === 'patient' && selected && (
         <div className="clinical-patient-workspace">
           <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} />
@@ -420,8 +424,11 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     profileLoading={secureProfileStatus === 'loading'}
                     clinicName={clinicName}
                     canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
+                    initialDocumentType={documentDraftType}
+                    onInitialDocumentTypeConsumed={() => setDocumentDraftType('')}
                     initialProtocolApplication={protocolApplication?.destination === 'exams' || protocolApplication?.destination === 'prescription' ? protocolApplication : null}
                     onProtocolApplicationConsumed={() => setProtocolApplication(null)}
+                    onDocumentCreated={loadWorkspaceIndex}
                   />
                 )}
                 {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}

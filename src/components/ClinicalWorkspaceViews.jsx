@@ -16,6 +16,84 @@ const dateLabel = (value, withTime = false) => {
 
 const includesText = (values, query) => values.some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query))
 
+function ClinicalDocumentCreateDialog({ patients, canPrescribe, onCancel, onContinue }) {
+  const [query, setQuery] = useState('')
+  const [patientId, setPatientId] = useState('')
+  const [documentType, setDocumentType] = useState('exam_request')
+  const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
+  const visiblePatients = useMemo(() => patients
+    .filter(patient => !normalizedQuery || includesText([patient.full_name, patient.phone, patient.email, patient.cpf], normalizedQuery))
+    .slice(0, 30), [patients, normalizedQuery])
+  const selectedPatient = patients.find(patient => patient.id === patientId) || null
+
+  return (
+    <div className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-document-create-title">
+      <div>
+        <header>
+          <div>
+            <span>Novo documento clínico</span>
+            <h3 id="clinical-document-create-title">Para quem você quer emitir?</h3>
+            <p>Escolha o paciente e o tipo. O formulário será aberto na ficha clínica e o documento ficará no prontuário.</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Fechar">×</button>
+        </header>
+        <div className="clinical-document-create-grid">
+          <section>
+            <label>
+              <span>Buscar paciente</span>
+              <input
+                aria-label="Buscar paciente para o documento"
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                placeholder="Nome, telefone, e-mail ou CPF"
+                autoFocus
+              />
+            </label>
+            <div className="clinical-document-patient-list">
+              {visiblePatients.map(patient => (
+                <button
+                  key={patient.id}
+                  type="button"
+                  className={patient.id === patientId ? 'is-active' : ''}
+                  onClick={() => setPatientId(patient.id)}
+                >
+                  <strong>{patient.full_name}</strong>
+                  <span>{patient.phone || patient.email || patient.cpf || 'Contato não informado'}</span>
+                </button>
+              ))}
+              {visiblePatients.length === 0 && <p>Nenhum paciente encontrado.</p>}
+            </div>
+          </section>
+          <section>
+            <span>Tipo de documento</span>
+            <div className="clinical-document-type-list">
+              <button type="button" className={documentType === 'exam_request' ? 'is-active' : ''} onClick={() => setDocumentType('exam_request')}>
+                <strong>Pedido de exames</strong>
+                <span>Solicitação de exames, indicação clínica e orientações.</span>
+              </button>
+              <button type="button" disabled={!canPrescribe} className={documentType === 'simple_prescription' ? 'is-active' : ''} onClick={() => setDocumentType('simple_prescription')}>
+                <strong>Receita simples</strong>
+                <span>{canPrescribe ? 'Medicamentos não controlados e modo de usar.' : 'Somente administradores clínicos podem emitir receitas.'}</span>
+              </button>
+            </div>
+            {selectedPatient && (
+              <div className="clinical-document-selected-patient">
+                <span>Será salvo no prontuário de</span>
+                <strong>{selectedPatient.full_name}</strong>
+                <small>Você poderá revisar todas as informações antes de emitir.</small>
+              </div>
+            )}
+          </section>
+        </div>
+        <footer>
+          <Btn variant="ghost" onClick={onCancel}>Cancelar</Btn>
+          <Btn disabled={!selectedPatient} onClick={() => onContinue(selectedPatient, documentType)}>Preencher documento</Btn>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
 function WorkspaceState({ loading, unavailableSources, onRefresh }) {
   if (loading) return <div className="clinical-index-state">Atualizando a visão clínica…</div>
   if (!unavailableSources?.length) return null
@@ -236,10 +314,11 @@ function ClinicalSignatureQueue() {
   )
 }
 
-export function ClinicalDocumentsCenter({ index, loading, unavailableSources, onOpenPatient, onRefresh }) {
+export function ClinicalDocumentsCenter({ index, patients = [], loading, unavailableSources, canPrescribe = false, onCreateDocument, onOpenPatient, onRefresh }) {
   const incomplete = Boolean(unavailableSources?.length)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
+  const [creating, setCreating] = useState(false)
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = index.documents.filter(document => {
     if (filter !== 'all' && document.signature.status !== filter) return false
@@ -249,7 +328,10 @@ export function ClinicalDocumentsCenter({ index, loading, unavailableSources, on
     <section className="clinical-index-page" data-testid="clinical-documents-center">
       <header className="clinical-index-header">
         <div><span>Central clínica</span><h2>Documentos</h2><p>Pedidos e receitas de todos os pacientes, com a situação real da assinatura.</p></div>
-        <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente ou profissional" /></label>
+        <div className="clinical-index-header-actions">
+          <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente ou profissional" /></label>
+          <Btn onClick={() => setCreating(true)}>+ Novo documento</Btn>
+        </div>
       </header>
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
       <ClinicalSignatureQueue />
@@ -270,6 +352,17 @@ export function ClinicalDocumentsCenter({ index, loading, unavailableSources, on
             </button>
           ))}
         </div>
+      )}
+      {creating && (
+        <ClinicalDocumentCreateDialog
+          patients={patients}
+          canPrescribe={canPrescribe}
+          onCancel={() => setCreating(false)}
+          onContinue={(patient, documentType) => {
+            setCreating(false)
+            onCreateDocument?.(patient, documentType)
+          }}
+        />
       )}
     </section>
   )

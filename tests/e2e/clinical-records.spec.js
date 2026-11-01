@@ -104,6 +104,15 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await page.route('**/rest/v1/medical_record_addenda*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(documents) }))
   await page.route('**/rest/v1/clinical_document_signatures*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/rpc/list_clinical_workspace_record_metadata*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  for (const table of [
+    'clinical_anamneses', 'clinical_intake_requests', 'clinical_intake_submissions', 'clinical_assets',
+    'clinical_treatment_plans', 'clinical_treatment_plan_versions', 'clinical_treatment_plan_status_events',
+    'clinical_treatment_sessions', 'clinical_treatment_session_events', 'clinical_protocols',
+    'clinical_protocol_versions', 'clinical_protocol_status_events',
+  ]) {
+    await page.route(`**/rest/v1/${table}*`, route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  }
   await page.route('**/rest/v1/rpc/create_clinical_document*', async route => {
     const payload = await route.request().postDataJSON()
     rpcPayloads.push(payload)
@@ -134,11 +143,17 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
     await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(id) })
   })
 
-  await page.goto('/app/clinical-records')
-  await page.getByRole('button', { name:/Ana Documentos/ }).click()
-  await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Exames e receitas', exact:true }).click()
+  await page.goto('/app/clinical-documents')
+  await expect(page.getByTestId('clinical-documents-center')).toBeVisible()
+  await page.getByRole('button', { name:'+ Novo documento' }).click()
+  const createDialog = page.getByRole('dialog', { name:'Para quem você quer emitir?' })
+  await createDialog.getByLabel('Buscar paciente para o documento').fill('Ana Documentos')
+  await createDialog.getByRole('button', { name:/Ana Documentos/ }).click()
+  await createDialog.getByRole('button', { name:'Pedido de exames' }).click()
+  await createDialog.getByRole('button', { name:'Preencher documento' }).click()
 
-  await page.getByRole('button', { name:'+ Pedido de exames' }).click()
+  await expect(page.getByRole('heading', { name:'Ana Documentos' })).toBeVisible()
+  await expect(page.getByRole('heading', { name:'Pedido de exames' })).toBeVisible()
   await page.getByLabel('Exames solicitados *').fill('Hemograma completo\nCoagulograma')
   await page.getByLabel('Indicação clínica').fill('Avaliação pré-operatória')
   await page.getByLabel('Telefone ou e-mail profissional *').fill('medica@clinica.test')
@@ -164,6 +179,12 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await expect(page.getByText(/Dipirona — 500 mg — Tomar um comprimido/)).toBeVisible()
   await expect(page.getByText('2 no histórico')).toBeVisible()
   expect(rpcPayloads[1].p_document_data).toMatchObject({ simple_prescription_confirmed:true })
+
+  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:/Documentos/ }).click()
+  await expect(page.getByTestId('clinical-documents-center')).toContainText('Ana Documentos')
+  await expect(page.locator('.clinical-documents-center-list > button')).toHaveCount(2)
+  await page.locator('.clinical-documents-center-list > button').first().click()
+  await expect(page.getByText('2 no histórico')).toBeVisible()
 })
 
 test('assina evolução imutável e corrige somente por adendo', async ({ page }) => {
