@@ -75,6 +75,33 @@ function normalizedPrescriptionItems(items = []) {
   })).filter(item => Object.values(item).some(Boolean))
 }
 
+// Identificação profissional que vai impressa no documento.
+//
+// Duas fontes, com prioridade explícita:
+//  1. perfil seguro — onde Configurações → "Médico e clínica" grava, por
+//     usuário autenticado (vale para dona, administrador ou qualquer perfil);
+//  2. vínculo de clínica (`clinic_members`) — reserva.
+//
+// Existe porque a tela clínica usava a fonte 2 e só consultava a 1 quando o
+// usuário era DONO da clínica: um administrador preenchia tudo em Configurações
+// e continuava vendo "Profissional não configurado" na hora de emitir
+// (31/10/2026). Um valor vazio nunca pode apagar um preenchido -- as duas
+// fontes chegam de forma assíncrona, em ordem imprevisível.
+export function resolveDocumentAuthor({
+  secureProfile = null,
+  professionalName = '',
+  professionalRegistration = '',
+  professionalCouncil = '',
+} = {}) {
+  const doctor = secureProfile?.doctor
+  const pick = (preferido, reserva) => String(preferido || '').trim() || String(reserva || '').trim()
+  return {
+    name:pick(doctor?.fullName, professionalName),
+    registration:pick(doctor?.registrationId, professionalRegistration),
+    council:pick(doctor?.council, professionalCouncil) || 'CRM',
+  }
+}
+
 export function validateClinicalDocument({ type, form, patient, author }) {
   if (![EXAM_REQUEST, SIMPLE_PRESCRIPTION].includes(type)) return 'Selecione um tipo de documento válido.'
   if (!form?.issue_date) return 'Informe a data de emissão.'
