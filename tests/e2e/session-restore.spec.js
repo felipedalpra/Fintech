@@ -29,7 +29,7 @@ test('mantem a tela aberta depois do reload', async ({ page }) => {
   await page.reload()
 
   await expect(page).toHaveURL(/\/app\/reports$/)
-  await expect(page.getByRole('heading', { name:'Relatórios Analíticos' })).toBeVisible()
+  await expect(page.getByRole('heading', { name:'Central de Relatórios' }).first()).toBeVisible()
 })
 
 test('nao redireciona rotas internas para assinatura durante o carregamento', async ({ page }) => {

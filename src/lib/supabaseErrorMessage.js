@@ -57,3 +57,19 @@ export function isBankReconciliationSchemaMissing(error) {
   if (!ABSENCE_WORDING.test(text)) return false
   return SCHEMA_OBJECT_NAMES.some(nome => text.includes(nome))
 }
+
+// A tabela dos indicadores e NOVA. Enquanto a migration nao estiver aplicada em
+// um banco, ela simplesmente nao existe -- e o Financeiro inteiro nao pode
+// deixar de carregar nem de salvar por causa disso. O mesmo cuidado ja existe
+// para `chart_accounts`.
+//
+// Sem esta tolerancia, publicar o cliente antes do SQL quebra a tela para todo
+// mundo: a leitura lanca e o salvamento falha DEPOIS das 11 tabelas gravarem,
+// reproduzindo o alarme de "gravacao parcial" que assustou a clinica em
+// 31/10/2026.
+export function isIndicatorInputsSchemaMissing(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return code === '42P01' || code === 'PGRST205' || code === 'PGRST204'
+    || (message.includes('finance_indicator_inputs') && message.includes('schema cache'))
+}

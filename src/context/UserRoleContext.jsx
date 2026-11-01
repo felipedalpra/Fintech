@@ -53,11 +53,14 @@ export function UserRoleProvider({ children }) {
 
     // E2E: resolve o perfil configurado sem bater no Supabase (espelha o bypass do AuthContext).
     if (E2E_BYPASS_AUTH) {
-      setRole(E2E_ROLE)
+      // Permite que cada cenário E2E isole o perfil sem depender do processo Vite que já esteja
+      // ocupando a porta. A chave só é lida em builds com o bypass de autenticação habilitado.
+      const e2eRole = window.localStorage.getItem('surgimetrics_e2e_role') || E2E_ROLE
+      setRole(e2eRole)
       setOwnerId(E2E_USER_ID)
       setClinicId(E2E_CLINIC_ID)
       setClinicName('Clínica E2E')
-      setIsOwner(E2E_ROLE === 'admin')
+      setIsOwner(e2eRole === 'admin')
       setClinicalAccess(E2E_CLINICAL_ACCESS)
       setProfessionalName('Dra. Clínica E2E')
       setProfessionalRegistration('CRM-E2E 0001')

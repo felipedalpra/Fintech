@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "e2e": "playwright test",
     "e2e:real": "playwright test -c playwright.real.config.js",
-    "test:unit": "playwright test -c playwright.unit.config.js"
+    "test:unit": "playwright test -c playwright.unit.config.js",
+    "audit:persistence": "node scripts/audit-persistence.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.0",

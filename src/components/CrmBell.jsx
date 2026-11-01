@@ -46,6 +46,7 @@ export function CrmBell({ onNavigate }) {
   const [open, setOpen] = useState(false)
   const [readKeys, setReadKeys] = useState([])
   const [notificationState, setNotificationState] = useState({})
+  const [saveError, setSaveError] = useState('')
   const triggerRef = useRef(null)
   const panelRef = useRef(null)
 
@@ -136,10 +137,12 @@ export function CrmBell({ onNavigate }) {
 
   async function markAllRead() {
     const keys = alerts.map(alert => alert.k)
-    setReadKeys(keys)
     const next = { ...notificationState, crm:keys }
+    const result = await saveWorkspacePreferences(effectiveUserId, user.id, { notification_state:{ crm:keys } })
+    if (result.error || !result.persisted) { setSaveError('Os alertas NÃO foram marcados como lidos. Tente novamente.'); return }
+    setSaveError('')
+    setReadKeys(keys)
     setNotificationState(next)
-    await saveWorkspacePreferences(effectiveUserId, user.id, { notification_state:{ crm:keys } })
   }
 
   const btn = { position: 'relative', width: 38, height: 38, borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, display: 'grid', placeItems: 'center', cursor: 'pointer', color: total ? C.text : C.textSub }
@@ -174,6 +177,7 @@ export function CrmBell({ onNavigate }) {
             <span style={{ fontSize: 10, fontWeight: 700, color: total ? (C.red || '#EF4444') : (C.green || '#10B981') }}>{total ? `${total} não lida${total > 1 ? 's' : ''}` : 'Tudo em ordem'}</span>
             {total > 0 && <button type="button" onClick={markAllRead} style={{ border:0, background:'transparent', color:C.accent, cursor:'pointer', fontSize:10, fontWeight:700 }}>Marcar lidas</button>}
           </div>
+          {saveError && <div role="alert" style={{ padding:'8px 14px', color:C.red, fontSize:11 }}>{saveError}</div>}
           {groupedAlerts.length === 0
             ? <div style={{ padding: '20px 14px', fontSize: 13, color: C.textSub, textAlign: 'center' }}>Tudo em dia por aqui. 🎉</div>
             : <div data-testid="crm-alerts-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarGutter: 'stable' }}>

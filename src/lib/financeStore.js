@@ -4,6 +4,7 @@ import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
 import { isChartSchemaMissing } from './chartOfAccountsStore.js'
+import { isIndicatorInputsSchemaMissing } from './supabaseErrorMessage.js'
 import { aggregateTableSyncFailures, isIgnorableAuditLogError, isMissingRelationError } from './financeStoreErrors.js'
 
 const LEGACY_APP_KEY = 'startupfinance_v1'
@@ -97,6 +98,7 @@ async function fetchRelationalData(userId) {
     liabilitiesResult,
     goalsResult,
     chartAccountsResult,
+    indicatorInputsResult,
   ] = await Promise.all([
     supabase.from('procedures').select('*').eq('user_id', userId),
     supabase.from('products').select('*').eq('user_id', userId),
@@ -110,6 +112,10 @@ async function fetchRelationalData(userId) {
     supabase.from('liabilities').select('*').eq('user_id', userId),
     supabase.from('goals').select('*').eq('user_id', userId),
     chartAccountsPromise,
+    supabase.from('finance_indicator_inputs')
+      .select('indicator_inputs, indicator_inputs_by_period')
+      .eq('user_id', userId)
+      .maybeSingle(),
   ])
 
   const results = [
@@ -129,6 +135,7 @@ async function fetchRelationalData(userId) {
   const failed = results.find(result => result.error)
   if (failed?.error) throw failed.error
   if (chartAccountsResult.error && !isChartSchemaMissing(chartAccountsResult.error)) throw chartAccountsResult.error
+  if (indicatorInputsResult.error && !isIndicatorInputsSchemaMissing(indicatorInputsResult.error)) throw indicatorInputsResult.error
 
   // SOFT-DELETE: oculta registros arquivados (archived_at preenchido). Filtro em JS (tolerante:
   // se a coluna ainda não existe no banco, archived_at vem undefined e nada é ocultado).
@@ -284,7 +291,30 @@ async function fetchRelationalData(userId) {
       dueDate:item.due_date || '',
     })),
     chartAccounts:chartAccountsResult.error ? [] : (chartAccountsResult.data || []),
+    indicatorInputs:indicatorInputsResult.error ? {} : (indicatorInputsResult.data?.indicator_inputs || {}),
+    indicatorInputsByPeriod:indicatorInputsResult.error ? {} : (indicatorInputsResult.data?.indicator_inputs_by_period || {}),
   })
+}
+
+async function syncIndicatorInputs(userId, payload) {
+  const row = {
+    user_id:userId,
+    indicator_inputs:payload.indicatorInputs || {},
+    indicator_inputs_by_period:payload.indicatorInputsByPeriod || {},
+    updated_at:new Date().toISOString(),
+  }
+  const { data:saved, error } = await supabase
+    .from('finance_indicator_inputs')
+    .upsert(row, { onConflict:'user_id' })
+    .select('user_id')
+    .single()
+  // Tabela ainda nao criada neste banco: os campos manuais continuam sem
+  // persistir, exatamente como antes desta mudanca. O resto do salvamento NAO
+  // pode ser derrubado por isso.
+  if (error && isIndicatorInputsSchemaMissing(error)) return false
+  if (error) throw error
+  if (saved?.user_id !== userId) throw new Error('Gravação dos indicadores financeiros não foi confirmada pelo banco.')
+  return true
 }
 
 function mapProceduresRows(userId, data) {
@@ -581,6 +611,9 @@ export async function saveFinanceData(userId, financeData, baselineData = null) 
     }))
     const tableFailure = aggregateTableSyncFailures(tables.map(([table]) => table), results)
     if (tableFailure) throw tableFailure
+    // Campos manuais dos indicadores não pertencem a uma coleção de lançamentos. Persistem em
+    // uma linha própria e também exigem read-back, para nunca parecerem salvos só na memória.
+    await syncIndicatorInputs(userId, payload)
     // Write-through idempotente depois das origens operacionais. Títulos e parcelas removidos da
     // origem são apenas arquivados, nunca apagados fisicamente.
     await syncFinancialLedger(supabase, userId, payload, base)

@@ -13,6 +13,7 @@ export function OperationalOnboarding({ data = {} }) {
   const effectiveUserId = ownerId || user?.id
   const [remote, setRemote] = useState({ whatsapp:0, contacts:0 })
   const [dismissed, setDismissed] = useState(true)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
     if (!effectiveUserId || !user?.id) return
@@ -40,12 +41,15 @@ export function OperationalOnboarding({ data = {} }) {
   if (dismissed || done === steps.length) return null
 
   async function dismiss() {
+    const result = await saveWorkspacePreferences(effectiveUserId, user.id, { onboarding_dismissed_at:new Date().toISOString() })
+    if (result.error || !result.persisted) { setSaveError('Não foi possível salvar esta preferência. O painel continua visível.'); return }
+    setSaveError('')
     setDismissed(true)
-    await saveWorkspacePreferences(effectiveUserId, user.id, { onboarding_dismissed_at:new Date().toISOString() })
   }
 
   return <div style={{ gridColumn:'1 / -1', padding:18, borderRadius:16, border:`1px solid ${C.accent}44`, background:`linear-gradient(135deg, ${C.accent}16, ${C.card})` }}>
     <div style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'start' }}><div><div style={{ color:C.accentLight, fontSize:11, fontWeight:900, textTransform:'uppercase', letterSpacing:'.08em' }}>Primeiros passos · {done}/{steps.length}</div><h3 style={{ margin:'5px 0 0', color:C.text, fontSize:18 }}>Deixe a clínica pronta para operar</h3></div><button onClick={dismiss} style={{ border:0, background:'transparent', color:C.textDim, cursor:'pointer' }}>Ocultar</button></div>
+    {saveError && <div role="alert" style={{ color:C.red, fontSize:12, marginTop:10 }}>{saveError}</div>}
     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))', gap:8, marginTop:14 }}>{steps.map((step, index) => <button key={step.label} onClick={() => navigate(`/app/${step.go}`)} style={{ display:'flex', gap:9, alignItems:'center', padding:'10px 12px', borderRadius:11, border:`1px solid ${step.done ? C.green + '55' : C.border}`, background:step.done ? C.green + '12' : C.surface, color:step.done ? C.green : C.textSub, cursor:'pointer', textAlign:'left', fontFamily:'inherit' }}><span style={{ fontWeight:900 }}>{step.done ? '✓' : index + 1}</span><span style={{ fontSize:12, fontWeight:700 }}>{step.label}</span></button>)}</div>
   </div>
 }

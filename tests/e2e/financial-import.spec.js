@@ -68,3 +68,27 @@ test('mostra todas as linhas, permite editar e só salva após aprovação', asy
   await expect(firstLine).toContainText('Importado')
   await expect(page.locator('[aria-label="Lançamento linha 189"]')).toContainText('Importado')
 })
+
+test('bloqueia a revisão quando o banco não consegue persistir o lote', async ({ page }) => {
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{"connected":false}' }))
+  await page.route('**/rest/v1/**', route => route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/0' }, body:'[]' }))
+  await page.route('**/rest/v1/financial_import_batches*', route => route.fulfill({
+    status:404,
+    contentType:'application/json',
+    body:JSON.stringify({ code:'42P01', message:'relation financial_import_batches does not exist' }),
+  }))
+
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['DATA', 'DESCRIÇÃO', 'RECEITA', 'DESPESA', 'CATEGORIA', 'CENTRO DE CUSTO'],
+    ['01/10/2026', 'Receita que não pode ficar só na memória', 100, '', 'HONORÁRIOS MÉDICOS', 'CIRURGIA'],
+  ]), 'Planilha1')
+  const buffer = XLSX.write(workbook, { type:'buffer', bookType:'xlsx' })
+
+  await page.goto('/app/financial-import')
+  await expect(page.getByTestId('financial-import-persistence-blocked')).toBeVisible()
+  await page.getByLabel('Planilha de lançamentos').setInputFiles({ name:'sem-persistencia.xlsx', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer })
+
+  await expect(page.getByRole('alert').filter({ hasText:'não pode ser iniciada' })).toBeVisible()
+  await expect(page.getByText('Receita que não pode ficar só na memória')).toHaveCount(0)
+})

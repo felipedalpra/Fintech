@@ -13,29 +13,46 @@ export function PatientSelector({ userId, value, onChange, label = 'Paciente' })
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ full_name: '', cpf: '', phone: '' })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!effectiveUserId) return
+    let active = true
+    setError('')
     supabase.from('patients').select('id,full_name,cpf,phone').eq('user_id', effectiveUserId).eq('active', true).order('full_name')
-      .then(({ data }) => setPatients(data || []))
+      .then(({ data, error:loadError }) => {
+        if (!active) return
+        if (loadError) setError('Não foi possível carregar os pacientes. Recarregue a página.')
+        else setPatients(data || [])
+      })
+    return () => { active = false }
   }, [effectiveUserId])
 
   async function createPatient() {
-    if (!form.full_name.trim()) return
+    if (!form.full_name.trim() || saving) return
+    if (!effectiveUserId) { setError('Clínica não identificada. Recarregue a página.'); return }
     setSaving(true)
-    const { data: created } = await supabase.from('patients').insert({
-      user_id: effectiveUserId,
-      full_name: form.full_name.trim(),
-      cpf: form.cpf || null,
-      phone: form.phone || null,
-      consent_signed: false,
-    }).select().single()
-    setSaving(false)
-    if (created) {
+    setError('')
+    try {
+      const { data:created, error:createError } = await supabase.from('patients').insert({
+        user_id: effectiveUserId,
+        full_name: form.full_name.trim(),
+        cpf: form.cpf || null,
+        phone: form.phone || null,
+        consent_signed: false,
+      }).select('id,full_name,cpf,phone').single()
+      if (createError || !created) {
+        setError('O paciente NÃO foi criado. Confira os dados e tente novamente.')
+        return
+      }
       setPatients(ps => [...ps, created].sort((a, b) => a.full_name.localeCompare(b.full_name)))
       onChange(created.id, created.full_name)
       setShowCreate(false)
       setForm({ full_name: '', cpf: '', phone: '' })
+    } catch {
+      setError('O paciente NÃO foi criado. Verifique sua conexão e tente novamente.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -84,6 +101,7 @@ export function PatientSelector({ userId, value, onChange, label = 'Paciente' })
           {[selected.phone, selected.cpf].filter(Boolean).join(' · ')}
         </div>
       )}
+      {error && <div role="alert" style={{ fontSize:12, color:C.red, marginTop:4 }}>{error}</div>}
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Criar paciente" width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -108,6 +126,7 @@ export function PatientSelector({ userId, value, onChange, label = 'Paciente' })
               placeholder="(11) 99999-9999"
             />
           </div>
+          {error && <div role="alert" style={{ fontSize:12, color:C.red }}>{error}</div>}
           <div style={{ fontSize: 12, color: C.textDim }}>
             Dados adicionais podem ser preenchidos em Pacientes a qualquer momento.
           </div>
