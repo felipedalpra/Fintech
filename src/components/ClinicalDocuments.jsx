@@ -36,6 +36,9 @@ async function fetchDocuments(patientId, ownerId) {
     .select('*')
     .eq('patient_id', patientId)
     .eq('user_id', ownerId)
+    // Arquivado some das telas, mas permanece integro no banco: documento de
+    // prontuario nao e apagado (CFM/LGPD).
+    .is('archived_at', null)
     .order('created_at', { ascending:false })
   if (error) throw error
   return data || []
@@ -128,6 +131,14 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Arquivamento (soft delete) de documento emitido: some da tela, permanece
+  // integro no banco. Documento de prontuario nao e apagado (CFM/LGPD).
+  const [confirmArchiveFor, setConfirmArchiveFor] = useState('')
+  const [archiveReason, setArchiveReason] = useState('')
+  const [archiving, setArchiving] = useState(false)
+  // O efeito que carrega os documentos ja sabe recarregar: mudar este token
+  // e o que o dispara de novo, sem duplicar a logica de busca.
+  const [reloadToken, setReloadToken] = useState(0)
   const [protocols, setProtocols] = useState([])
 
   useEffect(() => {
@@ -150,7 +161,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
         setError('Não foi possível carregar os documentos clínicos.')
       })
     return () => { active = false }
-  }, [patient.id, ownerId])
+  }, [patient.id, ownerId, reloadToken])
 
   useEffect(() => {
     let active = true
@@ -464,6 +475,28 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     )
   }
 
+  // Arquivar NAO e apagar: a linha permanece integra no banco, com quem
+  // arquivou e quando. Documento de prontuario tem guarda obrigatoria.
+  async function archiveDocument(record) {
+    setArchiving(true)
+    setError('')
+    try {
+      const { error:archiveError } = await supabase.rpc('archive_clinical_document', {
+        p_document_id:record.id,
+        p_reason:archiveReason.trim() || null,
+      })
+      if (archiveError) throw archiveError
+      setConfirmArchiveFor('')
+      setArchiveReason('')
+      setReloadToken(current => current + 1)
+      if (onDocumentCreated) onDocumentCreated()
+    } catch (caught) {
+      setError(caught.message || 'Não foi possível arquivar este documento.')
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   return (
     <div className="clinical-documents">
       <header className="clinical-documents__toolbar">
@@ -565,6 +598,25 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
               </div>
               {/* A via manual permanece sempre disponível, separada da digital. */}
               <Btn variant="ghost" onClick={() => print(record)}>{eligible && attempt?.evidenceComplete ? 'Imprimir via manual' : 'Imprimir / salvar PDF'}</Btn>
+              {confirmArchiveFor === record.id ? (
+                <div className="clinical-signature-confirm" role="group" aria-label="Arquivar documento">
+                  <span>O documento sai da lista, mas <strong>permanece no banco</strong> — documento de prontuário não é apagado. Fica registrado quem arquivou e quando.</span>
+                  <input
+                    type="text"
+                    aria-label="Motivo do arquivamento"
+                    placeholder="Motivo (opcional)"
+                    value={archiveReason}
+                    maxLength={300}
+                    onChange={event => setArchiveReason(event.target.value)}
+                  />
+                  <div>
+                    <Btn variant="ghost" disabled={archiving} onClick={() => { setConfirmArchiveFor(''); setArchiveReason('') }}>Cancelar</Btn>
+                    <Btn variant="danger" disabled={archiving} onClick={() => archiveDocument(record)}>{archiving ? 'Arquivando…' : 'Arquivar'}</Btn>
+                  </div>
+                </div>
+              ) : (
+                <Btn variant="ghost" disabled={archiving} onClick={() => { setConfirmArchiveFor(record.id); setArchiveReason('') }}>Arquivar</Btn>
+              )}
             </article>
           })}
         </div>
