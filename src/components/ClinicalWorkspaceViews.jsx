@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Btn } from './UI.jsx'
 import { uid } from '../utils.js'
 import {
@@ -16,18 +16,52 @@ const dateLabel = (value, withTime = false) => {
 
 const includesText = (values, query) => values.some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query))
 
-function ClinicalDocumentCreateDialog({ patients, canPrescribe, onCancel, onContinue }) {
+function ClinicalDocumentCreateDialog({ patients, canPrescribe, onCancel, onContinue, returnFocusRef }) {
   const [query, setQuery] = useState('')
   const [patientId, setPatientId] = useState('')
   const [documentType, setDocumentType] = useState('exam_request')
+  const dialogRef = useRef(null)
+  const onCancelRef = useRef(onCancel)
+  onCancelRef.current = onCancel
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const visiblePatients = useMemo(() => patients
     .filter(patient => !normalizedQuery || includesText([patient.full_name, patient.phone, patient.email, patient.cpf], normalizedQuery))
     .slice(0, 30), [patients, normalizedQuery])
   const selectedPatient = patients.find(patient => patient.id === patientId) || null
 
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return undefined
+    const focusFrame = window.requestAnimationFrame(() => dialog.querySelector('input')?.focus())
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCancelRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    dialog.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      dialog.removeEventListener('keydown', handleKeyDown)
+      returnFocusRef?.current?.querySelector('button')?.focus()
+    }
+  }, [returnFocusRef])
+
   return (
-    <div className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-document-create-title">
+    <div ref={dialogRef} className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-document-create-title">
       <div>
         <header>
           <div>
@@ -319,6 +353,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], loading, unavail
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [creating, setCreating] = useState(false)
+  const createButtonRef = useRef(null)
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = index.documents.filter(document => {
     if (filter !== 'all' && document.signature.status !== filter) return false
@@ -330,7 +365,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], loading, unavail
         <div><span>Central clínica</span><h2>Documentos</h2><p>Pedidos e receitas de todos os pacientes, com a situação real da assinatura.</p></div>
         <div className="clinical-index-header-actions">
           <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente ou profissional" /></label>
-          <Btn onClick={() => setCreating(true)}>+ Novo documento</Btn>
+          <span ref={createButtonRef}><Btn onClick={() => setCreating(true)}>+ Novo documento</Btn></span>
         </div>
       </header>
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
@@ -357,6 +392,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], loading, unavail
         <ClinicalDocumentCreateDialog
           patients={patients}
           canPrescribe={canPrescribe}
+          returnFocusRef={createButtonRef}
           onCancel={() => setCreating(false)}
           onContinue={(patient, documentType) => {
             setCreating(false)

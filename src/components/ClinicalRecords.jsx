@@ -416,6 +416,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                 )}
                 {tab === 'prescriptions' && (
                   <ClinicalDocuments
+                    key={selected.id}
                     patient={selected}
                     ownerId={ownerId}
                     viewerId={user?.id}
