@@ -65,9 +65,12 @@ function installmentEntry(installment) {
   return installment?.financial_entries || installment?.financial_entry || installment?.entry || {}
 }
 
-export function probableInternalTransfer(line) {
+export function probableInternalTransfer(line, effectiveCategory = null) {
   const metadata = metadataOf(line)
-  if (String(metadata.category || '').trim()) return false
+  // Quem classificou a linha na mao ja decidiu o que ela e. A heuristica existe
+  // para linha SEM classificacao -- insistir nela depois seria o sistema
+  // discordando de uma decisao humana explicita.
+  if (String(effectiveCategory ?? metadata.category ?? '').trim()) return false
   const text = normalized(`${line?.description || ''} ${metadata.reference || ''} ${metadata.observation || ''}`)
   return /\b(pix interno|transferencia interna|entre contas|aplicacao|resgate)\b/.test(text)
 }
@@ -92,24 +95,29 @@ export function duplicateLineIds(lines = []) {
   return new Set([...groups.values()].filter(values => values.length > 1).flat())
 }
 
-export function proposalForStatementLine(line, accounts = [], fileName = '') {
+// `classification` e a decisao MANUAL de quem concilia: { chartAccountId,
+// category, costCenter }. Existe porque o extrato em PDF nao traz categoria
+// nenhuma -- sem ela, TODA linha cai em "precisa revisar", sai da selecao em
+// lote, e conciliar 178 linhas vira abrir 178 formularios.
+export function proposalForStatementLine(line, accounts = [], fileName = '', classification = null) {
   const metadata = metadataOf(line)
   const isRevenue = Number(line.amount) > 0
   const direction = isRevenue ? 'receivable' : 'payable'
-  const category = String(metadata.category || '').trim()
-  const costCenter = String(metadata.costCenter || '').trim()
+  const category = String(classification?.category ?? metadata.category ?? '').trim()
+  const costCenter = String(classification?.costCenter ?? metadata.costCenter ?? '').trim()
   const reference = String(metadata.reference || '').trim()
   const observation = String(metadata.observation || '').trim()
-  const explicitAccount = metadata.chartAccountId
-    ? compatibleAccount(findChartAccount(accounts, { id:metadata.chartAccountId, direction }), direction)
+  const chosenAccountId = classification?.chartAccountId || metadata.chartAccountId
+  const explicitAccount = chosenAccountId
+    ? compatibleAccount(findChartAccount(accounts, { id:chosenAccountId, direction }), direction)
     : null
   const account = explicitAccount || mappedAccount(accounts, category, direction)
   const accountName = account?.name || (isRevenue ? 'Receita a classificar' : 'Pagamento a classificar')
   const unclassified = account?.nature === 'unclassified' || !account?.id
   const reasons = []
-  if (!category) reasons.push('Categoria ausente na planilha.')
+  if (!category) reasons.push('Categoria ausente no extrato; classifique esta linha.')
   if (unclassified) reasons.push('Plano de contas precisa ser confirmado.')
-  if (probableInternalTransfer(line)) reasons.push('Possível transferência entre contas; não deve entrar automaticamente na DRE.')
+  if (probableInternalTransfer(line, category)) reasons.push('Possível transferência entre contas; não deve entrar automaticamente na DRE.')
   if (sensitiveCategory(category)) reasons.push('Classificação contábil sensível; confirme antes de lançar.')
   const date = line.postedDate || line.posted_date
   const source = `Importação ${fileName || 'de planilha'} · linha ${metadata.excelRow || line.line_index || line.lineIndex || ''}`.trim()
@@ -141,9 +149,40 @@ export function proposalForStatementLine(line, accounts = [], fileName = '') {
     reference,
     observation,
     assumedDates:true,
+    classifiedByHand:Boolean(classification?.chartAccountId),
     requiresReview:reasons.length > 0,
     reasons,
   }
+}
+
+// Linhas que podem receber a MESMA classificacao de uma linha de referencia.
+//
+// Num extrato, a mesma descricao se repete muito: `TARIFA ENVIO VALORES PIX`
+// aparece dezenas de vezes no mesmo mes. Classificar uma e aplicar as iguais
+// derruba o numero de decisoes de 178 para algumas dezenas.
+//
+// Criterio deliberadamente ESTREITO: mesma descricao normalizada E mesmo
+// sentido (entrada/saida). Valor e data NAO entram -- duas tarifas de valores
+// diferentes sao a mesma categoria. O sentido entra porque uma devolucao de PIX
+// com a mesma descricao de uma saida e receita, e classifica-la como despesa
+// inverteria o sinal no DRE.
+//
+// So alcanca linhas ainda em aberto: conciliada, ignorada ou em processamento
+// nao pode ter a classificacao trocada por baixo.
+export function linesWithSameDescription(items = [], referenceLineId = null) {
+  const reference = items.find(item => (item.line?.id || item.line?.sourceLineKey) === referenceLineId)
+  if (!reference) return []
+  const key = normalized(reference.line?.normalized_description || reference.line?.description || '')
+  if (!key) return []
+  const referenceIsRevenue = Number(reference.line?.amount) > 0
+  return items.filter(item => {
+    const id = item.line?.id || item.line?.sourceLineKey
+    if (id === referenceLineId) return false
+    if (!['new', 'review'].includes(item.reviewStatus)) return false
+    if (item.processing) return false
+    if ((Number(item.line?.amount) > 0) !== referenceIsRevenue) return false
+    return normalized(item.line?.normalized_description || item.line?.description || '') === key
+  }).map(item => item.line?.id || item.line?.sourceLineKey)
 }
 
 export function buildStatementImportReview(matches = [], accounts = [], options = {}) {
@@ -151,7 +190,7 @@ export function buildStatementImportReview(matches = [], accounts = [], options 
   const duplicates = duplicateLineIds(lines)
   return matches.map(match => {
     const lineId = match.line.id || match.line.sourceLineKey
-    const proposal = proposalForStatementLine(match.line, accounts, options.fileName)
+    const proposal = proposalForStatementLine(match.line, accounts, options.fileName, options.classifications?.[lineId] || null)
     const ignored = match.line.review_status === 'ignored'
     const processing = match.line.review_status === 'processing'
     const duplicate = duplicates.has(lineId) || options.overlappingFingerprints?.has(statementLineSignature(match.line))
