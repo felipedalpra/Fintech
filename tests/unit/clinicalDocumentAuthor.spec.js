@@ -65,3 +65,33 @@ test('sem nenhuma fonte, devolve vazio e o conselho padrão', () => {
   expect(autor.registration).toBe('')
   expect(autor.council).toBe('CRM')
 })
+
+// ---------------------------------------------------------------------------
+// A identidade precisa existir num lugar que o SERVIDOR consiga ler
+// ---------------------------------------------------------------------------
+// Resolver o autor na tela não basta: a emissão é feita por RPC, e o banco
+// resolve o autor por `clinical_author_identity()`, que lê `clinics` (só para
+// a dona) ou `clinic_members` (para membros). O perfil seguro é criptografado
+// e o banco não o lê. Sem a cópia, a emissão é recusada com "Identidade
+// profissional nao configurada" mesmo com tudo preenchido em Configurações.
+
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+test('a tela sincroniza a identidade para o banco, e não só para a dona', () => {
+  const tela = readFileSync(join(process.cwd(), 'src/components/ClinicalRecords.jsx'), 'utf8')
+  const sql = readFileSync(join(process.cwd(), 'supabase/clinical_professional_identity_sync.sql'), 'utf8')
+
+  expect(tela).toContain("supabase.rpc('sync_clinical_professional_identity'")
+  // A sincronização não pode voltar a depender de ser dono: um administrador
+  // que não é dono não tinha caminho nenhum para registrar a própria identidade.
+  const trecho = tela.slice(tela.indexOf('const nextAuthor'), tela.indexOf("supabase.rpc('sync_clinical_professional_identity'"))
+  expect(trecho).not.toContain('isOwner')
+  // E a falha da sincronização precisa aparecer, não ser engolida.
+  expect(tela).toContain('identitySyncError')
+
+  // A RPC grava só a linha de quem chamou e só as colunas de identidade.
+  expect(sql).toContain('cm.user_id = auth.uid()')
+  expect(sql).not.toContain('role =')
+  expect(sql).not.toContain('clinical_access =')
+})

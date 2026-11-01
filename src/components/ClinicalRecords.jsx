@@ -76,6 +76,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [openAttempt, setOpenAttempt] = useState(0)
   const [currentDate, setCurrentDate] = useState(today)
   const [secureProfile, setSecureProfile] = useState(null)
+  const [identitySyncError, setIdentitySyncError] = useState('')
   const [secureProfileStatus, setSecureProfileStatus] = useState('loading')
   const [workspaceSources, setWorkspaceSources] = useState(emptyClinicalWorkspaceSources)
   const [workspaceStatus, setWorkspaceStatus] = useState('loading')
@@ -134,16 +135,28 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
           registration:payload?.profile?.doctor?.registrationId || '',
           council:'CRM',
         }
-        if (isOwner && nextAuthor.name && nextAuthor.registration && clinicId) {
-          const { error:syncError } = await supabase
-            .from('clinics')
-            .update({
-              clinical_professional_name:nextAuthor.name,
-              clinical_professional_registration:nextAuthor.registration,
-              clinical_professional_council:nextAuthor.council,
-            })
-            .eq('id', clinicId)
-          if (syncError) return
+        // O servidor resolve o autor do documento pelo banco (`clinical_author_
+        // identity()`), que NAO le o perfil seguro -- ele e criptografado. Sem
+        // copiar a identidade para uma coluna legivel, a emissao e recusada com
+        // "Identidade profissional nao configurada", mesmo com tudo preenchido
+        // em Configuracoes.
+        //
+        // Antes isso valia so para a DONA (update direto em `clinics`); um
+        // administrador que nao e dono nao tinha caminho nenhum, porque a
+        // policy de `clinic_members` so permite ler a propria linha. A RPC
+        // grava a identidade de quem chamou, seja dona ou membro, e so as tres
+        // colunas de identidade.
+        if (nextAuthor.name && nextAuthor.registration) {
+          const { error:syncError } = await supabase.rpc('sync_clinical_professional_identity', {
+            p_name:nextAuthor.name,
+            p_registration:nextAuthor.registration,
+            p_council:nextAuthor.council,
+          })
+          if (syncError) setIdentitySyncError(
+            'A identidade profissional não pôde ser registrada para emissão. '
+            + (syncError.message || ''),
+          )
+          else setIdentitySyncError('')
         }
       })
       .catch(() => {
@@ -376,6 +389,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
       </nav>
 
       {error && <div className="clinical-alert" role="alert">{error}</div>}
+      {identitySyncError && <div className="clinical-alert" role="alert">{identitySyncError}</div>}
 
       {moduleView === 'protocols' && <ClinicalProtocols ownerId={ownerId} patients={patients} canManage={isOwner || role === 'admin'} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onApplyProtocol={applyProtocolToPatient} onClose={() => navigateModule('today')} />}
       {moduleView === 'today' && <>
