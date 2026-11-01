@@ -278,9 +278,10 @@ export async function syncMetaInsights(supabase, opts = {}) {
       summary.details.push({ owner: conn.user_id, ...counts })
       // Sync real bem-sucedido valida a conexão; ainda assim, nunca mostra "conectado"
       // com um token vencido ou perto de vencer (ver metaConnectionStatusAfterSync).
-      await supabase.from('meta_connections')
+      const { error:statusError } = await supabase.from('meta_connections')
         .update({ status: metaConnectionStatusAfterSync(conn.token_expires_at), updated_at: new Date().toISOString() })
         .eq('user_id', conn.user_id)
+      if (statusError) throw statusError
     } catch (e) {
       summary.failures += 1
       summary.details.push({ owner: conn.user_id, error: e?.message || 'erro no sync Meta' })
@@ -289,10 +290,13 @@ export async function syncMetaInsights(supabase, opts = {}) {
       // PostgrestFilterBuilder só garante .then (thenable), não .catch — por isso try/await,
       // não encadeamento direto (que lançava "catch is not a function" e mascarava o erro real).
       try {
-        await supabase.from('meta_connections')
+        const { error:markError } = await supabase.from('meta_connections')
           .update({ status: 'erro', updated_at: new Date().toISOString() })
           .eq('user_id', conn.user_id)
-      } catch {}
+        if (markError) console.error('meta connection status persistence error:', conn.user_id, markError.message)
+      } catch (markError) {
+        console.error('meta connection status persistence error:', conn.user_id, markError?.message)
+      }
     }
   }
   return summary

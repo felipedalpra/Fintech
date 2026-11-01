@@ -33,8 +33,7 @@ export function FinancialImport({ data, saveDataNow }) {
   const { user } = useAuth()
   const { ownerId } = useUserRole()
   const fileRef = useRef(null)
-  // Lote persistido da revisão. null = revisão só em memória (migration ausente ou mapeamento
-  // de colunas ainda pendente). Ver spec 2026-10-29-financial-import-review-persistence.md.
+  // Lote persistido da revisão. A revisão só é liberada depois de o banco confirmar o lote.
   const [batch, setBatch] = useState(null)
   const [reviewPersisted, setReviewPersisted] = useState(true)
   const [resumable, setResumable] = useState(null)
@@ -92,7 +91,15 @@ export function FinancialImport({ data, saveDataNow }) {
     let active = true
     findResumableBatch(ownerId).then(result => {
       if (!active) return
-      if (result.schemaMissing) { setReviewPersisted(false); return }
+      if (result.schemaMissing) {
+        setReviewPersisted(false)
+        setError('A revisão de importações está indisponível porque as tabelas de persistência não existem neste banco. Nenhum arquivo será aberto sem salvamento.')
+        return
+      }
+      if (result.error) {
+        setError('Não foi possível verificar revisões salvas. Recarregue a página antes de importar.')
+        return
+      }
       if (!result.batch) return
       setResumable(result.batch)
       loadBatchStatuses(result.batch.id).then(statuses => {
@@ -125,27 +132,26 @@ export function FinancialImport({ data, saveDataNow }) {
 
     const existing = await findActiveBatch(ownerId, result.fileHash, result.sheetName)
     if (existing.schemaMissing) {
-      setBatch(null)
       setReviewPersisted(false)
-      resetReview(result, file, preparedLines)
-      return
+      throw new Error('A revisão não pode ser iniciada: as tabelas de persistência ainda não existem neste banco. O arquivo não foi aberto e nenhuma decisão será perdida.')
     }
     if (existing.error) throw new Error('Não foi possível verificar importações anteriores desta planilha. Tente novamente.')
 
     // Mesmo arquivo+aba já tem lote: retoma as decisões gravadas em vez de começar de novo.
     if (existing.batch) {
       // Um lote concluído volta a 'reviewing' para que rejeições possam ser revistas.
-      if (existing.batch.status === 'ready') await reopenBatch(existing.batch.id)
+      if (existing.batch.status === 'ready') {
+        const reopened = await reopenBatch(existing.batch.id)
+        if (reopened?.schemaMissing || reopened?.error) throw new Error('Não foi possível reabrir a revisão salva. Nada foi alterado.')
+      }
       await applyPersistedBatch(existing.batch, result, file)
       return
     }
 
     const created = await createBatch({ ownerId, actorId:user.id, parsed:parsedWithIds })
     if (created.schemaMissing) {
-      setBatch(null)
       setReviewPersisted(false)
-      resetReview(result, file, preparedLines)
-      return
+      throw new Error('A revisão não pode ser iniciada porque o banco não confirmou sua persistência. O arquivo não foi aberto.')
     }
     if (created.error) throw new Error(created.error.message || 'Não foi possível salvar a planilha para revisão. Nada foi importado.')
     resetReview(result, file, preparedLines)
@@ -215,12 +221,20 @@ export function FinancialImport({ data, saveDataNow }) {
     }
   }
 
-  // Uma decisão que não grava não pode passar como gravada: avisa e mantém o estado na tela.
+  // Uma decisão só muda a tela DEPOIS de o banco confirmá-la.
   async function persistDecision(lineIds, decision) {
-    if (!batch || !user?.id || !lineIds.length) return
+    if (!lineIds.length) return true
+    if (!batch || !user?.id || !reviewPersisted) {
+      setError('A revisão não está persistida. Recarregue a página antes de continuar.')
+      return false
+    }
     const result = await saveLinesDecision({ batchId:batch.id, lineIds, decision, actorId:user.id })
-    if (result?.schemaMissing) { setReviewPersisted(false); return }
-    if (result?.error) setError('A decisão foi aplicada na tela, mas NÃO foi salva. Recarregue a página para ver o que está salvo de verdade.')
+    if (result?.schemaMissing) setReviewPersisted(false)
+    if (result?.schemaMissing || result?.error) {
+      setError('A decisão NÃO foi salva e não foi aplicada na tela. Recarregue a página antes de continuar.')
+      return false
+    }
+    return true
   }
 
   async function onFileChange(event) {
@@ -276,37 +290,47 @@ export function FinancialImport({ data, saveDataNow }) {
       setError(caught.message || 'Não foi possível validar a edição.')
       return
     }
+    if (!batch || !user?.id || !reviewPersisted) {
+      setError('A revisão não está persistida. A edição não foi aplicada.')
+      return
+    }
+    const result = await saveLineEdit({ batchId:batch.id, lineId:updatedLine.id, line:updatedLine, actorId:user.id })
+    if (result?.schemaMissing) setReviewPersisted(false)
+    if (result?.schemaMissing || result?.error) {
+      setError('A edição NÃO foi salva e não foi aplicada na tela. Recarregue a página antes de continuar.')
+      return
+    }
     setLines(current => current.map(line => (line.id === editingId ? updatedLine : line)))
     setRejectedIds(current => current.filter(id => id !== editingId))
     setApprovedIds(current => current.filter(id => id !== editingId))
     setEditingId('')
     setEditDraft(null)
     setError('')
-    if (!batch || !user?.id) return
-    const result = await saveLineEdit({ batchId:batch.id, lineId:updatedLine.id, line:updatedLine, actorId:user.id })
-    if (result?.schemaMissing) setReviewPersisted(false)
-    else if (result?.error) setError('A edição foi aplicada na tela, mas NÃO foi salva. Recarregue a página para ver o que está salvo de verdade.')
   }
 
   function toggleSelection(id, checked) {
     setSelectedIds(current => checked ? [...new Set([...current, id])] : current.filter(item => item !== id))
   }
 
-  function reject(items) {
+  async function reject(items) {
     // Linha 'existing' já está no financeiro: rejeitá-la não significa nada e só distorceria o
     // progresso do lote.
     const ids = items.filter(item => item.reviewStatus !== 'existing').map(item => item.line.id).filter(id => !approvedIds.includes(id))
-    setRejectedIds(current => [...new Set([...current, ...ids])])
-    setSelectedIds(current => current.filter(id => !ids.includes(id)))
-    persistDecision(ids, 'reject')
+    if (await persistDecision(ids, 'reject')) {
+      setRejectedIds(current => [...new Set([...current, ...ids])])
+      setSelectedIds(current => current.filter(id => !ids.includes(id)))
+    }
   }
 
-  function reopen(id) {
-    setRejectedIds(current => current.filter(item => item !== id))
-    persistDecision([id], 'reopen')
+  async function reopen(id) {
+    if (await persistDecision([id], 'reopen')) setRejectedIds(current => current.filter(item => item !== id))
   }
 
   function requestApproval(items) {
+    if (!batch || !reviewPersisted) {
+      setError('A revisão não está confirmada no banco. Não é possível aprovar lançamentos.')
+      return
+    }
     const eligible = items.filter(item => approvableFinancialImportItem(item) && !rejectedIds.includes(item.line.id) && !approvedIds.includes(item.line.id))
     if (!eligible.length) {
       setError('Selecione lançamentos novos. Duplicados e possíveis transferências precisam ser revisados ou rejeitados.')
@@ -318,6 +342,10 @@ export function FinancialImport({ data, saveDataNow }) {
 
   async function approveConfirmed() {
     if (!confirmItems.length || !saveDataNow) return
+    if (!batch || !reviewPersisted || !user?.id) {
+      setError('A revisão não está confirmada no banco. Nenhum lançamento foi aprovado.')
+      return
+    }
     const retrying = importProgress?.status === 'error'
     const baseCompleted = retrying ? importProgress.completed : 0
     const overallTotal = retrying ? importProgress.total : confirmItems.length
@@ -335,13 +363,11 @@ export function FinancialImport({ data, saveDataNow }) {
         const ids = chunk.map(item => item.line.id)
         // Marca no lote só DEPOIS do bloco confirmado no financeiro. É isso que faz uma
         // confirmação interrompida no bloco 2 de 4 retomar exatamente nos blocos restantes.
-        if (batch && user?.id) {
-          const marked = await markLinesApproved({ batchId:batch.id, lineIds:ids, actorId:user.id })
-          if (marked?.schemaMissing) setReviewPersisted(false)
-          // O bloco JÁ está no financeiro; só o progresso do lote não gravou. Não é perda de dado
-          // (ao retomar, estas linhas aparecem como "já existe"), mas não pode passar calado.
-          else if (marked?.error) setError('Os lançamentos deste bloco foram importados, mas o progresso da revisão não foi salvo. Ao retomar, eles aparecerão como "já existe".')
-        }
+        const marked = await markLinesApproved({ batchId:batch.id, lineIds:ids, actorId:user.id })
+        if (marked?.schemaMissing) setReviewPersisted(false)
+        // O financeiro já confirmou o bloco. Interrompe os próximos para não acumular uma revisão
+        // dessincronizada; o retry é idempotente pelos mesmos ids.
+        if (marked?.schemaMissing || marked?.error) throw new Error('O bloco entrou no financeiro, mas o progresso da revisão não foi confirmado. A importação foi interrompida para evitar divergência; recarregue antes de continuar.')
         completed += ids.length
         setApprovedIds(current => [...new Set([...current, ...ids])])
         setSelectedIds(current => current.filter(id => !ids.includes(id)))
@@ -350,7 +376,10 @@ export function FinancialImport({ data, saveDataNow }) {
       // Lote sem nenhuma linha aguardando decisão vira histórico e para de ser oferecido.
       const decided = new Set([...approvedIds, ...rejectedIds, ...creations.map(item => item.line.id)])
       const stillOpen = reviewItems.some(item => item.reviewStatus !== 'existing' && !decided.has(item.line.id))
-      if (batch && !stillOpen) await closeBatch(batch.id)
+      if (batch && !stillOpen) {
+        const closed = await closeBatch(batch.id)
+        if (closed?.schemaMissing || closed?.error) throw new Error('Os lançamentos foram importados, mas o encerramento da revisão não foi confirmado. Recarregue a página para conferir o estado salvo.')
+      }
       setImportProgress({ status:'complete', completed:overallTotal, total:overallTotal })
       toast(`${overallTotal} lançamento(s) importados e confirmados no financeiro.`)
     } catch (caught) {
@@ -376,8 +405,8 @@ export function FinancialImport({ data, saveDataNow }) {
       <style>{`@keyframes financialImportSpin { to { transform: rotate(360deg); } }`}</style>
       {error && <div role="alert" style={{ padding:'12px 14px', borderRadius:10, color:C.red, background:`${C.red}12`, border:`1px solid ${C.red}55`, fontSize:13 }}>{error}</div>}
 
-      {!reviewPersisted && <div role="alert" data-testid="financial-import-unsaved-warning" style={{ padding:'12px 14px', borderRadius:10, color:C.yellow, background:`${C.yellow}12`, border:`1px solid ${C.yellow}55`, fontSize:13, lineHeight:1.5 }}>
-        <strong>A revisão desta planilha não está sendo salva.</strong> A migração <code>financial_import_batches_schema.sql</code> ainda não foi aplicada neste banco, então as suas decisões existem apenas nesta aba — fechar ou recarregar a página perde o trabalho. Os lançamentos já aprovados estão salvos normalmente no financeiro.
+      {!reviewPersisted && <div role="alert" data-testid="financial-import-persistence-blocked" style={{ padding:'12px 14px', borderRadius:10, color:C.red, background:`${C.red}12`, border:`1px solid ${C.red}55`, fontSize:13, lineHeight:1.5 }}>
+        <strong>Importação bloqueada para proteger seu trabalho.</strong> A revisão não será aberta nem alterada enquanto o banco não confirmar a persistência. Aplique <code>financial_import_batches_schema.sql</code> e recarregue a página.
       </div>}
 
       {incompleteBatch && <Card data-testid="financial-import-incomplete">

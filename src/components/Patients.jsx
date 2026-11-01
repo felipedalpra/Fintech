@@ -261,14 +261,34 @@ export function Patients({ data }) {
   }
 
   async function archivePatient(id) {
-    await supabase.from('patients').update({ active: false }).eq('id', id).eq('user_id', effectiveUserId)
+    setSaveError('')
+    const { data:saved, error } = await supabase.from('patients')
+      .update({ active:false })
+      .eq('id', id)
+      .eq('user_id', effectiveUserId)
+      .select('id,active')
+      .single()
+    if (error || saved?.id !== id || saved.active !== false) {
+      setSaveError('O paciente NÃO foi arquivado. O banco não confirmou a alteração; tente novamente.')
+      return
+    }
     // Mantém no estado como arquivado (não remove), para a visão Arquivados/Todos poder mostrar.
     setPatients(ps => ps.map(p => p.id === id ? { ...p, active: false } : p))
     if (selected?.id === id) setSelected(null)
   }
 
   async function reactivatePatient(id) {
-    await supabase.from('patients').update({ active: true }).eq('id', id).eq('user_id', effectiveUserId)
+    setSaveError('')
+    const { data:saved, error } = await supabase.from('patients')
+      .update({ active:true })
+      .eq('id', id)
+      .eq('user_id', effectiveUserId)
+      .select('id,active')
+      .single()
+    if (error || saved?.id !== id || saved.active !== true) {
+      setSaveError('O paciente NÃO foi reativado. O banco não confirmou a alteração; tente novamente.')
+      return
+    }
     setPatients(ps => ps.map(p => p.id === id ? { ...p, active: true } : p))
   }
 
@@ -334,6 +354,11 @@ export function Patients({ data }) {
         <div role="alert" style={{ padding:'13px 15px', borderRadius:10, border:`1px solid ${C.red}55`, background:C.red + '0D', color:C.textSub, fontSize:12, lineHeight:1.6 }}>
           {loadError}
           <Btn variant="ghost" onClick={load} style={{ marginLeft:10 }}>Tentar novamente</Btn>
+        </div>
+      )}
+      {saveError && !showForm && (
+        <div role="alert" style={{ padding:'13px 15px', borderRadius:10, border:`1px solid ${C.red}55`, background:C.red + '0D', color:C.textSub, fontSize:12 }}>
+          {saveError}
         </div>
       )}
 

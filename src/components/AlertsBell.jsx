@@ -68,6 +68,7 @@ export function AlertsBell({ data, summary, onNavigate }) {
   const [open, setOpen] = useState(false)
   const [readKeys, setReadKeys] = useState([])
   const [notificationState, setNotificationState] = useState({})
+  const [saveError, setSaveError] = useState('')
   const triggerRef = useRef(null)
   const panelRef = useRef(null)
 
@@ -118,10 +119,12 @@ export function AlertsBell({ data, summary, onNavigate }) {
   }
   async function markAllRead() {
     const keys = alerts.map(alert => alert.key)
-    setReadKeys(keys)
     const next = { ...notificationState, finance:keys }
+    const result = await saveWorkspacePreferences(effectiveUserId, user.id, { notification_state:{ finance:keys } })
+    if (result.error || !result.persisted) { setSaveError('Os alertas NÃO foram marcados como lidos. Tente novamente.'); return }
+    setSaveError('')
+    setReadKeys(keys)
     setNotificationState(next)
-    await saveWorkspacePreferences(effectiveUserId, user.id, { notification_state:{ finance:keys } })
   }
 
   return (
@@ -169,6 +172,7 @@ export function AlertsBell({ data, summary, onNavigate }) {
             </div>
             {total > 0 && <button type="button" onClick={markAllRead} style={{ border:0, background:'transparent', color:C.accent, cursor:'pointer', fontSize:10, fontWeight:700 }}>Marcar lidos</button>}
           </div>
+          {saveError && <div role="alert" style={{ padding:'8px 14px', color:C.red, fontSize:11 }}>{saveError}</div>}
 
           {total === 0 ? (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: C.textDim, fontSize: 13 }}>

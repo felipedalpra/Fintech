@@ -300,12 +300,14 @@ export function WhatsAppInbox() {
   useEffect(() => {
     if (!current || !ownerId || !current.unreadCount) return
     const timestamp = new Date().toISOString()
-    setConversationStates(states => {
-      const existing = states.find(state => state.conversation_key === current.key)
-      const next = { ...(existing || {}), conversation_key:current.key, last_read_at:timestamp, marked_unread_at:null }
-      return existing ? states.map(state => state.conversation_key === current.key ? next : state) : [...states, next]
+    saveConversationState(ownerId, current.key, { last_read_at:timestamp, marked_unread_at:null }, current.numberId).then(result => {
+      if (result.error) { setError(`A leitura da conversa não foi salva: ${result.error.message}`); return }
+      setConversationStates(states => {
+        const existing = states.find(state => state.conversation_key === current.key)
+        const next = { ...(existing || {}), conversation_key:current.key, last_read_at:timestamp, marked_unread_at:null }
+        return existing ? states.map(state => state.conversation_key === current.key ? next : state) : [...states, next]
+      })
     })
-    saveConversationState(ownerId, current.key, { last_read_at:timestamp, marked_unread_at:null }, current.numberId)
   }, [current?.key, current?.last?.id, ownerId])
   useEffect(() => {
     let active = true; setSuggestOpp(null)
@@ -364,10 +366,10 @@ export function WhatsAppInbox() {
   }
   async function patchCurrentState(patch) {
     if (!current) return
-    const optimistic = { ...(stateMap.get(current.key) || {}), conversation_key:current.key, ...patch }
-    setConversationStates(states => states.some(state => state.conversation_key === current.key) ? states.map(state => state.conversation_key === current.key ? optimistic : state) : [...states, optimistic])
     const result = await saveConversationState(ownerId, current.key, patch, current.numberId)
-    if (result.error) setError(result.error.message)
+    if (result.error) { setError(`A alteração da conversa NÃO foi salva: ${result.error.message}`); return }
+    const confirmed = { ...(stateMap.get(current.key) || {}), conversation_key:current.key, ...patch }
+    setConversationStates(states => states.some(state => state.conversation_key === current.key) ? states.map(state => state.conversation_key === current.key ? confirmed : state) : [...states, confirmed])
   }
   function markCurrentUnread() {
     const latestInbound = [...(current?.items || [])].find(message => message.direction === 'inbound')

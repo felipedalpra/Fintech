@@ -242,10 +242,13 @@ async function handleMetaAnalysis(req, res) {
     // Cacheia via service role (meta_analyses é somente-escrita-no-servidor).
     try {
       const admin = createClient(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-      await admin.from('meta_analyses').upsert(
+      const { error:cacheError } = await admin.from('meta_analyses').upsert(
         { user_id: ownerId, period, generated_at: new Date().toISOString(), model, payload },
         { onConflict: 'user_id,period' },
       )
+      // O cliente Supabase devolve erros no resultado; ele não lança automaticamente. Sem esta
+      // verificação o cache podia falhar e o servidor registrava a análise como persistida.
+      if (cacheError) throw cacheError
     } catch (cacheErr) {
       console.error('meta analysis cache error:', cacheErr?.message)
     }

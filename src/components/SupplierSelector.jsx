@@ -16,28 +16,45 @@ export function SupplierSelector({ userId, value, onChange, label = 'Fornecedor'
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState({ name: '', document: '', phone: '' })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!effectiveUserId) return
+    let active = true
+    setError('')
     supabase.from('suppliers').select('id,name,document,phone').eq('user_id', effectiveUserId).eq('active', true).order('name')
-      .then(({ data }) => setSuppliers(data || []))
+      .then(({ data, error:loadError }) => {
+        if (!active) return
+        if (loadError) setError('Não foi possível carregar os fornecedores. Recarregue a página.')
+        else setSuppliers(data || [])
+      })
+    return () => { active = false }
   }, [effectiveUserId])
 
   async function createSupplier() {
     if (!form.name.trim() || saving) return
+    if (!effectiveUserId) { setError('Clínica não identificada. Recarregue a página.'); return }
     setSaving(true)
-    const { data: created } = await supabase.from('suppliers').insert({
-      user_id: effectiveUserId,
-      name: form.name.trim(),
-      document: form.document || null,
-      phone: form.phone || null,
-    }).select('id,name,document,phone').single()
-    setSaving(false)
-    if (created) {
+    setError('')
+    try {
+      const { data:created, error:createError } = await supabase.from('suppliers').insert({
+        user_id: effectiveUserId,
+        name: form.name.trim(),
+        document: form.document || null,
+        phone: form.phone || null,
+      }).select('id,name,document,phone').single()
+      if (createError || !created) {
+        setError('O fornecedor NÃO foi criado. Confira os dados e tente novamente.')
+        return
+      }
       setSuppliers(s => [...s, created].sort((a, b) => a.name.localeCompare(b.name)))
       onChange(created.id, created.name)
       setShowCreate(false)
       setForm({ name: '', document: '', phone: '' })
+    } catch {
+      setError('O fornecedor NÃO foi criado. Verifique sua conexão e tente novamente.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -77,6 +94,7 @@ export function SupplierSelector({ userId, value, onChange, label = 'Fornecedor'
           {[selected.phone, selected.document].filter(Boolean).join(' · ')}
         </div>
       )}
+      {error && <div role="alert" style={{ fontSize:12, color:C.red, marginTop:4 }}>{error}</div>}
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Cadastrar fornecedor" width={440}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -88,6 +106,7 @@ export function SupplierSelector({ userId, value, onChange, label = 'Fornecedor'
             <FInput label="Telefone (opcional)" value={form.phone}
               onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="(11) 99999-9999" />
           </div>
+          {error && <div role="alert" style={{ fontSize:12, color:C.red }}>{error}</div>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
             <Btn variant="ghost" onClick={() => setShowCreate(false)}>Cancelar</Btn>
             <Btn onClick={createSupplier} disabled={saving || !form.name.trim()}>

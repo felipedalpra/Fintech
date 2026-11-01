@@ -1179,7 +1179,7 @@ export function BankReconciliation({ data, saveDataNow }) {
               if (bulkConfirm.type === 'approve') approveReviewItems(bulkConfirm.items)
               else if (bulkConfirm.type === 'create_duplicate') { const item = bulkConfirm.items[0]; setBulkConfirm(null); createFromLine(item, true) }
               else ignoreReviewItems(bulkConfirm.items)
-            }} disabled={busy}>{bulkConfirm.type === 'approve' ? 'Confirmar aprovação' : bulkConfirm.type === 'create_duplicate' ? 'Criar mesmo assim' : 'Confirmar que deseja ignorar'}</Btn>
+            }}>{bulkConfirm.type === 'approve' ? 'Confirmar aprovação' : bulkConfirm.type === 'create_duplicate' ? 'Criar mesmo assim' : 'Confirmar que deseja ignorar'}</Btn>
           </div>
         </div>}
       </Modal>
