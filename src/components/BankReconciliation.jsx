@@ -10,7 +10,7 @@ import { parseStatementFile } from '../lib/statementParser.js'
 import { matchBankStatementLines, validateManualReconciliation } from '../lib/bankReconciliationMatch.js'
 import { missingPersistedLedgerInstallments } from '../lib/bankReconciliationLedger.js'
 import { evaluateStatementIntegrity, suggestStatementAccount, summarizeReconciliationCoverage } from '../lib/bankStatementIntegrity.js'
-import { applyCompetenceChoice, buildStatementImportReview, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
+import { applyCompetenceChoice, buildStatementImportReview, linesWithSameDescription, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
 import {
   archiveBankStatementImport,
   findIncompleteImport,
@@ -127,6 +127,10 @@ export function BankReconciliation({ data, saveDataNow }) {
   // original importa: a conclusao e um palpite, e sem a evidencia ao lado dela
   // o usuario recebe um conselho que pode nao ter nada a ver com o problema.
   const [schemaError, setSchemaError] = useState(null)
+  // Classificacao manual por linha: { [lineId]: { chartAccountId, category } }.
+  // O extrato em PDF nao traz categoria, entao sem isto TODA linha fica em
+  // "precisa revisar" e o lote nao seleciona nada.
+  const [classifications, setClassifications] = useState({})
   // O extrato e data de CAIXA; a competencia manda no DRE. Por padrao ela
   // assume a data bancaria, e quem aprova pode informar outra.
   const [competenceMode, setCompetenceMode] = useState('line')
@@ -247,8 +251,8 @@ export function BankReconciliation({ data, saveDataNow }) {
   )
   const selectedImport = imports.find(item => item.id === selectedImportId)
   const reviewItems = useMemo(
-    () => buildStatementImportReview(matches, data?.chartAccounts || [], { fileName:selectedImport?.file_name || '', matchingUnavailable:!ledgerReady, overlappingFingerprints:new Set(overlappingFingerprints) }),
-    [matches, data?.chartAccounts, selectedImport?.file_name, ledgerReady, overlappingFingerprints],
+    () => buildStatementImportReview(matches, data?.chartAccounts || [], { fileName:selectedImport?.file_name || '', matchingUnavailable:!ledgerReady, overlappingFingerprints:new Set(overlappingFingerprints), classifications }),
+    [matches, data?.chartAccounts, selectedImport?.file_name, ledgerReady, overlappingFingerprints, classifications],
   )
   const visibleMatches = useMemo(() => reviewItems.filter(item => {
     if (filter !== 'all' && item.reviewStatus !== filter) return false
@@ -637,6 +641,45 @@ export function BankReconciliation({ data, saveDataNow }) {
     }
   }
 
+  // Contas do plano compativeis com o sentido da linha. Classificar uma ENTRADA
+  // numa conta de despesa inverteria o sinal no DRE, entao a lista ja vem
+  // filtrada -- o erro nao chega a ser oferecido.
+  function classifiableAccounts(isRevenue) {
+    const permitidas = isRevenue
+      ? ['revenue', 'financial_revenue']
+      : ['revenue_deduction', 'direct_cost', 'operating_expense', 'depreciation', 'financial_expense', 'income_tax']
+    return (data?.chartAccounts || [])
+      .filter(account => (account.node_type || account.nodeType) === 'account')
+      .filter(account => account.is_active !== false && account.isActive !== false)
+      .filter(account => permitidas.includes(account.nature))
+      .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'pt-BR'))
+  }
+
+  function classifyLine(lineId, chartAccountId) {
+    setClassifications(current => {
+      if (!chartAccountId) {
+        const { [lineId]:_removida, ...resto } = current
+        return resto
+      }
+      const conta = (data?.chartAccounts || []).find(account => account.id === chartAccountId)
+      return { ...current, [lineId]:{ chartAccountId, category:conta?.name || '' } }
+    })
+  }
+
+  // Aplica a classificacao de uma linha a todas as linhas iguais ainda em
+  // aberto. Num extrato a mesma descricao se repete dezenas de vezes.
+  function classifySameDescription(lineId) {
+    const alvos = linesWithSameDescription(reviewItems, lineId)
+    const escolha = classifications[lineId]
+    if (!escolha || !alvos.length) return
+    setClassifications(current => {
+      const proximo = { ...current }
+      for (const alvo of alvos) proximo[alvo] = escolha
+      return proximo
+    })
+    toast(`Classificação aplicada a ${alvos.length} linha(s) com a mesma descrição.`)
+  }
+
   async function createFromLine(item, allowOverlap = false) {
     const line = item.line
     if (selectedImport?.verification_status === 'mismatch') {
@@ -661,7 +704,7 @@ export function BankReconciliation({ data, saveDataNow }) {
         'A reserva desta linha não respondeu a tempo. Nada foi criado; tente de novo.',
       )
       const isRevenue = Number(line.amount) > 0
-      const proposal = proposalForStatementLine(line, data?.chartAccounts || [], selectedImport?.file_name || '')
+      const proposal = proposalForStatementLine(line, data?.chartAccounts || [], selectedImport?.file_name || '', classifications[line.id] || null)
       const form = selectedImport?.source_format === 'xlsx'
         ? { ...proposal.record, launchType:'variavel' }
         : isRevenue
@@ -1028,6 +1071,42 @@ export function BankReconciliation({ data, saveDataNow }) {
                     <div style={{ ...s.muted, marginTop:3 }}>{match.proposal.category} · {match.proposal.costCenter}</div>
                     <div style={{ ...s.muted, marginTop:3 }}>Competência {formatDateBR(match.proposal.record.competenceDate)} · caixa {formatDateBR(match.line.postedDate)}</div>
                     {match.proposal.reasons.map(item => <div key={item} style={{ color:C.yellow, fontSize:11.5, marginTop:4 }}>⚠ {item}</div>)}
+                    {(() => {
+                      const isRevenue = match.line.amount > 0
+                      const escolhida = classifications[match.line.id]?.chartAccountId || ''
+                      const iguais = escolhida ? linesWithSameDescription(reviewItems, match.line.id).length : 0
+                      return (
+                        <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${C.border}` }}>
+                          <label style={{ color:C.textSub, fontSize:11.5 }}>
+                            Classificar {isRevenue ? 'receita' : 'despesa'} no plano de contas
+                            <select
+                              aria-label={`Classificar ${match.line.description || match.line.id}`}
+                              value={escolhida}
+                              disabled={busy}
+                              onChange={event => classifyLine(match.line.id, event.target.value)}
+                              style={{ ...s.input, marginTop:6 }}
+                            >
+                              <option value="">Sem classificação — exige revisão</option>
+                              {classifiableAccounts(isRevenue).map(account => (
+                                <option key={account.id} value={account.id}>{account.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          {iguais > 0 && (
+                            <div style={{ ...s.row, marginTop:8 }}>
+                              <Btn variant="ghost" onClick={() => classifySameDescription(match.line.id)} disabled={busy}>
+                                Aplicar às {iguais} linha(s) com a mesma descrição
+                              </Btn>
+                            </div>
+                          )}
+                          {match.proposal.classifiedByHand && (
+                            <div style={{ color:C.green, fontSize:11.5, marginTop:7 }}>
+                              ✓ Classificada — já entra na seleção em lote.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>}
                   <select aria-label={`Lançamento para ${match.line.description || match.line.id}`} value={selectedId} onChange={event => setSelections(current => ({ ...current, [match.line.id]:event.target.value }))} style={{ ...s.input, marginTop:10 }}>
                     <option value="">Procurar outro lançamento…</option>
