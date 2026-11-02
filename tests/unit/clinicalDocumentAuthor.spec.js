@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { resolveDocumentAuthor } from '../../src/lib/clinicalDocuments.js'
+import { isProfessionalIdentitySyncConfirmed, resolveDocumentAuthor } from '../../src/lib/clinicalDocuments.js'
 
 // Em 01/11/2026 o Dr. Augusto (Administrador, NÃO dono da clínica) preencheu
 // nome, CRM e RQE em Configurações → "Médico e clínica" e, ao emitir um pedido
@@ -66,6 +66,13 @@ test('sem nenhuma fonte, devolve vazio e o conselho padrão', () => {
   expect(autor.council).toBe('CRM')
 })
 
+test('sincronização de identidade só é confirmada com booleano true e sem erro', () => {
+  expect(isProfessionalIdentitySyncConfirmed({ data:true, error:null })).toBe(true)
+  expect(isProfessionalIdentitySyncConfirmed({ data:false, error:null })).toBe(false)
+  expect(isProfessionalIdentitySyncConfirmed({ data:null, error:null })).toBe(false)
+  expect(isProfessionalIdentitySyncConfirmed({ data:true, error:new Error('falhou') })).toBe(false)
+})
+
 // ---------------------------------------------------------------------------
 // A identidade precisa existir num lugar que o SERVIDOR consiga ler
 // ---------------------------------------------------------------------------
@@ -89,9 +96,15 @@ test('a tela sincroniza a identidade para o banco, e não só para a dona', () =
   expect(trecho).not.toContain('isOwner')
   // E a falha da sincronização precisa aparecer, não ser engolida.
   expect(tela).toContain('identitySyncError')
+  expect(tela).toContain("setSecureProfileStatus('syncing')")
+  expect(tela).toContain('data:identitySynced')
+  expect(tela).toContain('isProfessionalIdentitySyncConfirmed')
+  expect(tela).toContain("setSecureProfileStatus('sync-error')")
 
   // A RPC grava só a linha de quem chamou e só as colunas de identidade.
   expect(sql).toContain('cm.user_id = auth.uid()')
+  expect(sql).toContain('cm.clinical_access is true')
+  expect(sql).toContain("raise exception 'Vinculo clinico do profissional nao encontrado.'")
   expect(sql).not.toContain('role =')
   expect(sql).not.toContain('clinical_access =')
 })

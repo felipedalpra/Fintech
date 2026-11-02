@@ -27,6 +27,20 @@ test('o arquivamento registra quem e quando, e exige acesso clínico', () => {
   expect(sql).toContain("raise exception 'Acesso clinico nao autorizado.'")
 })
 
+test('o gatilho preserva a imutabilidade e libera somente a transição de arquivamento', () => {
+  expect(sql).toContain('create or replace function public.prevent_clinical_document_mutation()')
+  expect(sql).toContain("to_jsonb(new) - array['archived_at', 'archived_by', 'archive_reason']")
+  expect(sql).toContain('old.archived_at is null')
+  expect(sql).toContain('new.archived_at is not null')
+  expect(sql).toContain('before update or delete on public.clinical_documents')
+})
+
+test('somente autor ou owner/admin clínico pode arquivar documento de outro profissional', () => {
+  expect(sql).toContain('v_created_by is distinct from auth.uid()')
+  expect(sql).toContain('public.can_issue_clinical_prescription()')
+  expect(sql).toContain("raise exception 'Somente o autor ou um administrador clinico pode arquivar este documento.'")
+})
+
 test('arquivar duas vezes não reescreve a trilha original', () => {
   // Reescrever apagaria quem arquivou de verdade e quando — a trilha é o
   // ponto do arquivamento.
@@ -49,5 +63,6 @@ test('as telas deixam de listar o que foi arquivado', () => {
 
 test('a tela chama a RPC, nunca um delete direto', () => {
   expect(tela).toContain("supabase.rpc('archive_clinical_document'")
+  expect(tela).toContain('record.created_by === viewerId || canPrescribe')
   expect(tela).not.toMatch(/from\('clinical_documents'\)[\s\S]{0,120}\.delete\(/)
 })

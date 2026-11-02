@@ -22,6 +22,7 @@ test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async
     window.localStorage.setItem('surgimetrics_onboarded', 'true')
   })
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Clínica E2E', registrationId:'CRM-E2E 0001' } } }) }))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'patient-agenda', full_name:'Ana Agenda', date_of_birth:'1990-04-10', phone:'11999990000', active:true }]) }))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ patient_id:'patient-agenda', user_id:'e2e-user-id', allergies:'Dipirona', consent_signed:false }) }))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
@@ -82,6 +83,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
       clinic:{ tradeName:'Clínica E2E', addressLine:'Av. Clínica, 100', city:'Porto Alegre', state:'RS', logoDataUrl:'data:image/png;base64,logo-e2e' },
     } }),
   }))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({
     status:200,
     contentType:'application/json',
@@ -311,6 +313,7 @@ test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor'
     contentType:'application/json',
     body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Clínica E2E', registrationId:'0001' } } }),
   }))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({
     status:200,
     contentType:'application/json',

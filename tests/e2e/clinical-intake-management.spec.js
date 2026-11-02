@@ -9,6 +9,7 @@ test('clínica cria modelo, publica TCLE e gera link opaco para o paciente', asy
 
   await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. E2E', registrationId:'CRM-RS 1' } } }) }))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/patients*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([{ id:'patient-intake', full_name:'Ana Formulário', date_of_birth:'1990-01-01', active:true }]) }))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'null' }))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
@@ -73,5 +74,6 @@ test('clínica cria modelo, publica TCLE e gera link opaco para o paciente', asy
 
   await page.getByRole('button', { name:'Gerar link seguro' }).click()
   await expect(page.getByText('Link criado — copie agora')).toBeVisible()
-  await expect(page.locator('input[readonly]')).toHaveValue(`http://127.0.0.1:4173/anamnese/${'c'.repeat(64)}`)
+  const appOrigin = new URL(page.url()).origin
+  await expect(page.locator('input[readonly]')).toHaveValue(`${appOrigin}/anamnese/${'c'.repeat(64)}`)
 })

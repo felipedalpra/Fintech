@@ -39,7 +39,7 @@ declare
   v_council text := coalesce(nullif(btrim(coalesce(p_council, '')), ''), 'CRM');
   touched integer := 0;
 begin
-  if auth.uid() is null or owner_now is null then
+  if auth.uid() is null or owner_now is null or not public.has_clinical_access() then
     raise exception 'Acesso negado.' using errcode = '42501';
   end if;
   -- Valor vazio NUNCA pode apagar uma identidade ja gravada: um documento
@@ -71,9 +71,13 @@ begin
   from public.clinics c
   where cm.clinic_id = c.id
     and cm.user_id = auth.uid()
+    and cm.clinical_access is true
     and c.owner_id = owner_now;
   get diagnostics touched = row_count;
-  return touched > 0;
+  if touched = 0 then
+    raise exception 'Vinculo clinico do profissional nao encontrado.' using errcode = '42501';
+  end if;
+  return true;
 end
 $$;
 

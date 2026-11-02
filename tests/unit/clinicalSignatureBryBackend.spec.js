@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   abandonClinicalSignature,
   clinicalSignatureLink,
+  clinicalSignatureQueue,
   clinicalSignatureState,
   handleBryWebhook,
   openClinicalSignatureArtifact,
@@ -36,6 +37,7 @@ function matches(row, filters) {
   return filters.every(({ kind, column, value }) => {
     if (kind === 'eq') return String(row[column] ?? '') === String(value ?? '')
     if (kind === 'in') return value.map(String).includes(String(row[column] ?? ''))
+    if (kind === 'is') return value === null ? row[column] == null : row[column] === value
     return true
   })
 }
@@ -52,6 +54,7 @@ function fakeSupabase(tables = {}, { storage = {}, failTables = {} } = {}) {
       limit() { return api },
       eq(column, value) { filters.push({ kind:'eq', column, value }); return api },
       in(column, value) { filters.push({ kind:'in', column, value }); return api },
+      is(column, value) { filters.push({ kind:'is', column, value }); return api },
       maybeSingle() { return api.then(result => ({ data:result.data?.[0] ?? null, error:result.error })) },
       single() {
         return api.then(result => ({
@@ -305,6 +308,27 @@ test('profissional diferente do autor nao pode assinar', async () => {
   expect(error.statusCode).toBe(403)
   expect(error.publicCode).toBe('nao_autor')
   expect(admin.calls.inserts).toHaveLength(0)
+})
+
+test('documento arquivado nao pode ser assinado nem por chamada direta do autor', async () => {
+  const admin = fakeSupabase({
+    clinical_documents:[{ ...documentRow, archived_at:'2026-11-01T12:00:00Z' }],
+  })
+  const error = await requestClinicalSignature(requestBody(), deps({ admin })).catch(nextError => nextError)
+  expect(error.statusCode).toBe(409)
+  expect(error.publicCode).toBe('documento_arquivado')
+  expect(admin.calls.inserts).toHaveLength(0)
+})
+
+test('fila da BRy nao devolve documento arquivado', async () => {
+  const admin = fakeSupabase({
+    clinical_documents:[
+      documentRow,
+      { ...documentRow2, archived_at:'2026-11-01T12:00:00Z' },
+    ],
+  })
+  const response = await clinicalSignatureQueue(requestBody(), deps({ admin }))
+  expect(response.documents.map(document => document.id)).toEqual([DOCUMENT])
 })
 
 test('feature desabilitada falha fechada antes de qualquer chamada ou escrita', async () => {

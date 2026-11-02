@@ -10,6 +10,7 @@ test('gerencia versões e aplica o protocolo como rascunho nos destinos clínico
   await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
   await page.route('**/rest/v1/**', route => route.fulfill(json([])))
   await page.route('**/api/secure-profile?action=get', route => route.fulfill(json({ profile:{ doctor:{ fullName:'Dra. E2E', registrationId:'12345' } } })))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill(json(true)))
   await page.route('**/rest/v1/patients*', route => route.fulfill(json([{ id:'patient-protocol', full_name:'Ana Protocolo', date_of_birth:'1990-01-01', active:true }])))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill(json(null)))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill(json(true)))

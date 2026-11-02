@@ -12,6 +12,7 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
   await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
   await page.route('**/rest/v1/**', route => route.fulfill(json([])))
   await page.route('**/api/secure-profile?action=get', route => route.fulfill(json({ profile:{ doctor:{ fullName:'Dra. E2E', registrationId:'CRM-RS 1' } } })))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill(json(true)))
   await page.route('**/rest/v1/patients*', route => route.fulfill(json([{ id:'patient-assets', full_name:'Ana Imagens', date_of_birth:'1990-01-01', active:true }])))
   await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill(json(null)))
   await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill(json(true)))
