@@ -9,7 +9,7 @@ import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
 import { ClinicalProtocols } from './ClinicalProtocols.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
-import { resolveDocumentAuthor } from '../lib/clinicalDocuments.js'
+import { isProfessionalIdentitySyncConfirmed, resolveDocumentAuthor } from '../lib/clinicalDocuments.js'
 import {
   ClinicalDocumentsCenter,
   ClinicalPatientSummary,
@@ -125,11 +125,11 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   useEffect(() => {
     let active = true
     setSecureProfileStatus('loading')
+    setIdentitySyncError('')
     fetchSecureProfile()
       .then(async payload => {
         if (!active) return
         setSecureProfile(payload?.profile || null)
-        setSecureProfileStatus('ready')
         const nextAuthor = {
           name:payload?.profile?.doctor?.fullName || '',
           registration:payload?.profile?.doctor?.registrationId || '',
@@ -147,17 +147,24 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
         // grava a identidade de quem chamou, seja dona ou membro, e so as tres
         // colunas de identidade.
         if (nextAuthor.name && nextAuthor.registration) {
-          const { error:syncError } = await supabase.rpc('sync_clinical_professional_identity', {
+          setSecureProfileStatus('syncing')
+          const { data:identitySynced, error:syncError } = await supabase.rpc('sync_clinical_professional_identity', {
             p_name:nextAuthor.name,
             p_registration:nextAuthor.registration,
             p_council:nextAuthor.council,
           })
-          if (syncError) setIdentitySyncError(
-            'A identidade profissional não pôde ser registrada para emissão. '
-            + (syncError.message || ''),
-          )
-          else setIdentitySyncError('')
+          if (!active) return
+          if (!isProfessionalIdentitySyncConfirmed({ data:identitySynced, error:syncError })) {
+            setIdentitySyncError(
+              'A identidade profissional não pôde ser registrada para emissão. '
+              + (syncError?.message || 'O banco não confirmou a atualização.'),
+            )
+            setSecureProfileStatus('sync-error')
+            return
+          }
+          setIdentitySyncError('')
         }
+        setSecureProfileStatus('ready')
       })
       .catch(() => {
         if (!active) return
@@ -165,7 +172,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
         setSecureProfileStatus('error')
       })
     return () => { active = false }
-  }, [isOwner, clinicId])
+  }, [clinicId, user?.id])
 
   useEffect(() => {
     const close = event => {
@@ -447,7 +454,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     viewerId={user?.id}
                     author={author}
                     profile={secureProfile}
-                    profileLoading={secureProfileStatus === 'loading'}
+                    profileLoading={secureProfileStatus === 'loading' || secureProfileStatus === 'syncing' || Boolean(identitySyncError)}
                     clinicName={clinicName}
                     canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })}
                     initialDocumentType={documentDraftType}

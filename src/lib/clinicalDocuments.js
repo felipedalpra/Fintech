@@ -102,6 +102,10 @@ export function resolveDocumentAuthor({
   }
 }
 
+export function isProfessionalIdentitySyncConfirmed({ data, error } = {}) {
+  return !error && data === true
+}
+
 export function validateClinicalDocument({ type, form, patient, author }) {
   if (![EXAM_REQUEST, SIMPLE_PRESCRIPTION].includes(type)) return 'Selecione um tipo de documento válido.'
   if (!form?.issue_date) return 'Informe a data de emissão.'

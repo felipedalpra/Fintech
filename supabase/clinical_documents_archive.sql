@@ -23,6 +23,34 @@ create index if not exists idx_clinical_documents_active
   on public.clinical_documents(user_id, patient_id, created_at desc)
   where archived_at is null;
 
+-- O gatilho generico da fundacao bloqueia TODO update. Documentos continuam
+-- imutaveis, mas o arquivamento precisa permitir uma unica transicao controlada
+-- sem abrir caminho para editar o conteudo clinico ou apagar a linha.
+create or replace function public.prevent_clinical_document_mutation()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'UPDATE'
+     and old.archived_at is null
+     and new.archived_at is not null
+     and new.archived_by is not null
+     and (to_jsonb(new) - array['archived_at', 'archived_by', 'archive_reason'])
+         = (to_jsonb(old) - array['archived_at', 'archived_by', 'archive_reason']) then
+    return new;
+  end if;
+
+  raise exception 'Documentos clinicos sao imutaveis; somente o arquivamento e permitido.'
+    using errcode = '55000';
+end
+$$;
+
+drop trigger if exists trg_clinical_documents_immutable on public.clinical_documents;
+create trigger trg_clinical_documents_immutable
+before update or delete on public.clinical_documents
+for each row execute function public.prevent_clinical_document_mutation();
+
 create or replace function public.archive_clinical_document(
   p_document_id uuid,
   p_reason text default null
@@ -36,6 +64,7 @@ declare
   owner_now uuid := public.data_owner_id();
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_archived timestamptz;
+  v_created_by uuid;
 begin
   -- Mesmo portao da emissao: quem nao pode emitir nao pode arquivar.
   if auth.uid() is null or owner_now is null or not public.has_clinical_access() then
@@ -50,7 +79,7 @@ begin
 
   -- Ja arquivado: devolve a data original em vez de reescrever. Reescrever
   -- apagaria quem arquivou de verdade e quando -- a trilha e o ponto disto.
-  select archived_at into v_archived
+  select archived_at, created_by into v_archived, v_created_by
   from public.clinical_documents
   where id = p_document_id and user_id = owner_now;
   if not found then
@@ -58,6 +87,13 @@ begin
   end if;
   if v_archived is not null then
     return v_archived;
+  end if;
+  -- O autor pode retirar da lista o proprio documento. Owner/admin clinico
+  -- pode corrigir documentos legados ou de um profissional indisponivel. Um
+  -- membro clinico comum nunca pode esconder o documento de outro autor.
+  if v_created_by is distinct from auth.uid() and not public.can_issue_clinical_prescription() then
+    raise exception 'Somente o autor ou um administrador clinico pode arquivar este documento.'
+      using errcode = '42501';
   end if;
 
   update public.clinical_documents

@@ -354,6 +354,9 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
   if (documents.some(document => !document)) {
     throw httpError('Documento clinico nao encontrado nesta clinica.', 404)
   }
+  if (documents.some(document => document.archived_at)) {
+    throw httpError('Documento arquivado nao pode ser enviado para assinatura.', 409, 'documento_arquivado')
+  }
   if (documents.some(document => document.created_by !== user.id)) {
     throw httpError('Somente o profissional que emitiu o documento pode assina-lo.', 403, 'nao_autor')
   }
@@ -644,6 +647,7 @@ export async function clinicalSignatureQueue(req, deps = defaultClinicalSignatur
     .eq('user_id', ownerId)
     .eq('created_by', user.id)
     .in('document_type', ['exam_request', 'simple_prescription'])
+    .is('archived_at', null)
     .order('created_at', { ascending:false })
     .limit(200)
   if (error) {

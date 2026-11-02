@@ -82,6 +82,7 @@ async function openDocuments(page, {
       clinic:{ tradeName:'Clínica E2E', addressLine:'Av. Clínica, 100', city:'Porto Alegre', state:'RS' },
     } }),
   }))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
 
   await page.route('**/api/secure-profile?action=clinical-signature-state', async route => {
     calls.state = (calls.state || 0) + 1
@@ -409,6 +410,7 @@ test('backend de assinatura indisponível não bloqueia o histórico nem a via m
     contentType:'application/json',
     body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Clínica E2E', registrationId:'CRM-RS 0001' } } }),
   }))
+  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   // O endpoint de estado cai: a tela precisa degradar, não quebrar.
   await page.route('**/api/secure-profile?action=clinical-signature-state', route => route.fulfill({
     status:500, contentType:'application/json', body:JSON.stringify({ error:'indisponível' }),

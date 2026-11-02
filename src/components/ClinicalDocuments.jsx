@@ -545,6 +545,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
             })
             const busy = Boolean(signatureBusy) && (signatureBusy === record.id || signatureBusy === attempt?.id)
             const eligible = isClinicalSignatureEligible(record)
+            const canArchive = record.created_by === viewerId || canPrescribe
             return <article key={record.id} data-testid={`clinical-document-${record.id}`}>
               <div className={`clinical-document-icon is-${record.document_type}`}>{record.document_type === SIMPLE_PRESCRIPTION ? 'Rx' : 'Ex'}</div>
               <div className="clinical-document-history__body">
@@ -598,7 +599,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
               </div>
               {/* A via manual permanece sempre disponível, separada da digital. */}
               <Btn variant="ghost" onClick={() => print(record)}>{eligible && attempt?.evidenceComplete ? 'Imprimir via manual' : 'Imprimir / salvar PDF'}</Btn>
-              {confirmArchiveFor === record.id ? (
+              {canArchive && (confirmArchiveFor === record.id ? (
                 <div className="clinical-signature-confirm" role="group" aria-label="Arquivar documento">
                   <span>O documento sai da lista, mas <strong>permanece no banco</strong> — documento de prontuário não é apagado. Fica registrado quem arquivou e quando.</span>
                   <input
@@ -616,7 +617,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
                 </div>
               ) : (
                 <Btn variant="ghost" disabled={archiving} onClick={() => { setConfirmArchiveFor(record.id); setArchiveReason('') }}>Arquivar</Btn>
-              )}
+              ))}
             </article>
           })}
         </div>
