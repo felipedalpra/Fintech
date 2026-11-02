@@ -13,6 +13,7 @@ import { Person360Drawer } from './Person360Drawer.jsx'
 import { WhatsAppMedia } from './WhatsAppMedia.jsx'
 import { applyConversationFilters, createSavedReply, loadConversationStates, loadSavedReplies, operationalConversationKey, saveConversationState, unreadCountForConversation } from '../lib/operationalWorkspace.js'
 import { isWhatsAppNumberAvailable } from '../lib/whatsappNumberAvailability.js'
+import { chunkWhatsAppMessageIds, reconcileWhatsAppMessageRows, reconcileWhatsAppMessageWindow, removeWhatsAppMessageRow, whatsappLoadIsCurrent, whatsappNumberScopeChanged, WHATSAPP_REALTIME_BATCH_MS, WHATSAPP_REALTIME_FALLBACK_POLL_MS } from '../lib/whatsappInboxSync.js'
 import './WhatsAppInbox.css'
 
 const EMOJI_GROUPS = [
@@ -39,6 +40,18 @@ async function selectWhatsAppMessages(configureQuery) {
     if (!['PGRST200', 'PGRST204', '42703'].includes(result.error?.code)) return result
   }
   return result
+}
+
+async function selectMessageWindow(availableNumbers) {
+  const results = availableNumbers.length
+    ? await Promise.all([
+        ...availableNumbers.map(number => selectWhatsAppMessages(query => query.eq('whatsapp_number_id', number.id).order('created_at', { ascending:false }).limit(500))),
+        selectWhatsAppMessages(query => query.is('whatsapp_number_id', null).order('created_at', { ascending:false }).limit(100)),
+      ])
+    : [await selectWhatsAppMessages(query => query.order('created_at', { ascending:false }).limit(500))]
+  const error = results.find(result => result.error)?.error || null
+  const rows = error ? [] : Array.from(new Map(results.flatMap(result => result.data || []).map(message => [message.id, message])).values())
+  return { rows:rows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)), error }
 }
 
 function Icon({ name, size=20, strokeWidth=1.8 }) {
@@ -147,8 +160,23 @@ export function WhatsAppInbox() {
   const messagesRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
   const pendingScrollRestoreRef = useRef(null)
   const textSendRequestRef = useRef(null)
+  const numbersRef = useRef([])
+  const pendingRealtimeIdsRef = useRef(new Set())
+  const realtimeBatchTimerRef = useRef(null)
+  const messageChangeCounterRef = useRef(0)
+  const messageChangedVersionRef = useRef(new Map())
+  const activeOwnerIdRef = useRef(ownerId)
+  const scopeGenerationRef = useRef(0)
+  const fullLoadRequestRef = useRef(0)
+  const messageWindowRequestRef = useRef(0)
+  activeOwnerIdRef.current = ownerId
 
   const load = useCallback(async ({ silent=false }={}) => {
+    const loadOwnerId = ownerId
+    const scopeGeneration = scopeGenerationRef.current
+    const fullLoadRequest = ++fullLoadRequestRef.current
+    const messageWindowRequest = ++messageWindowRequestRef.current
+    const versionAtLoadStart = messageChangeCounterRef.current
     silent ? setRefreshing(true) : setLoading(true)
     const [numRes, memRes, stateRes, replyRes] = await Promise.all([
       supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id, active, provider, connection_state, archived_at').order('created_at', { ascending:true }),
@@ -157,17 +185,22 @@ export function WhatsAppInbox() {
       loadSavedReplies(ownerId),
     ])
     const availableNumbers = numRes.data ?? []
-    const messageResults = availableNumbers.length
-      ? await Promise.all([
-          ...availableNumbers.map(number => selectWhatsAppMessages(query => query.eq('whatsapp_number_id', number.id).order('created_at', { ascending:false }).limit(500))),
-          selectWhatsAppMessages(query => query.is('whatsapp_number_id', null).order('created_at', { ascending:false }).limit(100)),
-        ])
-      : [await selectWhatsAppMessages(query => query.order('created_at', { ascending:false }).limit(500))]
-    const messageError = messageResults.find(result => result.error)?.error
-    if (messageError) setError(messageError.message)
+    const messageWindow = await selectMessageWindow(availableNumbers)
+    if (!whatsappLoadIsCurrent(
+      { ownerId:loadOwnerId, scopeGeneration, requestId:fullLoadRequest },
+      { ownerId:activeOwnerIdRef.current, scopeGeneration:scopeGenerationRef.current, requestId:fullLoadRequestRef.current },
+    )) return
+    if (messageWindow.error) setError(messageWindow.error.message)
     else {
-      const uniqueMessages = new Map(messageResults.flatMap(result => result.data || []).map(message => [message.id, message]))
-      setMessages(Array.from(uniqueMessages.values()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)))
+      numbersRef.current = availableNumbers
+      if (messageWindowRequest === messageWindowRequestRef.current) {
+        setMessages(currentRows => reconcileWhatsAppMessageWindow(
+          currentRows,
+          messageWindow.rows,
+          messageChangedVersionRef.current,
+          versionAtLoadStart,
+        ))
+      }
       setNumbers(availableNumbers)
       setMembers((memRes.data ?? []).filter(member => member.user_id))
       setConversationStates(stateRes.data || [])
@@ -176,7 +209,119 @@ export function WhatsAppInbox() {
     }
     setLoading(false); setRefreshing(false)
   }, [ownerId])
-  useEffect(() => { if (ownerId) load() }, [ownerId, load])
+  useEffect(() => {
+    activeOwnerIdRef.current = ownerId
+    scopeGenerationRef.current += 1
+    fullLoadRequestRef.current += 1
+    messageWindowRequestRef.current += 1
+    numbersRef.current = []
+    messageChangeCounterRef.current = 0
+    messageChangedVersionRef.current.clear()
+    if (ownerId) load()
+  }, [ownerId, load])
+
+  const reloadMessageWindow = useCallback(async ({ silent=true }={}) => {
+    const loadOwnerId = activeOwnerIdRef.current
+    const scopeGeneration = scopeGenerationRef.current
+    const messageWindowRequest = ++messageWindowRequestRef.current
+    const versionAtLoadStart = messageChangeCounterRef.current
+    if (silent) setRefreshing(true)
+    const result = await selectMessageWindow(numbersRef.current)
+    if (!whatsappLoadIsCurrent(
+      { ownerId:loadOwnerId, scopeGeneration, requestId:messageWindowRequest },
+      { ownerId:activeOwnerIdRef.current, scopeGeneration:scopeGenerationRef.current, requestId:messageWindowRequestRef.current },
+    )) return true
+    if (result.error) setError(result.error.message)
+    else setMessages(currentRows => reconcileWhatsAppMessageWindow(
+      currentRows,
+      result.rows,
+      messageChangedVersionRef.current,
+      versionAtLoadStart,
+    ))
+    if (silent) setRefreshing(false)
+    return !result.error
+  }, [])
+
+  const refreshMessagesByIds = useCallback(async messageIds => {
+    const loadOwnerId = activeOwnerIdRef.current
+    const scopeGeneration = scopeGenerationRef.current
+    const batches = chunkWhatsAppMessageIds(messageIds)
+    if (!batches.length) return true
+    const requestedIds = batches.flat()
+    const rows = []
+    for (const ids of batches) {
+      const result = await selectWhatsAppMessages(query => query.in('id', ids))
+      if (!whatsappLoadIsCurrent(
+        { ownerId:loadOwnerId, scopeGeneration },
+        { ownerId:activeOwnerIdRef.current, scopeGeneration:scopeGenerationRef.current },
+      )) return true
+      if (result.error) {
+        setError(`Não foi possível atualizar as novas mensagens: ${result.error.message}`)
+        return false
+      }
+      rows.push(...(result.data || []))
+    }
+    for (const messageId of requestedIds) {
+      messageChangeCounterRef.current += 1
+      messageChangedVersionRef.current.set(messageId, messageChangeCounterRef.current)
+    }
+    setMessages(currentRows => reconcileWhatsAppMessageRows(currentRows, requestedIds, rows))
+    return true
+  }, [])
+
+  const queueRealtimeMessage = useCallback(payload => {
+    const messageId = payload?.new?.id || payload?.old?.id
+    if (!messageId) return
+    if (payload.eventType === 'DELETE') {
+      pendingRealtimeIdsRef.current.delete(messageId)
+      messageChangeCounterRef.current += 1
+      messageChangedVersionRef.current.set(messageId, messageChangeCounterRef.current)
+      setMessages(currentRows => removeWhatsAppMessageRow(currentRows, messageId))
+      return
+    }
+    pendingRealtimeIdsRef.current.add(messageId)
+    if (realtimeBatchTimerRef.current) return
+    realtimeBatchTimerRef.current = window.setTimeout(async () => {
+      const ids = Array.from(pendingRealtimeIdsRef.current)
+      pendingRealtimeIdsRef.current.clear()
+      realtimeBatchTimerRef.current = null
+      const refreshed = await refreshMessagesByIds(ids)
+      if (!refreshed && !document.hidden) await reloadMessageWindow()
+    }, WHATSAPP_REALTIME_BATCH_MS)
+  }, [refreshMessagesByIds, reloadMessageWindow])
+
+  const applyRealtimeConversationState = useCallback(payload => {
+    const row = payload?.new || payload?.old
+    if (!row?.conversation_key) return
+    setConversationStates(currentRows => {
+      if (payload.eventType === 'DELETE') return currentRows.filter(current => current.conversation_key !== row.conversation_key)
+      const found = currentRows.some(current => current.conversation_key === row.conversation_key)
+      return found
+        ? currentRows.map(current => current.conversation_key === row.conversation_key ? { ...current, ...row } : current)
+        : [...currentRows, row]
+    })
+  }, [])
+
+  const applyRealtimeNumber = useCallback(payload => {
+    const row = payload?.new || payload?.old
+    if (!row?.id) return
+    const previous = numbersRef.current.find(current => current.id === row.id)
+    const scopeChanged = whatsappNumberScopeChanged(previous, payload)
+    if (scopeChanged) {
+      scopeGenerationRef.current += 1
+      messageWindowRequestRef.current += 1
+    }
+    setNumbers(currentRows => {
+      const nextRows = payload.eventType === 'DELETE'
+        ? currentRows.filter(current => current.id !== row.id)
+        : currentRows.some(current => current.id === row.id)
+          ? currentRows.map(current => current.id === row.id ? { ...current, ...row } : current)
+          : [...currentRows, row]
+      numbersRef.current = nextRows
+      return nextRows
+    })
+    if (scopeChanged) load({ silent:true })
+  }, [load])
 
   async function refreshConversations() {
     setRefreshing(true); setError(null)
@@ -199,10 +344,22 @@ export function WhatsAppInbox() {
   }
   useEffect(() => {
     if (!ownerId) return undefined
-    const channel = supabase.channel(`whatsapp-inbox-${ownerId}`).on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_messages', filter:`user_id=eq.${ownerId}` }, () => load({ silent:true })).subscribe()
-    const poll = window.setInterval(() => { if (!document.hidden) load({ silent:true }) }, 12_000)
-    return () => { window.clearInterval(poll); supabase.removeChannel(channel) }
-  }, [ownerId, load])
+    const channel = supabase.channel(`whatsapp-inbox-${ownerId}`)
+      .on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_messages', filter:`user_id=eq.${ownerId}` }, queueRealtimeMessage)
+      .on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_conversation_states', filter:`user_id=eq.${ownerId}` }, applyRealtimeConversationState)
+      .on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_numbers', filter:`user_id=eq.${ownerId}` }, applyRealtimeNumber)
+      .subscribe()
+    const authorizationPoll = window.setInterval(() => {
+      if (!document.hidden) load({ silent:true })
+    }, WHATSAPP_REALTIME_FALLBACK_POLL_MS)
+    return () => {
+      window.clearInterval(authorizationPoll)
+      if (realtimeBatchTimerRef.current) window.clearTimeout(realtimeBatchTimerRef.current)
+      realtimeBatchTimerRef.current = null
+      pendingRealtimeIdsRef.current.clear()
+      supabase.removeChannel(channel)
+    }
+  }, [applyRealtimeConversationState, applyRealtimeNumber, load, ownerId, queueRealtimeMessage])
 
   const numberLabel = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.label])), [numbers])
   const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
@@ -362,7 +519,13 @@ export function WhatsAppInbox() {
     const { data:sessionData } = E2E_BYPASS_AUTH ? { data:{ session:{ access_token:'e2e-token' } } } : await supabase.auth.getSession(); const token = sessionData.session?.access_token
     if (!token) throw new Error('Sessão inválida. Entre novamente.')
     const response = await fetch('/api/whatsapp?action=message', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body:JSON.stringify({ patientId:target.patientId, contactId:target.contactId, phone:target.phone, chatLid:target.chatLid, contactPhone:target.contactPhone, isGroup:target.isGroup, conversationNumberId:target.numberId, conversationMessageId:target.last.id, whatsappNumberId:sendingNumberId, requestId:extra.requestId || crypto.randomUUID(), ...extra }) })
-    const json = await response.json().catch(() => ({})); if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`); if (!json.pending) await load({ silent:true }); return json
+    const json = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`)
+    if (!json.pending) {
+      const refreshed = json.messageId ? await refreshMessagesByIds([json.messageId]) : false
+      if (!refreshed) await reloadMessageWindow()
+    }
+    return json
   }
   async function patchCurrentState(patch) {
     if (!current) return
@@ -477,7 +640,7 @@ export function WhatsAppInbox() {
     setContactBusy(false)
     if (result.error) { setContactError(result.error); return }
     setContactModal(null)
-    await load({ silent:true })
+    await reloadMessageWindow()
   }
   async function convertCurrentContact(patientId = null) {
     if (!current?.contactId || contactBusy) return
@@ -487,7 +650,7 @@ export function WhatsAppInbox() {
     setContactBusy(false)
     if (result.error) { setContactError(result.error); return }
     setContactModal(null)
-    await load({ silent:true })
+    await reloadMessageWindow()
   }
   async function toggleIgnored(ignored) {
     if (!current?.contactId || contactBusy) return
@@ -495,7 +658,7 @@ export function WhatsAppInbox() {
     const result = await setContactIgnored(current.contactId, ignored)
     setContactBusy(false)
     if (result.error) { setError(result.error); return }
-    await load({ silent:true })
+    await reloadMessageWindow()
   }
   function openConversation(key) { textSendRequestRef.current = null; setSelectedPhone(key); setMobileListOpen(false) }
   function returnToConversationList() { setMobileListOpen(true); setShowEmoji(false) }

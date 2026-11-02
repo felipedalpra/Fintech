@@ -49,11 +49,14 @@ drop policy if exists "WhatsApp numbers read scoped" on public.whatsapp_numbers;
 drop policy if exists "WhatsApp numbers admin write" on public.whatsapp_numbers;
 create policy "WhatsApp numbers read scoped" on public.whatsapp_numbers
   for select to authenticated
-  using (user_id = public.data_owner_id() and (public.is_clinic_admin() or assigned_user_id = auth.uid()));
+  using (
+    user_id = (select public.data_owner_id())
+    and ((select public.is_clinic_admin()) or assigned_user_id = (select auth.uid()))
+  );
 create policy "WhatsApp numbers admin write" on public.whatsapp_numbers
   for all to authenticated
-  using (user_id = public.data_owner_id() and public.is_clinic_admin())
-  with check (user_id = public.data_owner_id() and public.is_clinic_admin());
+  using (user_id = (select public.data_owner_id()) and (select public.is_clinic_admin()))
+  with check (user_id = (select public.data_owner_id()) and (select public.is_clinic_admin()));
 
 -- 5. whatsapp_messages: SELECT escopado. Admin vê tudo; os demais só os números atribuídos a eles.
 --    Mensagens SEM número (legadas ou número removido) continuam visíveis à clínica, como antes
@@ -64,11 +67,11 @@ drop policy if exists "WhatsApp messages scoped" on public.whatsapp_messages;
 create policy "WhatsApp messages scoped" on public.whatsapp_messages
   for select to authenticated
   using (
-    user_id = public.data_owner_id() and (
-      public.is_clinic_admin()
+    user_id = (select public.data_owner_id()) and (
+      (select public.is_clinic_admin())
       or whatsapp_number_id is null
       or whatsapp_number_id in (
-        select id from public.whatsapp_numbers where assigned_user_id = auth.uid()
+        select id from public.whatsapp_numbers where assigned_user_id = (select auth.uid())
       )
     )
   );
