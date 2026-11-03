@@ -1017,6 +1017,27 @@ export function FinanceWorkspace() {
     }
     return flushSave(ownerId, update.data, update.revision)
   }
+  // Incorpora dados que JA foram gravados por uma transacao/RPC no servidor. Atualiza tambem o
+  // baseline da sessao, para o autosave nao interpretar a nova origem como ausente. Se havia outra
+  // edicao local pendente, ela continua pendente e segue pelo fluxo normal de persistencia.
+  const applyServerConfirmedData = updater => {
+    const current = latestRef.current.data
+    const nextData = normalizeData(typeof updater === 'function' ? updater(current) : updater)
+    const baseline = baselineRef.current || current
+    const nextBaseline = normalizeData(typeof updater === 'function' ? updater(baseline) : updater)
+    const hadPendingChanges = pendingRef.current
+    const revision = revisionRef.current + 1
+    revisionRef.current = revision
+    latestRef.current = { data:nextData, ownerId }
+    baselineRef.current = nextBaseline
+    if (!hadPendingChanges) {
+      immediateSnapshotRef.current = nextData
+      setSaveStatus('ok')
+      setLastSavedAt(new Date())
+    }
+    setRaw(nextData)
+    return nextData
+  }
   const google = useGoogleCalendarSync({ data:safeData, enabled:!loading })
   const hasData = useMemo(() => safeData.procedures.length || safeData.surgeries.length || safeData.consultations.length || safeData.products.length || safeData.productSales.length || safeData.productPurchases.length || safeData.extraRevenues.length || safeData.expenses.length || safeData.assets.length || safeData.liabilities.length || safeData.goals.length, [safeData])
 
@@ -1402,7 +1423,7 @@ export function FinanceWorkspace() {
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}
         {!hasData && !isInboxPage && !isClinicalPage && <Card style={{ marginBottom:20, border:`1px solid ${C.accent}33`, background:`linear-gradient(135deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', gap:16, flexWrap:'wrap', alignItems:'center' }}><div><div style={{ fontSize:12, color:C.accentLight, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>Operação vazia</div><div style={{ fontSize:18, fontWeight:700, color:C.text }}>Comece a operação sem digitação duplicada.</div><div style={{ fontSize:13, color:C.textSub, marginTop:6, lineHeight:1.55 }}>{canAccess('finance') ? 'Cadastre procedimentos, cirurgias, consultas, produtos e despesas. O restante alimenta os indicadores automaticamente.' : 'Cadastre pacientes e registre os atendimentos disponíveis para o seu perfil.'}</div></div><div style={{ fontSize:12, color:C.textDim, lineHeight:1.7, width:isMobile ? '100%' : 'auto' }}>Primeiro passo recomendado:{canAccess('plans') && <div>1. Procedimentos</div>}{canAccess('sales') && <div>2. Cirurgias</div>}<div>{canAccess('sales') ? '3' : '1'}. Consultas e produtos</div>{canAccess('finance') && <div>4. Despesas e metas</div>}</div></div></Card>}
         <Suspense fallback={<div style={{ display:'grid', gap:12 }}><SkeletonBlock w="36%" h={26} /><SkeletonBlock w="100%" h={180} /><SkeletonBlock w="100%" h={220} /></div>}>
-          <Page data={safeData} setData={setData} saveDataNow={saveDataNow} saveError={saveError} google={google} />
+          <Page data={safeData} setData={setData} saveDataNow={saveDataNow} applyServerConfirmedData={applyServerConfirmedData} saveError={saveError} google={google} />
         </Suspense>
         {page !== 'inbox' && !isClinicalPage && canAccess('ai') && <CopilotWidget data={safeData} />}
         {page !== 'inbox' && !isClinicalPage && <FAB currentPage={page} />}

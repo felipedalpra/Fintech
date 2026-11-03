@@ -4,7 +4,7 @@
 //
 // FIDEDIGNIDADE: nada aqui produz valor financeiro. O lote e suas linhas ficam inteiramente ANTES
 // da fonte canônica (extra_revenues/expenses) — revisar, editar e rejeitar não tocam DRE, fluxo,
-// contas, metas nem dashboard. Só a aprovação cria origem, e ela continua indo pelo saveDataNow.
+// contas, metas nem dashboard. So a aprovacao atomica cria a origem financeira.
 
 import { statementMovementFingerprint } from './statementParser.js'
 
@@ -34,15 +34,15 @@ export function buildBatchRecord({ ownerId, actorId, parsed }) {
     column_mapping:parsed?.mapping || {},
     expected_line_count:lines.length,
     line_count:lines.length,
-    status:'reviewing',
+    status:'creating',
     period_start:dates[0] || null,
     period_end:dates[dates.length - 1] || null,
   }
 }
 
-// O `id` da linha é o UUID determinístico já calculado por financialImportUuid(fileHash:lineKey) —
-// o MESMO id que a origem financeira recebe na aprovação. É o que mantém a criação idempotente e
-// dá o vínculo linha↔lançamento sem tabela de ligação.
+// O `id` identifica a linha da revisao. `source_id` identifica o lancamento final e e gerado pelo
+// banco ao persistir a linha. Separar as chaves preserva a idempotencia do lote sem criar colisao
+// global quando clinicas diferentes importam o mesmo arquivo.
 export function buildBatchLineRows({ ownerId, batchId, lines = [] }) {
   return lines.map(line => ({
     id:line.id,
@@ -72,6 +72,7 @@ export function restoreReviewState(rows = []) {
   return {
     lines:active.map(row => ({
       id:row.id,
+      sourceRecordId:row.source_id || row.sourceId || row.id,
       externalId:(row.source_metadata || {}).externalId || undefined,
       sourceLineKey:row.source_line_key,
       lineIndex:row.line_index,

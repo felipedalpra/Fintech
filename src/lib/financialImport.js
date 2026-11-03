@@ -45,9 +45,21 @@ export function buildFinancialImportReview(lines = [], data = {}, fileName = '')
     ...(data.extraRevenues || []).map(item => item.id),
     ...(data.expenses || []).map(item => item.id),
   ])
-  return buildStatementImportReview(matches, data.chartAccounts || [], { fileName }).map(item => existingSourceIds.has(item.line.id)
-    ? { ...item, reviewStatus:'existing', safeForBulk:false, selectedAction:null }
-    : item)
+  // `line.id` identifica a linha dentro do lote de revisao. O lancamento financeiro tem um
+  // `sourceRecordId` proprio, gerado e persistido pelo banco. Manter os dois separados evita que
+  // duas clinicas importando a mesma planilha disputem a chave primaria global da origem.
+  return buildStatementImportReview(matches, data.chartAccounts || [], { fileName }).map(item => {
+    const marked = {
+      ...item,
+      proposal:item.proposal ? {
+        ...item.proposal,
+        record:{ ...item.proposal.record, isFinancialImport:true },
+      } : item.proposal,
+    }
+    return existingSourceIds.has(marked.proposal?.record?.id)
+      ? { ...marked, reviewStatus:'existing', safeForBulk:false, selectedAction:null }
+      : marked
+  })
 }
 
 export function approvableFinancialImportItem(item) {

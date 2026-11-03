@@ -7,10 +7,25 @@
 //
 // baselineIds: Set<string> | null  — ids que o cliente conhecia. null/undefined ⇒ não apaga nada.
 // currentRows: array de linhas atuais (cada uma com .id).
-export function computeIdsToDelete(baselineIds, currentRows) {
+export function computeIdsToDelete(baselineIds, currentRows, protectedIds = null) {
   if (!baselineIds) return []
   const currentIds = new Set((currentRows || []).map(r => r.id))
-  return [...baselineIds].filter(id => !currentIds.has(id))
+  return [...baselineIds].filter(id => !currentIds.has(id) && !protectedIds?.has(id))
+}
+
+// Importacoes retroativas so podem ser arquivadas por uma acao explicita e auditavel. Remover uma
+// linha do estado de uma aba (por cache, corrida ou cliente antigo) nao e uma decisao de exclusao.
+export function isProtectedFinancialImportRow(row) {
+  return row?.is_financial_import === true
+    || row?.isFinancialImport === true
+    || /^Importa(?:cao|ção)\b/i.test(String(row?.origin_label || row?.originLabel || '').trim())
+}
+
+export function protectedFinancialImportIds(rows = []) {
+  return new Set((rows || [])
+    .filter(isProtectedFinancialImportRow)
+    .map(row => row.id)
+    .filter(Boolean))
 }
 
 // READ-BACK (blindagem Fase 2): depois de gravar, confere que CADA linha enviada voltou

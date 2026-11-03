@@ -33,6 +33,30 @@ test('separa lançamento já existente de novo lançamento aprovável', () => {
   expect(approvableFinancialImportItem(reviews[1])).toBe(true)
 })
 
+test('usa sourceRecordId como chave da origem sem alterar o id da revisao', () => {
+  const lineId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const sourceId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const data = {
+    chartAccounts:accounts,
+    extraRevenues:[{ id:sourceId, description:'Ja persistida', value:500, date:'2026-09-01' }],
+    expenses:[], surgeries:[], consultations:[], productSales:[], productPurchases:[], recurrences:[], procedures:[],
+  }
+  const [review] = buildFinancialImportReview([{
+    id:lineId,
+    sourceRecordId:sourceId,
+    sourceLineKey:'linha-2',
+    lineIndex:2,
+    postedDate:'2026-09-01',
+    amount:500,
+    description:'Ja persistida',
+    normalizedDescription:'ja persistida',
+    sourceMetadata:{ category:'Consultas', chartAccountId:'revenue' },
+  }], data, 'MOV.xlsx')
+  expect(review.line.id).toBe(lineId)
+  expect(review.proposal.record.id).toBe(sourceId)
+  expect(review.reviewStatus).toBe('existing')
+})
+
 test('reimportação com o mesmo UUID nunca sobrescreve silenciosamente um lançamento editado', () => {
   const id = financialImportUuid('arquivo:linha-2')
   const data = {

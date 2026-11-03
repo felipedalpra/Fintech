@@ -3,21 +3,40 @@ import * as XLSX from 'xlsx'
 
 test('mostra todas as linhas, permite editar e só salva após aprovação', async ({ page }) => {
   const importedBatchSizes = []
-  let importedRecordCount = 0
+  let sourceRecordCount = 0
+  let genericLedgerWrites = 0
   await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
   await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{"connected":false}' }))
   await page.route('**/rest/v1/**', async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     let body = request.method() === 'GET' ? [] : (request.postDataJSON() || [])
-    if (path.endsWith('/financial_entries') && request.method() === 'POST') {
+    if (path.endsWith('/financial_import_batches') && request.method() === 'POST') {
+      body = { ...body, id:'10000000-0000-4000-8000-000000000001', status:'creating', created_at:'2026-11-03T10:00:00Z' }
+    }
+    if (path.endsWith('/financial_import_batches') && request.method() === 'PATCH') {
+      body = { id:'10000000-0000-4000-8000-000000000001', file_name:'retroativos.xlsx', file_hash:'a'.repeat(64), sheet_name:'Planilha1', line_count:188, status:'reviewing', created_at:'2026-11-03T10:00:00Z' }
+    }
+    if (path.endsWith('/financial_import_lines') && request.method() === 'POST') {
       const rows = Array.isArray(body) ? body : [body]
-      importedBatchSizes.push(rows.length)
-      await new Promise(resolve => setTimeout(resolve, 180))
       body = rows.map(row => {
-        importedRecordCount += 1
-        return { ...row, id:`00000000-0000-4000-8000-${String(importedRecordCount).padStart(12, '0')}` }
+        sourceRecordCount += 1
+        return { ...row, source_id:`20000000-0000-4000-8000-${String(sourceRecordCount).padStart(12, '0')}`, archived_at:null }
       })
+    }
+    if (path.endsWith('/rpc/approve_financial_import_lines') && request.method() === 'POST') {
+      const items = body.p_items || []
+      importedBatchSizes.push(items.length)
+      await new Promise(resolve => setTimeout(resolve, 180))
+      body = items.map(item => ({
+        approved_line_id:item.line_id,
+        approved_source_id:item.source_id,
+        approved_collection:item.collection,
+        source_created:true,
+      }))
+    }
+    if (path.endsWith('/financial_entries') && request.method() === 'POST') {
+      genericLedgerWrites += 1
     }
     return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/0' }, body:JSON.stringify(body) })
   })
@@ -63,6 +82,7 @@ test('mostra todas as linhas, permite editar e só salva após aprovação', asy
   await expect(progress).toContainText('Todos os lançamentos foram importados')
   await expect(progress).toContainText('188 de 188 importados')
   expect(importedBatchSizes).toEqual([50, 50, 50, 38])
+  expect(genericLedgerWrites).toBe(0)
 
   await page.getByRole('button', { name:'Concluir' }).click()
   await expect(firstLine).toContainText('Importado')

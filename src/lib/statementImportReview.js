@@ -123,7 +123,10 @@ export function proposalForStatementLine(line, accounts = [], fileName = '', cla
   const source = `Importação ${fileName || 'de planilha'} · linha ${metadata.excelRow || line.line_index || line.lineIndex || ''}`.trim()
   const description = String(line.description || '').trim() || `${isRevenue ? 'Receita' : 'Despesa'} importada`
   const common = {
-    id:line.id,
+    // A linha de revisao e a origem financeira deixaram de compartilhar a mesma chave. O banco
+    // gera `sourceRecordId` uma unica vez por linha persistida; conciliacao bancaria e lotes
+    // legados sem esse campo continuam usando `line.id` como antes.
+    id:line.sourceRecordId || line.source_id || line.id,
     description,
     category:category || (isRevenue ? 'outras_receitas' : 'outros'),
     value:Math.abs(Number(line.amount) || 0),
@@ -190,12 +193,13 @@ export function buildStatementImportReview(matches = [], accounts = [], options 
   const duplicates = duplicateLineIds(lines)
   return matches.map(match => {
     const lineId = match.line.id || match.line.sourceLineKey
+    const sourceRecordId = match.line.sourceRecordId || match.line.source_id || lineId
     const proposal = proposalForStatementLine(match.line, accounts, options.fileName, options.classifications?.[lineId] || null)
     const ignored = match.line.review_status === 'ignored'
     const processing = match.line.review_status === 'processing'
     const duplicate = duplicates.has(lineId) || options.overlappingFingerprints?.has(statementLineSignature(match.line))
     const createdCandidate = match.recommendedCandidate
-      && installmentEntry(match.recommendedCandidate.installment).source_id === lineId
+      && installmentEntry(match.recommendedCandidate.installment).source_id === sourceRecordId
     let reviewStatus = 'new'
     if (match.status === 'reconciled') reviewStatus = 'reconciled'
     else if (ignored) reviewStatus = 'ignored'

@@ -99,6 +99,7 @@ create table if not exists public.extra_revenues (
   category text not null,
   value numeric(12,2) not null default 0,
   date date not null,
+  is_financial_import boolean not null default false,
   created_at timestamptz not null default timezone('utc', now())
 );
 
@@ -111,6 +112,7 @@ create table if not exists public.expenses (
   due_date date not null,
   payment_date date,
   status text not null default 'aberto',
+  is_financial_import boolean not null default false,
   created_at timestamptz not null default timezone('utc', now())
 );
 
