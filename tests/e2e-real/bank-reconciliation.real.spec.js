@@ -69,6 +69,8 @@ test('persiste importação, vínculo e reversão no PostgreSQL local real', asy
     const genericReopen = await call('set_bank_statement_lines_review', { p_line_ids:[lineId], p_status:'pending', p_reason:null })
     const archiveWhileClaimed = await call('archive_bank_statement_import', { p_import_id:importId })
     const wrongRelease = await call('release_bank_statement_line_claims', { p_line_ids:[lineId], p_claim_token:otherToken })
+    const stateAfterWrongReleaseResponse = await fetch(`/rest/v1/bank_statement_lines?id=eq.${lineId}&select=review_status,review_claim_token`, { headers })
+    const stateAfterWrongRelease = await stateAfterWrongReleaseResponse.json()
     const correctRelease = await call('release_bank_statement_line_claims', { p_line_ids:[lineId], p_claim_token:firstToken })
     const ignore = await call('set_bank_statement_lines_review', { p_line_ids:[lineId], p_status:'ignored', p_reason:'guardrail real' })
     const staleConfirm = await call('confirm_bank_reconciliation', {
@@ -76,13 +78,14 @@ test('persiste importação, vínculo e reversão no PostgreSQL local real', asy
       p_reasons:[], p_justification:'tentativa obsoleta', p_window_days:3,
     })
     const reopen = await call('set_bank_statement_lines_review', { p_line_ids:[lineId], p_status:'pending', p_reason:null })
-    return { firstClaim, competingClaim, genericReopen, archiveWhileClaimed, wrongRelease, correctRelease, ignore, staleConfirm, reopen }
+    return { firstClaim, competingClaim, genericReopen, archiveWhileClaimed, wrongRelease, stateAfterWrongRelease, correctRelease, ignore, staleConfirm, reopen }
   }, { anonKey:ANON_KEY, expenseLineId, importId:activeImportId, installmentId:existingInstallmentId })
   expect(claimGuardrails.firstClaim).toMatchObject({ status:200, body:1 })
   expect(claimGuardrails.competingClaim.status).toBe(400)
   expect(claimGuardrails.genericReopen.status).toBe(400)
   expect(claimGuardrails.archiveWhileClaimed).toMatchObject({ status:400, body:{ message:expect.stringContaining('criações em andamento') } })
-  expect(claimGuardrails.wrongRelease.status).toBe(400)
+  expect(claimGuardrails.wrongRelease).toMatchObject({ status:200, body:1 })
+  expect(claimGuardrails.stateAfterWrongRelease).toEqual([{ review_status:'processing', review_claim_token:'12121212-1212-4121-8121-121212121212' }])
   expect(claimGuardrails.correctRelease).toMatchObject({ status:200, body:1 })
   expect(claimGuardrails.ignore).toMatchObject({ status:200, body:1 })
   expect(claimGuardrails.staleConfirm).toMatchObject({ status:400, body:{ message:expect.stringContaining('Reabra a linha ignorada') } })
