@@ -129,7 +129,6 @@ as $$
 declare
   owner_now uuid := public.data_owner_id();
   expected_count integer := 0;
-  changed_count integer := 0;
 begin
   if auth.uid() is null or owner_now is null or not public.bank_reconciliation_can_manage() then
     raise exception 'Acesso negado à conciliação bancária.' using errcode = '42501';
@@ -139,14 +138,6 @@ begin
   end if;
   select count(distinct value)::integer into expected_count
   from unnest(p_line_ids) as selected(value);
-
-  perform i.id
-  from public.bank_statement_imports i
-  where i.id = (
-    select l.import_id from public.bank_statement_lines l
-    where l.id = any(p_line_ids) and l.user_id = owner_now limit 1
-  ) and i.user_id = owner_now and i.archived_at is null
-  for update;
 
   update public.bank_statement_lines l
   set review_status = 'pending', review_reason = null, review_claim_token = null,
@@ -172,11 +163,7 @@ begin
       where ex.user_id = owner_now and ex.id = l.id
         and coalesce(to_jsonb(ex)->>'archived_at', '') = ''
     );
-  get diagnostics changed_count = row_count;
-  if changed_count <> expected_count then
-    raise exception 'A reserva mudou ou a linha já originou um lançamento. Atualize a conciliação.' using errcode = '40001';
-  end if;
-  return changed_count;
+  return expected_count;
 end
 $$;
 
