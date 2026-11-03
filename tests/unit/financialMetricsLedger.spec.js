@@ -138,6 +138,38 @@ test('Fase 10: cronograma de venda de produto gera caixa e saldo aberto por parc
   expect(january.accountsReceivable.find(item => item.sourceId === 'v-parcelada')).toMatchObject({ value:200, dueDate:'2026-02-10' })
 })
 
+test('consulta parcelada reconhece a receita na competência e cada parcela no mês do vencimento', () => {
+  const scheduled = structuredClone(data)
+  scheduled.surgeries = []
+  scheduled.productSales = []
+  scheduled.extraRevenues = []
+  scheduled.consultations = [{
+    id:'c-parcelada', patient:'Ana', value:900,
+    date:'2026-01-15', competenceDate:'2026-01-15', paymentStatus:'parcelado',
+    paymentMethod:encodePaymentMethod({ payments:[
+      { date:'2026-01-20', amount:300, method:'pix' },
+      { date:'2026-02-20', amount:300, method:'cartao' },
+      { date:'2026-03-20', amount:300, method:'boleto' },
+    ] }),
+  }]
+
+  const metrics = buildMetrics(scheduled, {
+    startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31',
+  })
+  const receivables = metrics.accountsReceivable
+    .filter(item => item.sourceId === 'c-parcelada')
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+
+  expect(metrics.consultationRevenue).toBe(900)
+  expect(metrics.drilldowns.consultationRevenue[0]).toMatchObject({ date:'2026-01-15', value:900 })
+  expect(receivables.map(item => ({ value:item.value, dueDate:item.dueDate, installmentNumber:item.installmentNumber }))).toEqual([
+    { value:300, dueDate:'2026-01-20', installmentNumber:1 },
+    { value:300, dueDate:'2026-02-20', installmentNumber:2 },
+    { value:300, dueDate:'2026-03-20', installmentNumber:3 },
+  ])
+  expect(receivables.every(item => item.competenceDate === '2026-01-15' && item.openInstallments === 3)).toBe(true)
+})
+
 test('Fase 10: compra forma estoque e só a venda reconhece CMV na DRE', () => {
   const inventoryOnly = structuredClone(data)
   inventoryOnly.productSales = []

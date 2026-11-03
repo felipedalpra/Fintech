@@ -44,3 +44,35 @@ test('settlements explícitos não inferem outra parcela só porque ela venceu a
   expect(flow.openInstallments).toHaveLength(1)
   expect(flow.openAmount).toBe(600)
 })
+
+test('liquidação explícita preserva o valor histórico recebido', () => {
+  const changedSchedule = encodePaymentMethod({ payments:[
+    { date:'2026-10-10', amount:100, method:'pix' },
+    { date:'2026-11-10', amount:900, method:'boleto' },
+  ] })
+  const flow = paymentScheduleFlow(1000, {
+    paymentMethod:changedSchedule,
+    paymentStatus:'pendente',
+    receiptSettlements:{ '1':{ receivedDate:'2026-10-16', amount:400, method:'pix' } },
+  })
+  expect(flow.paidInstallments[0]).toMatchObject({ amount:400, settlementDate:'2026-10-16' })
+  expect(flow.paidAmount).toBe(400)
+  expect(flow.openInstallments).toEqual([expect.objectContaining({ amount:600 })])
+  expect(flow.openAmount).toBe(600)
+  expect([...flow.paidInstallments, ...flow.openInstallments].reduce((sum, item) => sum + item.amount, 0)).toBe(1000)
+})
+
+test('liquidação histórica menor que a parcela redistribui todo o saldo sem perder valor', () => {
+  const flow = paymentScheduleFlow(1000, {
+    paymentMethod:encodePaymentMethod({ payments:[
+      { date:'2026-10-10', amount:500, method:'pix' },
+      { date:'2026-11-10', amount:500, method:'boleto' },
+    ] }),
+    paymentStatus:'pendente',
+    receiptSettlements:{ '1':{ receivedDate:'2026-10-16', amount:300, method:'pix' } },
+  })
+  expect(flow.paidAmount).toBe(300)
+  expect(flow.openAmount).toBe(700)
+  expect(flow.openInstallments).toEqual([expect.objectContaining({ amount:700, dueDate:'2026-11-10' })])
+  expect([...flow.paidInstallments, ...flow.openInstallments].reduce((sum, item) => sum + item.amount, 0)).toBe(1000)
+})

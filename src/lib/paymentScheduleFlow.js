@@ -29,7 +29,7 @@ export function paymentScheduleFlow(totalValueRaw, item) {
       ...entry,
       dueDate:entry.date,
       settlementDate:String(settlement.receivedDate),
-      amount:entry.amount,
+      amount:Math.max(0, Number(settlement.amount ?? entry.amount)),
       method:String(settlement.method || entry.method || ''),
     }
   }
@@ -76,15 +76,47 @@ export function paymentScheduleFlow(totalValueRaw, item) {
       : (paymentDateCutoff
         ? normalizedInstallments.filter(entry => onOrBefore(entry.date, paymentDateCutoff)).map(entry => ({ ...entry, settlementDate:paymentDateCutoff }))
         : []))
+  let remainingPaid = totalValue
+  const balancedPaidInstallments = paidByDate
+    .map(entry => {
+      const amount = Math.min(entry.amount, remainingPaid)
+      remainingPaid = Math.max(0, remainingPaid - amount)
+      return { ...entry, amount }
+    })
+    .filter(entry => entry.amount > 0)
   const paidIndexes = new Set(paidByDate.map(entry => entry.index))
-  const openInstallments = normalizedInstallments.filter(entry => !paidIndexes.has(entry.index))
-  const paidAmount = Math.min(totalValue, paidByDate.reduce((acc, entry) => acc + entry.amount, 0))
+  const paidAmount = balancedPaidInstallments.reduce((acc, entry) => acc + entry.amount, 0)
   const openAmount = Math.max(0, totalValue - paidAmount)
+  let remainingOpen = openAmount
+  const openInstallments = normalizedInstallments
+    .filter(entry => !paidIndexes.has(entry.index))
+    .map(entry => {
+      const amount = Math.min(entry.amount, remainingOpen)
+      remainingOpen = Math.max(0, remainingOpen - amount)
+      return { ...entry, amount }
+    })
+    .filter(entry => entry.amount > 0)
+  if (remainingOpen > 0) {
+    if (openInstallments.length > 0) {
+      const last = openInstallments[openInstallments.length - 1]
+      last.amount += remainingOpen
+    } else {
+      const fallback = normalizedInstallments[normalizedInstallments.length - 1]
+      openInstallments.push({
+        ...fallback,
+        index:normalizedInstallments.length,
+        settlementDate:null,
+        amount:remainingOpen,
+      })
+    }
+    remainingOpen = 0
+  }
+  const balancedInstallments = [...balancedPaidInstallments, ...openInstallments].sort((a, b) => a.index - b.index)
 
   return {
     hasSchedule:true,
-    installments:normalizedInstallments,
-    paidInstallments:paidByDate,
+    installments:balancedInstallments,
+    paidInstallments:balancedPaidInstallments,
     openInstallments,
     paidAmount,
     openAmount,

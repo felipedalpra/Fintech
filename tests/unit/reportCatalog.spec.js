@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import XLSXStyle from 'xlsx-js-style'
 import { buildAllReports, buildReport, getReportDefinitions } from '../../src/lib/reportCatalog.js'
 import { createCompleteWorkbook, createReportWorkbook } from '../../src/lib/reportWorkbook.js'
+import { encodePaymentMethod } from '../../src/lib/paymentMethodCodec.js'
 
 const RANGE = { start:'2026-10-01', end:'2026-10-31' }
 
@@ -41,6 +42,26 @@ test('contas a receber exporta somente parcelas ainda abertas no vencimento sele
   const report = buildReport('accounts-receivable', { data, range:RANGE })
   expect(report.rows).toHaveLength(1)
   expect(report.rows[0]).toMatchObject({ customer:'Ana', value:1000, dueDate:'2026-10-20' })
+})
+
+test('contas a receber exporta número e forma de cada parcela separadamente', () => {
+  const data = baseData()
+  data.consultations = [{
+    id:'consultation-installments', patient:'Ana', value:900,
+    date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'parcelado',
+    paymentMethod:encodePaymentMethod({ payments:[
+      { date:'2026-10-10', amount:300, method:'pix' },
+      { date:'2026-10-20', amount:300, method:'cartao' },
+      { date:'2026-10-30', amount:300, method:'boleto' },
+    ] }),
+  }]
+
+  const report = buildReport('accounts-receivable', { data, range:RANGE })
+  expect(report.rows.map(item => ({ installment:item.installment, paymentMethod:item.paymentMethod }))).toEqual([
+    { installment:1, paymentMethod:'PIX' },
+    { installment:2, paymentMethod:'Cartão' },
+    { installment:3, paymentMethod:'Boleto' },
+  ])
 })
 
 test('contas a receber e pagar exportam vendas e compras abertas do razão', () => {
