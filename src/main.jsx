@@ -9,6 +9,9 @@ import { FinancialPrivacyProvider } from './context/FinancialPrivacyContext.jsx'
 import { BillingProvider } from './context/BillingContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { UserRoleProvider } from './context/UserRoleContext.jsx'
+import { installDynamicImportRecovery } from './lib/dynamicImportRecovery.js'
+
+installDynamicImportRecovery()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
