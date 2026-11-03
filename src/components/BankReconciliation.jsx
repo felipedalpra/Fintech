@@ -558,7 +558,18 @@ export function BankReconciliation({ data, saveDataNow }) {
           // A linha que falhou fica reservada: sua operação durável será retomada no próximo
           // carregamento. Somente linhas ainda não iniciadas são liberadas para nova revisão.
           const untouchedIds = newItems.slice(persistedCount + 1).map(item => item.line.id)
-          await Promise.allSettled(untouchedIds.map(lineId => releaseBankStatementLineClaims([lineId], creationClaim.token)))
+          if (untouchedIds.length) {
+            try {
+              await releaseBankStatementLineClaims(untouchedIds, creationClaim.token, { tolerateStale:true })
+            } catch (cleanupError) {
+              throw new Error(
+                `${persistenceError.message || 'O lançamento não foi confirmado.'} ` +
+                `Além disso, não foi possível liberar ${untouchedIds.length} linha(s) ainda não iniciada(s): ` +
+                `${cleanupError.message || 'erro desconhecido'}. As reservas continuam protegidas para recuperação.`,
+                { cause:persistenceError },
+              )
+            }
+          }
           throw persistenceError
         }
       }
@@ -717,18 +728,34 @@ export function BankReconciliation({ data, saveDataNow }) {
       // navegacao desmontar a tela. Quando a navegacao nao acontece, o usuario
       // fica preso num "carregando" eterno, com a linha ja reservada.
       setBusy(false)
-      window.setTimeout(() => {
+      window.setTimeout(async () => {
         if (window.location.pathname.includes('/app/finance')) return
-        releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
-        setError('Não foi possível abrir o formulário de lançamento. A reserva desta linha foi liberada — tente de novo.')
+        try {
+          await releaseBankStatementLineClaims([line.id], claimToken, { tolerateStale:true })
+          setError('Não foi possível abrir o formulário de lançamento. A reserva desta linha foi liberada — tente de novo.')
+        } catch (cleanupError) {
+          setError(`Não foi possível abrir o formulário nem liberar a reserva: ${cleanupError.message || 'erro desconhecido'}. A linha continua protegida; atualize a conciliação antes de tentar novamente.`)
+        }
       }, NAVIGATION_GRACE_MS)
     } catch (caught) {
-      if (claimToken) await releaseBankStatementLineClaims([line.id], claimToken).catch(() => null)
+      let cleanupError = null
+      if (claimToken) {
+        try {
+          await releaseBankStatementLineClaims([line.id], claimToken, { tolerateStale:true })
+        } catch (releaseError) {
+          cleanupError = releaseError
+        }
+      }
       if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       // O banco recusa a reserva por varios motivos diferentes, e so a mensagem
       // dele diz qual. Mostrar apenas "nao foi possivel" obriga quem usa a abrir
       // o DevTools para descobrir -- que foi o que aconteceu em 31/10/2026.
-      else setError(describeImportFailure(caught).message || 'Não foi possível reservar esta linha para criação.')
+      else {
+        const originalMessage = describeImportFailure(caught).message || 'Não foi possível reservar esta linha para criação.'
+        setError(cleanupError
+          ? `${originalMessage} A reserva não pôde ser liberada: ${cleanupError.message || 'erro desconhecido'}. A linha continua protegida para recuperação.`
+          : originalMessage)
+      }
       setBusy(false)
     }
   }

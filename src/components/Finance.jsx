@@ -284,7 +284,11 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       savingLaunchRef.current = true
       setSavingLaunch(true)
       try {
-        await releaseBankStatementLineClaims([reconciliationReturn.lineId], reconciliationReturn.claimToken)
+        await releaseBankStatementLineClaims(
+          [reconciliationReturn.lineId],
+          reconciliationReturn.claimToken,
+          { tolerateStale:true },
+        )
       } catch (error) {
         const message = error.message || 'Não foi possível cancelar a criação com segurança.'
         setFormError(message)

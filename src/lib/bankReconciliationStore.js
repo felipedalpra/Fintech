@@ -2,6 +2,7 @@ import { supabase } from './supabase.js'
 import { statementMovementFingerprint } from './statementParser.js'
 export { isBankReconciliationSchemaMissing } from './supabaseErrorMessage.js'
 import { describeImportFailure } from './supabaseErrorMessage.js'
+import { createBankClaimReleaseCoordinator } from './bankClaimRelease.js'
 
 const PAGE_SIZE = 500
 
@@ -215,9 +216,7 @@ export async function recoverBankStatementLineClaim(lineId) {
   return Number(data)
 }
 
-export async function releaseBankStatementLineClaims(lineIds, claimToken) {
-  const ids = [...new Set((lineIds || []).filter(Boolean))]
-  if (!ids.length || !claimToken) throw new Error('Reserva de criação inválida.')
+const coordinateBankClaimRelease = createBankClaimReleaseCoordinator(async (ids, claimToken) => {
   const { data, error } = await supabase.rpc('release_bank_statement_line_claims', {
     p_line_ids:ids,
     p_claim_token:claimToken,
@@ -225,6 +224,10 @@ export async function releaseBankStatementLineClaims(lineIds, claimToken) {
   if (error) throw error
   if (Number(data) !== ids.length) throw new Error('A reserva não pôde ser liberada porque a linha mudou ou já originou um lançamento.')
   return Number(data)
+})
+
+export async function releaseBankStatementLineClaims(lineIds, claimToken, options) {
+  return coordinateBankClaimRelease(lineIds, claimToken, options)
 }
 
 export async function fetchBankReconciliations(ownerId, importId) {
