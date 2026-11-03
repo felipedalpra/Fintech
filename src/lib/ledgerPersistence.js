@@ -1,4 +1,5 @@
 import { buildLedger } from './financialLedger.js'
+import { isProtectedFinancialImportRow } from './financeSync.js'
 
 function entryKey(entry) {
   return `${entry.source_type}|${entry.source_id}|${entry.source_component}`
@@ -149,7 +150,8 @@ export function buildLedgerPersistenceDelta(financeData, baselineData = null) {
       entries:changedIndexes.map(index => ledger.entries[index]),
       installments:changedIndexes.map(index => ledger.installments[index]),
     },
-    archive:baselineLedger.entries.filter(entry => !currentKeys.has(entryKey(entry))),
+    archive:baselineLedger.entries.filter(entry => !currentKeys.has(entryKey(entry))
+      && !isProtectedFinancialImportRow(entry)),
   }
 }
 

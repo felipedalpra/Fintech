@@ -42,11 +42,12 @@ create table if not exists public.financial_import_batches (
 -- ---------------------------------------------------------------------------
 -- 2. Linhas do lote (a revisão em si)
 -- ---------------------------------------------------------------------------
--- O `id` NÃO é gerado pelo banco: é o UUID determinístico de financialImportUuid(fileHash:lineKey),
--- que já é o id da origem financeira criada na aprovação. Isso preserva a idempotência existente e
--- dá o vínculo linha↔lançamento sem tabela de ligação.
+-- `id` identifica a linha da revisao. `source_id` identifica a origem financeira final e e gerado
+-- uma unica vez pelo banco. Separar os dois evita colisao global quando clinicas diferentes
+-- importam o mesmo arquivo, sem perder a idempotencia dentro do lote.
 create table if not exists public.financial_import_lines (
   id                     uuid not null,
+  source_id              uuid not null default gen_random_uuid(),
   user_id                uuid not null references auth.users(id) on delete cascade,
   batch_id               uuid not null references public.financial_import_batches(id) on delete cascade,
   source_line_key        text not null,
@@ -105,6 +106,8 @@ create index if not exists idx_financial_import_lines_pending
 -- Leitura paginada da revisão depende desta ordem.
 create index if not exists idx_financial_import_lines_batch_id
   on public.financial_import_lines(batch_id, id);
+create index if not exists idx_financial_import_lines_source
+  on public.financial_import_lines(user_id, source_id);
 
 -- ---------------------------------------------------------------------------
 -- 4. RLS — mesmo escopo do núcleo financeiro (dono da clínica + admin/gestão)

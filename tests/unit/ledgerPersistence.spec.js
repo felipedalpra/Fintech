@@ -84,3 +84,18 @@ test('razão incremental arquiva remoção sem reenviar títulos restantes', () 
   expect(delta.ledger.entries).toEqual([])
   expect(delta.archive.map(entry => entry.source_id)).toEqual([removed.id])
 })
+
+test('razão incremental não arquiva origem importada ausente do estado da aba', () => {
+  const imported = {
+    id:'55555555-5555-4555-8555-555555555555',
+    description:'Receita importada',
+    category:'outras_receitas',
+    value:300,
+    date:'2026-10-14',
+    receivedDate:'2026-10-14',
+    status:'recebido',
+    originLabel:'Importação MOV.xlsx · linha 2',
+  }
+  const delta = buildLedgerPersistenceDelta({ extraRevenues:[] }, { extraRevenues:[imported] })
+  expect(delta.archive).toEqual([])
+})

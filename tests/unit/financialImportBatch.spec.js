@@ -56,7 +56,7 @@ test('lote registra arquivo, autoria real e contagem', () => {
   expect(row.file_hash).toBe('a'.repeat(64))
   expect(row.line_count).toBe(2)
   expect(row.expected_line_count).toBe(2)
-  expect(row.status).toBe('reviewing')
+  expect(row.status).toBe('creating')
 })
 
 test('lote deriva o período das datas da planilha', () => {
@@ -78,7 +78,7 @@ test('lote sem linhas não quebra e não inventa período', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Linhas: o id é o UUID determinístico, que também será o id do lançamento
+// Linhas: id da revisao e id da origem financeira sao independentes
 // ---------------------------------------------------------------------------
 test('linha preserva o UUID determinístico da linha (idempotência)', () => {
   const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines:parsedFixture().lines })
@@ -89,6 +89,14 @@ test('linha preserva o UUID determinístico da linha (idempotência)', () => {
   expect(rows[0].batch_id).toBe(BATCH)
   expect(rows[0].user_id).toBe(OWNER)
   expect(rows[0].review_status).toBe('pending')
+})
+
+test('round-trip usa source_id do banco como id do lancamento final', () => {
+  const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines:parsedFixture().lines })
+  rows[0].source_id = 'cccccccc-3333-4333-8333-cccccccccccc'
+  const state = restoreReviewState(rows)
+  expect(state.lines[0].id).toBe('aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa')
+  expect(state.lines[0].sourceRecordId).toBe('cccccccc-3333-4333-8333-cccccccccccc')
 })
 
 test('linha preserva metadados da planilha e o valor com sinal', () => {

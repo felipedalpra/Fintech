@@ -14,7 +14,7 @@ import { isMissingRelationError } from './financeStoreErrors.js'
 import { buildBatchLineRows, buildBatchRecord, lineDecisionPatch } from './financialImportBatch.js'
 
 const BATCH_COLUMNS = 'id, file_name, file_hash, sheet_name, line_count, status, created_at'
-const LINE_COLUMNS = 'id, batch_id, source_line_key, line_index, posted_date, amount, description, normalized_description, movement_fingerprint, source_metadata, review_status, chart_account_id, archived_at'
+const LINE_COLUMNS = 'id, source_id, batch_id, source_line_key, line_index, posted_date, amount, description, normalized_description, movement_fingerprint, source_metadata, review_status, chart_account_id, archived_at'
 // Gravação: 500 por bloco. Leitura: 1000 por página, que é o teto padrão do PostgREST — sem
 // paginar, um lote de 1.500 linhas voltaria truncado em 1.000, SEM erro (o limite da tela é 50.000).
 const WRITE_CHUNK = 500
@@ -112,15 +112,17 @@ export async function createBatch({ ownerId, actorId, parsed }) {
   if (batchError) return schemaMissing(batchError) || { error:batchError }
 
   const rows = buildBatchLineRows({ ownerId, batchId:batch.id, lines:parsed?.lines || [] })
+  const persistedRows = []
   for (const chunk of chunked(rows, WRITE_CHUNK)) {
     const { data: saved, error } = await supabase
       .from('financial_import_lines')
       .insert(chunk)
-      .select('id')
+      .select(LINE_COLUMNS)
     if (error || (saved?.length || 0) !== chunk.length) {
       await discardBatch(batch.id).catch(() => {})
       return { error:error || new Error('O banco nao confirmou todas as linhas da planilha.') }
     }
+    persistedRows.push(...saved)
   }
 
   const { data: promoted, error: promoteError } = await supabase
@@ -133,7 +135,29 @@ export async function createBatch({ ownerId, actorId, parsed }) {
     await discardBatch(batch.id).catch(() => {})
     return { error:promoteError }
   }
-  return { batch:promoted, rows }
+  return { batch:promoted, rows:persistedRows }
+}
+
+// Aprova origem financeira + progresso da linha na MESMA transacao do Postgres. A tela so recebe
+// sucesso depois que os dois lados foram confirmados; nao existe mais janela em que o lancamento
+// aparece localmente como salvo mas a linha do lote (ou a origem) falhou.
+export async function approveFinancialImportLines({ batchId, items = [] }) {
+  if (!batchId || !items.length) return { rows:[] }
+  const payload = items.map(item => ({
+    line_id:item.line.id,
+    source_id:item.proposal.record.id,
+    collection:item.proposal.collection,
+    record:item.proposal.record,
+  }))
+  const { data, error } = await supabase.rpc('approve_financial_import_lines', {
+    p_batch_id:batchId,
+    p_items:payload,
+  })
+  if (error) return { error }
+  if ((data?.length || 0) !== items.length) {
+    return { error:new Error('O banco nao confirmou todas as linhas deste bloco de importacao.') }
+  }
+  return { rows:data }
 }
 
 // Reabre um lote concluído, para que rejeições possam ser revistas depois de recarregar a página.
@@ -187,25 +211,6 @@ export async function saveLineEdit({ batchId, lineId, line, actorId }) {
     .eq('id', lineId)
     .neq('review_status', 'approved')
   if (error) return schemaMissing(error) || { error }
-  return { ok:true }
-}
-
-// Chamada DEPOIS de cada bloco confirmado no financeiro. É o que torna a retomada exata: uma
-// confirmação que morre no bloco 2 de 4 encontra os blocos 1 e 2 como 'approved'.
-//
-// Não há coluna apontando para a origem criada porque ela seria redundante: o id da linha É o id da
-// origem (UUID determinístico), por construção.
-export async function markLinesApproved({ batchId, lineIds = [], actorId }) {
-  if (!lineIds.length) return { ok:true }
-  const patch = lineDecisionPatch({ decision:'approve', actorId })
-  for (const chunk of chunked(lineIds, ID_CHUNK)) {
-    const { error } = await supabase
-      .from('financial_import_lines')
-      .update(patch)
-      .eq('batch_id', batchId)
-      .in('id', chunk)
-    if (error) return schemaMissing(error) || { error }
-  }
   return { ok:true }
 }
 

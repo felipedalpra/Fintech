@@ -1,5 +1,5 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
-import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById } from './financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds } from './financeSync.js'
 import { mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
@@ -481,7 +481,10 @@ function mapGoalsRows(userId, data) {
 // conhecia (baseline) e removeu — nunca por diferença contra o banco (concorrência/estado defasado).
 async function syncTable(table, userId, rows, baselineRows) {
   const baselineIds = Array.isArray(baselineRows) ? new Set(baselineRows.map(row => row.id)) : null
-  const idsToDelete = computeIdsToDelete(baselineIds, rows)
+  const protectedIds = ['extra_revenues', 'expenses'].includes(table)
+    ? protectedFinancialImportIds(baselineRows)
+    : null
+  const idsToDelete = computeIdsToDelete(baselineIds, rows, protectedIds)
   const rowsToUpsert = computeRowsToUpsert(baselineRows, rows)
 
   if (idsToDelete.length > 0) {

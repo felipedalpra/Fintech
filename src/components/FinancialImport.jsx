@@ -9,7 +9,7 @@ import { parseStatementFile, statementTotals, updateStatementLine } from '../lib
 import { mergeApprovedStatementRecords } from '../lib/statementImportReview.js'
 import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinancialImportLines } from '../lib/financialImport.js'
 import { batchProgress, isBatchComplete, restoreReviewState } from '../lib/financialImportBatch.js'
-import { closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, markLinesApproved, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
+import { approveFinancialImportLines, closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -28,7 +28,7 @@ function reviewLabel(item, rejected, approved) {
   return { text:'Novo', color:C.accentLight }
 }
 
-export function FinancialImport({ data, saveDataNow }) {
+export function FinancialImport({ data, applyServerConfirmedData }) {
   const { toast } = useToast()
   const { user } = useAuth()
   const { ownerId } = useUserRole()
@@ -154,7 +154,8 @@ export function FinancialImport({ data, saveDataNow }) {
       throw new Error('A revisão não pode ser iniciada porque o banco não confirmou sua persistência. O arquivo não foi aberto.')
     }
     if (created.error) throw new Error(created.error.message || 'Não foi possível salvar a planilha para revisão. Nada foi importado.')
-    resetReview(result, file, preparedLines)
+    const persistedState = restoreReviewState(created.rows)
+    resetReview(result, file, persistedState.lines)
     setBatch(created.batch)
     setReviewPersisted(true)
     setResumable(null)
@@ -341,7 +342,7 @@ export function FinancialImport({ data, saveDataNow }) {
   }
 
   async function approveConfirmed() {
-    if (!confirmItems.length || !saveDataNow) return
+    if (!confirmItems.length || !applyServerConfirmedData) return
     if (!batch || !reviewPersisted || !user?.id) {
       setError('A revisão não está confirmada no banco. Nenhum lançamento foi aprovado.')
       return
@@ -358,16 +359,19 @@ export function FinancialImport({ data, saveDataNow }) {
       // `chunk`, não `batch`: `batch` é o lote persistido da revisão.
       for (let offset = 0; offset < creations.length; offset += IMPORT_BATCH_SIZE) {
         const chunk = creations.slice(offset, offset + IMPORT_BATCH_SIZE)
-        const operations = chunk.map(item => ({ collection:item.proposal.collection, record:item.proposal.record }))
-        await saveDataNow(current => mergeApprovedStatementRecords(current, chunk), { operations })
+        const approved = await approveFinancialImportLines({ batchId:batch.id, items:chunk })
+        if (approved?.error) {
+          const message = String(approved.error.message || '')
+          if (/approve_financial_import_lines|schema cache|function/i.test(message)) {
+            throw new Error('A aprovacao atomica ainda nao esta instalada no banco. Aplique financial_import_atomic_approval.sql e recarregue; nenhum lancamento deste bloco foi criado.')
+          }
+          throw approved.error
+        }
+        // O estado local muda somente DEPOIS da transacao confirmar origem + linha do lote.
+        // Esta funcao tambem incorpora as origens no baseline da sessao, impedindo que o autosave
+        // as interprete como ausentes e tente arquiva-las.
+        applyServerConfirmedData(current => mergeApprovedStatementRecords(current, chunk))
         const ids = chunk.map(item => item.line.id)
-        // Marca no lote só DEPOIS do bloco confirmado no financeiro. É isso que faz uma
-        // confirmação interrompida no bloco 2 de 4 retomar exatamente nos blocos restantes.
-        const marked = await markLinesApproved({ batchId:batch.id, lineIds:ids, actorId:user.id })
-        if (marked?.schemaMissing) setReviewPersisted(false)
-        // O financeiro já confirmou o bloco. Interrompe os próximos para não acumular uma revisão
-        // dessincronizada; o retry é idempotente pelos mesmos ids.
-        if (marked?.schemaMissing || marked?.error) throw new Error('O bloco entrou no financeiro, mas o progresso da revisão não foi confirmado. A importação foi interrompida para evitar divergência; recarregue antes de continuar.')
         completed += ids.length
         setApprovedIds(current => [...new Set([...current, ...ids])])
         setSelectedIds(current => current.filter(id => !ids.includes(id)))

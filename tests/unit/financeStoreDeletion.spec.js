@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById } from '../../src/lib/financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds } from '../../src/lib/financeSync.js'
 
 // MERGE por id (importar do navegador): nunca remove/sobrescreve o do servidor.
 test('mergeById: adiciona só o que o servidor não tem', () => {
@@ -56,6 +56,16 @@ test('nada a apagar quando current contém todo o baseline', () => {
 
 test('baseline vazio → nunca apaga', () => {
   expect(computeIdsToDelete(new Set(), [{ id: 'a' }])).toEqual([])
+})
+
+test('lancamento importado nao entra em arquivamento implicito do dataset', () => {
+  const baseline = [
+    { id:'manual', origin_label:'Receita manual' },
+    { id:'imported', origin_label:'Importação MOV.xlsx · linha 2' },
+    { id:'legacy-imported', origin_label:'Importacao MOV.xlsx · linha 3' },
+  ]
+  const protectedIds = protectedFinancialImportIds(baseline)
+  expect(computeIdsToDelete(new Set(baseline.map(row => row.id)), [], protectedIds)).toEqual(['manual'])
 })
 
 test('salvamento incremental envia somente linhas novas ou alteradas', () => {
