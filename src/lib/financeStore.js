@@ -1,6 +1,6 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
 import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds } from './financeSync.js'
-import { mapExtraRevenuesRows } from './financeStoreRows.js'
+import { mapExpensesRows, mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
 import { isChartSchemaMissing } from './chartOfAccountsStore.js'
@@ -251,6 +251,7 @@ async function fetchRelationalData(userId) {
       competenceDate:item.competence_date || item.date || '',
       dueDate:item.due_date || item.date || '',
       originLabel:item.origin_label || '',
+      isFinancialImport:item.is_financial_import === true,
       status:item.status || 'recebido',
       chartAccountId:item.chart_account_id || null,
     })),
@@ -266,6 +267,7 @@ async function fetchRelationalData(userId) {
       costCenter:item.cost_center || '',
       competenceDate:item.competence_date || item.due_date || '',
       originLabel:item.origin_label || '',
+      isFinancialImport:item.is_financial_import === true,
       chartAccountId:item.chart_account_id || null,
     })),
     assets:(assetsResult.data || []).map(item => ({
@@ -433,24 +435,6 @@ function mapProductPurchasesRows(userId, data) {
     purchase_date:item.purchaseDate,
     competence_date:item.competenceDate || item.purchaseDate || null,
     due_date:item.dueDate || item.purchaseDate || null,
-  }))
-}
-
-function mapExpensesRows(userId, data) {
-  return data.expenses.map(item => ({
-    id:item.id,
-    user_id:userId,
-    description:item.description,
-    category:item.category || 'outros',
-    value:item.value || 0,
-    due_date:item.dueDate,
-    competence_date:item.competenceDate || item.dueDate || null,
-    payment_date:item.paymentDate || null,
-    status:item.status || 'aberto',
-    supplier_id:item.supplierId || null,
-    cost_center:item.costCenter || null,
-    origin_label:item.originLabel || null,
-    ...(item.chartAccountId ? { chart_account_id:item.chartAccountId } : {}),
   }))
 }
 

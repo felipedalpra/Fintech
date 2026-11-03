@@ -16,7 +16,9 @@ export function computeIdsToDelete(baselineIds, currentRows, protectedIds = null
 // Importacoes retroativas so podem ser arquivadas por uma acao explicita e auditavel. Remover uma
 // linha do estado de uma aba (por cache, corrida ou cliente antigo) nao e uma decisao de exclusao.
 export function isProtectedFinancialImportRow(row) {
-  return /^Importa(?:cao|ção)\b/i.test(String(row?.origin_label || row?.originLabel || '').trim())
+  return row?.is_financial_import === true
+    || row?.isFinancialImport === true
+    || /^Importa(?:cao|ção)\b/i.test(String(row?.origin_label || row?.originLabel || '').trim())
 }
 
 export function protectedFinancialImportIds(rows = []) {

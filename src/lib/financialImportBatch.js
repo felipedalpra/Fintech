@@ -46,7 +46,6 @@ export function buildBatchRecord({ ownerId, actorId, parsed }) {
 export function buildBatchLineRows({ ownerId, batchId, lines = [] }) {
   return lines.map(line => ({
     id:line.id,
-    ...(line.sourceRecordId || line.source_id ? { source_id:line.sourceRecordId || line.source_id } : {}),
     user_id:ownerId,
     batch_id:batchId,
     source_line_key:line.sourceLineKey || '',

@@ -203,6 +203,8 @@ do $$
 declare
   source_owner_one uuid;
   source_owner_two uuid;
+  forced_source uuid := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  generated_source uuid;
 begin
   select source_id into source_owner_one from public.financial_import_lines
   where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000001';
@@ -214,6 +216,26 @@ begin
   if source_owner_two = source_owner_one then
     raise exception 'Clinicas diferentes continuaram compartilhando source_id.';
   end if;
+
+  insert into public.financial_import_lines(
+    id, source_id, user_id, batch_id, source_line_key, line_index, posted_date, amount,
+    description, normalized_description, movement_fingerprint, review_status
+  ) values (
+    '40000000-0000-4000-8000-000000000005', forced_source,
+    '10000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000003',
+    'linha-5', 4, '2026-10-03', 25, 'Origem gerada no banco', 'origem gerada no banco',
+    'fp-5', 'pending'
+  ) returning source_id into generated_source;
+  if generated_source = forced_source then
+    raise exception 'INSERT aceitou source_id fornecido pelo cliente.';
+  end if;
+  begin
+    update public.financial_import_lines set source_id = forced_source
+    where batch_id = '30000000-0000-4000-8000-000000000003'
+      and id = '40000000-0000-4000-8000-000000000005';
+    raise exception 'source_id existente foi alterado.';
+  exception when sqlstate '55000' then null;
+  end;
 end $$;
 
 set role authenticated;
@@ -241,9 +263,36 @@ select * from public.approve_financial_import_lines(
   ))
 );
 
--- Arquivamento implicito da origem importada e recusado pelo banco.
 do $$
 begin
+  if (select cost_center from public.expenses
+      where id = (select source_id from public.financial_import_lines
+                  where batch_id = '30000000-0000-4000-8000-000000000001'
+                    and id = '40000000-0000-4000-8000-000000000002')) <> 'Clinica'
+     or (select cost_center from public.financial_entries
+         where source_id = (select source_id from public.financial_import_lines
+                            where batch_id = '30000000-0000-4000-8000-000000000001'
+                              and id = '40000000-0000-4000-8000-000000000002')) <> 'Clinica' then
+    raise exception 'Retry idempotente sobrescreveu origem ou razao com snapshot antigo.';
+  end if;
+end $$;
+
+-- Arquivamento implicito continua recusado mesmo se o rotulo editavel for apagado.
+do $$
+begin
+  update public.expenses set origin_label = null
+  where id = (select source_id from public.financial_import_lines where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000002');
+  update public.financial_entries set origin_label = null
+  where source_id = (select source_id from public.financial_import_lines where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000002');
+  update public.financial_import_lines set archived_at = now()
+  where batch_id = '30000000-0000-4000-8000-000000000001'
+    and id = '40000000-0000-4000-8000-000000000002';
+  begin
+    update public.expenses set is_financial_import = false
+    where id = (select source_id from public.financial_import_lines where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000002');
+    raise exception 'Marcador persistente da importacao foi removido.';
+  exception when sqlstate '55000' then null;
+  end;
   begin
     update public.expenses set archived_at = now()
     where id = (select source_id from public.financial_import_lines where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000002');

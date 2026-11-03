@@ -21,6 +21,7 @@ import { buildDrePresentation, flattenVisibleDreRows } from '../lib/drePresentat
 import { releaseBankStatementLineClaims } from '../lib/bankReconciliationStore.js'
 import { BillingChargeButton } from './BillingChargeButton.jsx'
 import { paymentScheduleFlow } from '../lib/paymentScheduleFlow.js'
+import { isProtectedFinancialImportRow } from '../lib/financeSync.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -830,6 +831,10 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
   }
 
   const removeRecord = record => {
+    if (isProtectedFinancialImportRow(record)) {
+      toast('Lançamentos importados não podem ser removidos por esta tela. Use o fluxo auditado da importação.', 'warning')
+      return
+    }
     const collection = { extra:'extraRevenues', expense:'expenses', asset:'assets', liability:'liabilities' }[record.type]
     setData(current => ({ ...current, [collection]:current[collection].filter(item => item.id !== record.id) }))
     toast('Registro removido.', 'warning')
@@ -838,6 +843,12 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
   const handleConfirmAction = async () => {
     if (!confirmState) return
     if (confirmState.action === 'delete-expense') {
+      const expense = data.expenses.find(record => record.id === confirmState.id)
+      if (isProtectedFinancialImportRow(expense)) {
+        toast('Esta despesa veio de uma importação e está protegida contra remoção não auditada.', 'warning')
+        setConfirmState(null)
+        return
+      }
       setData(current => ({ ...current, expenses:current.expenses.filter(record => record.id !== confirmState.id) }))
       toast('Saída removida.', 'warning')
       setConfirmState(null)
@@ -852,6 +863,12 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         setData(current => ({ ...current, consultations:current.consultations.map(c => c.id === referenceId ? { ...c, paymentStatus:'pendente', paymentDate:null } : c) }))
         toast('Consulta marcada como pendente — saiu do financeiro.', 'warning')
       } else if (origin === 'outra_receita') {
+        const revenue = data.extraRevenues.find(record => record.id === referenceId)
+        if (isProtectedFinancialImportRow(revenue)) {
+          toast('Esta receita veio de uma importação e está protegida contra remoção não auditada.', 'warning')
+          setConfirmState(null)
+          return
+        }
         setData(current => ({ ...current, extraRevenues:current.extraRevenues.filter(r => r.id !== referenceId) }))
         toast('Receita removida.', 'warning')
       } else if (origin === 'venda_produto') {
@@ -1301,6 +1318,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
           const sourceMap = { cirurgia:data.surgeries, consulta:data.consultations, outra_receita:data.extraRevenues, venda_produto:data.productSales }
           const editType = editTypeMap[item.origin]
           const sourceRecord = editType ? (sourceMap[item.origin] || []).find(r => r.id === item.referenceId) : null
+          const protectedImport = isProtectedFinancialImportRow(sourceRecord)
           return {
             key:item.id,
             cells:[
@@ -1308,7 +1326,9 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
               <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>,
               <div style={{ display:'flex', gap:6 }}>
                 {sourceRecord && <Btn variant="ghost" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openEdit(editType, sourceRecord)}>Editar</Btn>}
-                {removable
+                {protectedImport
+                  ? <span title="Importações só podem ser removidas por um fluxo auditado." style={{ color:C.textDim, fontSize:11 }}>Importado protegido</span>
+                  : removable
                   ? <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, title:removeLabels[item.origin], message:messages[item.origin], confirmLabel:'Confirmar', confirmVariant:'danger' })}>{removeLabels[item.origin]}</Btn>
                   : <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
               </div>,
@@ -1353,8 +1373,11 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
           const editTypeMap = { despesa:'expense', compra_produto:'product-purchase' }
           const sourceRecord = (editSourceMap[item.origin] || []).find(r => r.id === item.referenceId)
           const editType = editTypeMap[item.origin]
+          const protectedImport = isProtectedFinancialImportRow(sourceRecord)
           let removeBtn = null
-          if (item.origin === 'despesa') {
+          if (protectedImport) {
+            removeBtn = <span title="Importações só podem ser removidas por um fluxo auditado." style={{ color:C.textDim, fontSize:11 }}>Importado protegido</span>
+          } else if (item.origin === 'despesa') {
             removeBtn = <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir despesa', message:'Deseja excluir esta despesa? O lançamento será removido permanentemente.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Remover</Btn>
           } else if (item.origin === 'compra_produto') {
             removeBtn = <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-exit', origin:'compra_produto', referenceId:item.referenceId, title:'Remover compra de produto', message:'Deseja remover esta compra de produto? Ela será excluída permanentemente.', confirmLabel:'Remover', confirmVariant:'danger' })}>Remover</Btn>
@@ -1698,7 +1721,9 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
                   onQuickCancel={() => setQuickCategory(QUICK_CATEGORY_EMPTY)} />
               : <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} placeholder="Ex: outras_receitas" />}
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
-            <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
+            {editing && isProtectedFinancialImportRow(form)
+              ? <div><div style={{ fontSize:12, color:C.textSub, marginBottom:6 }}>Origem</div><div style={{ color:C.text, padding:'10px 12px', border:`1px solid ${C.border}`, borderRadius:8 }}>{form.originLabel}</div><div style={{ color:C.textDim, fontSize:11, marginTop:5 }}>Identificação preservada porque este lançamento veio de uma importação auditada.</div></div>
+              : <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />}
             <PatientSelector label="Cliente (opcional)" value={form.patientId} onChange={(id, name) => setForm(current => ({ ...current, patientId:id, patient:name }))} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
@@ -1768,7 +1793,9 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
                   onQuickCancel={() => setQuickCategory(QUICK_CATEGORY_EMPTY)} />
               : <FInput label="Categoria" value={form.category} onChange={value => setForm(current => ({ ...current, category:value }))} options={EXPENSE_CATEGORIES.map(item => ({ v:item, l:EXPENSE_CATEGORY_LABELS[item] || item }))} />}
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
-            <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />
+            {editing && isProtectedFinancialImportRow(form)
+              ? <div><div style={{ fontSize:12, color:C.textSub, marginBottom:6 }}>Origem</div><div style={{ color:C.text, padding:'10px 12px', border:`1px solid ${C.border}`, borderRadius:8 }}>{form.originLabel}</div><div style={{ color:C.textDim, fontSize:11, marginTop:5 }}>Identificação preservada porque este lançamento veio de uma importação auditada.</div></div>
+              : <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />}
             <SupplierSelector value={form.supplierId} onChange={(id, name) => setForm(current => ({ ...current, supplierId:id, supplier:name }))} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 

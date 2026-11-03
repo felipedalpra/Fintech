@@ -14,6 +14,11 @@ begin;
 alter table public.financial_import_lines
   add column if not exists source_id uuid;
 
+alter table public.extra_revenues
+  add column if not exists is_financial_import boolean not null default false;
+alter table public.expenses
+  add column if not exists is_financial_import boolean not null default false;
+
 -- Linhas que ja produziram uma origem preservam o id historico. Linhas ainda nao aprovadas recebem
 -- um UUID novo e independente do arquivo/tenant. Assim nenhum lancamento existente troca de chave.
 update public.financial_import_lines line
@@ -29,12 +34,84 @@ set source_id = case
 end
 where line.source_id is null;
 
+-- Marca origens historicas sem depender para sempre do texto editavel `origin_label`.
+update public.extra_revenues source
+set is_financial_import = true
+where source.is_financial_import is not true
+  and (
+    coalesce(source.origin_label, '') ~* '^Importa(cao|ção)\y'
+    or exists (
+      select 1 from public.financial_import_lines line
+      where line.user_id = source.user_id
+        and line.source_id = source.id
+        and line.review_status = 'approved'
+    )
+  );
+
+update public.expenses source
+set is_financial_import = true
+where source.is_financial_import is not true
+  and (
+    coalesce(source.origin_label, '') ~* '^Importa(cao|ção)\y'
+    or exists (
+      select 1 from public.financial_import_lines line
+      where line.user_id = source.user_id
+        and line.source_id = source.id
+        and line.review_status = 'approved'
+    )
+  );
+
 alter table public.financial_import_lines
   alter column source_id set default gen_random_uuid(),
   alter column source_id set not null;
 
 create index if not exists idx_financial_import_lines_source
   on public.financial_import_lines(user_id, source_id);
+
+-- `source_id` e identidade interna, nao entrada do navegador. O trigger sobrescreve qualquer valor
+-- enviado no INSERT e impede que uma linha existente seja religada a outra origem.
+create or replace function public.enforce_financial_import_source_id()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.source_id := gen_random_uuid();
+  elsif new.source_id is distinct from old.source_id then
+    raise exception 'A origem vinculada a linha de importacao e imutavel.' using errcode = '55000';
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists trg_financial_import_lines_source_id on public.financial_import_lines;
+create trigger trg_financial_import_lines_source_id
+before insert or update of source_id on public.financial_import_lines
+for each row execute function public.enforce_financial_import_source_id();
+
+create or replace function public.preserve_financial_import_marker()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if old.is_financial_import is true and new.is_financial_import is not true then
+    raise exception 'O marcador de origem importada e imutavel.' using errcode = '55000';
+  end if;
+  return new;
+end
+$$;
+
+drop trigger if exists trg_extra_revenues_preserve_import_marker on public.extra_revenues;
+create trigger trg_extra_revenues_preserve_import_marker
+before update of is_financial_import on public.extra_revenues
+for each row execute function public.preserve_financial_import_marker();
+
+drop trigger if exists trg_expenses_preserve_import_marker on public.expenses;
+create trigger trg_expenses_preserve_import_marker
+before update of is_financial_import on public.expenses
+for each row execute function public.preserve_financial_import_marker();
 
 create or replace function public.approve_financial_import_lines(
   p_batch_id uuid,
@@ -137,6 +214,48 @@ begin
       raise exception 'O tipo da origem nao corresponde ao sinal do lancamento.' using errcode = '22023';
     end if;
 
+    v_source_type := case when v_collection = 'extraRevenues' then 'extra_revenue' else 'expense' end;
+    v_direction := case when v_collection = 'extraRevenues' then 'receivable' else 'payable' end;
+    v_party_type := case when v_collection = 'extraRevenues' then 'other' else 'supplier' end;
+
+    -- Retry e aba antiga sao leitura idempotente: depois de aprovada, a linha nunca regrava a
+    -- origem, o titulo ou a parcela com um snapshot possivelmente defasado do navegador.
+    if v_line.review_status = 'approved' then
+      if not (
+        (v_collection = 'extraRevenues' and exists (
+          select 1 from public.extra_revenues source
+          where source.id = v_source_id and source.user_id = v_owner and source.archived_at is null
+        )) or
+        (v_collection = 'expenses' and exists (
+          select 1 from public.expenses source
+          where source.id = v_source_id and source.user_id = v_owner and source.archived_at is null
+        ))
+      ) or not exists (
+        select 1
+        from public.financial_entries entry
+        join public.financial_installments installment
+          on installment.financial_entry_id = entry.id
+         and installment.user_id = v_owner
+         and installment.archived_at is null
+        where entry.user_id = v_owner
+          and entry.source_type = v_source_type
+          and entry.source_id = v_source_id
+          and entry.source_component = 'revenue'
+          and entry.archived_at is null
+      ) then
+        raise exception 'Linha aprovada possui persistencia financeira incompleta; nenhuma regravacao foi feita.'
+          using errcode = '40001';
+      end if;
+
+      approved_line_id := v_line_id;
+      approved_source_id := v_source_id;
+      approved_collection := v_collection;
+      source_created := false;
+      v_approved_count := v_approved_count + 1;
+      return next;
+      continue;
+    end if;
+
     begin
       v_chart_account_id := nullif(v_record->>'chartAccountId', '')::uuid;
       v_competence_date := coalesce(nullif(v_record->>'competenceDate', '')::date, v_line.posted_date);
@@ -161,12 +280,13 @@ begin
     if v_collection = 'extraRevenues' then
       insert into public.extra_revenues (
         id, user_id, description, category, value, date, received_date, status,
-        competence_date, due_date, cost_center, origin_label, chart_account_id, archived_at
+        competence_date, due_date, cost_center, origin_label, chart_account_id,
+        is_financial_import, archived_at
       ) values (
         v_source_id, v_owner, coalesce(nullif(btrim(v_line.description), ''), 'Receita importada'),
         v_category, abs(v_line.amount), v_line.posted_date, v_line.posted_date, 'recebido',
         v_competence_date, v_line.posted_date, v_cost_center, v_origin_label,
-        v_chart_account_id, null
+        v_chart_account_id, true, null
       )
       on conflict (id) do nothing;
       get diagnostics v_inserted = row_count;
@@ -179,11 +299,12 @@ begin
     else
       insert into public.expenses (
         id, user_id, description, category, value, due_date, payment_date, status,
-        competence_date, cost_center, origin_label, chart_account_id, archived_at
+        competence_date, cost_center, origin_label, chart_account_id,
+        is_financial_import, archived_at
       ) values (
         v_source_id, v_owner, coalesce(nullif(btrim(v_line.description), ''), 'Despesa importada'),
         v_category, abs(v_line.amount), v_line.posted_date, v_line.posted_date, 'pago',
-        v_competence_date, v_cost_center, v_origin_label, v_chart_account_id, null
+        v_competence_date, v_cost_center, v_origin_label, v_chart_account_id, true, null
       )
       on conflict (id) do nothing;
       get diagnostics v_inserted = row_count;
@@ -198,10 +319,6 @@ begin
     -- A origem operacional e o razao precisam confirmar juntos. Sem estas duas escritas, a tela
     -- poderia somar a origem em memoria enquanto auditorias/relatorios relacionais ainda nao a
     -- encontrassem no titulo e na parcela canonicos.
-    v_source_type := case when v_collection = 'extraRevenues' then 'extra_revenue' else 'expense' end;
-    v_direction := case when v_collection = 'extraRevenues' then 'receivable' else 'payable' end;
-    v_party_type := case when v_collection = 'extraRevenues' then 'other' else 'supplier' end;
-
     insert into public.financial_entries (
       user_id, direction, source_type, source_id, source_component, description,
       party_type, party_name_snapshot, category, cost_center, origin_label, chart_account_id,
@@ -289,12 +406,32 @@ grant execute on function public.approve_financial_import_lines(uuid, jsonb) to 
 create or replace function public.prevent_implicit_financial_import_archive()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_old jsonb := to_jsonb(old);
+  v_owner uuid := nullif(v_old->>'user_id', '')::uuid;
+  v_source_id uuid := case
+    when tg_table_name = 'financial_entries' then nullif(v_old->>'source_id', '')::uuid
+    else nullif(v_old->>'id', '')::uuid
+  end;
+  v_linked_import boolean := false;
 begin
+  if v_owner is not null and v_source_id is not null then
+    select exists (
+      select 1 from public.financial_import_lines line
+      where line.user_id = v_owner
+        and line.source_id = v_source_id
+        and line.review_status = 'approved'
+    ) into v_linked_import;
+  end if;
+
   if old.archived_at is null
      and new.archived_at is not null
-     and coalesce(old.origin_label, '') ~* '^Importa(cao|ção)\y'
+     and (v_linked_import
+       or coalesce((v_old->>'is_financial_import')::boolean, false)
+       or coalesce(v_old->>'origin_label', '') ~* '^Importa(cao|ção)\y')
      and coalesce(current_setting('app.explicit_financial_import_archive', true), '') <> 'on' then
     raise exception 'Lancamento importado so pode ser arquivado por uma acao explicita e auditavel.'
       using errcode = '55000';

@@ -127,6 +127,7 @@ export function normalizeData(data) {
           costCenter:expense.costCenter || '',
           competenceDate:expense.competenceDate || expense.dueDate || expense.date || '',
           originLabel:expense.originLabel || '',
+          isFinancialImport:expense.isFinancialImport === true,
           supplierId:expense.supplierId || null,
           chartAccountId:expense.chartAccountId || null,
         }))

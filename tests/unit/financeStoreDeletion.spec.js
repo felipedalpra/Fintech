@@ -68,6 +68,12 @@ test('lancamento importado nao entra em arquivamento implicito do dataset', () =
   expect(computeIdsToDelete(new Set(baseline.map(row => row.id)), [], protectedIds)).toEqual(['manual'])
 })
 
+test('marcador persistente protege importacao mesmo sem rotulo de origem', () => {
+  const baseline = [{ id:'imported', originLabel:'', isFinancialImport:true }]
+  const protectedIds = protectedFinancialImportIds(baseline)
+  expect(computeIdsToDelete(new Set(['imported']), [], protectedIds)).toEqual([])
+})
+
 test('salvamento incremental envia somente linhas novas ou alteradas', () => {
   const baseline = [
     { id:'a', name:'Sem mudança', details:{ b:2, a:1 } },
