@@ -167,9 +167,8 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       return sum + Math.max(0, Number(row.amount || 0) - paid)
     }, 0)
     if (openValue <= 0) return
-    const dueDates = openRows.map(row => row.due_date).filter(Boolean).sort()
     const rawStatus = source?.paymentStatus || source?.status
-    const account = {
+    const accountBase = {
       id:`ledger-${entry.source_type}-${entry.source_id}-${entry.source_component}`,
       source:presentation.source,
       originLabel:source?.originLabel || '',
@@ -181,24 +180,47 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       chartAccountId:entry.chart_account_id || null,
       accountNature:entry.account_nature || null,
       dreSection:entry.dre_section || null,
-      value:openValue,
       competenceDate:entry.competence_date,
-      dueDate:dueDates[0] || entry.issue_date,
       openInstallments:openRows.length,
       installmentsTotal:rows.length,
-      openInstallmentRows:openRows.map(row => ({
-        installmentNumber:row.installment_number,
-        amount:Math.max(0, Number(row.amount || 0) - Number(row.paid_amount || 0)),
-        dueDate:row.due_date,
-        paymentMethod:row.payment_method || '',
-      })),
       status:rawStatus && !['pago', 'recebido'].includes(rawStatus) ? rawStatus : 'pendente',
       description:presentation.accountDescription,
     }
     if (entry.direction === 'receivable') {
-      accountsReceivable.push({ ...account, patient:entry.party_name_snapshot || presentation.description })
+      openRows.forEach(row => {
+        const installmentValue = Math.max(0, Number(row.amount || 0) - Number(row.paid_amount || 0))
+        if (installmentValue <= 0) return
+        const installment = {
+          installmentNumber:row.installment_number,
+          amount:installmentValue,
+          dueDate:row.due_date || entry.issue_date,
+          paymentMethod:row.payment_method || '',
+        }
+        accountsReceivable.push({
+          ...accountBase,
+          id:`${accountBase.id}-${row.installment_number}`,
+          value:installmentValue,
+          dueDate:installment.dueDate,
+          installmentNumber:row.installment_number,
+          openInstallmentRows:[installment],
+          description:rows.length > 1 ? `${presentation.accountDescription} (parcela ${row.installment_number}/${rows.length})` : presentation.accountDescription,
+          patient:entry.party_name_snapshot || presentation.description,
+        })
+      })
     } else {
-      accountsPayable.push({ ...account, supplier:entry.party_name_snapshot || presentation.description })
+      const dueDates = openRows.map(row => row.due_date).filter(Boolean).sort()
+      accountsPayable.push({
+        ...accountBase,
+        value:openValue,
+        dueDate:dueDates[0] || entry.issue_date,
+        openInstallmentRows:openRows.map(row => ({
+          installmentNumber:row.installment_number,
+          amount:Math.max(0, Number(row.amount || 0) - Number(row.paid_amount || 0)),
+          dueDate:row.due_date,
+          paymentMethod:row.payment_method || '',
+        })),
+        supplier:entry.party_name_snapshot || presentation.description,
+      })
     }
   })
 

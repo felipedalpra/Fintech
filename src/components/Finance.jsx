@@ -59,6 +59,7 @@ const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', s
 
 function settleReceivableInstallment(record, account) {
   const installment = account.openInstallmentRows?.[0] || { installmentNumber:1, amount:account.value }
+  const remainingOpenInstallments = Number(account.openInstallments || account.openInstallmentRows?.length || 1)
   const receivedDate = today()
   const legacyFlow = paymentScheduleFlow(record.totalValue ?? record.value ?? account.value, record)
   const legacySettlements = Object.fromEntries((legacyFlow.paidInstallments || []).map(entry => [String(entry.index + 1), {
@@ -73,20 +74,20 @@ function settleReceivableInstallment(record, account) {
     [String(installment.installmentNumber)]:{
       receivedDate,
       amount:installment.amount,
-      method:record.paymentMethod || 'manual',
+      method:installment.paymentMethod || record.paymentMethod || 'manual',
     },
   }
   return {
     ...record,
     receiptSettlements,
     paymentDate:receivedDate,
-    paymentStatus:(account.openInstallmentRows?.length || 1) === 1 ? 'pago' : 'pendente',
+    paymentStatus:remainingOpenInstallments === 1 ? 'pago' : 'pendente',
   }
 }
 
 function settleProductSaleInstallment(record, account) {
   const settled = settleReceivableInstallment(record, account)
-  const allPaid = (account.openInstallmentRows?.length || 1) === 1
+  const allPaid = Number(account.openInstallments || account.openInstallmentRows?.length || 1) === 1
   return {
     ...settled,
     paymentStatus:allPaid ? 'recebido' : 'pendente',
@@ -748,7 +749,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     }
     if (item.source === 'venda_produto') {
       setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? settleProductSaleInstallment(record, item) : record) }))
-      toast((item.openInstallmentRows?.length || 1) === 1 ? 'Venda de produto marcada como recebida.' : 'Parcela da venda marcada como recebida.')
+      toast(Number(item.openInstallments || item.openInstallmentRows?.length || 1) === 1 ? 'Venda de produto marcada como recebida.' : 'Parcela da venda marcada como recebida.')
       return
     }
     if (item.source === 'cirurgia') {

@@ -172,9 +172,9 @@ function receivableRows(ctx) {
       const source = sourceRecords.get(`${item.source}:${item.sourceId}`)
       return {
         source:sourceLabels[item.source] || labelize(item.source), document:item.sourceId || item.id,
-        customer:item.patient || 'Não informado', description:item.description || '', installment:item.openInstallments || 1,
+        customer:item.patient || 'Não informado', description:item.description || '', installment:item.installmentNumber || 1,
         competenceDate:item.competenceDate, dueDate:item.dueDate, value:num(item.value),
-        status:dueStatus(item.dueDate, range.end), paymentMethod:paymentMethodLabel(source?.paymentMethod),
+        status:dueStatus(item.dueDate, range.end), paymentMethod:paymentMethodLabel(item.openInstallmentRows?.[0]?.paymentMethod || source?.paymentMethod),
       }
     })
     .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))

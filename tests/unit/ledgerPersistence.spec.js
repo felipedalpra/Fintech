@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { buildLedger } from '../../src/lib/financialLedger.js'
 import { buildLedgerPersistenceDelta, prepareFinancialEntryRows, prepareFinancialInstallmentRows } from '../../src/lib/ledgerPersistence.js'
+import { encodePaymentMethod } from '../../src/lib/paymentMethodCodec.js'
 
 const OWNER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -98,4 +99,27 @@ test('razão incremental não arquiva origem importada ausente do estado da aba'
   }
   const delta = buildLedgerPersistenceDelta({ extraRevenues:[] }, { extraRevenues:[imported] })
   expect(delta.archive).toEqual([])
+})
+
+test('persistência da consulta mantém competência e vencimento de cada parcela', () => {
+  const ledger = buildLedger({
+    consultations:[{
+      id:'66666666-6666-4666-8666-666666666666', patient:'Ana', value:900,
+      date:'2026-01-15', competenceDate:'2026-01-15', paymentStatus:'parcelado',
+      paymentMethod:encodePaymentMethod({ payments:[
+        { date:'2026-01-20', amount:300, method:'pix' },
+        { date:'2026-02-20', amount:300, method:'cartao' },
+        { date:'2026-03-20', amount:300, method:'boleto' },
+      ] }),
+    }],
+  })
+  const entries = prepareFinancialEntryRows(OWNER, ledger).map(entry => ({ ...entry, id:'77777777-7777-4777-8777-777777777777' }))
+  const installments = prepareFinancialInstallmentRows(OWNER, ledger, entries)
+
+  expect(entries[0]).toMatchObject({ competence_date:'2026-01-15', total_amount:900 })
+  expect(installments.map(item => ({ dueDate:item.due_date, amount:item.amount, method:item.payment_method }))).toEqual([
+    { dueDate:'2026-01-20', amount:300, method:'pix' },
+    { dueDate:'2026-02-20', amount:300, method:'cartao' },
+    { dueDate:'2026-03-20', amount:300, method:'boleto' },
+  ])
 })
