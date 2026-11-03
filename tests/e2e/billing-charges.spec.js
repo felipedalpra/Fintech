@@ -60,6 +60,7 @@ test('emite Pix da parcela exata sem permitir editar valor ou vencimento', async
     sourceType:'extra_revenue',
     sourceId:'11111111-1111-4111-8111-111111111111',
     installmentNumber:1,
+    sourceInstallmentNumber:1,
     billingType:'PIX',
   })
   expect(requestBody).not.toHaveProperty('amount')

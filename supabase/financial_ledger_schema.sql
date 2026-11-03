@@ -43,6 +43,7 @@ create table if not exists public.financial_installments (
   user_id              uuid not null references auth.users(id) on delete cascade,
   financial_entry_id   uuid not null references public.financial_entries(id) on delete cascade,
   installment_number   integer not null default 1,
+  source_installment_number integer,                      -- identidade estável no cronograma da origem
   amount               numeric(12,2) not null default 0,     -- valor original da parcela
   paid_amount          numeric(12,2) not null default 0,     -- valor efetivamente liquidado
   due_date             date,                                 -- vencimento
@@ -59,6 +60,7 @@ create table if not exists public.financial_installments (
   archived_at          timestamptz
 );
 alter table public.financial_installments add column if not exists archived_at timestamptz;
+alter table public.financial_installments add column if not exists source_installment_number integer;
 create unique index if not exists uq_financial_installments_entry_num
   on public.financial_installments(financial_entry_id, installment_number);
 create index if not exists idx_financial_installments_entry on public.financial_installments(financial_entry_id);

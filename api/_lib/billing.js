@@ -215,6 +215,7 @@ async function resolveInstallment(admin, ownerId, body) {
   const sourceId = String(body.sourceId || '')
   const sourceComponent = String(body.sourceComponent || 'revenue')
   const installmentNumber = Number(body.installmentNumber || 1)
+  const sourceInstallmentNumber = Number(body.sourceInstallmentNumber || installmentNumber)
   if (!['surgery','consultation','product_sale','extra_revenue'].includes(sourceType)) {
     throw Object.assign(new Error('Esta origem ainda não permite emissão automática.'), { statusCode:400 })
   }
@@ -229,6 +230,9 @@ async function resolveInstallment(admin, ownerId, body) {
   if (installmentError) throw installmentError
   if (!installment || installment.status === 'paid' || installment.settlement_date) {
     throw Object.assign(new Error('A parcela já foi liquidada ou não está mais disponível.'), { statusCode:409 })
+  }
+  if (Number(installment.source_installment_number || installment.installment_number) !== sourceInstallmentNumber) {
+    throw Object.assign(new Error('A identidade da parcela mudou. Recarregue o financeiro antes de emitir.'), { statusCode:409 })
   }
   if (!entry.party_id) throw Object.assign(new Error('Vincule um paciente ao lançamento antes de emitir a cobrança.'), { statusCode:400 })
   return { entry, installment }

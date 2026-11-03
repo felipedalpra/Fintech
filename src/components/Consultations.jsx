@@ -16,6 +16,7 @@ import {
   roundPaymentAmount,
   shiftInstallmentDate,
 } from '../lib/consultationPayments.js'
+import { hasRecognizedReceipt } from '../lib/receivablePaymentReversal.js'
 
 const TYPES = [
   { v:'avaliacao', l:'Avaliação' },
@@ -62,15 +63,6 @@ const STATUSES = [
   { v:'cancelado', l:'Cancelado' },
 ]
 const CONSULTATIONS_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_consultations'
-
-function hasRecognizedConsultationPayment(item) {
-  return Boolean(item && (
-    Object.keys(item.receiptSettlements || {}).length
-    || item.paymentDate
-    || item.receivedDate
-    || ['pago', 'recebido'].includes(item.paymentStatus)
-  ))
-}
 
 function readDraft() {
   if (typeof window === 'undefined') return null
@@ -134,7 +126,7 @@ export function Consultations({ data, setData, saveDataNow }) {
   const [sortBy, setSortBy] = useState('recentes')          // 'recentes' | 'antigas' | 'valor'
   const [installmentModal, setInstallmentModal] = useState(null)
   const editingRecord = editing ? data.consultations.find(item => item.id === editing) : null
-  const paymentLocked = hasRecognizedConsultationPayment(editingRecord)
+  const paymentLocked = hasRecognizedReceipt(editingRecord)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -215,7 +207,7 @@ export function Consultations({ data, setData, saveDataNow }) {
       consultations: editing
         ? current.consultations.map(item => {
           if (item.id !== editing) return item
-          if (!hasRecognizedConsultationPayment(item)) return { ...nextRecord, id:editing }
+          if (!hasRecognizedReceipt(item)) return { ...nextRecord, id:editing }
           return {
             ...nextRecord,
             id:editing,

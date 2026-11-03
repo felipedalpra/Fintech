@@ -28,6 +28,7 @@ export function BillingChargeButton({ item }) {
         sourceId:item.sourceId,
         sourceComponent:item.sourceComponent || 'revenue',
         installmentNumber:installment.installmentNumber,
+        sourceInstallmentNumber:installment.sourceInstallmentNumber || installment.installmentNumber,
         billingType,
         idempotencyKey:attemptId,
       })

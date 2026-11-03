@@ -123,3 +123,27 @@ test('persistência da consulta mantém competência e vencimento de cada parcel
     { dueDate:'2026-03-20', amount:300, method:'boleto' },
   ])
 })
+
+test('persistência mantém separadas a ordem do vencimento e a identidade da origem', () => {
+  const ledger = buildLedger({
+    consultations:[{
+      id:'88888888-8888-4888-8888-888888888888', patient:'Ana', value:300,
+      date:'2026-11-01', competenceDate:'2026-11-01', paymentStatus:'parcelado',
+      paymentMethod:encodePaymentMethod({ payments:[
+        { date:'2026-12-03', amount:200, method:'cartao' },
+        { date:'2026-11-03', amount:100, method:'pix' },
+      ] }),
+    }],
+  })
+  const entries = prepareFinancialEntryRows(OWNER, ledger).map(entry => ({ ...entry, id:'99999999-9999-4999-8999-999999999999' }))
+  const installments = prepareFinancialInstallmentRows(OWNER, ledger, entries)
+
+  expect(installments.map(item => ({
+    ledger:item.installment_number,
+    source:item.source_installment_number,
+    dueDate:item.due_date,
+  }))).toEqual([
+    { ledger:1, source:2, dueDate:'2026-11-03' },
+    { ledger:2, source:1, dueDate:'2026-12-03' },
+  ])
+})

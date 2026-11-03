@@ -20,11 +20,14 @@ export function paymentScheduleFlow(totalValueRaw, item) {
   const settlements = item?.receiptSettlements && typeof item.receiptSettlements === 'object'
     ? item.receiptSettlements
     : {}
+  // Um estorno continua no JSON para auditoria, mas deixa de ser fato de caixa.
+  // A presença dele ainda torna o registro explícito, impedindo o fallback legado
+  // de `paymentStatus = pago` de ressuscitar a parcela depois do estorno.
   const hasExplicitSettlements = Object.keys(settlements).length > 0
 
   const withSettlement = entry => {
     const settlement = settlements[String(entry.index + 1)]
-    if (!settlement?.receivedDate) return { ...entry, dueDate:entry.date, settlementDate:null }
+    if (!settlement?.receivedDate || settlement?.status === 'reversed') return { ...entry, dueDate:entry.date, settlementDate:null }
     return {
       ...entry,
       dueDate:entry.date,
@@ -36,7 +39,7 @@ export function paymentScheduleFlow(totalValueRaw, item) {
 
   if (schedule.length === 0) {
     const explicit = settlements['1']
-    const paid = Boolean(explicit?.receivedDate) || (!hasExplicitSettlements && ['pago', 'recebido'].includes(item?.paymentStatus))
+    const paid = Boolean(explicit?.receivedDate && explicit?.status !== 'reversed') || (!hasExplicitSettlements && ['pago', 'recebido'].includes(item?.paymentStatus))
     const dueDate = item?.forecastPaymentDate || item?.dueDate || item?.date
     const settlementDate = explicit?.receivedDate || item?.paymentDate || item?.receivedDate || dueDate
     return {

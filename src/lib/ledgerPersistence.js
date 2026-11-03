@@ -35,6 +35,7 @@ function asInstallmentRow(userId, entryId, row) {
     user_id:userId,
     financial_entry_id:entryId,
     installment_number:Number(row.installment_number || 1),
+    source_installment_number:Number(row.source_installment_number || row.installment_number || 1),
     amount,
     paid_amount:row.status === 'paid' ? amount : Number(row.paid_amount || 0),
     due_date:row.due_date || null,
