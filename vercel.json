@@ -19,7 +19,35 @@
       "destination": "/api/$1"
     },
     {
-      "source": "/(.*)",
+      "source": "/app",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/signup",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/reset-password",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/privacidade",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/termos",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/anamnese/(.*)",
       "destination": "/index.html"
     }
   ]
