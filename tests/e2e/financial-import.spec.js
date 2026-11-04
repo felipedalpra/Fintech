@@ -204,10 +204,19 @@ test('histórico lista as importações, bloqueia o que tem vínculo e cancela o
   const readyCard = page.getByTestId(`financial-import-history-${READY}`)
   await readyCard.getByRole('button', { name:'Cancelar importação' }).click()
 
-  // Motivo é obrigatório: sem ele a confirmação fica travada.
+  // Motivo é obrigatório: sem ele a confirmação fica travada — e a tela DIZ o que falta,
+  // em vez de deixar a usuária clicando num botão morto.
   const confirm = page.getByRole('button', { name:'Confirmar cancelamento' })
+  const reason = page.getByLabel('Motivo do cancelamento da importação')
   await expect(confirm).toBeDisabled()
-  await page.getByLabel('Motivo do cancelamento da importação').fill('planilha da clínica errada')
+  await expect(page.getByText('faltam 3 caractere(s)', { exact:false })).toBeVisible()
+
+  await reason.fill('oi')
+  await expect(confirm).toBeDisabled()
+  await expect(page.getByText('faltam 1 caractere(s)', { exact:false })).toBeVisible()
+
+  await reason.fill('planilha da clínica errada')
+  await expect(page.getByText('faltam', { exact:false })).toHaveCount(0)
   await expect(confirm).toBeEnabled()
   await confirm.click()
 
