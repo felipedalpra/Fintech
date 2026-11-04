@@ -6,7 +6,6 @@ import { buildMetrics } from '../useMetrics.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { SupplierSelector } from './SupplierSelector.jsx'
-import { ExportModal } from './ExportModal.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -245,7 +244,6 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     'section:financial_result',
     'section:income_taxes',
   ]))
-  const [showExport, setShowExport] = useState(false)
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
   const [formError, setFormError] = useState('')
   const [savingLaunch, setSavingLaunch] = useState(false)
@@ -1278,11 +1276,6 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
 
           <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, alignItems:'center' }}>
             {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} style={{ background:tab === id ? C.card : 'transparent', color:tab === id ? C.text : C.textSub, border:tab === id ? `1px solid ${C.border}` : '1px solid transparent', borderRadius:999, padding:'9px 14px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s', whiteSpace:'nowrap' }}>{label}</button>)}
-            <div style={{ marginLeft:'auto', flexShrink:0 }}>
-              <Btn variant="ghost" onClick={() => setShowExport(true)} style={{ fontSize:12, padding:'8px 14px', display:'flex', alignItems:'center', gap:6 }}>
-                <span>↓</span> Exportar para Contador
-              </Btn>
-            </div>
           </div>
         </div>
       </div>
@@ -2014,7 +2007,6 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </div>
         </div>
       </Modal>
-      <ExportModal open={showExport} onClose={() => setShowExport(false)} data={data} />
     </div>
   )
 }
