@@ -232,7 +232,7 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     const result = await saveLinesDecision({ batchId:batch.id, lineIds, decision, actorId:user.id })
     if (result?.schemaMissing) setReviewPersisted(false)
     if (result?.schemaMissing || result?.error) {
-      setError('A decisão NÃO foi salva e não foi aplicada na tela. Recarregue a página antes de continuar.')
+      setError(`A decisão não foi totalmente confirmada e não foi aplicada na tela. ${result?.error?.message || 'Recarregue a página antes de continuar.'}`)
       return false
     }
     return true
@@ -298,7 +298,7 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     const result = await saveLineEdit({ batchId:batch.id, lineId:updatedLine.id, line:updatedLine, actorId:user.id })
     if (result?.schemaMissing) setReviewPersisted(false)
     if (result?.schemaMissing || result?.error) {
-      setError('A edição NÃO foi salva e não foi aplicada na tela. Recarregue a página antes de continuar.')
+      setError(`A edição não foi confirmada e não foi aplicada na tela. ${result?.error?.message || 'Recarregue a página antes de continuar.'}`)
       return
     }
     setLines(current => current.map(line => (line.id === editingId ? updatedLine : line)))

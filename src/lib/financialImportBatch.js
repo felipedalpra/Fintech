@@ -141,3 +141,26 @@ export function batchProgress(rows = []) {
 export function isBatchComplete(rows = [], expectedLineCount = 0) {
   return rows.filter(row => !row.archived_at).length === Number(expectedLineCount || 0)
 }
+
+export function missingConfirmedLineIds(expectedIds = [], confirmedRows = [], key = 'id') {
+  const confirmed = new Set((confirmedRows || []).map(row => String(row?.[key] || '').toLowerCase()).filter(Boolean))
+  return (expectedIds || []).filter(id => !confirmed.has(String(id || '').toLowerCase()))
+}
+
+export function validateApprovalConfirmation(items = [], rows = []) {
+  if (rows.length !== items.length) return false
+  const expected = new Map(items.map(item => [String(item?.line?.id || '').toLowerCase(), {
+    sourceId:String(item?.proposal?.record?.id || '').toLowerCase(),
+    collection:item?.proposal?.collection,
+  }]))
+  const seen = new Set()
+  for (const row of rows) {
+    const lineId = String(row?.approved_line_id || '').toLowerCase()
+    const match = expected.get(lineId)
+    if (!match || seen.has(lineId)) return false
+    if (String(row?.approved_source_id || '').toLowerCase() !== match.sourceId) return false
+    if (row?.approved_collection !== match.collection) return false
+    seen.add(lineId)
+  }
+  return seen.size === expected.size
+}

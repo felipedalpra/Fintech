@@ -12,6 +12,9 @@ test('migration aprova origem, razao, parcela e progresso numa unica RPC', () =>
   expect(sql).toContain('insert into public.financial_installments')
   expect(sql).toContain("set review_status = 'approved'")
   expect(sql).toContain("'approve_financial_import_lines'")
+  expect(sql).toContain("account.node_type = 'account'")
+  expect(sql).toContain("v_direction = 'receivable'")
+  expect(sql).toContain("v_direction = 'payable'")
 })
 
 test('migration preserva dados e bloqueia arquivamento implicito de importacoes', () => {

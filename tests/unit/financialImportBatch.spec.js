@@ -7,7 +7,9 @@ import {
   buildBatchRecord,
   lineDecisionPatch,
   linesPendingApproval,
+  missingConfirmedLineIds,
   restoreReviewState,
+  validateApprovalConfirmation,
 } from '../../src/lib/financialImportBatch.js'
 
 const OWNER = '4472437e-f47b-41a3-9253-056660bcff20'
@@ -247,4 +249,25 @@ test('externalId sobrevive ao round-trip (chave de linha estável após retomar)
   const rows = buildBatchLineRows({ ownerId:OWNER, batchId:BATCH, lines })
   expect(rows[0].source_metadata.externalId).toBe('ext-2')
   expect(restoreReviewState(rows)["lines"][0].externalId).toBe('ext-2')
+})
+
+test('read-back detecta linha que o banco nao confirmou', () => {
+  const expected = ['AAAAAAAA-1111-4111-8111-AAAAAAAAAAAA', 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb']
+  const confirmed = [{ id:'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }]
+  expect(missingConfirmedLineIds(expected, confirmed)).toEqual(['bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb'])
+})
+
+test('confirmacao da RPC precisa corresponder exatamente a linha, origem e colecao', () => {
+  const item = {
+    line:{ id:'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' },
+    proposal:{ collection:'extraRevenues', record:{ id:'cccccccc-3333-4333-8333-cccccccccccc' } },
+  }
+  const valid = [{
+    approved_line_id:item.line.id,
+    approved_source_id:item.proposal.record.id,
+    approved_collection:item.proposal.collection,
+  }]
+  expect(validateApprovalConfirmation([item], valid)).toBe(true)
+  expect(validateApprovalConfirmation([item], [{ ...valid[0], approved_source_id:'dddddddd-4444-4444-8444-dddddddddddd' }])).toBe(false)
+  expect(validateApprovalConfirmation([item, item], [valid[0], valid[0]])).toBe(false)
 })
