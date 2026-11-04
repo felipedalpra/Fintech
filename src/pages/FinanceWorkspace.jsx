@@ -233,7 +233,7 @@ const PAGES = {
   consultations:Consultations,
   calendar:Calendar,
   products:Products,
-  finance:props => <Finance {...props} defaultTab="entradas" />,
+  finance:props => <Finance {...props} defaultTab="overview" />,
   cashflow:props => <Finance {...props} defaultTab="fluxo" />,
   dre:props => <Finance {...props} defaultTab="dre" />,
   balance:props => <Finance {...props} defaultTab="balanco" />,

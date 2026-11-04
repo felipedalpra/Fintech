@@ -6,6 +6,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-11-03
+### Changed
+- **Removido o botão “Exportar para Contador” da navegação do Financeiro**: a ação e seu modal exclusivo deixaram de aparecer na barra de abas, sem alterar os dados financeiros nem as demais exportações e relatórios da plataforma. (`src/components/Finance.jsx`.)
+- **Resumo financeiro concentrado em uma nova aba “Visão geral”**: os cards de resultado de caixa, lucro líquido, contas a receber e contas a pagar, além do próximo vencimento e dos alertas, deixaram de ocupar espaço em todas as abas. O acesso principal ao Financeiro abre a visão geral, enquanto atalhos como DRE, Balanço e Fluxo de caixa continuam indo diretamente ao conteúdo correspondente. (`src/components/Finance.jsx`, `src/pages/FinanceWorkspace.jsx`.)
+
 ### Added
 - **Consultas agora aceitam cronograma livre de parcelas, como as cirurgias**: além de uma ou duas datas, a criação e edição da consulta permite gerar parcelas mensais, quinzenais ou semanais, alterar individualmente vencimento, valor e forma de pagamento e acrescentar ou remover parcelas. A consulta só pode ser salva quando há ao menos duas parcelas válidas e a soma fecha exatamente com seu valor, evitando saldo financeiro oculto. (`src/components/Consultations.jsx`, `src/lib/consultationPayments.js`, `tests/unit/consultationPayments.spec.js`.)
 
