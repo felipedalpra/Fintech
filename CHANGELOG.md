@@ -7,6 +7,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-04
 ### Fixed
+- **Cancelamento de importação explica por que o botão está travado**: o motivo exige no mínimo 3 caracteres (regra do banco), mas a tela apenas desabilitava “Confirmar cancelamento” em silêncio — quem escrevia um motivo curto ficava clicando num botão morto sem nenhuma pista do que faltava. O rótulo agora anuncia o mínimo, o campo fica destacado enquanto o motivo é curto e uma mensagem diz quantos caracteres faltam, além de lembrar que o motivo vai para o histórico e a auditoria. O textarea ganhou `aria-invalid` e `aria-describedby` ligando campo e mensagem. Nenhuma mudança na regra: o banco continua sendo quem valida. (`src/components/FinancialImport.jsx`, `tests/e2e/financial-import.spec.js`.)
 - **E2E de restauração de modal voltou a exercitar o que promete**: o teste abria `/app/finance` e clicava em “+ Outra receita”, mas essa rota passou a abrir na aba “Visão geral” quando ela foi criada, e o botão só existe na aba “Entradas”. O teste falhava no clique, portanto as asserções de restauração do modal nunca chegavam a rodar — a suíte acusava falha sem medir nada. O teste agora entra na aba antes de clicar. Verificado que ele detecta uma regressão real: apagando o rascunho de `localStorage` **e** `sessionStorage` antes do reload, o modal não é restaurado e o teste falha. Nenhuma alteração de produto. (`tests/e2e/session-restore.spec.js`.)
 
 ### Added

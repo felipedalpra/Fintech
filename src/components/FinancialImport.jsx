@@ -508,6 +508,9 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     toast('Revisão descartada. Nenhum lançamento foi afetado.')
   }
 
+  // O banco exige motivo entre 3 e 500 caracteres; a tela espelha a mesma regra e explica a falta.
+  const cancelReasonTooShort = cancelReason.trim().length < 3
+
   const selectedItems = selectedIds.map(id => reviewById.get(id)).filter(Boolean)
 
   return (
@@ -736,10 +739,16 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
           <div style={{ color:C.red, fontWeight:900 }}>Todos os {cancelTarget.approved_count} lançamentos deste lote sairão do financeiro.</div>
           <div style={s.muted}>A operação é atômica: ou o lote inteiro é cancelado, ou nada muda. Os registros ficam arquivados para auditoria e o arquivo poderá ser importado novamente.</div>
           <Card style={{ padding:14 }}><strong style={{ color:C.text }}>{cancelTarget.file_name}</strong><div style={{ ...s.muted, marginTop:5 }}>Entradas {fmt(Number(cancelTarget.imported_receipts || 0))} · Saídas {fmt(Number(cancelTarget.imported_expenses || 0))}</div></Card>
-          <label style={s.label}>Motivo do cancelamento
-            <textarea aria-label="Motivo do cancelamento da importação" value={cancelReason} onChange={event => setCancelReason(event.target.value)} maxLength={500} placeholder="Ex.: arquivo importado na clínica errada" style={{ ...s.input, marginTop:5, minHeight:86, resize:'vertical' }} />
-          </label>
-          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason('') }} disabled={busy}>Voltar</Btn><Btn variant="danger" onClick={confirmCancellation} disabled={busy || cancelReason.trim().length < 3}>{busy ? 'Cancelando…' : 'Confirmar cancelamento'}</Btn></div>
+          <label style={s.label} htmlFor="financial-import-cancel-reason">Motivo do cancelamento (mínimo 3 caracteres)</label>
+          <textarea id="financial-import-cancel-reason" aria-label="Motivo do cancelamento da importação" aria-invalid={cancelReasonTooShort} aria-describedby="financial-import-cancel-reason-hint" value={cancelReason} onChange={event => setCancelReason(event.target.value)} maxLength={500} placeholder="Ex.: arquivo importado na clínica errada" style={{ ...s.input, minHeight:86, resize:'vertical', borderColor:cancelReasonTooShort ? `${C.yellow}88` : C.border }} />
+          {/* O botão desabilitado precisa DIZER o que falta. Recusar em silêncio deixa a usuária
+              clicando num botão morto sem saber que o problema é o tamanho do motivo. */}
+          <div id="financial-import-cancel-reason-hint" style={{ ...s.muted, color:cancelReasonTooShort ? C.yellow : C.textSub, marginTop:-10 }}>
+            {cancelReasonTooShort
+              ? `Escreva o motivo para liberar o cancelamento — faltam ${3 - cancelReason.trim().length} caractere(s). Ele fica no histórico e na auditoria.`
+              : 'O motivo fica registrado no histórico e na auditoria.'}
+          </div>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason('') }} disabled={busy}>Voltar</Btn><Btn variant="danger" onClick={confirmCancellation} disabled={busy || cancelReasonTooShort}>{busy ? 'Cancelando…' : 'Confirmar cancelamento'}</Btn></div>
         </div>}
       </Modal>
     </div>
