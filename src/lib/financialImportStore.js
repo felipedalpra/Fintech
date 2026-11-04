@@ -13,7 +13,7 @@ import { statementMovementFingerprint } from './statementParser.js'
 import { isMissingRelationError } from './financeStoreErrors.js'
 import { buildBatchLineRows, buildBatchRecord, lineDecisionPatch, missingConfirmedLineIds, validateApprovalConfirmation } from './financialImportBatch.js'
 
-const BATCH_COLUMNS = 'id, file_name, file_hash, sheet_name, line_count, status, created_at'
+const BATCH_COLUMNS = 'id, file_name, file_hash, sheet_name, line_count, status, created_at, ready_at, canceled_at, cancellation_reason'
 const LINE_COLUMNS = 'id, source_id, batch_id, source_line_key, line_index, posted_date, amount, description, normalized_description, movement_fingerprint, source_metadata, review_status, chart_account_id, archived_at'
 // Gravação: 500 por bloco. Leitura: 1000 por página, que é o teto padrão do PostgREST — sem
 // paginar, um lote de 1.500 linhas voltaria truncado em 1.000, SEM erro (o limite da tela é 50.000).
@@ -98,6 +98,24 @@ export async function loadBatchLines(batchId) {
   const result = await readAllPages(LINE_COLUMNS, batchId)
   if (result.error) return schemaMissing(result.error) || { error:result.error }
   return { rows:result.rows }
+}
+
+export async function loadImportHistory(limit = 50) {
+  const { data, error } = await supabase.rpc('list_financial_import_history', { p_limit:limit })
+  if (error) return schemaMissing(error) || { error }
+  return { batches:data || [] }
+}
+
+export async function cancelFinancialImportBatch(batchId, reason) {
+  const { data, error } = await supabase.rpc('cancel_financial_import_batch', {
+    p_batch_id:batchId,
+    p_reason:String(reason || '').trim(),
+  })
+  if (error) return schemaMissing(error) || { error }
+  if (!data || data.batch_id !== batchId || data.status !== 'canceled') {
+    return { error:new Error('O banco não confirmou o cancelamento completo da importação.') }
+  }
+  return { result:data }
 }
 
 // Grava o lote e TODAS as linhas. O lote nasce 'creating' e só é promovido a 'reviewing' depois do

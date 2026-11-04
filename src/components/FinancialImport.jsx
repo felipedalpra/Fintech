@@ -9,7 +9,8 @@ import { parseStatementFile, statementTotals, updateStatementLine } from '../lib
 import { mergeApprovedStatementRecords } from '../lib/statementImportReview.js'
 import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinancialImportLines } from '../lib/financialImport.js'
 import { batchProgress, isBatchComplete, restoreReviewState } from '../lib/financialImportBatch.js'
-import { approveFinancialImportLines, closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
+import { canCancelImport, canResumeImport, importCancelBlockedMessage, importHistoryStatus, removeCanceledImportSources } from '../lib/financialImportHistory.js'
+import { approveFinancialImportLines, cancelFinancialImportBatch, closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, loadImportHistory, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -54,6 +55,16 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Abre em 'new' e só salta para o histórico quando o banco confirma que existe histórico: numa
+  // clínica que nunca importou, cair numa lista vazia esconderia a única ação possível. O salto
+  // acontece UMA vez e nunca por cima de uma escolha da usuária (viewTouchedRef).
+  const [view, setView] = useState('new')
+  const viewTouchedRef = useRef(false)
+  const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const [cancelTarget, setCancelTarget] = useState(null)
+  const [cancelReason, setCancelReason] = useState('')
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 820
 
   const s = {
@@ -84,6 +95,31 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     acc[status] = (acc[status] || 0) + 1
     return acc
   }, {}), [reviewItems, rejectedIds, approvedIds])
+
+  async function refreshHistory() {
+    if (!ownerId) return
+    setHistoryLoading(true)
+    const result = await loadImportHistory()
+    setHistoryLoading(false)
+    if (result.schemaMissing) {
+      setHistoryError('Aplique financial_import_batch_cancellation.sql para ativar o histórico e o cancelamento seguro.')
+      return
+    }
+    if (result.error) {
+      setHistoryError('Não foi possível carregar o histórico de importações. Tente novamente.')
+      return
+    }
+    setHistory(result.batches)
+    setHistoryError('')
+    if (!viewTouchedRef.current && (result.batches || []).length > 0) {
+      viewTouchedRef.current = true
+      setView('history')
+    }
+  }
+
+  useEffect(() => {
+    refreshHistory().catch(() => setHistoryError('Não foi possível carregar o histórico de importações.'))
+  }, [ownerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Oferece retomar uma revisão deixada pela metade, sem precisar do arquivo em mãos.
   useEffect(() => {
@@ -211,6 +247,8 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
 
   // Retomada sem o arquivo: as linhas e as decisões já estão no banco.
   async function resumeBatch(batchRow) {
+    viewTouchedRef.current = true
+    setView('new')
     setBusy(true)
     setError('')
     try {
@@ -385,6 +423,7 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
         if (closed?.schemaMissing || closed?.error) throw new Error('Os lançamentos foram importados, mas o encerramento da revisão não foi confirmado. Recarregue a página para conferir o estado salvo.')
       }
       setImportProgress({ status:'complete', completed:overallTotal, total:overallTotal })
+      refreshHistory().catch(() => {})
       toast(`${overallTotal} lançamento(s) importados e confirmados no financeiro.`)
     } catch (caught) {
       const remaining = creations.slice(completed - baseCompleted)
@@ -402,6 +441,37 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     setImportProgress(null)
   }
 
+  async function confirmCancellation() {
+    if (!cancelTarget || cancelReason.trim().length < 3 || !applyServerConfirmedData) return
+    setBusy(true)
+    setError('')
+    const canceled = await cancelFinancialImportBatch(cancelTarget.id, cancelReason)
+    setBusy(false)
+    if (canceled.schemaMissing) {
+      setError('O cancelamento seguro ainda não está instalado. Aplique financial_import_batch_cancellation.sql; nenhum lançamento foi alterado.')
+      return
+    }
+    if (canceled.error) {
+      setError(canceled.error.message || 'Não foi possível cancelar a importação. Nenhum lançamento foi alterado.')
+      return
+    }
+    applyServerConfirmedData(current => removeCanceledImportSources(current, canceled.result.source_ids || []))
+    if (batch?.id === cancelTarget.id) {
+      setBatch(null)
+      setParsed(null)
+      setLines([])
+      setApprovedIds([])
+      setRejectedIds([])
+    }
+    // Um lote cancelado nunca volta a ser retomável: deixar a oferta de retomada na tela abriria
+    // uma revisão que o banco recusa.
+    if (resumable?.id === cancelTarget.id) { setResumable(null); setResumableProgress(null) }
+    setCancelTarget(null)
+    setCancelReason('')
+    await refreshHistory()
+    toast(`${canceled.result.approved_count} lançamento(s) retirado(s) do financeiro. O histórico foi preservado.`)
+  }
+
   const selectedItems = selectedIds.map(id => reviewById.get(id)).filter(Boolean)
 
   return (
@@ -413,17 +483,6 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
         <strong>Importação bloqueada para proteger seu trabalho.</strong> A revisão não será aberta nem alterada enquanto o banco não confirmar a persistência. Aplique <code>financial_import_batches_schema.sql</code> e recarregue a página.
       </div>}
 
-      {incompleteBatch && <Card data-testid="financial-import-incomplete">
-        <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
-          <div>
-            <div style={{ color:C.red, fontSize:15, fontWeight:900 }}>Revisão salva incompleta</div>
-            <div style={{ ...s.muted, marginTop:5 }}><strong>{incompleteBatch.file_name}</strong> · {incompleteBatch.loadedCount} de {incompleteBatch.line_count} linha(s) gravadas</div>
-            <div style={{ ...s.muted, marginTop:4 }}>Nenhum lançamento foi criado. Descarte para subir a planilha novamente.</div>
-          </div>
-          <Btn variant="ghost" onClick={discardIncomplete} disabled={busy}>Descartar e começar de novo</Btn>
-        </div>
-      </Card>}
-
       {resumable && !parsed && !incompleteBatch && <Card data-testid="financial-import-resume">
         <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
           <div>
@@ -432,6 +491,67 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
             <div style={{ ...s.muted, marginTop:4 }}>Continue de onde parou, sem precisar subir a planilha de novo.</div>
           </div>
           <Btn variant="success" onClick={() => resumeBatch(resumable)} disabled={busy}>Retomar revisão</Btn>
+        </div>
+      </Card>}
+
+      <Card style={{ padding:10 }}>
+        <div style={{ ...s.row, justifyContent:'space-between' }}>
+          <div style={s.row}>
+            <Btn variant={view === 'history' ? 'primary' : 'ghost'} onClick={() => { viewTouchedRef.current = true; setView('history') }}>Histórico de importações</Btn>
+            <Btn variant={view === 'new' ? 'primary' : 'ghost'} onClick={() => { viewTouchedRef.current = true; setView('new') }}>+ Nova importação</Btn>
+          </div>
+          <div style={s.muted}>{history.length} importação(ões) registrada(s)</div>
+        </div>
+      </Card>
+
+      {view === 'history' && <Card data-testid="financial-import-history">
+        <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <div style={{ color:C.text, fontSize:18, fontWeight:900 }}>Histórico de importações</div>
+            <div style={{ ...s.muted, marginTop:5 }}>Consulte o que entrou no financeiro e cancele um lote inteiro com segurança. O cancelamento preserva a auditoria e não apaga os dados fisicamente.</div>
+          </div>
+          <Btn variant="ghost" onClick={refreshHistory} disabled={historyLoading}>{historyLoading ? 'Atualizando…' : 'Atualizar'}</Btn>
+        </div>
+        {historyError && <div role="alert" style={{ color:C.red, fontSize:12.5, marginTop:14 }}>{historyError}</div>}
+        {!historyLoading && !historyError && history.length === 0 && <div style={{ ...s.muted, marginTop:18, padding:'24px 0', textAlign:'center' }}>Nenhuma importação registrada. Clique em “Nova importação” para começar.</div>}
+        <div style={{ display:'grid', gap:10, marginTop:16 }}>
+          {history.map(item => {
+            const status = importHistoryStatus(item)
+            const tone = status.tone === 'red' ? C.red : status.tone === 'green' ? C.green : status.tone === 'yellow' ? C.yellow : C.textDim
+            const blocked = importCancelBlockedMessage(item)
+            return <div key={item.id} data-testid={`financial-import-history-${item.id}`} style={{ border:`1px solid ${C.border}`, borderRadius:12, padding:14, background:C.surface }}>
+              <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : 'minmax(0,1.4fr) minmax(230px,0.8fr) auto', gap:14, alignItems:'center' }}>
+                <div>
+                  <div style={{ ...s.row, gap:7 }}><strong style={{ color:C.text, overflowWrap:'anywhere' }}>{item.file_name}</strong><span style={{ color:tone, border:`1px solid ${tone}55`, background:`${tone}12`, borderRadius:999, padding:'3px 8px', fontSize:10.5, fontWeight:800 }}>{status.label}</span></div>
+                  <div style={{ ...s.muted, marginTop:5 }}>{item.sheet_name ? `Aba ${item.sheet_name} · ` : ''}{formatDateBR(String(item.created_at).slice(0, 10))} · {item.line_count} linha(s)</div>
+                  {item.cancellation_reason && <div style={{ color:C.red, fontSize:11.5, marginTop:5 }}>Motivo: {item.cancellation_reason}</div>}
+                </div>
+                <div style={{ ...s.muted, lineHeight:1.7 }}>
+                  <div><strong style={{ color:C.green }}>{item.approved_count}</strong> importado(s) · {item.rejected_count} rejeitado(s)</div>
+                  <div>Entradas {fmt(Number(item.imported_receipts || 0))} · Saídas {fmt(Number(item.imported_expenses || 0))}</div>
+                  {Number(item.pending_count || 0) > 0 && <div>{item.pending_count} linha(s) ainda sem decisão</div>}
+                </div>
+                <div style={{ ...s.row, gap:8, justifyContent:isMobile ? 'flex-start' : 'flex-end' }}>
+                  {canResumeImport(item) && <Btn variant="success" onClick={() => resumeBatch(item)} disabled={busy}>Retomar revisão</Btn>}
+                  {canCancelImport(item) && <Btn variant="danger" onClick={() => { setCancelTarget(item); setCancelReason('') }}>Cancelar importação</Btn>}
+                  {!canCancelImport(item) && blocked && Number(item.approved_count || 0) > 0 && <span style={{ ...s.muted, color:C.yellow, maxWidth:210 }}>{blocked}</span>}
+                </div>
+              </div>
+            </div>
+          })}
+        </div>
+      </Card>}
+
+      {view === 'new' && <>
+
+      {incompleteBatch && <Card data-testid="financial-import-incomplete">
+        <div style={{ ...s.row, justifyContent:'space-between', alignItems:'flex-start' }}>
+          <div>
+            <div style={{ color:C.red, fontSize:15, fontWeight:900 }}>Revisão salva incompleta</div>
+            <div style={{ ...s.muted, marginTop:5 }}><strong>{incompleteBatch.file_name}</strong> · {incompleteBatch.loadedCount} de {incompleteBatch.line_count} linha(s) gravadas</div>
+            <div style={{ ...s.muted, marginTop:4 }}>Nenhum lançamento foi criado. Descarte para subir a planilha novamente.</div>
+          </div>
+          <Btn variant="ghost" onClick={discardIncomplete} disabled={busy}>Descartar e começar de novo</Btn>
         </div>
       </Card>}
 
@@ -515,6 +635,7 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
           {visibleItems.length === 0 && <Card><div style={s.muted}>Nenhum lançamento encontrado neste filtro.</div></Card>}
         </div>
       </>}
+      </>}
 
       <Modal open={Boolean(editingId && editDraft)} onClose={() => { setEditingId(''); setEditDraft(null) }} title="Editar lançamento sugerido" width={720} trackDirty={false}>
         {editDraft && <div style={s.stack}>
@@ -557,6 +678,17 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
             {importProgress.status === 'error' && <div style={{ ...s.row, justifyContent:'center', marginTop:18 }}><Btn variant="ghost" onClick={closeImportModal}>Fechar</Btn><Btn variant="success" onClick={approveConfirmed}>Tentar importar os restantes ({confirmItems.length})</Btn></div>}
           </div>}
         </div>
+      </Modal>
+      <Modal open={Boolean(cancelTarget)} onClose={() => { if (!busy) { setCancelTarget(null); setCancelReason('') } }} closeOnBackdrop={!busy} title="Cancelar importação" width={600} trackDirty={false}>
+        {cancelTarget && <div style={s.stack}>
+          <div style={{ color:C.red, fontWeight:900 }}>Todos os {cancelTarget.approved_count} lançamentos deste lote sairão do financeiro.</div>
+          <div style={s.muted}>A operação é atômica: ou o lote inteiro é cancelado, ou nada muda. Os registros ficam arquivados para auditoria e o arquivo poderá ser importado novamente.</div>
+          <Card style={{ padding:14 }}><strong style={{ color:C.text }}>{cancelTarget.file_name}</strong><div style={{ ...s.muted, marginTop:5 }}>Entradas {fmt(Number(cancelTarget.imported_receipts || 0))} · Saídas {fmt(Number(cancelTarget.imported_expenses || 0))}</div></Card>
+          <label style={s.label}>Motivo do cancelamento
+            <textarea aria-label="Motivo do cancelamento da importação" value={cancelReason} onChange={event => setCancelReason(event.target.value)} maxLength={500} placeholder="Ex.: arquivo importado na clínica errada" style={{ ...s.input, marginTop:5, minHeight:86, resize:'vertical' }} />
+          </label>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason('') }} disabled={busy}>Voltar</Btn><Btn variant="danger" onClick={confirmCancellation} disabled={busy || cancelReason.trim().length < 3}>{busy ? 'Cancelando…' : 'Confirmar cancelamento'}</Btn></div>
+        </div>}
       </Modal>
     </div>
   )

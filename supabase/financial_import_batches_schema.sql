@@ -31,11 +31,15 @@ create table if not exists public.financial_import_batches (
   -- depois do read-back do último bloco. Isso impede que uma gravação interrompida no meio deixe
   -- um lote retomável com linhas faltando (revisão incompleta aberta em silêncio).
   status              text not null default 'creating'
-                      check (status in ('creating', 'reviewing', 'ready', 'archived')),
+                      check (status in ('creating', 'reviewing', 'ready', 'canceled', 'archived')),
   period_start        date,
   period_end          date,
   created_at          timestamptz not null default timezone('utc', now()),
   ready_at            timestamptz,
+  canceled_at         timestamptz,
+  canceled_by         uuid references auth.users(id) on delete set null,
+  cancellation_reason text,
+  cancellation_summary jsonb not null default '{}'::jsonb,
   archived_at         timestamptz
 );
 
@@ -93,7 +97,7 @@ end $$;
 -- restauraria silenciosamente as linhas da aba anterior. Um lote é o par (arquivo, aba).
 create unique index if not exists uq_financial_import_active_file
   on public.financial_import_batches(user_id, file_hash, coalesce(sheet_name, ''))
-  where archived_at is null and status <> 'archived';
+  where archived_at is null and status not in ('archived', 'canceled');
 create index if not exists idx_financial_import_owner_created
   on public.financial_import_batches(user_id, created_at desc)
   where archived_at is null;

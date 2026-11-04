@@ -121,3 +121,101 @@ test('bloqueia a revisão quando o banco não consegue persistir o lote', async 
   await expect(page.getByRole('alert').filter({ hasText:'não pode ser iniciada' })).toBeVisible()
   await expect(page.getByText('Receita que não pode ficar só na memória')).toHaveCount(0)
 })
+
+test('histórico lista as importações, bloqueia o que tem vínculo e cancela o lote inteiro', async ({ page }) => {
+  const READY = '10000000-0000-4000-8000-00000000aaaa'
+  const BLOCKED = '10000000-0000-4000-8000-00000000bbbb'
+  const SOURCE_A = '20000000-0000-4000-8000-00000000aaa1'
+  const SOURCE_B = '20000000-0000-4000-8000-00000000aaa2'
+  let canceled = false
+  let cancelPayload = null
+  // Guarda contra a regressão de perda de dados: cancelar NÃO pode virar um DELETE/PATCH genérico
+  // em extra_revenues/expenses pelo caminho do autosave. Toda a baixa é da RPC.
+  const sourceWrites = []
+
+  function historyRow(id, overrides) {
+    return {
+      id,
+      file_name:id === READY ? 'retroativos-set.xlsx' : 'retroativos-out.xlsx',
+      sheet_name:'Movimento',
+      status:'ready',
+      line_count:2,
+      created_at:'2026-11-03T10:00:00Z',
+      ready_at:'2026-11-03T11:00:00Z',
+      canceled_at:null,
+      cancellation_reason:null,
+      approved_count:2,
+      rejected_count:0,
+      pending_count:0,
+      imported_receipts:1500,
+      imported_expenses:300,
+      active_reconciliation_count:0,
+      active_charge_count:0,
+      active_fiscal_document_count:0,
+      ...overrides,
+    }
+  }
+
+  await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{"connected":false}' }))
+  await page.route('**/rest/v1/**', async route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    let body = request.method() === 'GET' ? [] : (request.postDataJSON() || [])
+
+    if (['/extra_revenues', '/expenses'].some(table => path.endsWith(table)) && request.method() !== 'GET') {
+      sourceWrites.push(`${request.method()} ${path}`)
+    }
+    if (path.endsWith('/rpc/list_financial_import_history')) {
+      body = [
+        historyRow(READY, canceled
+          ? { status:'canceled', canceled_at:'2026-11-04T09:00:00Z', cancellation_reason:'planilha da clínica errada' }
+          : {}),
+        historyRow(BLOCKED, { active_fiscal_document_count:2 }),
+      ]
+    }
+    if (path.endsWith('/rpc/cancel_financial_import_batch')) {
+      cancelPayload = body
+      canceled = true
+      body = {
+        batch_id:body.p_batch_id,
+        status:'canceled',
+        approved_count:2,
+        source_ids:[SOURCE_A, SOURCE_B],
+        canceled_at:'2026-11-04T09:00:00Z',
+      }
+    }
+    return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/0' }, body:JSON.stringify(body) })
+  })
+
+  await page.goto('/app/financial-import')
+
+  // Com histórico no banco, a tela abre no histórico — não na lista vazia nem no upload.
+  const history = page.getByTestId('financial-import-history')
+  await expect(history).toBeVisible()
+  await expect(history.getByText('retroativos-set.xlsx')).toBeVisible()
+  await expect(history.getByText('Entradas', { exact:false }).first()).toBeVisible()
+
+  // O lote com documento fiscal vinculado NÃO oferece cancelamento, e diz por quê.
+  const blockedCard = page.getByTestId(`financial-import-history-${BLOCKED}`)
+  await expect(blockedCard.getByText('2 documento(s) fiscal(is)')).toBeVisible()
+  await expect(blockedCard.getByRole('button', { name:'Cancelar importação' })).toHaveCount(0)
+
+  const readyCard = page.getByTestId(`financial-import-history-${READY}`)
+  await readyCard.getByRole('button', { name:'Cancelar importação' }).click()
+
+  // Motivo é obrigatório: sem ele a confirmação fica travada.
+  const confirm = page.getByRole('button', { name:'Confirmar cancelamento' })
+  await expect(confirm).toBeDisabled()
+  await page.getByLabel('Motivo do cancelamento da importação').fill('planilha da clínica errada')
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+
+  await expect(page.getByText('2 lançamento(s) retirado(s) do financeiro', { exact:false })).toBeVisible()
+  await expect(readyCard.getByText('Cancelada')).toBeVisible()
+  await expect(readyCard.getByText('Motivo: planilha da clínica errada')).toBeVisible()
+  await expect(readyCard.getByRole('button', { name:'Cancelar importação' })).toHaveCount(0)
+
+  expect(cancelPayload).toMatchObject({ p_batch_id:READY, p_reason:'planilha da clínica errada' })
+  expect(sourceWrites).toEqual([])
+})
