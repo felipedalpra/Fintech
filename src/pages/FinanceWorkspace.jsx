@@ -37,6 +37,7 @@ const Recurrences = lazyNamed(() => import('../components/Recurrences.jsx'), 'Re
 const ChartOfAccounts = lazyNamed(() => import('../components/ChartOfAccounts.jsx'), 'ChartOfAccounts')
 const BankReconciliation = lazyNamed(() => import('../components/BankReconciliation.jsx'), 'BankReconciliation')
 const FinancialImport = lazyNamed(() => import('../components/FinancialImport.jsx'), 'FinancialImport')
+const FiscalDocuments = lazyNamed(() => import('../components/FiscalDocuments.jsx'), 'FiscalDocuments')
 const DataQualityCenter = lazyNamed(() => import('../components/DataQualityCenter.jsx'), 'DataQualityCenter')
 const Settings = lazyNamed(() => import('../components/Settings.jsx'), 'Settings')
 const BillingPage = lazyNamed(() => import('./BillingPage.jsx'), 'BillingPage')
@@ -107,6 +108,7 @@ const AREAS = [
       { title:'Movimento', items:[
         { id:'finance', label:'Financeiro', icon:'finance', hint:'Caixa, DRE e balanço' },
         { id:'financial-import', label:'Importar lançamentos', icon:'reports', hint:'Revise e importe lançamentos retroativos do Excel' },
+        { id:'fiscal-documents', label:'Documentos fiscais', icon:'reports', hint:'Notas emitidas e recebidas por lançamento' },
       ] },
       { title:'Operação', items:[
         { id:'products',      label:'Produtos',      icon:'products',      hint:'Modeladores e estoque' },
@@ -171,6 +173,7 @@ const TITLES = {
   'chart-of-accounts':'Plano de Contas',
   'bank-reconciliation':'Conciliação Bancária',
   'financial-import':'Importar Lançamentos',
+  'fiscal-documents':'Documentos Fiscais',
   'data-quality':'Qualidade dos Dados',
   ai:'Central de IA',
   billing:'Assinatura',
@@ -208,6 +211,7 @@ const SUBTITLES = {
   'chart-of-accounts':'Organize grupos e categorias usados nos lançamentos e relatórios.',
   'bank-reconciliation':'Importe um extrato OFX, CSV ou o PDF do BRB e cruze com lançamentos já existentes no financeiro.',
   'financial-import':'Importe lançamentos retroativos do Excel, revise duplicidades e aprove antes de salvar.',
+  'fiscal-documents':'Consulte notas emitidas e recebidas, vinculadas aos títulos e suas parcelas.',
   'data-quality':'Revise pendências e inconsistências sem alterar automaticamente os lançamentos.',
   ai:'Previsões, diagnósticos e recomendações em tópicos.',
   billing:'Gerencie a sua assinatura.',
@@ -244,6 +248,7 @@ const PAGES = {
   'chart-of-accounts':ChartOfAccounts,
   'bank-reconciliation':BankReconciliation,
   'financial-import':FinancialImport,
+  'fiscal-documents':FiscalDocuments,
   'data-quality':DataQualityCenter,
   ai:AIAssistant,
   billing:BillingPage,

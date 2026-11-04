@@ -22,6 +22,9 @@ import { BillingChargeButton } from './BillingChargeButton.jsx'
 import { paymentScheduleFlow } from '../lib/paymentScheduleFlow.js'
 import { isProtectedFinancialImportRow } from '../lib/financeSync.js'
 import { hasChangedReceiptFields, hasRecognizedReceipt, reverseReceivableInstallment, withReceivedInstallmentHistory } from '../lib/receivablePaymentReversal.js'
+import { FiscalDocumentCell, FiscalDocumentModal, FiscalDocumentSummary } from './FiscalDocumentModal.jsx'
+import { documentsForTarget, fiscalDocumentsSearchText, fiscalTargetFromMetric, fiscalTargetFromModal, matchesFiscalFilter } from '../lib/fiscalDocuments.js'
+import { loadFiscalDocuments } from '../lib/fiscalDocumentStore.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -229,7 +232,10 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const [reconciliationReturn, setReconciliationReturn] = useState(() => readModalDraft()?.reconciliationReturn || null)
   const [confirmState, setConfirmState] = useState(null)
   const [paymentConfirmState, setPaymentConfirmState] = useState(null)
-  const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all' })
+  const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all', fiscalStatus:'all' })
+  const [fiscalDocumentsByEntry, setFiscalDocumentsByEntry] = useState({})
+  const [fiscalTarget, setFiscalTarget] = useState(null)
+  const [fiscalSchemaMissing, setFiscalSchemaMissing] = useState(false)
   const [form, setForm] = useState(() => {
     const draft = readModalDraft()
     return draft?.form ? { ...EXTRA_REVENUE_EMPTY, ...draft.form } : EXTRA_REVENUE_EMPTY
@@ -263,6 +269,42 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const revenueGroupOptions = useMemo(() => postingGroupOptions(data?.chartAccounts || [], 'receivable'), [data?.chartAccounts])
   const expenseGroupOptions = useMemo(() => postingGroupOptions(data?.chartAccounts || [], 'payable'), [data?.chartAccounts])
   const canManageChartAccounts = role === 'admin' || role === 'gestao'
+
+  const refreshFiscalDocuments = async () => {
+    if (!ownerId) return
+    const result = await loadFiscalDocuments(ownerId)
+    setFiscalDocumentsByEntry(result.documentsByEntry)
+    setFiscalSchemaMissing(result.schemaMissing)
+  }
+
+  useEffect(() => {
+    let active = true
+    if (!ownerId) return () => { active = false }
+    loadFiscalDocuments(ownerId).then(result => {
+      if (!active) return
+      setFiscalDocumentsByEntry(result.documentsByEntry)
+      setFiscalSchemaMissing(result.schemaMissing)
+    }).catch(error => {
+      if (active) toast(error?.message || 'Não foi possível carregar os documentos fiscais.', 'warning')
+    })
+    return () => { active = false }
+  }, [ownerId])
+
+  const fiscalDocsFor = item => documentsForTarget(fiscalDocumentsByEntry, fiscalTargetFromMetric(item))
+  const openFiscalDocuments = item => {
+    const target = fiscalTargetFromMetric(item)
+    if (!target) {
+      toast('Este lançamento ainda não possui uma origem financeira válida.', 'warning')
+      return
+    }
+    if (fiscalSchemaMissing) {
+      toast('Aplique primeiro o SQL de documentos fiscais no Supabase.', 'warning')
+      return
+    }
+    setFiscalTarget(target)
+  }
+  const editFiscalTarget = editing ? fiscalTargetFromModal(modalType, form) : null
+  const editFiscalDocuments = documentsForTarget(fiscalDocumentsByEntry, editFiscalTarget)
 
   const persistLaunch = async (updater, pendingOperation) => {
     if (savingLaunchRef.current) return false
@@ -1076,56 +1118,64 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const filteredEntriesFinancial = useMemo(() => {
     const search = String(listFilters.search || '').toLowerCase().trim()
     return m.entriesFinancial.filter(item => {
+      const documents = fiscalDocsFor(item)
       const launchType = item.origin === 'recorrencia_receita' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
       if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
+      if (!matchesFiscalFilter(documents, listFilters.fiscalStatus)) return false
       if (!search) return true
-      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${resolveOrigin(item)}`.toLowerCase()
+      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${resolveOrigin(item)} ${fiscalDocumentsSearchText(documents)}`.toLowerCase()
       return haystack.includes(search)
     })
-  }, [m.entriesFinancial, listFilters])
+  }, [m.entriesFinancial, listFilters, fiscalDocumentsByEntry])
 
   const filteredExitsFinancial = useMemo(() => {
     const search = String(listFilters.search || '').toLowerCase().trim()
     return m.exitsFinancial.filter(item => {
+      const documents = fiscalDocsFor(item)
       const launchType = item.origin === 'recorrencia_despesa' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
       if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
+      if (!matchesFiscalFilter(documents, listFilters.fiscalStatus)) return false
       if (!search) return true
-      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${item.origin || ''}`.toLowerCase()
+      const haystack = `${item.date || ''} ${item.category || ''} ${item.description || ''} ${item.origin || ''} ${fiscalDocumentsSearchText(documents)}`.toLowerCase()
       return haystack.includes(search)
     })
-  }, [m.exitsFinancial, listFilters])
+  }, [m.exitsFinancial, listFilters, fiscalDocumentsByEntry])
 
   const filteredAccountsReceivable = useMemo(() => {
     const search = String(listFilters.search || '').toLowerCase().trim()
     return m.accountsReceivable.filter(item => {
+      const documents = fiscalDocsFor(item)
       const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
       if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
       if (listFilters.status !== 'all' && item.status !== listFilters.status) return false
+      if (!matchesFiscalFilter(documents, listFilters.fiscalStatus)) return false
       if (!search) return true
-      const haystack = `${item.patient || ''} ${item.description || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''}`.toLowerCase()
+      const haystack = `${item.patient || ''} ${item.description || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''} ${fiscalDocumentsSearchText(documents)}`.toLowerCase()
       return haystack.includes(search)
     })
-  }, [m.accountsReceivable, listFilters])
+  }, [m.accountsReceivable, listFilters, fiscalDocumentsByEntry])
 
   const filteredAccountsPayable = useMemo(() => {
     const search = String(listFilters.search || '').toLowerCase().trim()
     return m.accountsPayable.filter(item => {
+      const documents = fiscalDocsFor(item)
       const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
       if (listFilters.category !== 'all' && item.category !== listFilters.category) return false
       if (listFilters.origin !== 'all' && resolveOrigin(item) !== listFilters.origin) return false
       if (listFilters.status !== 'all' && item.status !== listFilters.status) return false
+      if (!matchesFiscalFilter(documents, listFilters.fiscalStatus)) return false
       if (!search) return true
-      const haystack = `${item.supplier || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''}`.toLowerCase()
+      const haystack = `${item.supplier || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''} ${fiscalDocumentsSearchText(documents)}`.toLowerCase()
       return haystack.includes(search)
     })
-  }, [m.accountsPayable, listFilters])
+  }, [m.accountsPayable, listFilters, fiscalDocumentsByEntry])
 
   const activeListFilterConfig = useMemo(() => {
     if (tab === 'entradas') {
@@ -1344,8 +1394,9 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             <FInput label="Categoria" value={listFilters.category} onChange={value => setListFilters(current => ({ ...current, category:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.categories.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
             <FInput label="Origem" value={listFilters.origin} onChange={value => setListFilters(current => ({ ...current, origin:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.origins.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
             <FInput label="Tipo" value={listFilters.launchType} onChange={value => setListFilters(current => ({ ...current, launchType:value }))} options={[{ v:'all', l:'Todos' }, { v:'fixa', l:'Fixa' }, { v:'variavel', l:'Variável' }]} />
+            <FInput label="Documento fiscal" value={listFilters.fiscalStatus} onChange={value => setListFilters(current => ({ ...current, fiscalStatus:value }))} options={[{ v:'all', l:'Todos' }, { v:'with', l:'Com documento' }, { v:'without', l:'Sem documento' }, { v:'pending', l:'Pendente' }, { v:'canceled', l:'Cancelado' }]} />
             {activeListFilterConfig.showStatus && <FInput label="Status" value={listFilters.status} onChange={value => setListFilters(current => ({ ...current, status:value }))} options={[{ v:'all', l:'Todos' }, ...activeListFilterConfig.statuses.map(value => ({ v:value, l:value }))]} />}
-            <Btn variant="ghost" onClick={() => setListFilters({ search:'', category:'all', origin:'all', status:'all', launchType:'all' })}>Limpar filtros</Btn>
+            <Btn variant="ghost" onClick={() => setListFilters({ search:'', category:'all', origin:'all', status:'all', launchType:'all', fiscalStatus:'all' })}>Limpar filtros</Btn>
           </div>
         </Card>
       )}
@@ -1376,7 +1427,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </div>
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
           const removable = ['cirurgia', 'consulta', 'outra_receita', 'venda_produto'].includes(item.origin)
           const installmentLabel = item.installmentsTotal > 1 ? ` da parcela ${item.installmentDisplayNumber || item.installmentNumber}/${item.installmentsTotal}` : ''
           const removeLabels = { cirurgia:'Estornar pgto', consulta:'Estornar pgto', outra_receita:'Remover', venda_produto:'Estornar pgto' }
@@ -1396,6 +1447,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             cells:[
               formatDateBR(item.date), item.category, item.description, resolveOrigin(item),
               <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>,
+              <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />,
               <div style={{ display:'flex', gap:6 }}>
                 {sourceRecord && <Btn variant="ghost" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openEdit(editType, sourceRecord)}>Editar</Btn>}
                 {protectedImport
@@ -1405,7 +1457,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
                   : <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
               </div>,
             ],
-            rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, removable ? 1 : 0],
+            rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, fiscalDocumentsSearchText(fiscalDocsFor(item)), removable ? 1 : 0],
           }
         })} emptyMessage="Nenhuma entrada financeira no período." />
       </>}
@@ -1440,7 +1492,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
           const editSourceMap = { despesa:data.expenses, compra_produto:data.productPurchases }
           const editTypeMap = { despesa:'expense', compra_produto:'product-purchase' }
           const sourceRecord = (editSourceMap[item.origin] || []).find(r => r.id === item.referenceId)
@@ -1460,7 +1512,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
               {removeBtn || <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
             </div>
           )
-          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, resolveOrigin(item), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, actionCell], rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
+          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, resolveOrigin(item), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, actionCell], rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, fiscalDocumentsSearchText(fiscalDocsFor(item)), ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
         })} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
@@ -1474,7 +1526,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           onOpen={item => openDrilldown(`Recebíveis de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.patient || '', origin:resolveOrigin(row), description:row.description || row.patient || 'Conta a receber' })), item.total)}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, receivableActions(item)] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Documento fiscal', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, receivableActions(item)] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -1487,7 +1539,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           onOpen={item => openDrilldown(`Contas a pagar de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.supplier || '', origin:row.source, description:row.description || row.supplier || 'Conta a pagar' })), item.total)}
           emptyMessage="Sem contas a pagar agrupadas por mês."
         />
-        <RecordTable columns={['Categoria', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
+        <RecordTable columns={['Categoria', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Documento fiscal', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
       </>}
 
       {tab === 'dre' && (
@@ -1762,6 +1814,10 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
       {tab === 'indicadores' && <IndicadoresTab m={m} data={data} money={money} setData={setData} indicatorPeriodKey={indicatorPeriodKey} />}
 
       <Modal open={showModal} onClose={cancelLaunchModal} title={(() => { const t = { surgery:'Editar cirurgia', consultation:'Editar consulta', 'product-sale':'Editar venda', 'product-purchase':'Editar compra' }; return t[modalType] || (editing ? 'Editar registro' : 'Novo registro') })()}>
+        {editFiscalTarget && <FiscalDocumentSummary target={editFiscalTarget} documents={editFiscalDocuments} onOpen={() => {
+          if (fiscalSchemaMissing) toast('Aplique primeiro o SQL de documentos fiscais no Supabase.', 'warning')
+          else setFiscalTarget(editFiscalTarget)
+        }} />}
         {modalType === 'extra' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {!editing && !reconciliationReturn && (
@@ -1972,6 +2028,14 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </div>
         )}
       </Modal>
+
+      <FiscalDocumentModal
+        open={!!fiscalTarget}
+        target={fiscalTarget}
+        documents={documentsForTarget(fiscalDocumentsByEntry, fiscalTarget)}
+        onClose={() => setFiscalTarget(null)}
+        onChanged={refreshFiscalDocuments}
+      />
 
       <ConfirmModal
         open={!!confirmState}

@@ -4,6 +4,8 @@ import { canIssueClinicalPrescription, canRoleAccess } from '../../src/lib/roleA
 test('admin e gestão acessam finanças, mas somente admin acessa configurações', () => {
   expect(canRoleAccess('admin', 'finance')).toBe(true)
   expect(canRoleAccess('gestao', 'finance')).toBe(true)
+  expect(canRoleAccess('admin', 'fiscal-documents')).toBe(true)
+  expect(canRoleAccess('gestao', 'fiscal-documents')).toBe(true)
   expect(canRoleAccess('admin', 'settings')).toBe(true)
   expect(canRoleAccess('gestao', 'settings')).toBe(false)
 })
@@ -11,6 +13,7 @@ test('admin e gestão acessam finanças, mas somente admin acessa configuraçõe
 test('concierge e equipe não acessam dados financeiros ou IA financeira', () => {
   for (const role of ['concierge', 'equipe']) {
     expect(canRoleAccess(role, 'finance')).toBe(false)
+    expect(canRoleAccess(role, 'fiscal-documents')).toBe(false)
     expect(canRoleAccess(role, 'data-quality')).toBe(false)
     expect(canRoleAccess(role, 'ai')).toBe(false)
   }
