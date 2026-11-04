@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   canCancelImport,
+  canDiscardImport,
   canResumeImport,
   importCancelBlockedMessage,
   importCancelBlockers,
@@ -115,4 +116,32 @@ test('só um lote em revisão com linhas gravadas pode ser retomado', () => {
   expect(canResumeImport(batchFixture({ status:'ready' }))).toBe(false)
   expect(canResumeImport(batchFixture({ status:'canceled' }))).toBe(false)
   expect(canResumeImport(batchFixture({ status:'creating', pending_count:4 }))).toBe(false)
+})
+
+test('revisão que nunca entrou no financeiro pode ser descartada', () => {
+  expect(canDiscardImport(batchFixture({ status:'reviewing', approved_count:0, pending_count:188 }))).toBe(true)
+  expect(canDiscardImport(batchFixture({ status:'creating', approved_count:0 }))).toBe(true)
+  // Revisão encerrada com tudo rejeitado tambem nunca virou lançamento.
+  expect(canDiscardImport(batchFixture({ status:'ready', approved_count:0, rejected_count:188 }))).toBe(true)
+})
+
+test('lote com lançamento no financeiro NÃO oferece descartar — a ação certa é cancelar', () => {
+  // Descartar aqui arquivaria o lote e deixaria as origens vivas sem lote cancelável.
+  const imported = batchFixture({ status:'reviewing', approved_count:1 })
+  expect(canDiscardImport(imported)).toBe(false)
+  expect(canCancelImport(imported)).toBe(true)
+})
+
+test('lote já descartado ou cancelado não oferece descartar de novo', () => {
+  expect(canDiscardImport(batchFixture({ status:'archived', approved_count:0 }))).toBe(false)
+  expect(canDiscardImport(batchFixture({ status:'canceled', approved_count:0 }))).toBe(false)
+})
+
+test('descartar e cancelar nunca aparecem juntos no mesmo lote', () => {
+  for (const status of ['creating', 'reviewing', 'ready', 'canceled', 'archived']) {
+    for (const approved of [0, 5]) {
+      const batch = batchFixture({ status, approved_count:approved })
+      expect(canDiscardImport(batch) && canCancelImport(batch)).toBe(false)
+    }
+  }
 })

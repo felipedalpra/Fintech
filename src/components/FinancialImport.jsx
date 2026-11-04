@@ -9,8 +9,8 @@ import { parseStatementFile, statementTotals, updateStatementLine } from '../lib
 import { mergeApprovedStatementRecords } from '../lib/statementImportReview.js'
 import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinancialImportLines } from '../lib/financialImport.js'
 import { batchProgress, isBatchComplete, restoreReviewState } from '../lib/financialImportBatch.js'
-import { canCancelImport, canResumeImport, importCancelBlockedMessage, importHistoryStatus, removeCanceledImportSources } from '../lib/financialImportHistory.js'
-import { approveFinancialImportLines, cancelFinancialImportBatch, closeBatch, createBatch, discardBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, loadImportHistory, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
+import { canCancelImport, canDiscardImport, canResumeImport, importCancelBlockedMessage, importHistoryStatus, removeCanceledImportSources } from '../lib/financialImportHistory.js'
+import { approveFinancialImportLines, cancelFinancialImportBatch, closeBatch, createBatch, discardFinancialImportBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, loadImportHistory, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -65,6 +65,7 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
   const [historyError, setHistoryError] = useState('')
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
+  const [discardTarget, setDiscardTarget] = useState(null)
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 820
 
   const s = {
@@ -235,13 +236,18 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
   async function discardIncomplete() {
     if (!incompleteBatch) return
     setBusy(true)
-    const result = await discardBatch(incompleteBatch.id)
+    const result = await discardFinancialImportBatch(incompleteBatch.id, 'gravação interrompida')
     setBusy(false)
-    if (result?.error) { setError('Não foi possível descartar a revisão incompleta. Tente novamente.'); return }
+    if (result?.schemaMissing) {
+      setError('O descarte seguro ainda não está instalado. Aplique financial_import_batch_discard.sql; nada foi alterado.')
+      return
+    }
+    if (result?.error) { setError(result.error.message || 'Não foi possível descartar a revisão incompleta. Tente novamente.'); return }
     setIncompleteBatch(null)
     setResumable(null)
     setResumableProgress(null)
     setError('')
+    refreshHistory().catch(() => {})
     toast('Revisão incompleta descartada. Suba a planilha novamente.')
   }
 
@@ -472,6 +478,36 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     toast(`${canceled.result.approved_count} lançamento(s) retirado(s) do financeiro. O histórico foi preservado.`)
   }
 
+  // Descartar NÃO toca no financeiro: o banco só aceita quando o lote não tem linha aprovada.
+  // Por isso não há applyServerConfirmedData aqui — não existe lançamento para retirar da tela.
+  async function confirmDiscard() {
+    if (!discardTarget) return
+    setBusy(true)
+    setError('')
+    const discarded = await discardFinancialImportBatch(discardTarget.id)
+    setBusy(false)
+    if (discarded.schemaMissing) {
+      setError('O descarte seguro ainda não está instalado. Aplique financial_import_batch_discard.sql; nada foi alterado.')
+      return
+    }
+    if (discarded.error) {
+      setError(discarded.error.message || 'Não foi possível descartar a revisão. Nada foi alterado.')
+      return
+    }
+    if (batch?.id === discardTarget.id) {
+      setBatch(null)
+      setParsed(null)
+      setLines([])
+      setApprovedIds([])
+      setRejectedIds([])
+    }
+    if (resumable?.id === discardTarget.id) { setResumable(null); setResumableProgress(null) }
+    if (incompleteBatch?.id === discardTarget.id) setIncompleteBatch(null)
+    setDiscardTarget(null)
+    await refreshHistory()
+    toast('Revisão descartada. Nenhum lançamento foi afetado.')
+  }
+
   const selectedItems = selectedIds.map(id => reviewById.get(id)).filter(Boolean)
 
   return (
@@ -533,6 +569,7 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
                 </div>
                 <div style={{ ...s.row, gap:8, justifyContent:isMobile ? 'flex-start' : 'flex-end' }}>
                   {canResumeImport(item) && <Btn variant="success" onClick={() => resumeBatch(item)} disabled={busy}>Retomar revisão</Btn>}
+                  {canDiscardImport(item) && <Btn variant="ghost" onClick={() => setDiscardTarget(item)} disabled={busy}>Descartar</Btn>}
                   {canCancelImport(item) && <Btn variant="danger" onClick={() => { setCancelTarget(item); setCancelReason('') }}>Cancelar importação</Btn>}
                   {!canCancelImport(item) && blocked && Number(item.approved_count || 0) > 0 && <span style={{ ...s.muted, color:C.yellow, maxWidth:210 }}>{blocked}</span>}
                 </div>
@@ -678,6 +715,21 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
             {importProgress.status === 'error' && <div style={{ ...s.row, justifyContent:'center', marginTop:18 }}><Btn variant="ghost" onClick={closeImportModal}>Fechar</Btn><Btn variant="success" onClick={approveConfirmed}>Tentar importar os restantes ({confirmItems.length})</Btn></div>}
           </div>}
         </div>
+      </Modal>
+      <Modal open={Boolean(discardTarget)} onClose={() => { if (!busy) setDiscardTarget(null) }} closeOnBackdrop={!busy} title="Descartar revisão" width={560} trackDirty={false}>
+        {discardTarget && <div style={s.stack}>
+          <div style={{ color:C.text, fontWeight:900 }}>Esta revisão nunca entrou no financeiro.</div>
+          <div style={s.muted}>Descartar tira a planilha da sua lista de trabalho e libera o arquivo para ser importado de novo. <strong>Nenhum lançamento é afetado</strong> — não há nenhum criado por este lote. O registro fica arquivado para auditoria, não é apagado.</div>
+          <Card style={{ padding:14 }}>
+            <strong style={{ color:C.text, overflowWrap:'anywhere' }}>{discardTarget.file_name}</strong>
+            <div style={{ ...s.muted, marginTop:5 }}>{discardTarget.line_count} linha(s) · {discardTarget.rejected_count || 0} rejeitada(s) · {discardTarget.pending_count || 0} sem decisão</div>
+          </Card>
+          <div style={{ ...s.muted, color:C.yellow }}>As decisões de revisão desta planilha serão perdidas. Se quiser continuar de onde parou, use “Retomar revisão”.</div>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}>
+            <Btn variant="ghost" onClick={() => setDiscardTarget(null)} disabled={busy}>Voltar</Btn>
+            <Btn variant="danger" onClick={confirmDiscard} disabled={busy}>{busy ? 'Descartando…' : 'Descartar revisão'}</Btn>
+          </div>
+        </div>}
       </Modal>
       <Modal open={Boolean(cancelTarget)} onClose={() => { if (!busy) { setCancelTarget(null); setCancelReason('') } }} closeOnBackdrop={!busy} title="Cancelar importação" width={600} trackDirty={false}>
         {cancelTarget && <div style={s.stack}>

@@ -106,6 +106,21 @@ export async function loadImportHistory(limit = 50) {
   return { batches:data || [] }
 }
 
+// Descarte de uma revisão que nunca entrou no financeiro. Passa por RPC de propósito: o guard de
+// "nenhuma linha aprovada" tem que viver no banco. Arquivar pelo cliente um lote que já virou
+// lançamento deixaria origens no financeiro sem lote cancelável para retirá-las depois.
+export async function discardFinancialImportBatch(batchId, reason = null) {
+  const { data, error } = await supabase.rpc('discard_financial_import_batch', {
+    p_batch_id:batchId,
+    p_reason:reason ? String(reason).trim() : null,
+  })
+  if (error) return schemaMissing(error) || { error }
+  if (!data || data.batch_id !== batchId || data.status !== 'archived') {
+    return { error:new Error('O banco não confirmou o descarte desta revisão.') }
+  }
+  return { result:data }
+}
+
 export async function cancelFinancialImportBatch(batchId, reason) {
   const { data, error } = await supabase.rpc('cancel_financial_import_batch', {
     p_batch_id:batchId,

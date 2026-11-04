@@ -219,3 +219,77 @@ test('histórico lista as importações, bloqueia o que tem vínculo e cancela o
   expect(cancelPayload).toMatchObject({ p_batch_id:READY, p_reason:'planilha da clínica errada' })
   expect(sourceWrites).toEqual([])
 })
+
+test('revisão que nunca entrou no financeiro pode ser descartada pelo histórico', async ({ page }) => {
+  const EM_REVISAO = '10000000-0000-4000-8000-00000000cccc'
+  const IMPORTADA = '10000000-0000-4000-8000-00000000dddd'
+  let discarded = false
+  let discardPayload = null
+  const sourceWrites = []
+
+  await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
+  await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{"connected":false}' }))
+  await page.route('**/rest/v1/**', async route => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    let body = request.method() === 'GET' ? [] : (request.postDataJSON() || [])
+
+    if (['/extra_revenues', '/expenses', '/financial_entries'].some(t => path.endsWith(t)) && request.method() !== 'GET') {
+      sourceWrites.push(`${request.method()} ${path}`)
+    }
+    if (path.endsWith('/rpc/list_financial_import_history')) {
+      body = [
+        {
+          id:EM_REVISAO, file_name:'MOV 09-2026.xlsx', sheet_name:'Planilha1',
+          status:discarded ? 'archived' : 'reviewing', line_count:188,
+          created_at:'2026-10-29T10:00:00Z', ready_at:null, canceled_at:null, cancellation_reason:null,
+          approved_count:0, rejected_count:0, pending_count:discarded ? 0 : 188,
+          imported_receipts:0, imported_expenses:0,
+          active_reconciliation_count:0, active_charge_count:0, active_fiscal_document_count:0,
+        },
+        {
+          id:IMPORTADA, file_name:'MOV_10-2026.xlsx', sheet_name:'Planilha1',
+          status:'ready', line_count:188, created_at:'2026-11-02T10:00:00Z',
+          ready_at:'2026-11-02T11:00:00Z', canceled_at:null, cancellation_reason:null,
+          approved_count:188, rejected_count:0, pending_count:0,
+          imported_receipts:494480.55, imported_expenses:159735.53,
+          active_reconciliation_count:0, active_charge_count:0, active_fiscal_document_count:0,
+        },
+      ]
+    }
+    if (path.endsWith('/rpc/discard_financial_import_batch')) {
+      discardPayload = body
+      discarded = true
+      body = { batch_id:body.p_batch_id, status:'archived', line_count:188, discarded_at:'2026-11-04T21:00:00Z' }
+    }
+    return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/0' }, body:JSON.stringify(body) })
+  })
+
+  await page.goto('/app/financial-import')
+
+  const emRevisao = page.getByTestId(`financial-import-history-${EM_REVISAO}`)
+  const importada = page.getByTestId(`financial-import-history-${IMPORTADA}`)
+  await expect(emRevisao.getByText('Em revisão')).toBeVisible()
+
+  // O lote em revisão oferece retomar E descartar — nunca cancelar, pois nada entrou no financeiro.
+  await expect(emRevisao.getByRole('button', { name:'Retomar revisão' })).toBeVisible()
+  await expect(emRevisao.getByRole('button', { name:'Descartar' })).toBeVisible()
+  await expect(emRevisao.getByRole('button', { name:'Cancelar importação' })).toHaveCount(0)
+
+  // O lote já importado oferece o oposto: cancelar, nunca descartar.
+  await expect(importada.getByRole('button', { name:'Cancelar importação' })).toBeVisible()
+  await expect(importada.getByRole('button', { name:'Descartar' })).toHaveCount(0)
+
+  await emRevisao.getByRole('button', { name:'Descartar' }).click()
+  await expect(page.getByText('Esta revisão nunca entrou no financeiro.')).toBeVisible()
+  await page.getByRole('button', { name:'Descartar revisão' }).click()
+
+  await expect(page.getByText('Revisão descartada. Nenhum lançamento foi afetado.')).toBeVisible()
+  await expect(emRevisao.getByText('Descartada')).toBeVisible()
+  await expect(emRevisao.getByRole('button', { name:'Descartar' })).toHaveCount(0)
+  await expect(emRevisao.getByRole('button', { name:'Retomar revisão' })).toHaveCount(0)
+
+  expect(discardPayload).toMatchObject({ p_batch_id:EM_REVISAO })
+  // Descartar nao pode ter tocado em nenhuma origem nem titulo do financeiro.
+  expect(sourceWrites).toEqual([])
+})
