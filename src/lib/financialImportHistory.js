@@ -56,6 +56,14 @@ export function canCancelImport(batch) {
     && importCancelBlockers(batch).length === 0
 }
 
+// Descartar: só faz sentido para um lote que NUNCA entrou no financeiro. Com linha aprovada a ação
+// correta é cancelar, que retira os lançamentos; descartar deixaria origens vivas sem lote
+// cancelável. O banco impõe a mesma regra em discard_financial_import_batch.
+export function canDiscardImport(batch) {
+  return ['creating', 'reviewing', 'ready'].includes(batch?.status)
+    && COUNT(batch, 'approved_count') === 0
+}
+
 // Retomar a revisão de um lote que ficou pela metade. Um lote cancelado/descartado nunca reabre, e
 // um 'creating' pode estar sem todas as linhas (a tela recusa e oferece descarte).
 export function canResumeImport(batch) {

@@ -179,6 +179,7 @@ insert into public.financial_import_lines(id, user_id, batch_id, source_line_key
 
 \ir ../../supabase/financial_import_atomic_approval.sql
 \ir ../../supabase/financial_import_batch_cancellation.sql
+\ir ../../supabase/financial_import_batch_discard.sql
 
 -- ---------------------------------------------------------------------------
 -- Aprova de verdade, pela RPC real, tudo o que sera cancelado depois.
@@ -522,6 +523,96 @@ begin
     join public.financial_import_lines line on line.source_id = source.id
     where line.batch_id = '30000000-0000-4000-8000-00000000000b' and source.archived_at is not null
   ) then raise exception 'A recusa por persistencia incompleta ainda arquivou a origem.'; end if;
+end $$;
+reset role;
+
+-- ---------------------------------------------------------------------------
+-- 9. Descarte: so vale para revisao que NUNCA entrou no financeiro.
+-- ---------------------------------------------------------------------------
+set role authenticated;
+set request.jwt.claim.sub = '20000000-0000-4000-8000-000000000001';
+
+do $$
+declare
+  result jsonb;
+  entries_before integer;
+begin
+  select count(*) into entries_before from public.financial_entries where archived_at is null;
+
+  -- Lote E nunca teve linha aprovada: pode descartar.
+  result := public.discard_financial_import_batch('30000000-0000-4000-8000-00000000000e', 'planilha de teste');
+  if result->>'status' <> 'archived' then
+    raise exception 'O descarte nao confirmou o arquivamento: %', result;
+  end if;
+  if not exists (
+    select 1 from public.financial_import_batches
+    where id = '30000000-0000-4000-8000-00000000000e' and status = 'archived' and archived_at is not null
+  ) then raise exception 'O lote descartado nao ficou arquivado.'; end if;
+  if exists (
+    select 1 from public.financial_import_lines
+    where batch_id = '30000000-0000-4000-8000-00000000000e' and archived_at is null
+  ) then raise exception 'As linhas do lote descartado continuaram ativas.'; end if;
+
+  -- Descartar NAO pode mexer no financeiro.
+  if (select count(*) from public.financial_entries where archived_at is null) <> entries_before then
+    raise exception 'O descarte alterou o financeiro.';
+  end if;
+
+  if not exists (
+    select 1 from public.audit_logs
+    where action = 'discard_financial_import_batch'
+      and entity_id = '30000000-0000-4000-8000-00000000000e'
+  ) then raise exception 'O descarte nao foi auditado.'; end if;
+
+  -- Repetir e inofensivo.
+  result := public.discard_financial_import_batch('30000000-0000-4000-8000-00000000000e');
+  if coalesce((result->>'already_discarded')::boolean, false) is not true then
+    raise exception 'O segundo descarte nao se identificou como repeticao: %', result;
+  end if;
+  if (select count(*) from public.audit_logs where action = 'discard_financial_import_batch') <> 1 then
+    raise exception 'A repeticao do descarte gravou auditoria duplicada.';
+  end if;
+end $$;
+
+do $$
+begin
+  -- Lote D tem linha aprovada no financeiro: descartar deixaria origens orfas, entao e RECUSADO.
+  begin
+    perform public.discard_financial_import_batch('30000000-0000-4000-8000-00000000000d', 'tentando');
+    raise exception 'Lote com lancamento no financeiro foi descartado.';
+  exception when sqlstate '55000' then null;
+  end;
+  if exists (
+    select 1 from public.financial_import_batches
+    where id = '30000000-0000-4000-8000-00000000000d' and status = 'archived'
+  ) then raise exception 'A recusa do descarte ainda arquivou o lote.'; end if;
+  if exists (
+    select 1 from public.financial_import_lines
+    where batch_id = '30000000-0000-4000-8000-00000000000d' and archived_at is not null
+  ) then raise exception 'A recusa do descarte ainda arquivou as linhas.'; end if;
+
+  -- Lote de outra clinica e lote ja cancelado tambem sao recusados.
+  begin
+    perform public.discard_financial_import_batch('30000000-0000-4000-8000-00000000000f', 'outra clinica');
+    raise exception 'Lote de outra clinica foi descartado.';
+  exception when sqlstate '42501' then null;
+  end;
+  begin
+    perform public.discard_financial_import_batch('30000000-0000-4000-8000-00000000000a', 'ja cancelado');
+    raise exception 'Lote cancelado foi descartado.';
+  exception when sqlstate '22023' then null;
+  end;
+end $$;
+
+-- Equipe sem papel financeiro nao descarta.
+set request.jwt.claim.sub = '20000000-0000-4000-8000-000000000003';
+do $$
+begin
+  begin
+    perform public.discard_financial_import_batch('30000000-0000-4000-8000-00000000000c', 'equipe');
+    raise exception 'Perfil sem papel financeiro descartou a importacao.';
+  exception when sqlstate '42501' then null;
+  end;
 end $$;
 reset role;
 
