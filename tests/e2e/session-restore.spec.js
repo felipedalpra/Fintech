@@ -91,6 +91,8 @@ test('restaura modal aberto com digitacao apos reload', async ({ page }) => {
   await page.goto('/app/finance')
   await expect(page).toHaveURL(/\/app\/finance$/)
 
+  // /app/finance abre na aba "Visão geral"; "+ Outra receita" vive na aba "Entradas".
+  await page.getByRole('button', { name:'Entradas', exact:true }).click()
   await page.getByRole('button', { name:/Outra receita/i }).click()
   await expect(page.getByRole('heading', { name:'Novo registro' })).toBeVisible()
 
@@ -99,6 +101,7 @@ test('restaura modal aberto com digitacao apos reload', async ({ page }) => {
   await page.reload()
 
   await expect(page).toHaveURL(/\/app\/finance$/)
+  // A aba volta para "Visão geral" no reload: a restauração do modal não pode depender da aba.
   await expect(page.getByRole('heading', { name:'Novo registro' })).toBeVisible()
   await expect(page.getByPlaceholder('Ex: contrato mensal de consultoria')).toHaveValue('Receita modal persistida E2E')
 })
