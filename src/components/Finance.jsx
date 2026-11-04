@@ -205,7 +205,7 @@ function buildIndicatorPeriodKey(range) {
   return `${t}:${t}`
 }
 
-export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, defaultTab = 'entradas' }) {
+export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, defaultTab = 'overview' }) {
   const navigate = useNavigate()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const SUMMARY_CARDS = [
@@ -997,6 +997,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   }
 
   const tabs = [
+    ['overview', 'Visão geral'],
     ['entradas', 'Entradas'],
     ['saidas', 'Saídas'],
     ['receber', 'A receber'],
@@ -1280,60 +1281,61 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         </div>
       </div>
 
-      {/* Resumo rápido */}
-      <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap:12 }}>
-        {SUMMARY_CARDS.map(([label, key, color]) => {
-          const value = m[key]
-          const resolvedColor = color === 'dynamic-profit' ? (value >= 0 ? C.green : C.red) : color
-          return (
-            <Card key={label} onClick={() => openDrilldown(label, m.drilldowns?.[key] || [], value, 'Lançamentos considerados no período e regime deste indicador.')} title="Clique para ver os lançamentos" style={{ padding:isMobile ? 14 : 18, background:`linear-gradient(135deg, ${resolvedColor}0A, transparent)`, border:`1px solid ${resolvedColor}22` }}>
-              <div style={{ fontSize:10, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>{label}</div>
-              <div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color:resolvedColor, letterSpacing:'-0.02em' }}>{money(value)}</div>
-              <div style={{ fontSize:10, color:C.accentLight, marginTop:7, fontWeight:700 }}>Ver lançamentos →</div>
-            </Card>
-          )
-        })}
-      </div>
+      {tab === 'overview' && <>
+        <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr 1fr' : 'repeat(4,1fr)', gap:12 }}>
+          {SUMMARY_CARDS.map(([label, key, color]) => {
+            const value = m[key]
+            const resolvedColor = color === 'dynamic-profit' ? (value >= 0 ? C.green : C.red) : color
+            return (
+              <Card key={label} onClick={() => openDrilldown(label, m.drilldowns?.[key] || [], value, 'Lançamentos considerados no período e regime deste indicador.')} title="Clique para ver os lançamentos" style={{ padding:isMobile ? 14 : 18, background:`linear-gradient(135deg, ${resolvedColor}0A, transparent)`, border:`1px solid ${resolvedColor}22` }}>
+                <div style={{ fontSize:10, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6 }}>{label}</div>
+                <div style={{ fontSize:isMobile ? 18 : 22, fontWeight:800, color:resolvedColor, letterSpacing:'-0.02em' }}>{money(value)}</div>
+                <div style={{ fontSize:10, color:C.accentLight, marginTop:7, fontWeight:700 }}>Ver lançamentos →</div>
+              </Card>
+            )
+          })}
+        </div>
 
-      {nextDueItem && (
-        <Card style={{ padding:'12px 18px', border:`1px solid ${C.yellow}44`, background:`${C.yellow}08`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-            <span style={{ fontSize:16 }}>⏰</span>
-            <div>
-              <div style={{ fontSize:11, color:C.yellow, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>Próximo vencimento</div>
-              <div style={{ fontSize:13, color:C.text, fontWeight:600, marginTop:2 }}>
-                {nextDueItem.patient || nextDueItem.supplier || nextDueItem.description || '—'} · {formatDateBR(nextDueItem.dueDate)}
+        {nextDueItem && (
+          <Card style={{ padding:'12px 18px', border:`1px solid ${C.yellow}44`, background:`${C.yellow}08`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+            <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+              <span style={{ fontSize:16 }}>⏰</span>
+              <div>
+                <div style={{ fontSize:11, color:C.yellow, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em' }}>Próximo vencimento</div>
+                <div style={{ fontSize:13, color:C.text, fontWeight:600, marginTop:2 }}>
+                  {nextDueItem.patient || nextDueItem.supplier || nextDueItem.description || '—'} · {formatDateBR(nextDueItem.dueDate)}
+                </div>
               </div>
             </div>
-          </div>
-          <div style={{ fontSize:16, fontWeight:800, color:C.yellow }}>{money(nextDueItem.value)}</div>
-        </Card>
-      )}
+            <div style={{ fontSize:16, fontWeight:800, color:C.yellow }}>{money(nextDueItem.value)}</div>
+          </Card>
+        )}
 
-      {(dueAlerts.overdue.length > 0 || dueAlerts.dueSoon.length > 0) && (
-        <Card style={{ padding:16, border:`1px solid ${C.yellow}55` }}>
-          <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Alertas de vencimento</div>
-            <div style={{ color:C.textSub, fontSize:12 }}>
-              {dueAlerts.overdue.length} vencida(s) · {dueAlerts.dueSoon.length} vencendo em até 3 dias
+        {(dueAlerts.overdue.length > 0 || dueAlerts.dueSoon.length > 0) && (
+          <Card style={{ padding:16, border:`1px solid ${C.yellow}55` }}>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:8 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Alertas de vencimento</div>
+              <div style={{ color:C.textSub, fontSize:12 }}>
+                {dueAlerts.overdue.length} vencida(s) · {dueAlerts.dueSoon.length} vencendo em até 3 dias
+              </div>
             </div>
-          </div>
-          <div style={{ display:'grid', gap:8 }}>
-            {dueAlerts.overdue.slice(0, 4).map(item => (
-              <div key={`overdue-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
-                <span style={{ color:C.red, fontSize:12 }}>Vencida: {item.label} · {formatDateBR(item.dueDate)}</span>
-                <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
-              </div>
-            ))}
-            {dueAlerts.dueSoon.slice(0, 4).map(item => (
-              <div key={`soon-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
-                <span style={{ color:C.yellow, fontSize:12 }}>A vencer: {item.label} · {formatDateBR(item.dueDate)} ({item.days} dia(s))</span>
-                <span style={{ color:C.yellow, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+            <div style={{ display:'grid', gap:8 }}>
+              {dueAlerts.overdue.slice(0, 4).map(item => (
+                <div key={`overdue-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
+                  <span style={{ color:C.red, fontSize:12 }}>Vencida: {item.label} · {formatDateBR(item.dueDate)}</span>
+                  <span style={{ color:C.red, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
+                </div>
+              ))}
+              {dueAlerts.dueSoon.slice(0, 4).map(item => (
+                <div key={`soon-${item.id}`} style={{ display:'flex', justifyContent:'space-between', gap:12, borderTop:`1px solid ${C.border}33`, paddingTop:8 }}>
+                  <span style={{ color:C.yellow, fontSize:12 }}>A vencer: {item.label} · {formatDateBR(item.dueDate)} ({item.days} dia(s))</span>
+                  <span style={{ color:C.yellow, fontWeight:700, fontSize:12 }}>{money(item.value)}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </>}
 
       {activeListFilterConfig.show && (
         <Card style={{ padding:14 }}>
