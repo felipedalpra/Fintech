@@ -147,6 +147,10 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           origin:presentation.origin,
           originLabel:source?.originLabel || '',
           referenceId:entry.source_id,
+          installmentNumber:row.installment_number,
+          sourceInstallmentNumber:row.source_installment_number || row.installment_number,
+          installmentDisplayNumber:row.installment_number,
+          installmentsTotal:rows.length,
           sourceComponent:entry.source_component,
           chartAccountId:entry.chart_account_id || null,
           accountNature:entry.account_nature || null,
@@ -192,6 +196,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
         if (installmentValue <= 0) return
         const installment = {
           installmentNumber:row.installment_number,
+          sourceInstallmentNumber:row.source_installment_number || row.installment_number,
           amount:installmentValue,
           dueDate:row.due_date || entry.issue_date,
           paymentMethod:row.payment_method || '',
@@ -202,6 +207,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           value:installmentValue,
           dueDate:installment.dueDate,
           installmentNumber:row.installment_number,
+          sourceInstallmentNumber:row.source_installment_number || row.installment_number,
           openInstallmentRows:[installment],
           description:rows.length > 1 ? `${presentation.accountDescription} (parcela ${row.installment_number}/${rows.length})` : presentation.accountDescription,
           patient:entry.party_name_snapshot || presentation.description,

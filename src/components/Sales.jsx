@@ -10,6 +10,8 @@ import { PatientSelector } from './PatientSelector.jsx'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
+import { hasChangedReceiptFields, hasRecognizedReceipt } from '../lib/receivablePaymentReversal.js'
+import { useToast } from '../context/ToastContext.jsx'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -95,6 +97,7 @@ export function Sales({ data, setData, saveDataNow }) {
   // Erro aparece no banner global; cai para setData se saveDataNow não vier.
   const persist = updater => { const r = (saveDataNow || setData)(updater); if (r && r.catch) r.catch(() => {}) }
   const { user } = useAuth()
+  const { toast } = useToast()
   const { ownerId } = useUserRole()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
@@ -271,6 +274,12 @@ export function Sales({ data, setData, saveDataNow }) {
       netRevenue:resolvedTotal - totalCosts,
       installmentValue,
     }, 'surgery')
+
+    const existing = editing ? data.surgeries.find(item => item.id === editing) : null
+    if (hasRecognizedReceipt(existing) && hasChangedReceiptFields(existing, nextRecord, ['totalValue', 'paymentMethod', 'paymentStatus', 'paymentDate', 'dueDate'])) {
+      toast('Há parcelas recebidas. Estorne cada recebimento no Financeiro antes de alterar valor, forma, status ou vencimento.', 'warning')
+      return
+    }
 
     persist(current => ({
       ...current,

@@ -293,7 +293,7 @@ begin
   end if;
 
   v_received_date := coalesce((p_paid_at at time zone 'America/Sao_Paulo')::date, current_date);
-  settlement_key := installment_now.installment_number::text;
+  settlement_key := coalesce(installment_now.source_installment_number, installment_now.installment_number)::text;
   settlement_value := jsonb_build_object(
     'receivedDate', v_received_date,
     'amount', charge_now.amount,
@@ -324,7 +324,7 @@ begin
     where id = entry_now.id;
 
     select coalesce(jsonb_object_agg(
-      installment_number::text,
+      coalesce(source_installment_number, installment_number)::text,
       jsonb_build_object(
         'receivedDate', settlement_date,
         'amount', amount,
@@ -399,7 +399,7 @@ begin
       where id = entry_now.source_id and user_id = p_user_id
         and receipt_settlements -> settlement_key ->> 'chargeId' = charge_now.id::text;
       if settlements_after is not null then
-        select max((value ->> 'receivedDate')::date) into latest_receipt_date from jsonb_each(settlements_after);
+        latest_receipt_date := public.latest_active_receipt_date(settlements_after);
         update public.surgeries set receipt_settlements = settlements_after, payment_status = 'pendente', payment_date = latest_receipt_date
         where id = entry_now.source_id and user_id = p_user_id;
       end if;
@@ -409,7 +409,7 @@ begin
       where id = entry_now.source_id and user_id = p_user_id
         and receipt_settlements -> settlement_key ->> 'chargeId' = charge_now.id::text;
       if settlements_after is not null then
-        select max((value ->> 'receivedDate')::date) into latest_receipt_date from jsonb_each(settlements_after);
+        latest_receipt_date := public.latest_active_receipt_date(settlements_after);
         update public.consultations set receipt_settlements = settlements_after, payment_status = 'pendente', payment_date = latest_receipt_date
         where id = entry_now.source_id and user_id = p_user_id;
       end if;
@@ -419,7 +419,7 @@ begin
       where id = entry_now.source_id and user_id = p_user_id
         and receipt_settlements -> settlement_key ->> 'chargeId' = charge_now.id::text;
       if settlements_after is not null then
-        select max((value ->> 'receivedDate')::date) into latest_receipt_date from jsonb_each(settlements_after);
+        latest_receipt_date := public.latest_active_receipt_date(settlements_after);
         update public.product_sales set receipt_settlements = settlements_after, status = 'pendente', received_date = latest_receipt_date
         where id = entry_now.source_id and user_id = p_user_id;
       end if;

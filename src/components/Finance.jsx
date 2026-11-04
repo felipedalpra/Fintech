@@ -22,6 +22,7 @@ import { releaseBankStatementLineClaims } from '../lib/bankReconciliationStore.j
 import { BillingChargeButton } from './BillingChargeButton.jsx'
 import { paymentScheduleFlow } from '../lib/paymentScheduleFlow.js'
 import { isProtectedFinancialImportRow } from '../lib/financeSync.js'
+import { hasChangedReceiptFields, hasRecognizedReceipt, reverseReceivableInstallment, withReceivedInstallmentHistory } from '../lib/receivablePaymentReversal.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -59,6 +60,7 @@ const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', s
 
 function settleReceivableInstallment(record, account) {
   const installment = account.openInstallmentRows?.[0] || { installmentNumber:1, amount:account.value }
+  const sourceInstallmentNumber = installment.sourceInstallmentNumber || installment.installmentNumber
   const remainingOpenInstallments = Number(account.openInstallments || account.openInstallmentRows?.length || 1)
   const receivedDate = today()
   const legacyFlow = paymentScheduleFlow(record.totalValue ?? record.value ?? account.value, record)
@@ -68,14 +70,17 @@ function settleReceivableInstallment(record, account) {
     method:entry.method || record.paymentMethod || 'manual',
     legacy:true,
   }]))
-  const receiptSettlements = {
+  const previousSettlements = {
     ...legacySettlements,
     ...(record.receiptSettlements || {}),
-    [String(installment.installmentNumber)]:{
+  }
+  const receiptSettlements = {
+    ...previousSettlements,
+    [String(sourceInstallmentNumber)]:withReceivedInstallmentHistory(previousSettlements[String(sourceInstallmentNumber)], {
       receivedDate,
       amount:installment.amount,
       method:installment.paymentMethod || record.paymentMethod || 'manual',
-    },
+    }),
   }
   return {
     ...record,
@@ -201,7 +206,7 @@ function buildIndicatorPeriodKey(range) {
   return `${t}:${t}`
 }
 
-export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' }) {
+export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, defaultTab = 'entradas' }) {
   const navigate = useNavigate()
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const SUMMARY_CARDS = [
@@ -689,7 +694,14 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     if (modalType === 'surgery') {
       if (!editing) return
       const normalized = withClinicalCostSettlementDefaults(form, 'surgery')
-      setData(current => ({ ...current, surgeries: current.surgeries.map(item => item.id === editing ? { ...item, ...normalized, id:editing } : item) }))
+      const existing = data.surgeries.find(item => item.id === editing)
+      if (hasRecognizedReceipt(existing) && hasChangedReceiptFields(existing, normalized, ['totalValue', 'paymentMethod', 'paymentStatus', 'paymentDate', 'dueDate'])) {
+        setFormError('Há parcelas recebidas. Estorne cada recebimento na aba Entradas antes de alterar valor, forma, status ou vencimento.')
+        return
+      }
+      const surgeryRecord = { ...existing, ...normalized, id:editing }
+      const saved = await persistLaunch(current => ({ ...current, surgeries: current.surgeries.map(item => item.id === editing ? surgeryRecord : item) }), { collection:'surgeries', record:surgeryRecord })
+      if (!saved) return
       toast('Cirurgia atualizada com sucesso.')
       setShowModal(false)
       return
@@ -697,7 +709,14 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
     if (modalType === 'consultation') {
       if (!editing) return
       const normalized = withClinicalCostSettlementDefaults(form, 'consultation')
-      setData(current => ({ ...current, consultations: current.consultations.map(item => item.id === editing ? { ...item, ...normalized, id:editing } : item) }))
+      const existing = data.consultations.find(item => item.id === editing)
+      if (hasRecognizedReceipt(existing) && hasChangedReceiptFields(existing, normalized, ['value', 'paymentMethod', 'paymentStatus', 'paymentDate', 'dueDate', 'forecastPaymentDate'])) {
+        setFormError('Há parcelas recebidas. Estorne cada recebimento na aba Entradas antes de alterar valor, forma, status ou vencimento.')
+        return
+      }
+      const consultationRecord = { ...existing, ...normalized, id:editing }
+      const saved = await persistLaunch(current => ({ ...current, consultations: current.consultations.map(item => item.id === editing ? consultationRecord : item) }), { collection:'consultations', record:consultationRecord })
+      if (!saved) return
       toast('Consulta atualizada com sucesso.')
       setShowModal(false)
       return
@@ -713,7 +732,14 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         return
       }
       setFormError('')
-      setData(current => ({ ...current, productSales: current.productSales.map(item => item.id === editing ? { ...item, ...form, id:editing } : item) }))
+      const existing = data.productSales.find(item => item.id === editing)
+      if (hasRecognizedReceipt(existing) && hasChangedReceiptFields(existing, form, ['totalValue', 'paymentMethod', 'paymentStatus', 'receivedDate', 'dueDate'])) {
+        setFormError('Há parcelas recebidas. Estorne cada recebimento na aba Entradas antes de alterar valor, forma, status ou vencimento.')
+        return
+      }
+      const saleRecord = { ...existing, ...form, id:editing }
+      const saved = await persistLaunch(current => ({ ...current, productSales: current.productSales.map(item => item.id === editing ? saleRecord : item) }), { collection:'productSales', record:saleRecord })
+      if (!saved) return
       toast('Venda atualizada com sucesso.')
       setShowModal(false)
       return
@@ -856,13 +882,65 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
       return
     }
     if (confirmState.action === 'delete-entry') {
-      const { origin, referenceId } = confirmState
-      if (origin === 'cirurgia') {
-        setData(current => ({ ...current, surgeries:current.surgeries.map(s => s.id === referenceId ? { ...s, paymentStatus:'pendente', paymentDate:null } : s) }))
-        toast('Cirurgia marcada como pendente — saiu do financeiro.', 'warning')
-      } else if (origin === 'consulta') {
-        setData(current => ({ ...current, consultations:current.consultations.map(c => c.id === referenceId ? { ...c, paymentStatus:'pendente', paymentDate:null } : c) }))
-        toast('Consulta marcada como pendente — saiu do financeiro.', 'warning')
+      const { origin, referenceId, sourceInstallmentNumber, ledgerInstallmentNumber } = confirmState
+      if (['cirurgia', 'consulta', 'venda_produto'].includes(origin)) {
+        const config = {
+          cirurgia:{ collection:'surgeries', totalField:'totalValue', paidStatus:'pago', receivedDateField:false, label:'cirurgia' },
+          consulta:{ collection:'consultations', totalField:'value', paidStatus:'pago', receivedDateField:false, label:'consulta' },
+          venda_produto:{ collection:'productSales', totalField:'totalValue', paidStatus:'recebido', receivedDateField:true, label:'venda de produto' },
+        }[origin]
+        const sourceRecord = (data[config.collection] || []).find(record => record.id === referenceId)
+        if (!sourceRecord) {
+          toast('O lançamento de origem não foi encontrado. Recarregue a página e tente novamente.', 'warning')
+          setConfirmState(null)
+          return
+        }
+        let reversedRecord
+        try {
+          reversedRecord = reverseReceivableInstallment(sourceRecord, {
+            totalValue:sourceRecord[config.totalField],
+            installmentNumber:sourceInstallmentNumber,
+            reversedByRole:role,
+            paidStatus:config.paidStatus,
+            receivedDateField:config.receivedDateField,
+          })
+        } catch (error) {
+          toast(error.message || 'Não foi possível estornar este recebimento.', 'warning')
+          setConfirmState(null)
+          return
+        }
+        if (!applyServerConfirmedData) {
+          toast('O estorno seguro não está disponível nesta sessão. Recarregue a página e tente novamente.', 'warning')
+          setConfirmState(null)
+          return
+        }
+        const receiptDateField = config.receivedDateField ? 'receivedDate' : 'paymentDate'
+        const { data:confirmed, error } = await supabase.rpc('reverse_receivable_installment', {
+          p_source_type:origin === 'cirurgia' ? 'surgery' : origin === 'consulta' ? 'consultation' : 'product_sale',
+          p_source_id:referenceId,
+          p_source_installment_number:Number(sourceInstallmentNumber || 1),
+          p_ledger_installment_number:Number(ledgerInstallmentNumber || 1),
+          p_expected_receipt_settlements:sourceRecord.receiptSettlements || {},
+          p_expected_payment_status:sourceRecord.paymentStatus || null,
+          p_expected_receipt_date:sourceRecord[receiptDateField] || null,
+          p_next_receipt_settlements:reversedRecord.receiptSettlements,
+        })
+        if (error) {
+          toast(error.message || 'Não foi possível estornar este recebimento.', 'warning')
+          setConfirmState(null)
+          return
+        }
+        applyServerConfirmedData(current => ({
+          ...current,
+          [config.collection]:(current[config.collection] || []).map(record => record.id === referenceId ? {
+            ...record,
+            receiptSettlements:confirmed?.receiptSettlements || reversedRecord.receiptSettlements,
+            paymentStatus:confirmed?.paymentStatus || reversedRecord.paymentStatus,
+            [receiptDateField]:confirmed?.receiptDate ?? null,
+            ...(config.receivedDateField ? { paymentDate:confirmed?.receiptDate ?? null } : {}),
+          } : record),
+        }))
+        toast(`Recebimento da parcela estornado. A ${config.label} continua cadastrada e a parcela voltou para Contas a Receber.`, 'warning')
       } else if (origin === 'outra_receita') {
         const revenue = data.extraRevenues.find(record => record.id === referenceId)
         if (isProtectedFinancialImportRow(revenue)) {
@@ -872,9 +950,6 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
         }
         setData(current => ({ ...current, extraRevenues:current.extraRevenues.filter(r => r.id !== referenceId) }))
         toast('Receita removida.', 'warning')
-      } else if (origin === 'venda_produto') {
-        setData(current => ({ ...current, productSales:current.productSales.filter(r => r.id !== referenceId) }))
-        toast('Venda de produto removida.', 'warning')
       }
       setConfirmState(null)
       return
@@ -1308,12 +1383,13 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
 
         <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
           const removable = ['cirurgia', 'consulta', 'outra_receita', 'venda_produto'].includes(item.origin)
-          const removeLabels = { cirurgia:'Cancelar pgto', consulta:'Cancelar pgto', outra_receita:'Remover', venda_produto:'Remover' }
+          const installmentLabel = item.installmentsTotal > 1 ? ` da parcela ${item.installmentDisplayNumber || item.installmentNumber}/${item.installmentsTotal}` : ''
+          const removeLabels = { cirurgia:'Estornar pgto', consulta:'Estornar pgto', outra_receita:'Remover', venda_produto:'Estornar pgto' }
           const messages = {
-            cirurgia:'Cancelar pagamento marca a cirurgia como pendente e a remove do financeiro. Ela continua cadastrada em Cirurgias.',
-            consulta:'Cancelar pagamento marca a consulta como pendente e a remove do financeiro. Ela continua cadastrada em Consultas.',
+            cirurgia:`Estornar o recebimento${installmentLabel}? A cirurgia continuará cadastrada e somente esta parcela voltará para Contas a Receber.`,
+            consulta:`Estornar o recebimento${installmentLabel}? A consulta continuará cadastrada e somente esta parcela voltará para Contas a Receber.`,
             outra_receita:'Remover esta receita adicional? Ela será excluída permanentemente.',
-            venda_produto:'Remover esta venda de produto? Ela será excluída permanentemente.',
+            venda_produto:`Estornar o recebimento${installmentLabel}? A venda continuará cadastrada e somente esta parcela voltará para Contas a Receber.`,
           }
           const editTypeMap = { cirurgia:'surgery', consulta:'consultation', outra_receita:'extra', venda_produto:'product-sale' }
           const sourceMap = { cirurgia:data.surgeries, consulta:data.consultations, outra_receita:data.extraRevenues, venda_produto:data.productSales }
@@ -1330,7 +1406,7 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
                 {protectedImport
                   ? <span title="Importações só podem ser removidas por um fluxo auditado." style={{ color:C.textDim, fontSize:11 }}>Importado protegido</span>
                   : removable
-                  ? <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, title:removeLabels[item.origin], message:messages[item.origin], confirmLabel:'Confirmar', confirmVariant:'danger' })}>{removeLabels[item.origin]}</Btn>
+                  ? <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, sourceInstallmentNumber:item.sourceInstallmentNumber || item.installmentNumber || 1, ledgerInstallmentNumber:item.installmentNumber || 1, title:removeLabels[item.origin], message:messages[item.origin], confirmLabel:item.origin === 'outra_receita' ? 'Remover' : 'Estornar recebimento', confirmVariant:'danger' })}>{removeLabels[item.origin]}</Btn>
                   : <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
               </div>,
             ],
@@ -1855,7 +1931,8 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
             <FInput label="NF / ISSQN (%)" value={form.invoiceIssuancePercent || 0} onChange={value => setForm(c => ({ ...c, invoiceIssuancePercent:value }))} type="number" />
             <ClinicalCostSettlementFields sourceType="surgery" form={form} setForm={setForm} />
             <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />
-            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+            {formError && <div style={{ color:C.red, fontSize:12, fontWeight:600 }}>{formError}</div>}
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={savingLaunch} saving={savingLaunch} />
           </div>
         )}
 
@@ -1871,7 +1948,8 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
             <ClinicalCostSettlementFields sourceType="consultation" form={form} setForm={setForm} />
             <FInput label="Forma de pagamento" value={form.paymentMethod || 'pix'} onChange={value => setForm(c => ({ ...c, paymentMethod:value }))} options={PAYMENT_METHODS} />
             <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />
-            <FormActions onCancel={() => setShowModal(false)} onSave={save} />
+            {formError && <div style={{ color:C.red, fontSize:12, fontWeight:600 }}>{formError}</div>}
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={savingLaunch} saving={savingLaunch} />
           </div>
         )}
 
@@ -1883,7 +1961,8 @@ export function Finance({ data, setData, saveDataNow, defaultTab = 'entradas' })
             {form.paymentStatus === 'pendente' && <FInput label="Vencimento" required value={form.dueDate || ''} onChange={value => setForm(c => ({ ...c, dueDate:value }))} type="date" />}
             <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
             <FInput label="Quantidade" value={form.quantity || 1} onChange={value => setForm(c => ({ ...c, quantity:value }))} type="number" />
-            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={form.paymentStatus === 'recebido' ? !form.receivedDate : form.paymentStatus === 'pendente' ? !form.dueDate : false} />
+            {formError && <div style={{ color:C.red, fontSize:12, fontWeight:600 }}>{formError}</div>}
+            <FormActions onCancel={() => setShowModal(false)} onSave={save} disabled={savingLaunch || (form.paymentStatus === 'recebido' ? !form.receivedDate : form.paymentStatus === 'pendente' ? !form.dueDate : false)} saving={savingLaunch} />
           </div>
         )}
 
