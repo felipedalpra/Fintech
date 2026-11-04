@@ -15,7 +15,16 @@ test('mostra todas as linhas, permite editar e só salva após aprovação', asy
       body = { ...body, id:'10000000-0000-4000-8000-000000000001', status:'creating', created_at:'2026-11-03T10:00:00Z' }
     }
     if (path.endsWith('/financial_import_batches') && request.method() === 'PATCH') {
-      body = { id:'10000000-0000-4000-8000-000000000001', file_name:'retroativos.xlsx', file_hash:'a'.repeat(64), sheet_name:'Planilha1', line_count:188, status:'reviewing', created_at:'2026-11-03T10:00:00Z' }
+      body = {
+        id:'10000000-0000-4000-8000-000000000001',
+        file_name:'retroativos.xlsx',
+        file_hash:'a'.repeat(64),
+        sheet_name:'Planilha1',
+        line_count:188,
+        status:body.status || 'reviewing',
+        ready_at:body.ready_at || null,
+        created_at:'2026-11-03T10:00:00Z',
+      }
     }
     if (path.endsWith('/financial_import_lines') && request.method() === 'POST') {
       const rows = Array.isArray(body) ? body : [body]

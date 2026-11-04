@@ -4,14 +4,14 @@
 // Spec: docs/superpowers/plans/2026-10-29-financial-import-review-persistence.md
 //
 // DEGRADAÇÃO EXPLÍCITA (refinamento da spec): se as tabelas ainda não existem (migration não
-// rodada), as funções devolvem `schemaMissing` em vez de estourar. A tela então continua
-// funcionando em memória, mas AVISA que a revisão não está sendo salva. Nunca em silêncio — foi
-// exatamente a degradação silenciosa que custou a revisão da clínica.
+// rodada), as funções devolvem `schemaMissing` em vez de estourar. A tela bloqueia o início da
+// revisão: nenhuma decisão pode existir só em memória. Foi exatamente a degradação silenciosa que
+// custou a revisão da clínica.
 
 import { supabase } from './supabase.js'
 import { statementMovementFingerprint } from './statementParser.js'
 import { isMissingRelationError } from './financeStoreErrors.js'
-import { buildBatchLineRows, buildBatchRecord, lineDecisionPatch } from './financialImportBatch.js'
+import { buildBatchLineRows, buildBatchRecord, lineDecisionPatch, missingConfirmedLineIds, validateApprovalConfirmation } from './financialImportBatch.js'
 
 const BATCH_COLUMNS = 'id, file_name, file_hash, sheet_name, line_count, status, created_at'
 const LINE_COLUMNS = 'id, source_id, batch_id, source_line_key, line_index, posted_date, amount, description, normalized_description, movement_fingerprint, source_metadata, review_status, chart_account_id, archived_at'
@@ -154,7 +154,7 @@ export async function approveFinancialImportLines({ batchId, items = [] }) {
     p_items:payload,
   })
   if (error) return { error }
-  if ((data?.length || 0) !== items.length) {
+  if (!validateApprovalConfirmation(items, data || [])) {
     return { error:new Error('O banco nao confirmou todas as linhas deste bloco de importacao.') }
   }
   return { rows:data }
@@ -162,11 +162,14 @@ export async function approveFinancialImportLines({ batchId, items = [] }) {
 
 // Reabre um lote concluído, para que rejeições possam ser revistas depois de recarregar a página.
 export async function reopenBatch(batchId) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('financial_import_batches')
     .update({ status:'reviewing', ready_at:null })
     .eq('id', batchId)
+    .select('id, status')
+    .maybeSingle()
   if (error) return schemaMissing(error) || { error }
+  if (!data || data.status !== 'reviewing') return { error:new Error('O banco nao confirmou a reabertura desta revisao.') }
   return { ok:true }
 }
 
@@ -177,13 +180,18 @@ export async function saveLinesDecision({ batchId, lineIds = [], decision, actor
   if (!lineIds.length) return { ok:true }
   const patch = lineDecisionPatch({ decision, actorId })
   for (const chunk of chunked(lineIds, ID_CHUNK)) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('financial_import_lines')
       .update(patch)
       .eq('batch_id', batchId)
       .in('id', chunk)
       .neq('review_status', 'approved')
+      .select('id, review_status')
     if (error) return schemaMissing(error) || { error }
+    const missing = missingConfirmedLineIds(chunk, data || [])
+    if (missing.length) {
+      return { error:new Error(`${missing.length} linha(s) mudaram em outra aba ou nao foram autorizadas; recarregue a revisao.`) }
+    }
   }
   return { ok:true }
 }
@@ -194,7 +202,7 @@ export async function saveLinesDecision({ batchId, lineIds = [], decision, actor
 // em memória e a MESMA revisão depois de retomada.
 export async function saveLineEdit({ batchId, lineId, line, actorId }) {
   const metadata = line.sourceMetadata || {}
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('financial_import_lines')
     .update({
       posted_date:line.postedDate,
@@ -210,16 +218,24 @@ export async function saveLineEdit({ batchId, lineId, line, actorId }) {
     .eq('batch_id', batchId)
     .eq('id', lineId)
     .neq('review_status', 'approved')
+    .select('id, review_status')
+    .maybeSingle()
   if (error) return schemaMissing(error) || { error }
+  if (!data || data.review_status !== 'edited') {
+    return { error:new Error('A linha mudou em outra aba ou nao foi autorizada; recarregue a revisao.') }
+  }
   return { ok:true }
 }
 
 export async function closeBatch(batchId) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('financial_import_batches')
     .update({ status:'ready', ready_at:new Date().toISOString() })
     .eq('id', batchId)
+    .select('id, status')
+    .maybeSingle()
   if (error) return schemaMissing(error) || { error }
+  if (!data || data.status !== 'ready') return { error:new Error('O banco nao confirmou o encerramento desta revisao.') }
   return { ok:true }
 }
 
@@ -233,10 +249,15 @@ export async function discardBatch(batchId) {
     .eq('batch_id', batchId)
     .is('archived_at', null)
   if (linesError && !isMissingRelationError(linesError)) return { error:linesError }
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('financial_import_batches')
     .update({ status:'archived', archived_at:now })
     .eq('id', batchId)
+    .select('id, status, archived_at')
+    .maybeSingle()
   if (error) return schemaMissing(error) || { error }
+  if (!data || data.status !== 'archived' || !data.archived_at) {
+    return { error:new Error('O banco nao confirmou o descarte desta revisao.') }
+  }
   return { ok:true }
 }

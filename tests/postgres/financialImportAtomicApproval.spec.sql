@@ -87,6 +87,8 @@ create table public.financial_import_lines (
 create table public.chart_accounts(
   id uuid primary key,
   user_id uuid not null,
+  node_type text not null default 'account',
+  nature text not null default 'unclassified',
   is_active boolean not null default true
 );
 
@@ -181,6 +183,10 @@ create table public.financial_installments(
 
 grant select, insert, update on all tables in schema public to authenticated;
 
+insert into public.chart_accounts(id, user_id, nature) values
+  ('50000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'revenue'),
+  ('50000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000001', 'operating_expense');
+
 insert into public.financial_import_batches(id, user_id, imported_by, file_name, file_hash, expected_line_count, line_count, status) values
   ('30000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'mesmo.xlsx', repeat('a',64), 2, 2, 'reviewing'),
   ('30000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002', 'mesmo.xlsx', repeat('a',64), 1, 1, 'reviewing'),
@@ -241,6 +247,27 @@ end $$;
 set role authenticated;
 set request.jwt.claim.sub = '20000000-0000-4000-8000-000000000001';
 
+-- Uma despesa nunca pode ser classificada numa conta de receita, mesmo por chamada direta.
+do $$
+begin
+  begin
+    perform public.approve_financial_import_lines(
+      '30000000-0000-4000-8000-000000000001',
+      jsonb_build_array(jsonb_build_object(
+        'line_id', '40000000-0000-4000-8000-000000000002',
+        'source_id', (select source_id from public.financial_import_lines where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000002'),
+        'collection', 'expenses',
+        'record', jsonb_build_object('chartAccountId','50000000-0000-4000-8000-000000000001')
+      ))
+    );
+    raise exception 'Despesa aceitou conta de receita.';
+  exception when sqlstate '22023' then null;
+  end;
+  if exists (select 1 from public.expenses) then
+    raise exception 'A classificacao invalida deixou efeito financeiro parcial.';
+  end if;
+end $$;
+
 -- Aprova a despesa e confirma origem + progresso na mesma chamada.
 select * from public.approve_financial_import_lines(
   '30000000-0000-4000-8000-000000000001',
@@ -248,7 +275,7 @@ select * from public.approve_financial_import_lines(
     'line_id', '40000000-0000-4000-8000-000000000002',
     'source_id', (select source_id from public.financial_import_lines where batch_id = '30000000-0000-4000-8000-000000000001' and id = '40000000-0000-4000-8000-000000000002'),
     'collection', 'expenses',
-    'record', jsonb_build_object('category','Administrativo','costCenter','Clinica')
+    'record', jsonb_build_object('category','Administrativo','costCenter','Clinica','chartAccountId','50000000-0000-4000-8000-000000000002')
   ))
 );
 

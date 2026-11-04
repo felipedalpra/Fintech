@@ -271,6 +271,23 @@ begin
     ) then
       raise exception 'Plano de contas fora do escopo da clinica.' using errcode = '42501';
     end if;
+    if v_chart_account_id is not null and not exists (
+      select 1 from public.chart_accounts account
+      where account.id = v_chart_account_id
+        and account.user_id = v_owner
+        and account.is_active is not false
+        and account.node_type = 'account'
+        and (
+          (v_direction = 'receivable' and account.nature in ('revenue', 'financial_revenue', 'unclassified'))
+          or
+          (v_direction = 'payable' and account.nature in (
+            'revenue_deduction', 'direct_cost', 'operating_expense', 'depreciation',
+            'financial_expense', 'income_tax', 'unclassified'
+          ))
+        )
+    ) then
+      raise exception 'Plano de contas incompativel com o tipo do lancamento.' using errcode = '22023';
+    end if;
 
     v_category := left(coalesce(nullif(btrim(v_record->>'category'), ''),
       case when v_line.amount > 0 then 'outras_receitas' else 'outros' end), 160);
