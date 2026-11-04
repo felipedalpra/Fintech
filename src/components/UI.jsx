@@ -32,7 +32,9 @@ if (typeof document !== 'undefined') {
   }
 }
 
-export function Card({ children, style, glow, onClick, title, ariaLabel }) {
+// `data-testid` é encaminhado de propósito: sem isso o atributo era descartado em silêncio e os
+// testes que miravam um Card nunca encontravam o elemento.
+export function Card({ children, style, glow, onClick, title, ariaLabel, 'data-testid':testId }) {
   const lightTheme = isLightHexColor(C.bg)
   const defaultShadow = lightTheme ? '0 10px 26px rgba(15,23,42,0.08)' : '0 2px 16px rgba(0,0,0,0.5)'
   const glowShadow = lightTheme
@@ -51,6 +53,7 @@ export function Card({ children, style, glow, onClick, title, ariaLabel }) {
     tabIndex={interactive ? 0 : undefined}
     title={title}
     aria-label={ariaLabel}
+    data-testid={testId}
     style={{ ...base.card, boxShadow: glow ? glowShadow : defaultShadow, cursor:interactive ? 'pointer' : undefined, ...style }}
   >{children}</div>
 }
