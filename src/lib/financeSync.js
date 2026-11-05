@@ -67,3 +67,38 @@ export function mergeById(current, incoming) {
   const extra = (incoming || []).filter(r => r && r.id != null && !ids.has(r.id))
   return { merged: [...(current || []), ...extra], added: extra.length }
 }
+
+// Os campos manuais dos indicadores vivem numa linha própria, protegida por RLS que exige papel
+// financeiro. Gravá-la em TODO save — mesmo sem nenhuma mudança — fazia a gravação inteira de um
+// perfil Equipe falhar com "violates row-level security policy": ele não pode tocar nessa tabela,
+// e o autosave pedia a escrita do mesmo jeito, derrubando junto o trabalho de CRM dele.
+//
+// A regra aqui é só "mudou?". Se mudou e o perfil não pode gravar, o erro CONTINUA aparecendo —
+// trocar um bloqueio visível por um silêncio seria perda de dado, que é pior.
+function stableShape(value) {
+  if (Array.isArray(value)) return value.map(stableShape)
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = stableShape(value[key])
+      return acc
+    }, {})
+  }
+  return value
+}
+
+function sameIndicatorShape(left, right) {
+  return JSON.stringify(stableShape(left || {})) === JSON.stringify(stableShape(right || {}))
+}
+
+function emptyIndicatorInputs(payload) {
+  return Object.keys(payload?.indicatorInputs || {}).length === 0
+    && Object.keys(payload?.indicatorInputsByPeriod || {}).length === 0
+}
+
+// true  → precisa gravar a linha de indicadores.
+// false → nada mudou (ou não há nada a persistir): não tocar na tabela.
+export function shouldWriteIndicatorInputs(payload, baseline) {
+  if (!baseline) return !emptyIndicatorInputs(payload)
+  return !sameIndicatorShape(payload?.indicatorInputs, baseline?.indicatorInputs)
+    || !sameIndicatorShape(payload?.indicatorInputsByPeriod, baseline?.indicatorInputsByPeriod)
+}

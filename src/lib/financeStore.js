@@ -1,5 +1,5 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
-import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds } from './financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds, shouldWriteIndicatorInputs } from './financeSync.js'
 import { mapExpensesRows, mapExtraRevenuesRows } from './financeStoreRows.js'
 import { supabase } from './supabase.js'
 import { syncFinancialLedger } from './ledgerPersistence.js'
@@ -600,7 +600,9 @@ export async function saveFinanceData(userId, financeData, baselineData = null) 
     if (tableFailure) throw tableFailure
     // Campos manuais dos indicadores não pertencem a uma coleção de lançamentos. Persistem em
     // uma linha própria e também exigem read-back, para nunca parecerem salvos só na memória.
-    await syncIndicatorInputs(userId, payload)
+    // SÓ quando mudaram: a tabela exige papel financeiro na RLS, e escrevê-la a cada save fazia
+    // um perfil Equipe perder a gravação inteira (CRM incluso) por algo que ele nem alterou.
+    if (shouldWriteIndicatorInputs(payload, base)) await syncIndicatorInputs(userId, payload)
     // Write-through idempotente depois das origens operacionais. Títulos e parcelas removidos da
     // origem são apenas arquivados, nunca apagados fisicamente.
     await syncFinancialLedger(supabase, userId, payload, base)
