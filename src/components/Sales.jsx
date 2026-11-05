@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { paginate } from '../lib/listPagination.js'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
-import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { Card, Btn, FInput, Modal, ConfirmModal, Badge, Pager } from './UI.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -157,6 +158,7 @@ export function Sales({ data, setData, saveDataNow }) {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
   const [sortBy, setSortBy] = useState('recentes') // 'recentes' | 'antigas' | 'valor'
+  const [page, setPage] = useState(1)
   const [installmentModal, setInstallmentModal] = useState(null)
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
@@ -298,6 +300,12 @@ export function Sales({ data, setData, saveDataNow }) {
       return sortBy === 'antigas' ? cmp : -cmp
     })
 
+  // Pagina em 25: a lista cresce indefinidamente e rolar tudo não é navegar. Filtro e ordenação
+  // valem sobre a lista INTEIRA; a página é só o recorte exibido.
+  const pageView = paginate(filtered, page)
+  const visible = pageView.rows
+  useEffect(() => { setPage(1) }, [search, filterStatus, sortBy, data.surgeries.length])
+
   // Summary stats
   const totalAReceber = data.surgeries
     .filter(item => item.paymentStatus === 'pendente' || item.paymentStatus === 'parcelado')
@@ -385,7 +393,7 @@ export function Sales({ data, setData, saveDataNow }) {
             </thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={7} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma cirurgia cadastrada.</td></tr>}
-              {filtered.map(item => {
+              {visible.map(item => {
                 const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
                 const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
                 const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
@@ -426,12 +434,13 @@ export function Sales({ data, setData, saveDataNow }) {
             </tbody>
           </table>
         </div>
+        {pageView.needed && <div style={{ padding:'0 18px 16px' }}><Pager view={pageView} onPage={setPage} label="cirurgias" testId="surgeries-pager" /></div>}
       </Card>}
 
       {isMobile && (
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma cirurgia cadastrada.</div></Card>}
-          {filtered.map(item => {
+          {visible.map(item => {
             const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
             const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
             const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
@@ -465,6 +474,7 @@ export function Sales({ data, setData, saveDataNow }) {
               </Card>
             )
           })}
+          <Pager view={pageView} onPage={setPage} label="cirurgias" testId="surgeries-pager-mobile" />
         </div>
       )}
 

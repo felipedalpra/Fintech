@@ -272,3 +272,26 @@ export function ConfirmModal({
     </Modal>
   )
 }
+
+// Navegação de páginas das listas longas. Some sozinha quando não há o que paginar.
+// Estilos dentro do componente de propósito: constante no nível do módulo captaria C.* uma vez
+// só e quebraria o dark mode (regra do projeto).
+export function Pager({ view, onPage, label = 'lançamentos', testId }) {
+  if (!view || !view.needed) return null
+  const s = {
+    wrap:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap', marginTop:14 },
+    info:{ color:C.textSub, fontSize:12 },
+    nav:{ display:'flex', alignItems:'center', gap:8 },
+    page:{ color:C.text, fontSize:12, fontWeight:700, minWidth:92, textAlign:'center' },
+  }
+  return (
+    <div style={s.wrap} data-testid={testId}>
+      <div style={s.info}>{view.from}–{view.to} de {view.total} {label}</div>
+      <div style={s.nav}>
+        <Btn variant="ghost" disabled={!view.hasPrevious} onClick={() => onPage(view.page - 1)} style={{ padding:'6px 12px', fontSize:12 }}>Anterior</Btn>
+        <span style={s.page}>Página {view.page} de {view.totalPages}</span>
+        <Btn variant="ghost" disabled={!view.hasNext} onClick={() => onPage(view.page + 1)} style={{ padding:'6px 12px', fontSize:12 }}>Próxima</Btn>
+      </div>
+    </div>
+  )
+}
