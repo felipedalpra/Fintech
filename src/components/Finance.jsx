@@ -1264,20 +1264,15 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
       [0] || null
   }, [m.accountsReceivable, m.accountsPayable])
 
-  // Revenue by origin totals for entradas tab
-  const revenueOrigins = (() => {
-    const cirurgias = m.surgeryRevenue
-    const consultas = m.consultationRevenue
-    const produtos = m.productSalesRevenue
-    const outras = m.extraRevenueTotal
-    const total = cirurgias + consultas + produtos + outras || 1
-    return [
-      { label: 'Cirurgias', value: cirurgias, detailsKey:'surgeryRevenue', color: C.accent },
-      { label: 'Consultas', value: consultas, detailsKey:'consultationRevenue', color: C.cyan },
-      { label: 'Produtos', value: produtos, detailsKey:'productSalesRevenue', color: C.yellow },
-      { label: 'Outras receitas', value: outras, detailsKey:'extraRevenueTotal', color: C.purple },
-    ].map(item => ({ ...item, pct: total > 0 ? item.value / total * 100 : 0, total }))
-  })()
+  // Receita por origem = plano de contas (igual ao DRE e à coluna Categoria ao lado). Antes era
+  // pelo tipo do registro, e uma cirurgia lançada como "Outra receita" aparecia como Outras —
+  // mostrando "Cirurgias 0%" logo acima de uma tabela cheia de cirurgias.
+  const ORIGIN_COLORS = [C.accent, C.cyan, C.yellow, C.purple, C.green, C.accentLight]
+  const revenueOrigins = (m.revenueOriginBreakdown || []).map((item, index) => ({
+    ...item,
+    color:ORIGIN_COLORS[index % ORIGIN_COLORS.length],
+  }))
+
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
@@ -1408,10 +1403,12 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         </div>
 
         <Card style={{ padding:20 }}>
-          <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:16 }}>Receita por origem</div>
+          <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Receita por origem</div>
+          <div style={{ fontSize:11.5, color:C.textDim, marginTop:4, marginBottom:16, lineHeight:1.5 }}>Agrupada pelo plano de contas, igual ao DRE e à coluna Categoria abaixo.</div>
+          {revenueOrigins.length === 0 && <div style={{ color:C.textDim, fontSize:12.5 }}>Nenhuma receita no período.</div>}
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             {revenueOrigins.map(item => (
-              <div key={item.label} role="button" tabIndex={0} onClick={() => openDrilldown(`Receita de ${item.label.toLowerCase()}`, m.drilldowns?.[item.detailsKey] || [], item.value)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openDrilldown(`Receita de ${item.label.toLowerCase()}`, m.drilldowns?.[item.detailsKey] || [], item.value) }} title="Clique para ver os lançamentos" style={{ cursor:'pointer' }}>
+              <div key={item.label} role="button" tabIndex={0} onClick={() => openDrilldown(`Receita de ${item.label.toLowerCase()}`, item.entries || [], item.value)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openDrilldown(`Receita de ${item.label.toLowerCase()}`, item.entries || [], item.value) }} title="Clique para ver os lançamentos" style={{ cursor:'pointer' }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
                   <span style={{ fontSize:12, color:C.textSub, fontWeight:600 }}>{item.label}</span>
                   <span style={{ fontSize:12, color:C.textSub }}>
@@ -1427,7 +1424,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </div>
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
           const removable = ['cirurgia', 'consulta', 'outra_receita', 'venda_produto'].includes(item.origin)
           const installmentLabel = item.installmentsTotal > 1 ? ` da parcela ${item.installmentDisplayNumber || item.installmentNumber}/${item.installmentsTotal}` : ''
           const removeLabels = { cirurgia:'Estornar pgto', consulta:'Estornar pgto', outra_receita:'Remover', venda_produto:'Estornar pgto' }
@@ -1492,7 +1489,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
           const editSourceMap = { despesa:data.expenses, compra_produto:data.productPurchases }
           const editTypeMap = { despesa:'expense', compra_produto:'product-purchase' }
           const sourceRecord = (editSourceMap[item.origin] || []).find(r => r.id === item.referenceId)
@@ -1851,7 +1848,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             {editing && isProtectedFinancialImportRow(form)
               ? <div><div style={{ fontSize:12, color:C.textSub, marginBottom:6 }}>Origem</div><div style={{ color:C.text, padding:'10px 12px', border:`1px solid ${C.border}`, borderRadius:8 }}>{form.originLabel}</div><div style={{ color:C.textDim, fontSize:11, marginTop:5 }}>Identificação preservada porque este lançamento veio de uma importação auditada.</div></div>
-              : <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />}
+              : <FInput label="Origem do contato" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />}
             <PatientSelector label="Cliente (opcional)" value={form.patientId} onChange={(id, name) => setForm(current => ({ ...current, patientId:id, patient:name }))} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
@@ -1923,7 +1920,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             <FInput label="Centro de custo" value={form.costCenter || ''} onChange={value => setForm(current => ({ ...current, costCenter:value }))} options={allCostCenters} creatable placeholder="Ex: Farmácia" />
             {editing && isProtectedFinancialImportRow(form)
               ? <div><div style={{ fontSize:12, color:C.textSub, marginBottom:6 }}>Origem</div><div style={{ color:C.text, padding:'10px 12px', border:`1px solid ${C.border}`, borderRadius:8 }}>{form.originLabel}</div><div style={{ color:C.textDim, fontSize:11, marginTop:5 }}>Identificação preservada porque este lançamento veio de uma importação auditada.</div></div>
-              : <FInput label="Origem" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />}
+              : <FInput label="Origem do contato" value={form.originLabel || ''} onChange={value => setForm(current => ({ ...current, originLabel:value }))} options={allOrigins} creatable placeholder="Ex: Indicação, Instagram, Convênio X" />}
             <SupplierSelector value={form.supplierId} onChange={(id, name) => setForm(current => ({ ...current, supplierId:id, supplier:name }))} />
             <FInput label="Valor (R$)" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" />
 
