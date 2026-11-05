@@ -584,6 +584,11 @@ function TeamSettings({ clinicId }) {
                   Acesso ao prontuário clínico
                 </label>
                 {m.clinical_access && (
+                  <div style={{ color:C.textSub, fontSize:11.5, lineHeight:1.6, marginTop:-2 }}>
+                    <strong style={{ color:C.text }}>Identidade profissional (opcional).</strong> Só é necessária para <strong>assinar evolução clínica e emitir receita</strong>. Sem ela, esta pessoa registra anamnese, pré-anamnese, fotos, plano e retorno normalmente, e os registros ficam no nome da conta, marcados como registro da equipe.
+                  </div>
+                )}
+                {m.clinical_access && (
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:10 }}>
                     <input
                       value={m.professional_name || ''}
