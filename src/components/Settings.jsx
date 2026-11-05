@@ -5,6 +5,7 @@ import { Btn, Card, FInput } from './UI.jsx'
 import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClient.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { buildClinicOrgChart, canSeeOrgChart } from '../lib/clinicTeamOrgChart.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { forceImportBrowserData } from '../lib/financeStore.js'
 import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
@@ -432,6 +433,10 @@ function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
 }
 
 function TeamSettings({ clinicId }) {
+  const { role, ownerId } = useUserRole()
+  const showOrgChart = canSeeOrgChart(role)
+  const [teamView, setTeamView] = useState('lista')
+  const [highlightedMember, setHighlightedMember] = useState('')
   const [members, setMembers] = useState([])
   const [loadingMembers, setLoadingMembers] = useState(true)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -550,14 +555,26 @@ function TeamSettings({ clinicId }) {
       </SectionCard>
 
       <SectionCard title="Membros da clínica" subtitle="Gerencie os colaboradores que têm acesso à plataforma.">
-        {loadingMembers ? (
+        {showOrgChart && !loadingMembers && members.length > 0 && (
+          <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+            <Btn variant={teamView === 'lista' ? 'primary' : 'ghost'} onClick={() => setTeamView('lista')}>Lista</Btn>
+            <Btn variant={teamView === 'organograma' ? 'primary' : 'ghost'} onClick={() => setTeamView('organograma')}>Organograma</Btn>
+          </div>
+        )}
+        {showOrgChart && teamView === 'organograma' && !loadingMembers && members.length > 0 ? (
+          <TeamOrgChart
+            members={members}
+            ownerId={ownerId}
+            onSelectMember={id => { setHighlightedMember(id); setTeamView('lista') }}
+          />
+        ) : loadingMembers ? (
           <div style={{ color:C.textSub, fontSize:14 }}>Carregando membros...</div>
         ) : members.length === 0 ? (
           <div style={{ color:C.textDim, fontSize:14 }}>Nenhum membro adicionado ainda.</div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {members.map(m => (
-              <div key={m.id} style={{ display:'grid', gap:12, padding:'12px 14px', borderRadius:14, border:`1px solid ${C.border}`, background:C.bg }}>
+              <div key={m.id} data-testid={`team-member-${m.id}`} style={{ display:'grid', gap:12, padding:'12px 14px', borderRadius:14, border:`1px solid ${highlightedMember === m.id ? C.accent : C.border}`, background:C.bg }}>
                 <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
                   <div style={{ flex:1, minWidth:180 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.member_email || '—'}</div>
@@ -583,6 +600,11 @@ function TeamSettings({ clinicId }) {
                   />
                   Acesso ao prontuário clínico
                 </label>
+                {m.clinical_access && (
+                  <div style={{ color:C.textSub, fontSize:11.5, lineHeight:1.6, marginTop:-2 }}>
+                    <strong style={{ color:C.text }}>Identidade profissional (opcional).</strong> Só é necessária para <strong>assinar evolução clínica e emitir receita</strong>. Sem ela, esta pessoa registra anamnese, pré-anamnese, fotos, plano e retorno normalmente, e os registros ficam no nome da conta, marcados como registro da equipe.
+                  </div>
+                )}
                 {m.clinical_access && (
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:10 }}>
                     <input
@@ -613,6 +635,69 @@ function TeamSettings({ clinicId }) {
           </div>
         )}
       </SectionCard>
+    </div>
+  )
+}
+
+// Organograma da equipe. Somente leitura de propósito: editar continua na lista, para não existir
+// um segundo caminho de escrita sobre as mesmas permissões. Clicar num card leva para a lista.
+function TeamOrgChart({ members, ownerId, onSelectMember }) {
+  const chart = buildClinicOrgChart(members, ownerId)
+  const roleTone = { admin:C.accent, gestao:C.cyan || C.accentLight, concierge:C.yellow, equipe:C.textSub }
+
+  const card = (member, highlight) => (
+    <button
+      key={member.id}
+      type="button"
+      onClick={() => onSelectMember?.(member.id)}
+      title="Ver e editar na lista"
+      style={{
+        textAlign:'left', cursor:'pointer', fontFamily:'inherit', width:'100%',
+        padding:'12px 14px', borderRadius:14, background:C.bg,
+        border:`1px solid ${highlight ? C.accent + '66' : C.border}`,
+        boxShadow:highlight ? `0 0 0 1px ${C.accent}22` : 'none',
+      }}
+    >
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+        <span style={{ color:C.text, fontWeight:700, fontSize:13, overflowWrap:'anywhere' }}>{member.name}</span>
+        {member.isOwner && <span style={{ fontSize:9.5, fontWeight:800, letterSpacing:'0.06em', color:C.accent, border:`1px solid ${C.accent}55`, background:`${C.accent}12`, borderRadius:999, padding:'2px 7px' }}>DONA DA CLÍNICA</span>}
+      </div>
+      <div style={{ color:roleTone[member.role] || C.textSub, fontSize:11, fontWeight:700, marginTop:3 }}>{member.roleLabel}</div>
+      {member.email && member.email !== member.name && <div style={{ color:C.textDim, fontSize:10.5, marginTop:2, overflowWrap:'anywhere' }}>{member.email}</div>}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:7 }}>
+        {member.capabilities.record
+          ? <span style={{ fontSize:10, fontWeight:700, color:C.green, border:`1px solid ${C.green}44`, background:`${C.green}10`, borderRadius:999, padding:'2px 7px' }}>prontuário</span>
+          : <span style={{ fontSize:10, fontWeight:700, color:C.textDim, border:`1px solid ${C.border}`, borderRadius:999, padding:'2px 7px' }}>sem prontuário</span>}
+        {member.capabilities.sign && <span style={{ fontSize:10, fontWeight:700, color:C.accentLight, border:`1px solid ${C.accentLight}44`, background:`${C.accentLight}10`, borderRadius:999, padding:'2px 7px' }}>assina · {member.council} {member.registration}</span>}
+      </div>
+    </button>
+  )
+
+  if (!chart.total) return <div style={{ color:C.textDim, fontSize:14 }}>Nenhum membro adicionado ainda.</div>
+
+  return (
+    <div data-testid="team-org-chart" style={{ display:'grid', gap:14 }}>
+      <div style={{ color:C.textSub, fontSize:12 }}>
+        {chart.total} pessoa(s) · <strong style={{ color:C.green }}>{chart.summary.withRecordAccess}</strong> com prontuário · <strong style={{ color:C.accentLight }}>{chart.summary.canSign}</strong> podem assinar
+      </div>
+
+      {chart.owner && <div style={{ maxWidth:340, margin:'0 auto', width:'100%' }}>{card(chart.owner, true)}</div>}
+      {chart.owner && chart.groups.length > 0 && <div aria-hidden="true" style={{ height:14, borderLeft:`1px solid ${C.border}`, margin:'0 auto', width:0 }} />}
+
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(230px, 1fr))', gap:12, alignItems:'start' }}>
+        {chart.groups.map(group => (
+          <div key={group.role} style={{ display:'grid', gap:8, padding:12, borderRadius:16, border:`1px dashed ${C.border}` }}>
+            <div style={{ color:C.textDim, fontSize:10.5, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase' }}>
+              {group.label} · {group.members.length}
+            </div>
+            {group.members.map(member => card(member, false))}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ color:C.textDim, fontSize:11, lineHeight:1.6 }}>
+        A hierarquia segue o perfil de acesso de cada pessoa, mantido pelo próprio sistema. Clique em alguém para editar na lista.
+      </div>
     </div>
   )
 }

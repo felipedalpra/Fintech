@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import { clinicalSignature } from '../lib/clinicalAuthorship.js'
 import { today, uid } from '../utils.js'
 import {
   buildClinicalAnamnesisRpcArgs,
@@ -66,10 +67,7 @@ function displayDate(value) {
   return new Date(value.includes('T') ? value : `${value}T12:00:00`).toLocaleDateString('pt-BR')
 }
 
-function signature(record) {
-  if (!record?.author_name) return ''
-  return `${record.author_name} · ${record.author_council || 'CRM'} ${record.author_registration || 'não informado'}`
-}
+const signature = clinicalSignature
 
 async function fetchClinicalAnamneses(patientId, ownerId) {
   const { data, error } = await supabase
