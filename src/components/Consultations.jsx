@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { paginate } from '../lib/listPagination.js'
 import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today, uid } from '../utils.js'
-import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { Card, Btn, FInput, Modal, ConfirmModal, Badge, Pager } from './UI.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -124,6 +125,7 @@ export function Consultations({ data, setData, saveDataNow }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos') // paymentStatus
   const [sortBy, setSortBy] = useState('recentes')          // 'recentes' | 'antigas' | 'valor'
+  const [page, setPage] = useState(1)
   const [installmentModal, setInstallmentModal] = useState(null)
   const editingRecord = editing ? data.consultations.find(item => item.id === editing) : null
   const paymentLocked = hasRecognizedReceipt(editingRecord)
@@ -234,6 +236,12 @@ export function Consultations({ data, setData, saveDataNow }) {
       const cmp = (a.date || '').localeCompare(b.date || '')
       return sortBy === 'antigas' ? cmp : -cmp
     })
+  // Lista longa pagina em 25: a clínica tem centenas de consultas e rolar tudo não é navegar.
+  // A ordenação e os filtros valem sobre a lista INTEIRA; a página é só o recorte exibido.
+  const pageView = paginate(filtered, page)
+  const visible = pageView.rows
+  useEffect(() => { setPage(1) }, [search, statusFilter, sortBy, data.consultations.length])
+
   const preparedPayment = prepareConsultationPayment(form, form.value)
 
   return (
@@ -263,7 +271,7 @@ export function Consultations({ data, setData, saveDataNow }) {
             <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>{['Paciente', 'Data', 'Tipo', 'Pagamento', 'Valor', 'Líquido', 'Status', 'Ações'].map(header => <th key={header} style={{ padding:'14px 18px', textAlign:'left', fontSize:11, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>{header}</th>)}</tr></thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={8} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma consulta cadastrada.</td></tr>}
-              {filtered.map(item => {
+              {visible.map(item => {
                 const payment = decodePaymentMethod(item.paymentMethod)
                 const netValue = (item.value || 0) - ((item.value || 0) * ((item.invoiceIssuancePercent || 0) / 100))
                 const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -291,12 +299,13 @@ export function Consultations({ data, setData, saveDataNow }) {
             </tbody>
           </table>
         </div>
+        {pageView.needed && <div style={{ padding:'0 18px 16px' }}><Pager view={pageView} onPage={setPage} label="consultas" testId="consultations-pager" /></div>}
       </Card>}
 
       {isMobile && (
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma consulta cadastrada.</div></Card>}
-          {filtered.map(item => {
+          {visible.map(item => {
             const payment = decodePaymentMethod(item.paymentMethod)
             const netValue = (item.value || 0) - ((item.value || 0) * ((item.invoiceIssuancePercent || 0) / 100))
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -324,6 +333,7 @@ export function Consultations({ data, setData, saveDataNow }) {
               </Card>
             )
           })}
+          <Pager view={pageView} onPage={setPage} label="consultas" testId="consultations-pager-mobile" />
         </div>
       )}
 

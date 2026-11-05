@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { foldRevenueOriginTail } from '../lib/revenueByOrigin.js'
+import { DEFAULT_PAGE_SIZE, paginate } from '../lib/listPagination.js'
+import { sortRows } from '../lib/tableSort.js'
 import { fmt, formatDateBR, getPeriodRange, inRange, isIsoDateString, today, uid } from '../utils.js'
 import { buildMetrics } from '../useMetrics.js'
-import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
+import { Card, Btn, FInput, Modal, ConfirmModal, Badge, Pager } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { SupplierSelector } from './SupplierSelector.jsx'
 import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
@@ -1452,7 +1454,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             </>}
         </Card>
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredEntriesFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3, 4]} pagerTestId="entries-pager" rows={filteredEntriesFinancial.map(item => {
           const removable = ['cirurgia', 'consulta', 'outra_receita', 'venda_produto'].includes(item.origin)
           const installmentLabel = item.installmentsTotal > 1 ? ` da parcela ${item.installmentDisplayNumber || item.installmentNumber}/${item.installmentsTotal}` : ''
           const removeLabels = { cirurgia:'Estornar pgto', consulta:'Estornar pgto', outra_receita:'Remover', venda_produto:'Estornar pgto' }
@@ -1517,7 +1519,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3]} rows={filteredExitsFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3, 4]} pagerTestId="exits-pager" rows={filteredExitsFinancial.map(item => {
           const editSourceMap = { despesa:data.expenses, compra_produto:data.productPurchases }
           const editTypeMap = { despesa:'expense', compra_produto:'product-purchase' }
           const sourceRecord = (editSourceMap[item.origin] || []).find(r => r.id === item.referenceId)
@@ -1551,7 +1553,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           onOpen={item => openDrilldown(`Recebíveis de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.patient || '', origin:resolveOrigin(row), description:row.description || row.patient || 'Conta a receber' })), item.total)}
           emptyMessage="Sem recebíveis agrupados por mês."
         />
-        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Documento fiscal', 'Status', 'Ações']} rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, receivableActions(item)] }))} emptyMessage="Nenhuma conta a receber em aberto." />
+        <RecordTable columns={['Origem', 'Paciente', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Documento fiscal', 'Status', 'Ações']} sortableColumns={[0, 1, 3, 4, 5, 7]} pageLabel="contas" pagerTestId="receivable-pager" rows={filteredAccountsReceivable.map(item => ({ key:item.id, cells:[resolveOrigin(item), item.patient, item.description, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.green, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, receivableActions(item)], rawCells:[resolveOrigin(item), item.patient || '', item.description || '', item.competenceDate || item.dueDate || '', item.dueDate || '', Number(item.value || 0), fiscalDocumentsSearchText(fiscalDocsFor(item)), item.status || '', ''] }))} emptyMessage="Nenhuma conta a receber em aberto." />
       </>}
 
       {tab === 'pagar' && <>
@@ -1564,7 +1566,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           onOpen={item => openDrilldown(`Contas a pagar de ${item.month}`, item.items.map(row => ({ ...row, date:row.dueDate, party:row.supplier || '', origin:row.source, description:row.description || row.supplier || 'Conta a pagar' })), item.total)}
           emptyMessage="Sem contas a pagar agrupadas por mês."
         />
-        <RecordTable columns={['Categoria', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Documento fiscal', 'Status', 'Ações']} rows={filteredAccountsPayable.map(item => ({ key:item.id, cells:[item.category, item.supplier, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
+        <RecordTable columns={['Categoria', 'Descrição', 'Competência', 'Vencimento', 'Valor', 'Documento fiscal', 'Status', 'Ações']} sortableColumns={[0, 1, 2, 3, 4, 6]} pageLabel="contas" pagerTestId="payable-pager" rows={filteredAccountsPayable.map(item => ({ key:item.id, rawCells:[item.category || '', item.supplier || '', item.competenceDate || item.dueDate || '', item.dueDate || '', Number(item.value || 0), fiscalDocumentsSearchText(fiscalDocsFor(item)), item.status || '', ''], cells:[item.category, item.supplier, formatDateBR(item.competenceDate || item.dueDate), formatDateBR(item.dueDate), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, <Badge color={item.status === 'pago' ? C.green : C.yellow} small>{item.status}</Badge>, item.source === 'recorrencia' ? <div style={{ display:'flex', gap:6 }}><Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pago</Btn><Btn variant="ghost" onClick={() => markExpenseAsPending(item)} style={{ padding:'5px 10px', fontSize:12 }}>Pendente</Btn></div> : <Btn onClick={() => markExpenseAsPaid(item)} style={{ padding:'5px 12px', fontSize:12 }}>Marcar pago</Btn>] }))} emptyMessage="Nenhuma conta a pagar em aberto." />
       </>}
 
       {tab === 'dre' && (
@@ -2345,11 +2347,18 @@ function IndicadoresTab({ m, data, money, setData, indicatorPeriodKey }) {
   )
 }
 
-function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
+function RecordTable({ columns, rows, emptyMessage, sortableColumns = [], pageLabel = 'lançamentos', pageSize = DEFAULT_PAGE_SIZE, pagerTestId = 'record-table-pager' }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 380 : false
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+  const [page, setPage] = useState(1)
+
+  // Volta para a primeira página quando a lista muda de tamanho (filtro, período) ou a ordenação
+  // muda. Depende do TAMANHO, não do array: `rows` é recriado a cada render pelo .map() do JSX,
+  // então depender da identidade zerava a página a cada clique e era impossível passar da 2ª.
+  // Quando o tamanho não muda mas a lista sim, `paginate` ainda garante página válida.
+  useEffect(() => { setPage(1) }, [rows.length, sortCol, sortDir])
 
   const handleSort = colIdx => {
     if (!sortableColumns.includes(colIdx)) return
@@ -2361,26 +2370,16 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
     }
   }
 
-  const sorted = useMemo(() => {
-    if (sortCol === null) return rows
-    return [...rows].sort((a, b) => {
-      const av = typeof a.cells[sortCol] === 'string' ? a.cells[sortCol] : (a.rawCells?.[sortCol] ?? '')
-      const bv = typeof b.cells[sortCol] === 'string' ? b.cells[sortCol] : (b.rawCells?.[sortCol] ?? '')
-      const cmp = String(av).localeCompare(String(bv), 'pt-BR', { numeric: true })
-      return sortDir === 'asc' ? cmp : -cmp
-    })
-  }, [rows, sortCol, sortDir])
+  const sorted = useMemo(() => sortRows(rows, sortCol, sortDir), [rows, sortCol, sortDir])
+
+  // Ordena a lista inteira e só então corta a página. Ordenar dentro da página ordenaria 25 de
+  // 200 e daria uma resposta errada a "qual o maior valor".
+  const view = paginate(sorted, page, pageSize)
 
   if (isMobile) {
     const activeSortCol = sortCol ?? (sortableColumns[0] ?? null)
-    const mobileSorted = activeSortCol === null
-      ? rows
-      : [...rows].sort((a, b) => {
-        const av = typeof a.cells[activeSortCol] === 'string' ? a.cells[activeSortCol] : (a.rawCells?.[activeSortCol] ?? '')
-        const bv = typeof b.cells[activeSortCol] === 'string' ? b.cells[activeSortCol] : (b.rawCells?.[activeSortCol] ?? '')
-        const cmp = String(av).localeCompare(String(bv), 'pt-BR', { numeric:true })
-        return sortDir === 'asc' ? cmp : -cmp
-      })
+    const mobileView = paginate(sortRows(rows, activeSortCol, sortDir), page, pageSize)
+    const mobileSorted = mobileView.rows
 
     return (
       <Card style={{ padding:14 }}>
@@ -2423,6 +2422,7 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
             </div>
           ))}
         </div>
+        <Pager view={mobileView} onPage={setPage} label={pageLabel} testId={pagerTestId} />
       </Card>
     )
   }
@@ -2468,7 +2468,7 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
             {sorted.length === 0 && (
               <tr><td colSpan={columns.length} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>{emptyMessage}</td></tr>
             )}
-            {sorted.map(row => (
+            {view.rows.map(row => (
               <tr key={row.key} style={{ borderBottom:`1px solid ${C.border}`, transition:'background 0.1s' }}
                 onMouseEnter={e => { e.currentTarget.style.background = C.surface }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -2481,6 +2481,7 @@ function RecordTable({ columns, rows, emptyMessage, sortableColumns = [] }) {
           </tbody>
         </table>
       </div>
+      {view.needed && <div style={{ padding:'0 18px 16px' }}><Pager view={view} onPage={setPage} label={pageLabel} testId={pagerTestId} /></div>}
     </Card>
   )
 }
