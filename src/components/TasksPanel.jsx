@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
+import { TASK_OUTCOMES, TASK_TYPE_LABEL, TASK_TYPES } from '../lib/taskQueue.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { Modal, Btn, FInput } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
-import { createTask, toggleTask, deleteTask } from '../lib/taskActions.js'
+import { createTask, toggleTask, deleteTask , registerTaskAttempt } from '../lib/taskActions.js'
 import { groupTasksByDue, GROUP_ORDER } from '../lib/taskGroups.js'
 import { filterTasks, kanbanByStatus, urgencyOf, countDoneToday, dayKey } from '../lib/taskViews.js'
 import { initials, avatarColor } from '../lib/avatar.js'
@@ -80,6 +81,7 @@ export function TasksPanel() {
   const [query, setQuery] = useState('')
   const [showDone, setShowDone] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [attemptFlash, setAttemptFlash] = useState(null)
   const [view, setView] = useState(() => {
     try { return window.localStorage.getItem(VIEW_KEY) || 'lista' } catch { return 'lista' }
   })
@@ -93,7 +95,7 @@ export function TasksPanel() {
     setLoading(true); setError(null)
     const [taskRes, memRes] = await Promise.all([
       supabase.from('tasks')
-        .select('id, title, due_date, status, assigned_user_id, done_at, created_at, opportunity_id, patient_id, patients(full_name), opportunities(title)')
+        .select('id, title, due_date, due_time, task_type, status, outcome, assigned_user_id, done_at, created_at, opportunity_id, patient_id, patients(full_name, phone), opportunities(title)')
         .order('due_date', { ascending: true, nullsFirst: false }),
       supabase.rpc('clinic_team'), // time completo da clínica (inclui o dono) — admin/gestão/equipe atribuem a qualquer um
     ])
@@ -126,6 +128,22 @@ export function TasksPanel() {
     const res = await toggleTask(task)
     if (res.error) { setTasks(ts => ts.map(x => (x.id === task.id ? task : x))); setError(res.error) }
   }
+  // Conclusão com desfecho. Desfecho que NÃO encerra (não atendeu, remarcou) registra a
+  // tentativa e mantém a tarefa na fila — o trabalho continua pendente.
+  async function completeWithOutcome(task, outcome) {
+    const closes = TASK_OUTCOMES.find(item => item.key === outcome)?.closes === true
+    if (closes) {
+      setTasks(ts => ts.map(x => (x.id === task.id ? { ...x, status:'feita', outcome, done_at:new Date().toISOString() } : x)))
+    }
+    const res = await registerTaskAttempt({ task, ownerId:effectiveUserId, actorId:user?.id, outcome, closes })
+    if (res.error) {
+      if (closes) setTasks(ts => ts.map(x => (x.id === task.id ? task : x)))
+      setError(res.error)
+      return
+    }
+    if (!closes) setAttemptFlash({ id:task.id, outcome })
+  }
+
   async function remove(task) {
     setTasks(ts => ts.filter(x => x.id !== task.id))
     const res = await deleteTask(task.id)
@@ -155,8 +173,8 @@ export function TasksPanel() {
       <StatStrip stats={stats} />
 
       {view === 'kanban'
-        ? <KanbanView kanban={kanban} memberLabel={memberLabel} onToggle={toggle} onRemove={remove} onDrop={dropToStatus} />
-        : <ListView groups={groups} memberLabel={memberLabel} onToggle={toggle} onRemove={remove} showDone={showDone} setShowDone={setShowDone} />}
+        ? <KanbanView kanban={kanban} memberLabel={memberLabel} onToggle={toggle} onRemove={remove} onDrop={dropToStatus} onOutcome={completeWithOutcome} attemptFlash={attemptFlash} />
+        : <ListView groups={groups} memberLabel={memberLabel} onToggle={toggle} onRemove={remove} showDone={showDone} setShowDone={setShowDone} onOutcome={completeWithOutcome} attemptFlash={attemptFlash} />}
 
       {creating && (
         <NewTaskModal ownerId={effectiveUserId} userId={user?.id} members={members}
@@ -273,7 +291,7 @@ function StatStrip({ stats }) {
 }
 
 // ---- Cartão de tarefa (compartilhado entre lista e kanban) ----
-function TaskCard({ t, memberLabel, onToggle, onRemove, draggable }) {
+function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, attemptFlash }) {
   const done = t.status === 'feita'
   const u = done ? 'feita' : urgencyOf(t)
   const bar = urgColor(u)
@@ -284,6 +302,11 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable }) {
   const avulsa = !patient && !t.opportunity_id
 
   const [hover, setHover] = useState(false)
+  const [outcomeOpen, setOutcomeOpen] = useState(false)
+  const typeLabel = t.task_type && t.task_type !== 'outro' ? TASK_TYPE_LABEL[t.task_type] : ''
+  const hora = String(t.due_time || '').slice(0, 5)
+  const phone = t.patients?.phone || ''
+  const flash = attemptFlash && attemptFlash.id === t.id ? attemptFlash.outcome : ''
   const dueStyle = {
     atrasada: { color: C.red || '#EF4444', background: (C.red || '#EF4444') + '22' },
     hoje: { color: C.accent, background: C.accent + '22' },
@@ -324,14 +347,68 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable }) {
               <Ico d={ICON.briefcase} size={12} /> {oppTitle}
             </span>
           )}
+          {typeLabel && (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.accentLight || C.accent, background: (C.accentLight || C.accent) + '1e', border: `1px solid ${(C.accentLight || C.accent)}44`, borderRadius: 7, padding: '3px 8px' }}>{typeLabel}</span>
+          )}
+          {flash && (
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.yellow || '#F59E0B', background: (C.yellow || '#F59E0B') + '1e', border: `1px solid ${(C.yellow || '#F59E0B')}44`, borderRadius: 7, padding: '3px 8px' }}>
+              tentativa registrada · segue pendente
+            </span>
+          )}
           {avulsa && <span style={{ fontSize: 11.5, fontWeight: 600, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '3px 8px' }}>avulsa</span>}
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         {dueTxt && <span style={{ ...dueStyle, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8, whiteSpace: 'nowrap' }}>
-          {u === 'atrasada' && <Ico d={ICON.warn} size={12} sw={2.2} />}{dueTxt}
+          {u === 'atrasada' && <Ico d={ICON.warn} size={12} sw={2.2} />}{dueTxt}{hora ? ` · ${hora}` : ''}
         </span>}
+
+        {!done && phone && (
+          <a
+            href={`https://wa.me/${String(phone).replace(/\D/g, '')}`}
+            target="_blank"
+            rel="noreferrer"
+            title={`Abrir conversa com ${patient}`}
+            data-testid={`task-whatsapp-${t.id}`}
+            style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: hover ? C.surface : 'transparent', color: C.green || '#10B981', display: 'grid', placeItems: 'center', textDecoration: 'none', flexShrink: 0 }}
+          >
+            <Ico d={ICON.chat || ICON.list} size={14} sw={2} />
+          </a>
+        )}
+
+        {!done && onOutcome && (
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setOutcomeOpen(open => !open)}
+              data-testid={`task-outcome-${t.id}`}
+              title="Registrar desfecho"
+              style={{ padding: '5px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: hover || outcomeOpen ? C.surface : 'transparent', color: C.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+            >
+              Desfecho
+            </button>
+            {outcomeOpen && (
+              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: 5, minWidth: 190, boxShadow: '0 18px 44px -18px rgba(0,0,0,.75)' }}>
+                {TASK_OUTCOMES.map(option => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => { setOutcomeOpen(false); onOutcome(t, option.key) }}
+                    style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+                  >
+                    {option.label}
+                    {/* Quem lê precisa saber, ANTES de clicar, se a tarefa vai sair da fila. */}
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: option.closes ? (C.green || '#10B981') : (C.yellow || '#F59E0B') }}>
+                      {option.closes ? 'encerra' : 'segue'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {who && <Avatar label={who} size={30} />}
         <button type="button" onClick={() => onRemove()} title="Excluir"
           style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: hover ? C.surface : 'transparent', color: C.textDim, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: '.15s', padding: 0 }}>
@@ -343,7 +420,7 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable }) {
 }
 
 // ---- Visão em LISTA (agrupada por vencimento) ----
-function ListView({ groups, memberLabel, onToggle, onRemove, showDone, setShowDone }) {
+function ListView({ groups, memberLabel, onToggle, onRemove, showDone, setShowDone, onOutcome, attemptFlash }) {
   const empty = GROUP_ORDER.every(g => !groups[g.key].length)
   const headColor = { atrasadas: C.red || '#EF4444', hoje: C.accent, semana: C.textSub, futuras: C.textSub }
   const headBg = { atrasadas: (C.red || '#EF4444') + '22', hoje: C.accent + '22', semana: C.surface, futuras: C.surface }
@@ -362,7 +439,7 @@ function ListView({ groups, memberLabel, onToggle, onRemove, showDone, setShowDo
               <span style={{ fontSize: 11.5, fontWeight: 700, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 20, padding: '2px 9px', fontVariantNumeric: 'tabular-nums' }}>{items.length}</span>
               <span style={{ flex: 1, height: 1, background: C.border }} />
             </div>
-            {items.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} />)}
+            {items.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} onOutcome={onOutcome} attemptFlash={attemptFlash} />)}
           </div>
         )
       })}
@@ -376,7 +453,7 @@ function ListView({ groups, memberLabel, onToggle, onRemove, showDone, setShowDo
             <span style={{ display: 'inline-flex', transform: showDone ? 'none' : 'rotate(-90deg)', transition: '.15s' }}><Ico d={ICON.chevron} size={13} sw={2.4} /></span>
             Concluídas ({groups.concluidas.length})
           </button>
-          {showDone && <div style={{ marginTop: 8 }}>{groups.concluidas.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} />)}</div>}
+          {showDone && <div style={{ marginTop: 8 }}>{groups.concluidas.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} onOutcome={onOutcome} attemptFlash={attemptFlash} />)}</div>}
         </div>
       )}
     </div>
@@ -384,7 +461,7 @@ function ListView({ groups, memberLabel, onToggle, onRemove, showDone, setShowDo
 }
 
 // ---- Visão em KANBAN (A fazer / Concluídas; arrastar conclui/reabre) ----
-function KanbanView({ kanban, memberLabel, onToggle, onRemove, onDrop }) {
+function KanbanView({ kanban, memberLabel, onToggle, onRemove, onDrop, onOutcome, attemptFlash }) {
   const cols = [
     { key: 'afazer', label: 'A fazer', items: kanban.afazer, done: false, color: C.accent },
     { key: 'concluidas', label: 'Concluídas', items: kanban.concluidas, done: true, color: C.green || '#10B981' },
@@ -410,7 +487,7 @@ function KanbanColumn({ col, memberLabel, onToggle, onRemove, onDrop }) {
       </div>
       {col.items.length === 0
         ? <div style={{ textAlign: 'center', color: C.textDim, fontSize: 12, padding: '26px 0', border: `1.5px dashed ${C.border}`, borderRadius: 11 }}>{over ? 'Soltar aqui' : 'Arraste tarefas pra cá'}</div>
-        : col.items.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} draggable />)}
+        : col.items.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} onOutcome={onOutcome} attemptFlash={attemptFlash} draggable />)}
     </div>
   )
 }
@@ -437,7 +514,7 @@ function LoadingState() {
 }
 
 function NewTaskModal({ ownerId, userId, members, onClose, onCreated }) {
-  const [form, setForm] = useState({ title: '', due: '', assigned: '', patient_id: '' })
+  const [form, setForm] = useState({ title: '', due: '', time: '', type: 'outro', assigned: '', patient_id: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -446,8 +523,8 @@ function NewTaskModal({ ownerId, userId, members, onClose, onCreated }) {
     if (!form.title.trim() || saving) return
     setSaving(true); setError(null)
     const res = await createTask(ownerId, {
-      title: form.title, dueDate: form.due || null, assignedUserId: form.assigned || null,
-      patientId: form.patient_id || null, createdBy: userId,
+      title: form.title, dueDate: form.due || null, dueTime: form.time || null, taskType: form.type,
+      assignedUserId: form.assigned || null, patientId: form.patient_id || null, createdBy: userId,
     })
     setSaving(false)
     if (res.error) { setError(res.error); return }
@@ -459,9 +536,14 @@ function NewTaskModal({ ownerId, userId, members, onClose, onCreated }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <FInput label="Tarefa" value={form.title} onChange={v => set('title', v)} placeholder="O que precisa ser feito?" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <FInput label="Vencimento" type="date" value={form.due} onChange={v => set('due', v)} />
+          <FInput label="Tipo" value={form.type} onChange={v => set('type', v)}
+            options={TASK_TYPES.map(item => ({ v: item.key, l: item.label }))} />
           <FInput label="Responsável" value={form.assigned} onChange={v => set('assigned', v)}
             options={[{ v: '', l: 'Sem responsável' }, ...(members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <FInput label="Vencimento" type="date" value={form.due} onChange={v => set('due', v)} />
+          <FInput label="Hora (opcional)" type="time" value={form.time} onChange={v => set('time', v)} />
         </div>
         <PatientSelector userId={ownerId} value={form.patient_id} onChange={id => set('patient_id', id)} />
         {error && <div style={{ color: C.red || '#ef4444', fontSize: 12 }}>{error}</div>}
