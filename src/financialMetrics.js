@@ -2,7 +2,8 @@ import { inRange, monthKey, onOrBefore, today } from './utils.js'
 import { buildLedger } from './lib/financialLedger.js'
 import { buildProductCosting } from './lib/inventoryCosting.js'
 import { buildInventoryMovements, stockByProduct } from './lib/inventoryLedger.js'
-import { findChartAccount } from './lib/chartOfAccounts.js'
+import { accountPath, findChartAccount } from './lib/chartOfAccounts.js'
+import { buildRevenueOrigins } from './lib/revenueByOrigin.js'
 
 export { paymentScheduleFlow } from './lib/paymentScheduleFlow.js'
 export { generateRecurringOccurrences } from './lib/recurrenceSchedule.js'
@@ -451,6 +452,19 @@ export function buildMetrics(rawData, options = {}) {
   const productRevenueDetails = pick(entry => entry.sourceType === 'product_sale' && entry.direction === 'receivable')
   const productPurchaseDetails = pick(entry => entry.sourceType === 'product_purchase' && entry.direction === 'payable')
   const extraRevenueDetails = pick(entry => ['extra_revenue', 'recurrence'].includes(entry.sourceType) && entry.direction === 'receivable' && (!usesChartOfAccounts || entry.accountNature !== 'financial_revenue'))
+  // Painel "Receita por origem": MESMO conjunto que alimenta receita bruta, só reagrupado pelo
+  // plano de contas. Assim a soma das barras continua sendo a receita bruta do período, e uma
+  // cirurgia lançada como "Outra receita" aparece em Cirurgias, igual ao DRE.
+  const chartPathCache = new Map()
+  const accountPathOf = accountId => {
+    if (!accountId || !usesChartOfAccounts) return []
+    if (!chartPathCache.has(accountId)) chartPathCache.set(accountId, accountPath(data.chartAccounts || [], accountId))
+    return chartPathCache.get(accountId)
+  }
+  const revenueOriginBreakdown = buildRevenueOrigins(
+    [...surgeryRevenueDetails, ...consultationRevenueDetails, ...productRevenueDetails, ...extraRevenueDetails],
+    accountPathOf,
+  )
   const revenueDeductionDetails = usesChartOfAccounts ? pick(entry => entry.direction === 'payable' && entry.accountNature === 'revenue_deduction') : []
   const additionalDirectCostDetails = usesChartOfAccounts ? pick(entry => ['expense', 'recurrence'].includes(entry.sourceType) && entry.direction === 'payable' && entry.accountNature === 'direct_cost') : []
   const financialRevenueDetails = usesChartOfAccounts ? pick(entry => entry.direction === 'receivable' && entry.accountNature === 'financial_revenue') : []
@@ -528,6 +542,7 @@ export function buildMetrics(rawData, options = {}) {
 
   return {
     grossRevenue,
+    revenueOriginBreakdown,
     surgeryRevenue,
     surgeryCostTotal,
     surgeryNetRevenue,
