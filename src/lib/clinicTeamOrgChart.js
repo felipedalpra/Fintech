@@ -29,6 +29,28 @@ export function memberCapabilities(member) {
   return { record, sign }
 }
 
+// O dono da clinica NAO tem linha em clinic_members: ele vive em clinics.owner_id. Sem isto ele
+// some da equipe inteira — inclusive para ele mesmo. Entra como entrada sintetica, marcada como
+// nao editavel, porque nenhum admin pode alterar a linha do dono.
+export function withClinicOwner(members = [], owner = null) {
+  const list = (members || []).filter(Boolean)
+  if (!owner?.user_id) return list
+  // Se o dono TAMBEM tiver linha de membro (clinicas antigas podem ter), nao duplicar.
+  if (list.some(member => member.user_id === owner.user_id)) return list
+  return [{
+    id:`owner:${owner.user_id}`,
+    user_id:owner.user_id,
+    member_email:owner.member_email || '',
+    role:'admin',
+    // O dono sempre tem acesso clinico: has_clinical_access() devolve true para ele.
+    clinical_access:true,
+    professional_name:owner.professional_name || '',
+    professional_registration:owner.professional_registration || '',
+    professional_council:owner.professional_council || 'CRM',
+    readOnly:true,
+  }, ...list]
+}
+
 export function buildClinicOrgChart(members = [], ownerId = null) {
   const normalized = (members || [])
     .filter(Boolean)
@@ -42,6 +64,7 @@ export function buildClinicOrgChart(members = [], ownerId = null) {
       registration:String(member.professional_registration || '').trim(),
       council:String(member.professional_council || '').trim() || 'CRM',
       isOwner:Boolean(ownerId) && member.user_id === ownerId,
+      readOnly:member.readOnly === true || (Boolean(ownerId) && member.user_id === ownerId),
       capabilities:memberCapabilities(member),
     }))
 

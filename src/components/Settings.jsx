@@ -5,7 +5,7 @@ import { Btn, Card, FInput } from './UI.jsx'
 import { fetchSecureProfile, saveSecureProfile } from '../lib/secureProfileClient.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
-import { buildClinicOrgChart, canSeeOrgChart } from '../lib/clinicTeamOrgChart.js'
+import { buildClinicOrgChart, canSeeOrgChart, withClinicOwner } from '../lib/clinicTeamOrgChart.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { forceImportBrowserData } from '../lib/financeStore.js'
 import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
@@ -448,12 +448,18 @@ function TeamSettings({ clinicId }) {
   const loadMembers = async () => {
     if (!clinicId) return
     setLoadingMembers(true)
-    const { data, error } = await supabase
-      .from('clinic_members')
-      .select('id, user_id, role, member_email, clinical_access, professional_name, professional_registration, professional_council, created_at')
-      .eq('clinic_id', clinicId)
-      .order('created_at')
-    if (!error) setMembers(data ?? [])
+    // O dono da clínica NÃO tem linha em clinic_members (ver supabase/clinic_owner_profile.sql).
+    // Sem buscá-lo à parte, ele some da equipe inteira — inclusive para ele mesmo.
+    const [{ data, error }, ownerResult] = await Promise.all([
+      supabase
+        .from('clinic_members')
+        .select('id, user_id, role, member_email, clinical_access, professional_name, professional_registration, professional_council, created_at')
+        .eq('clinic_id', clinicId)
+        .order('created_at'),
+      supabase.rpc('clinic_owner_profile'),
+    ])
+    const owner = Array.isArray(ownerResult?.data) ? ownerResult.data[0] : ownerResult?.data
+    if (!error) setMembers(withClinicOwner(data ?? [], ownerResult?.error ? null : owner))
     setLoadingMembers(false)
   }
 
@@ -577,9 +583,18 @@ function TeamSettings({ clinicId }) {
               <div key={m.id} data-testid={`team-member-${m.id}`} style={{ display:'grid', gap:12, padding:'12px 14px', borderRadius:14, border:`1px solid ${highlightedMember === m.id ? C.accent : C.border}`, background:C.bg }}>
                 <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
                   <div style={{ flex:1, minWidth:180 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.member_email || '—'}</div>
-                    <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{ROLE_LABELS[m.role]}</div>
+                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.professional_name || m.member_email || '—'}</div>
+                    <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>
+                      {ROLE_LABELS[m.role]}
+                      {m.readOnly && <span style={{ color:C.accent, fontWeight:800, marginLeft:7 }}>· DONA DA CLÍNICA</span>}
+                    </div>
+                    {m.readOnly && m.professional_name && m.member_email && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{m.member_email}</div>}
                   </div>
+                  {m.readOnly ? (
+                    <span style={{ color:C.textDim, fontSize:11.5, maxWidth:300, lineHeight:1.5 }}>
+                      Quem criou a clínica. O perfil e o acesso dela não são editáveis aqui — ela ajusta a própria identidade profissional na aba Perfil.
+                    </span>
+                  ) : (<>
                   <select
                     value={m.role}
                     onChange={e => changeRole(m.id, e.target.value)}
@@ -591,21 +606,22 @@ function TeamSettings({ clinicId }) {
                     <option value="equipe">Equipe</option>
                   </select>
                   <Btn variant="ghost" onClick={() => removeMember(m.id)}>Remover</Btn>
+                  </>)}
                 </div>
-                <label style={{ display:'flex', gap:9, alignItems:'center', color:C.text, fontSize:12, fontWeight:700 }}>
+                {!m.readOnly && <label style={{ display:'flex', gap:9, alignItems:'center', color:C.text, fontSize:12, fontWeight:700 }}>
                   <input
                     type="checkbox"
                     checked={m.clinical_access === true}
                     onChange={event => updateClinicalIdentity(m.id, { clinical_access:event.target.checked })}
                   />
                   Acesso ao prontuário clínico
-                </label>
-                {m.clinical_access && (
+                </label>}
+                {!m.readOnly && m.clinical_access && (
                   <div style={{ color:C.textSub, fontSize:11.5, lineHeight:1.6, marginTop:-2 }}>
                     <strong style={{ color:C.text }}>Identidade profissional (opcional).</strong> Só é necessária para <strong>assinar evolução clínica e emitir receita</strong>. Sem ela, esta pessoa registra anamnese, pré-anamnese, fotos, plano e retorno normalmente, e os registros ficam no nome da conta, marcados como registro da equipe.
                   </div>
                 )}
-                {m.clinical_access && (
+                {!m.readOnly && m.clinical_access && (
                   <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(150px, 1fr))', gap:10 }}>
                     <input
                       value={m.professional_name || ''}
