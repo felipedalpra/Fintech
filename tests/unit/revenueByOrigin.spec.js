@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildRevenueOrigins, revenueGroupLabel } from '../../src/lib/revenueByOrigin.js'
+import { buildRevenueOrigins, foldRevenueOriginTail, REVENUE_ORIGIN_COLORS, revenueGroupLabel } from '../../src/lib/revenueByOrigin.js'
 
 // Espelha o plano de contas real: raiz "Receita bruta" → grupo "Cirurgias" → conta.
 const PATHS = {
@@ -105,4 +105,51 @@ test('reproduz a tela do cliente: 3 cirurgias importadas deixam de aparecer como
   expect(cirurgias.pct).toBeGreaterThan(99)
   // E o que de fato não é cirurgia continua fora.
   expect(origins.find(item => item.label === 'Outras receitas operacionais').value).toBe(220)
+})
+
+test('a cauda vira um bloco "Outros" sem mudar o total', () => {
+  const origins = buildRevenueOrigins([
+    { chartAccountId:'g1', value:100 }, { chartAccountId:'g2', value:90 }, { chartAccountId:'g3', value:80 },
+    { chartAccountId:'g4', value:70 }, { chartAccountId:'g5', value:60 }, { chartAccountId:'g6', value:50 },
+    { chartAccountId:'g7', value:40 },
+  ], id => [{ name:'Receita bruta' }, { name:`Grupo ${id}` }, { name:'Conta' }])
+
+  const folded = foldRevenueOriginTail(origins)
+  expect(folded).toHaveLength(6)
+  expect(folded.at(-1).label).toBe('Outros')
+  expect(folded.at(-1).value).toBe(90)
+  expect(folded.at(-1).foldedLabels).toEqual(['Grupo g6', 'Grupo g7'])
+  // A invariante que mais importa: dobrar a cauda não cria nem destrói receita.
+  expect(folded.reduce((acc, item) => acc + item.value, 0)).toBe(490)
+  expect(folded.reduce((acc, item) => acc + item.pct, 0)).toBeCloseTo(100, 6)
+})
+
+test('"Outros" carrega os lançamentos que saíram das barras nomeadas, para o clique abrir o detalhe', () => {
+  const origins = buildRevenueOrigins([
+    { chartAccountId:'g1', value:100, id:'a' }, { chartAccountId:'g2', value:90, id:'b' },
+    { chartAccountId:'g3', value:80, id:'c' }, { chartAccountId:'g4', value:70, id:'d' },
+    { chartAccountId:'g5', value:60, id:'e' }, { chartAccountId:'g6', value:50, id:'f' },
+  ], id => [{ name:'R' }, { name:`G${id}` }, { name:'C' }])
+  const folded = foldRevenueOriginTail(origins)
+  expect(folded.at(-1).entries.map(entry => entry.id)).toEqual(['f'])
+})
+
+test('com 5 grupos ou menos ninguém é dobrado, e cada um recebe a cor da ordem validada', () => {
+  const origins = buildRevenueOrigins([
+    { chartAccountId:'g1', value:100 }, { chartAccountId:'g2', value:90 },
+  ], id => [{ name:'R' }, { name:`G${id}` }, { name:'C' }])
+  const folded = foldRevenueOriginTail(origins)
+  expect(folded).toHaveLength(2)
+  expect(folded.every(item => item.isTail === false)).toBe(true)
+  expect(folded.map(item => item.color)).toEqual([REVENUE_ORIGIN_COLORS[0], REVENUE_ORIGIN_COLORS[1]])
+})
+
+test('a ordem de cores é fixa: a cor segue a posição, nunca é gerada', () => {
+  expect(REVENUE_ORIGIN_COLORS).toHaveLength(5)
+  expect(new Set(REVENUE_ORIGIN_COLORS).size).toBe(5)
+})
+
+test('lista vazia não vira bloco Outros fantasma', () => {
+  expect(foldRevenueOriginTail([])).toEqual([])
+  expect(foldRevenueOriginTail(undefined)).toEqual([])
 })

@@ -49,3 +49,35 @@ export function buildRevenueOrigins(entries = [], accountPathOf = null) {
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'pt-BR'))
     .map(bucket => ({ ...bucket, pct:total > 0 ? bucket.value / total * 100 : 0, total }))
 }
+
+// Ordem categórica fixa, validada pelo script do guia de dataviz contra as DUAS superfícies do
+// app (escura #111827 e clara #F7FAFE): banda de luminosidade, piso de croma, separação para
+// daltonismo e contraste. Nunca gerar uma 6ª cor — a cauda vira "Outros" em cinza.
+// A separação protan do par âmbar/verde cai na faixa 6–8, o que só é permitido com codificação
+// secundária: por isso cada segmento tem folga de 2px e a legenda traz nome e valor por extenso.
+export const REVENUE_ORIGIN_COLORS = ['#3B82F6', '#D97706', '#059669', '#8B5CF6', '#0891B2']
+export const REVENUE_ORIGIN_TAIL_COLOR = '#64748B'
+export const REVENUE_ORIGIN_TAIL_LABEL = 'Outros'
+
+// Mantém os maiores com cor própria e dobra o resto num bloco só. O total e a soma das partes
+// não mudam: "Outros" carrega exatamente os lançamentos que saíram das barras nomeadas.
+export function foldRevenueOriginTail(origins = [], maxSlices = REVENUE_ORIGIN_COLORS.length) {
+  const list = (origins || []).filter(Boolean)
+  if (list.length <= maxSlices) {
+    return list.map((item, index) => ({ ...item, color:REVENUE_ORIGIN_COLORS[index], isTail:false }))
+  }
+  const head = list.slice(0, maxSlices).map((item, index) => ({ ...item, color:REVENUE_ORIGIN_COLORS[index], isTail:false }))
+  const tail = list.slice(maxSlices)
+  const tailValue = tail.reduce((acc, item) => acc + Number(item.value || 0), 0)
+  const total = list[0]?.total || tail[0]?.total || 0
+  return [...head, {
+    label:REVENUE_ORIGIN_TAIL_LABEL,
+    value:tailValue,
+    entries:tail.flatMap(item => item.entries || []),
+    pct:total > 0 ? tailValue / total * 100 : 0,
+    total,
+    color:REVENUE_ORIGIN_TAIL_COLOR,
+    isTail:true,
+    foldedLabels:tail.map(item => item.label),
+  }]
+}

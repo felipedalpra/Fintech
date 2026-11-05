@@ -43,6 +43,7 @@ export function FinancialDrilldownModal({ detail, onClose }) {
 
   return (
     <Modal open={!!detail} onClose={close} title={detail?.title || 'Detalhamento'} width={1040} trackDirty={false}>
+      <div data-testid="financial-drilldown" />
       {detail?.subtitle && <p style={{ margin:'-10px 0 18px', color:C.textSub, fontSize:13, lineHeight:1.55 }}>{detail.subtitle}</p>}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))', gap:10, marginBottom:16 }}>
         <div style={{ padding:14, borderRadius:12, background:C.surface, border:`1px solid ${C.border}` }}>
