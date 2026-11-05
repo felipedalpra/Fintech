@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildClinicOrgChart, canSeeOrgChart, memberCapabilities, ORG_ROLE_LABELS } from '../../src/lib/clinicTeamOrgChart.js'
+import { buildClinicOrgChart, canSeeOrgChart, memberCapabilities, ORG_ROLE_LABELS, withClinicOwner } from '../../src/lib/clinicTeamOrgChart.js'
 
 const OWNER = '10000000-0000-4000-8000-000000000001'
 
@@ -84,4 +84,40 @@ test('só Administrador enxerga o organograma', () => {
   for (const role of ['gestao', 'concierge', 'equipe', '', null, undefined]) {
     expect(canSeeOrgChart(role)).toBe(false)
   }
+})
+
+test('o dono entra na equipe mesmo sem linha em clinic_members', () => {
+  // Bug real (04/11/2026): a criação da clínica não insere linha de membro para o dono, então a
+  // Dra. Vitoria não aparecia nem na lista nem no organograma — nem para ela mesma.
+  const semDona = team().filter(member => member.user_id !== OWNER)
+  const owner = { user_id:OWNER, member_email:'vitoria@x.com', professional_name:'Dra. Vitoria Ribeiro', professional_registration:'CRM-DF 29500', professional_council:'CRM' }
+
+  const chart = buildClinicOrgChart(withClinicOwner(semDona, owner), OWNER)
+  expect(chart.owner?.name).toBe('Dra. Vitoria Ribeiro')
+  expect(chart.owner.isOwner).toBe(true)
+  expect(chart.owner.readOnly).toBe(true)
+  expect(chart.total).toBe(6)
+  // Dona sempre tem acesso clínico, e assina porque a clínica tem registro.
+  expect(chart.owner.capabilities).toEqual({ record:true, sign:true })
+})
+
+test('dono que JÁ tem linha de membro não é duplicado', () => {
+  const owner = { user_id:OWNER, member_email:'vitoria@x.com', professional_name:'Dra. Vitoria Ribeiro' }
+  const merged = withClinicOwner(team(), owner)
+  expect(merged.filter(member => member.user_id === OWNER)).toHaveLength(1)
+  expect(buildClinicOrgChart(merged, OWNER).total).toBe(6)
+})
+
+test('sem dono resolvido a lista passa intacta', () => {
+  expect(withClinicOwner(team(), null)).toHaveLength(6)
+  expect(withClinicOwner(team(), { member_email:'x@x.com' })).toHaveLength(6)
+  expect(withClinicOwner(undefined, null)).toEqual([])
+})
+
+test('a linha do dono é marcada como não editável', () => {
+  const owner = { user_id:OWNER, member_email:'vitoria@x.com' }
+  const [first] = withClinicOwner([], owner)
+  expect(first.readOnly).toBe(true)
+  expect(first.clinical_access).toBe(true)
+  expect(first.role).toBe('admin')
 })
