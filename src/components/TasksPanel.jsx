@@ -468,11 +468,11 @@ function KanbanView({ kanban, memberLabel, onToggle, onRemove, onDrop, onOutcome
   ]
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 15, alignItems: 'start' }}>
-      {cols.map(col => <KanbanColumn key={col.key} col={col} memberLabel={memberLabel} onToggle={onToggle} onRemove={onRemove} onDrop={onDrop} />)}
+      {cols.map(col => <KanbanColumn key={col.key} col={col} memberLabel={memberLabel} onToggle={onToggle} onRemove={onRemove} onDrop={onDrop} onOutcome={onOutcome} attemptFlash={attemptFlash} />)}
     </div>
   )
 }
-function KanbanColumn({ col, memberLabel, onToggle, onRemove, onDrop }) {
+function KanbanColumn({ col, memberLabel, onToggle, onRemove, onDrop, onOutcome, attemptFlash }) {
   const [over, setOver] = useState(false)
   return (
     <div

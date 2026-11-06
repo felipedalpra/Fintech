@@ -85,3 +85,22 @@ test('o menu avisa, antes do clique, qual desfecho encerra a tarefa', async ({ p
   await expect(menu).toContainText('segue')
   await expect(page.getByRole('button', { name:/^Atendeu/ })).toContainText('encerra')
 })
+
+test('a visão kanban também abre o desfecho — foi onde a tela quebrou em produção', async ({ page }) => {
+  // Regressão real (05/11/2026): KanbanColumn usava onOutcome sem recebê-lo, e a página inteira
+  // caía com "onOutcome is not defined" para quem tinha o kanban selecionado. O e2e anterior só
+  // exercitava a lista, que é o padrão — por isso passou verde com a tela quebrada.
+  const attempts = []
+  await mock(page, { onAttempt:body => attempts.push(body) })
+  await page.goto('/app/tarefas')
+
+  await page.getByRole('button', { name:'Kanban' }).click()
+  await expect(page.getByText('A fazer')).toBeVisible()
+  await expect(page.getByText('Ligar sobre o orçamento')).toBeVisible()
+
+  await page.getByTestId(`task-outcome-${TASK_ID}`).click()
+  await page.getByRole('button', { name:/Não atendeu/ }).click()
+  // Esperar a requisição sair: afirmar logo após o clique já me enganou nesta mesma sessão.
+  await expect.poll(() => attempts.length, { timeout:5000 }).toBe(1)
+  await expect(page.getByText('tentativa registrada · segue pendente')).toBeVisible()
+})
