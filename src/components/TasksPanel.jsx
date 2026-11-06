@@ -303,6 +303,10 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, at
 
   const [hover, setHover] = useState(false)
   const [outcomeOpen, setOutcomeOpen] = useState(false)
+  // Numa janela baixa, ou com a tarefa no fim da lista, o menu abriria abaixo da dobra e a
+  // pessoa não veria as últimas opções. Mede o espaço e vira para cima quando não cabe.
+  const [outcomeUp, setOutcomeUp] = useState(false)
+  const outcomeRef = useRef(null)
   const typeLabel = t.task_type && t.task_type !== 'outro' ? TASK_TYPE_LABEL[t.task_type] : ''
   const hora = String(t.due_time || '').slice(0, 5)
   const phone = t.patients?.phone || ''
@@ -321,13 +325,15 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, at
       onDragStart={draggable ? e => e.dataTransfer.setData('text/plain', t.id) : undefined}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
-        display: 'flex', alignItems: 'center', gap: 13, position: 'relative', overflow: 'hidden',
+        // SEM overflow:hidden: ele existia só para arredondar a barra lateral, e cortava o menu
+        // de desfecho, que é absoluto e precisa transbordar o card. A barra arredonda sozinha.
+        display: 'flex', alignItems: 'center', gap: 13, position: 'relative',
         background: hover ? (C.cardHover || C.card) : C.card, border: `1px solid ${hover ? (C.borderBright || C.border) : C.border}`,
         borderRadius: 13, padding: '12px 14px', marginBottom: 9, opacity: done ? 0.62 : 1,
         transform: hover ? 'translateY(-2px)' : 'none', boxShadow: hover ? '0 16px 40px -16px rgba(0,0,0,.6)' : 'none',
         transition: 'transform .16s, box-shadow .16s, background .16s, border-color .16s', cursor: draggable ? 'grab' : 'default',
       }}>
-      <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3.5, background: bar }} />
+      <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3.5, background: bar, borderTopLeftRadius: 13, borderBottomLeftRadius: 13 }} />
 
       <button type="button" onClick={() => onToggle()} aria-label={done ? 'Reabrir' : 'Concluir'}
         style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${done ? (C.green || '#10B981') : (C.borderBright || C.border)}`, background: done ? (C.green || '#10B981') : 'transparent', color: '#fff', flexShrink: 0, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0, transition: '.16s' }}>
@@ -381,7 +387,13 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, at
           <div style={{ position: 'relative' }}>
             <button
               type="button"
-              onClick={() => setOutcomeOpen(open => !open)}
+              ref={outcomeRef}
+              onClick={() => {
+                const rect = outcomeRef.current?.getBoundingClientRect()
+                const ESPACO_MENU = 230
+                setOutcomeUp(Boolean(rect) && window.innerHeight - rect.bottom < ESPACO_MENU)
+                setOutcomeOpen(open => !open)
+              }}
               data-testid={`task-outcome-${t.id}`}
               title="Registrar desfecho"
               style={{ padding: '5px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: hover || outcomeOpen ? C.surface : 'transparent', color: C.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
@@ -389,7 +401,7 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, at
               Desfecho
             </button>
             {outcomeOpen && (
-              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: 5, minWidth: 190, boxShadow: '0 18px 44px -18px rgba(0,0,0,.75)' }}>
+              <div data-testid={`task-outcome-menu-${t.id}`} style={{ position: 'absolute', right: 0, ...(outcomeUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), zIndex: 60, background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: 5, minWidth: 190, boxShadow: '0 18px 44px -18px rgba(0,0,0,.75)' }}>
                 {TASK_OUTCOMES.map(option => (
                   <button
                     key={option.key}
