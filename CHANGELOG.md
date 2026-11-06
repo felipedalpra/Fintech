@@ -13,6 +13,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - **Ordenação em A receber e A pagar**: as duas listas não tinham ordenação nenhuma. Passam a ordenar por origem/categoria, paciente/fornecedor, competência, vencimento, valor e status. Entradas e Saídas ganharam ordenação por valor. (`src/components/Finance.jsx`.)
 
 ### Changed
+- **Esteiras de acompanhamento saíram de Configurações para a área Relacionamento**: estavam como última aba de Configurações, atrás de nove outras numa faixa que rola na horizontal — ninguém achava. Agora têm item próprio no menu, ao lado de Funil e Tarefas, que é o contexto em que se pensa nelas. Continua restrita a Administrador, como era; a aba antiga foi removida para não existirem dois caminhos para a mesma configuração. (`src/pages/FinanceWorkspace.jsx`, `src/lib/roleAccess.js`, `src/components/Settings.jsx`, `tests/e2e/care-tracks.spec.js`.)
 - **Ícone do WhatsApp nos cards do funil e das tarefas**: era um balão genérico com rabicho, desenhado à mão e sem o telefone — não lia como WhatsApp. Passa a usar o glifo oficial, extraído para `WhatsAppGlyph` e compartilhado pelas duas telas, com `aria-label`. O ícone da barra lateral já usava o glifo correto e não foi tocado. (`src/components/WhatsAppGlyph.jsx`, `src/components/OpportunityPipeline.jsx`, `src/components/TasksPanel.jsx`, `tests/unit/whatsappGlyph.spec.js`.)
 
 ### Fixed

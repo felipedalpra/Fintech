@@ -50,6 +50,7 @@ const MeuDia = lazyNamed(() => import('../components/MeuDia.jsx'), 'MeuDia')
 const WhatsAppInbox = lazyNamed(() => import('../components/WhatsAppInbox.jsx'), 'WhatsAppInbox')
 const MetaAdsDashboard = lazyNamed(() => import('../components/MetaAdsDashboard.jsx'), 'MetaAdsDashboard')
 const TasksPanel = lazyNamed(() => import('../components/TasksPanel.jsx'), 'TasksPanel')
+const CareTracks = lazyNamed(() => import('../components/CareTracks.jsx'), 'CareTracks')
 
 // Navegação por ÁREAS de domínio (spec de arquitetura, seção 4).
 // Cada área tem uma barra no topo; a sidebar mostra a sub-navegação da área ativa.
@@ -77,6 +78,7 @@ const AREAS = [
         { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
         { id:'ads',      label:'Anúncios',  icon:'reports',  hint:'Desempenho dos anúncios do Meta' },
         { id:'tarefas',  label:'Tarefas',   icon:'tasks',    hint:'Tarefas e follow-ups da equipe' },
+        { id:'esteiras', label:'Esteiras',  icon:'automacoes', hint:'Acompanhamento automático a partir da cirurgia' },
       ] },
     ],
   },
@@ -184,6 +186,7 @@ const TITLES = {
   inbox:'WhatsApp',
   ads:'Anúncios — Meta Ads',
   tarefas:'Tarefas',
+  esteiras:'Esteiras de acompanhamento',
   'clinical-records':'Clínico',
   'clinical-patients':'Pacientes clínicos',
   'clinical-pending':'Pendências clínicas',
@@ -222,6 +225,7 @@ const SUBTITLES = {
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
   tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, agrupadas por vencimento.',
+  esteiras:'Trilhas de acompanhamento definidas pela clínica. Cada passo vira uma tarefa com data ancorada na cirurgia.',
   'clinical-records':'Agenda do dia e ficha central do paciente em um workspace clínico compacto.',
   'clinical-patients':'Continuidade do cuidado, últimos atendimentos, próximos compromissos e situação de cada paciente.',
   'clinical-pending':'Fila clínica baseada em pré-anamneses, retornos, planos, sessões e assinaturas reais.',
@@ -259,6 +263,7 @@ const PAGES = {
   inbox:WhatsAppInbox,
   ads:MetaAdsDashboard,
   tarefas:TasksPanel,
+  esteiras:CareTracks,
   'clinical-records':props => <ClinicalRecords {...props} initialView="today" />,
   'clinical-patients':props => <ClinicalRecords {...props} initialView="patients" />,
   'clinical-pending':props => <ClinicalRecords {...props} initialView="pending" />,

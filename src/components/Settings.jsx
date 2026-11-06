@@ -12,7 +12,6 @@ import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
 import { WhatsAppAutomations } from './WhatsAppAutomations.jsx'
 import { MetaConnection } from './MetaConnection.jsx'
 import { FollowupRules } from './FollowupRules.jsx'
-import { CareTracks } from './CareTracks.jsx'
 import { IntegrationHealth } from './IntegrationHealth.jsx'
 import { BillingConnection } from './BillingConnection.jsx'
 import { clinicalSignerReadiness } from '../lib/clinicalSignature.js'
@@ -144,7 +143,7 @@ export function Settings({ google, data }) {
 
   const tabs = [
     { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'exportacao', label:'Exportação' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }, { id:'esteiras', label:'Esteiras de acompanhamento' }] : []),
+    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'exportacao', label:'Exportação' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
   ]
 
   return (
@@ -286,9 +285,6 @@ export function Settings({ google, data }) {
         )}
         {tab === 'followup' && role === 'admin' && (
           <FollowupRules />
-        )}
-        {tab === 'esteiras' && role === 'admin' && (
-          <CareTracks />
         )}
       </Card>
 
