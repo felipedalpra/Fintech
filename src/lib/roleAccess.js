@@ -1,6 +1,6 @@
 export const ROLE_ACCESS = {
   admin: [
-    'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas',
+    'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas', 'esteiras',
     'finance', 'financial-import', 'fiscal-documents', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai', 'billing', 'settings',
   ],
   gestao: [

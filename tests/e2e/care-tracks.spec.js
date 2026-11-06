@@ -30,8 +30,7 @@ async function mock(page, { onInsert } = {}) {
 
 test('a esteira aparece na ordem do cuidado, não na de cadastro', async ({ page }) => {
   await mock(page)
-  await page.goto('/app/settings')
-  await page.getByRole('button', { name:'Esteiras de acompanhamento', exact:true }).click()
+  await page.goto('/app/esteiras')
 
   const track = page.getByTestId(`care-track-${TRACK_ID}`)
   await expect(track).toBeVisible()
@@ -42,8 +41,7 @@ test('a esteira aparece na ordem do cuidado, não na de cadastro', async ({ page
 
 test('a tela explica a âncora e que nada é criado para cirurgia passada', async ({ page }) => {
   await mock(page)
-  await page.goto('/app/settings')
-  await page.getByRole('button', { name:'Esteiras de acompanhamento', exact:true }).click()
+  await page.goto('/app/esteiras')
 
   await expect(page.getByText('ancorada na data da cirurgia', { exact:false })).toBeVisible()
   await expect(page.getByText('Nenhuma tarefa é criada para cirurgia que já passou', { exact:false })).toBeVisible()
@@ -53,8 +51,7 @@ test('a tela explica a âncora e que nada é criado para cirurgia passada', asyn
 test('a clínica cria a própria esteira e seus passos', async ({ page }) => {
   const inserts = []
   await mock(page, { onInsert:item => inserts.push(item) })
-  await page.goto('/app/settings')
-  await page.getByRole('button', { name:'Esteiras de acompanhamento', exact:true }).click()
+  await page.goto('/app/esteiras')
 
   await page.getByLabel('Nome').fill('Pós-op de rinoplastia')
   await page.getByRole('button', { name:'Criar esteira' }).click()
@@ -66,4 +63,22 @@ test('a clínica cria a própria esteira e seus passos', async ({ page }) => {
   await page.getByRole('button', { name:'Adicionar passo' }).first().click()
   await expect.poll(() => inserts.length).toBe(2)
   expect(inserts[1].body).toMatchObject({ offset_days:-2, title:'Confirmar jejum' })
+})
+
+test('a esteira mora no Relacionamento, ao lado de Funil e Tarefas', async ({ page }) => {
+  // Estava enterrada como última aba de Configurações e ninguém achava.
+  await mock(page)
+  await page.goto('/app/funnel')
+  const item = page.getByRole('button', { name:'Esteiras', exact:true })
+  await expect(item).toBeVisible()
+  await item.click()
+  await expect(page).toHaveURL(/\/app\/esteiras$/)
+  await expect(page.getByTestId('care-tracks')).toBeVisible()
+})
+
+test('não sobrou cópia da tela em Configurações', async ({ page }) => {
+  // Mudar de lugar e esquecer a antiga cria dois caminhos para a mesma config.
+  await mock(page)
+  await page.goto('/app/settings')
+  await expect(page.getByRole('button', { name:'Esteiras de acompanhamento', exact:true })).toHaveCount(0)
 })
