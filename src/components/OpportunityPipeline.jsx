@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
+import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -21,7 +22,6 @@ const ICON = {
   plus: <path d="M12 5v14M5 12h14" />,
   search: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
   ai: <><path d="M12 3v2m0 14v2M5 12H3m18 0h-2M6 6 4.5 4.5M18 18l1.5 1.5" /><circle cx="12" cy="12" r="4" /></>,
-  wa: <path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z" />,
   pencil: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></>,
   check: <path d="M20 6 9 17l-5-5" />,
@@ -468,7 +468,7 @@ function OpportunityCard({ opp, currentStage, allStages, memberLabel, members, o
           <button type="button" style={s.wa} disabled={!hasPhone}
             onClick={e => { e.stopPropagation(); if (!hasPhone) return; const digits = String(person.phone).replace(/\D/g, ''); if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener') }}
             title={hasPhone ? 'Abrir conversa no WhatsApp' : 'Sem telefone'}>
-            <Ico d={ICON.wa} size={15} fill="currentColor" sw={0} />
+            <WhatsAppGlyph size={15} />
           </button>
         </div>
       </div>
