@@ -43,3 +43,12 @@ test('robots.txt não bloqueia o robô da Meta', () => {
   expect(robots).not.toMatch(/Disallow:\s*\/\s*$/im)
   expect(robots.toLowerCase()).not.toContain('facebookexternalhit\nuser-agent')
 })
+
+test('a home declara o fb:app_id, para o Facebook atribuir os compartilhamentos', () => {
+  // Nao muda a previa do link; e o que liga as interacoes ao app nos Insights da Meta.
+  const html = ler('index.html')
+  const id = html.match(/property="fb:app_id" content="([^"]+)"/)?.[1]
+  expect(id, 'falta a metatag fb:app_id').toBeTruthy()
+  // Um App ID e so digitos: colar o nome do app ou um placeholder passaria despercebido.
+  expect(id).toMatch(/^\d{10,20}$/)
+})
