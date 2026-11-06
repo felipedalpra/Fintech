@@ -80,6 +80,10 @@ export function parseInsightsResponse(body, level) {
       reach: num(r.reach),
       clicks: num(r.clicks),
       leads: pickLeads(r.actions),
+      // O array inteiro, como veio. Antes só o lead era extraído e o resto — engajamento,
+      // conversões por tipo, custo por resultado — ia fora, exigindo nova chamada para recuperar.
+      actions: Array.isArray(r.actions) ? r.actions : null,
+      cost_per_action: Array.isArray(r.cost_per_action_type) ? r.cost_per_action_type : null,
     })
   }
   return rows
@@ -144,9 +148,9 @@ async function graphGetAll(version, token, path, params = {}, maxPages = 25) {
 
 // Campos de insights por nível.
 const INSIGHT_FIELDS = {
-  campaign: 'campaign_id,spend,impressions,reach,clicks,actions',
-  adset: 'adset_id,campaign_id,spend,impressions,reach,clicks,actions',
-  ad: 'ad_id,adset_id,campaign_id,spend,impressions,reach,clicks,actions',
+  campaign: 'campaign_id,spend,impressions,reach,clicks,actions,cost_per_action_type',
+  adset: 'adset_id,campaign_id,spend,impressions,reach,clicks,actions,cost_per_action_type',
+  ad: 'ad_id,adset_id,campaign_id,spend,impressions,reach,clicks,actions,cost_per_action_type',
 }
 
 // Campos de alcance/frequência por nível (consulta por intervalo, sem time_increment).
@@ -179,9 +183,16 @@ async function syncOwner(supabase, conn, { version, since, until, reachPeriods }
     if (error) throw error
     counts.adsets = rows.length
   }
-  const ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: 'id,name,status,adset_id,campaign_id' })
+  // `creative{thumbnail_url}` está coberto por ads_read; vem junto da estrutura, sem requisição extra.
+  const ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: 'id,name,status,adset_id,campaign_id,creative{id,thumbnail_url}' })
   if (ads.length) {
-    const rows = ads.map(a => ({ user_id, ad_id: a.id, adset_id: a.adset_id, campaign_id: a.campaign_id, name: a.name, status: a.status, updated_at: now }))
+    const rows = ads.map(a => ({
+      user_id, ad_id: a.id, adset_id: a.adset_id, campaign_id: a.campaign_id,
+      name: a.name, status: a.status, updated_at: now,
+      creative_id: a.creative?.id || null,
+      // A Meta expira a URL da miniatura; guardamos mesmo assim e a tela trata imagem quebrada.
+      thumbnail_url: a.creative?.thumbnail_url || null,
+    }))
     const { error } = await supabase.from('meta_ads').upsert(rows, { onConflict: 'user_id,ad_id' })
     if (error) throw error
     counts.ads = rows.length
