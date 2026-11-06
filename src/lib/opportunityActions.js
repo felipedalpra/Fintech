@@ -86,6 +86,30 @@ export async function patchOpportunity(oppId, patch = {}) {
   if ('responsible_user_id' in patch) allowed.responsible_user_id = patch.responsible_user_id || null
   if ('title' in patch) allowed.title = String(patch.title || '').trim() || 'Oportunidade'
   if ('source' in patch) allowed.source = String(patch.source || '').trim() || null
+  // Campos do workspace de CRM (supabase/crm_workspace_phase1.sql).
+  if ('procedure_id' in patch) allowed.procedure_id = patch.procedure_id || null
+  if ('probability' in patch) {
+    if (patch.probability === '' || patch.probability == null) {
+      allowed.probability = null
+    } else {
+      const p = Number(patch.probability)
+      if (!Number.isFinite(p) || p < 0 || p > 100) return { error: 'Probabilidade deve estar entre 0 e 100.' }
+      allowed.probability = p
+    }
+  }
+  if ('next_action' in patch) allowed.next_action = String(patch.next_action || '').trim().slice(0, 500) || null
+  for (const dateField of ['next_action_due', 'expected_surgery_date']) {
+    if (!(dateField in patch)) continue
+    const d = patch[dateField]
+    if (d === '' || d == null) allowed[dateField] = null
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(String(d))) allowed[dateField] = String(d)
+    else return { error: 'Data inválida.' }
+  }
+  if ('custom_values' in patch) {
+    const cv = patch.custom_values
+    if (!cv || typeof cv !== 'object' || Array.isArray(cv)) return { error: 'Campos personalizados inválidos.' }
+    allowed.custom_values = cv
+  }
   if (Object.keys(allowed).length === 0) return { ok: true }
   allowed.updated_at = new Date().toISOString()
   // READ-BACK: confirma que uma linha foi realmente atualizada (RLS permitiu) — senão seria um

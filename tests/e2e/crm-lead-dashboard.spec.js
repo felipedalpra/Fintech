@@ -16,9 +16,9 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
 })
 
-test('botão "Novo lead" abre o modal com os campos essenciais', async ({ page }) => {
+test('botão "Nova oportunidade" abre o modal de lead com os campos essenciais', async ({ page }) => {
   await page.goto('/app/funnel')
-  await page.getByRole('button', { name: 'Novo lead', exact: true }).click()
+  await page.getByRole('button', { name: 'Nova oportunidade', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Novo lead' })).toBeVisible()
   await expect(page.getByPlaceholder('Nome do lead')).toBeVisible()
   await expect(page.getByText('Procedimento de interesse')).toBeVisible()
@@ -26,7 +26,7 @@ test('botão "Novo lead" abre o modal com os campos essenciais', async ({ page }
 })
 
 test('quick-add inline aparece em cada coluna do funil', async ({ page }) => {
-  await page.goto('/app/funnel')
+  await page.goto('/app/funnel?view=kanban')
   await expect(page.getByRole('button', { name: 'Adicionar lead rápido' }).first()).toBeVisible()
 })
 

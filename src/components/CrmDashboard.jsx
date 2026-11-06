@@ -6,6 +6,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { funnelCounts, weightedPipeline, leadsBySource, byResponsible, lossReasons, avgDaysPerStage, crmKpis } from '../lib/crmMetrics.js'
 import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
+import { resolveStages, stageProbFractions } from '../lib/crmStages.js'
 
 // Painel de CRM: lê oportunidades + histórico de estágios e calcula tudo no cliente
 // (módulo puro crmMetrics.js). Não cruza com o financeiro — conversão ≠ faturamento.
@@ -47,6 +48,18 @@ async function fetchAll(makeQuery) {
   return { data: all }
 }
 
+// Oportunidades do período. Tenta incluir a probabilidade própria (crm_workspace_phase1.sql);
+// sem a coluna, segue com o conjunto antigo — o ponderado usa então só a probabilidade da etapa.
+async function fetchOpps(ownerId, cutoff) {
+  const base = 'id, stage, status, value, source, responsible_user_id, stage_entered_at, created_at, first_response_at, lost_reason'
+  const run = fields => fetchAll(() => supabase.from('opportunities').select(fields)
+    .eq('user_id', ownerId).gte('created_at', cutoff)
+    .order('created_at', { ascending: true }).order('id', { ascending: true }))
+  const withProb = await run(`${base}, probability`)
+  if (!withProb.error || !['42703', 'PGRST204'].includes(withProb.error.code)) return withProb
+  return run(base)
+}
+
 export function CrmDashboard() {
   const { user } = useAuth()
   const { ownerId } = useUserRole()
@@ -54,6 +67,7 @@ export function CrmDashboard() {
 
   const [opps, setOpps] = useState([])
   const [history, setHistory] = useState([])
+  const [stageProb, setStageProb] = useState(undefined)
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -65,21 +79,21 @@ export function CrmDashboard() {
     async function load() {
       setLoading(true); setError(null)
       const cutoff = period ? new Date(Date.now() - period * DAY).toISOString() : '1970-01-01'
-      const [oppRes, histRes, memRes] = await Promise.all([
-        fetchAll(() => supabase.from('opportunities')
-          .select('id, stage, status, value, source, responsible_user_id, stage_entered_at, created_at, first_response_at, lost_reason')
-          .eq('user_id', effectiveUserId).gte('created_at', cutoff)
-          .order('created_at', { ascending: true }).order('id', { ascending: true })),
+      const [oppRes, histRes, memRes, stageRes] = await Promise.all([
+        fetchOpps(effectiveUserId, cutoff),
         fetchAll(() => supabase.from('opportunity_stage_history')
           .select('opportunity_id, from_stage, to_stage, created_at')
           .eq('user_id', effectiveUserId).gte('created_at', cutoff)
           .order('created_at', { ascending: true }).order('opportunity_id', { ascending: true })),
         supabase.from('clinic_members').select('user_id, member_email'),
+        supabase.from('crm_stage_settings').select('stage_key, label, color, position, probability').eq('user_id', effectiveUserId),
       ])
       if (!mounted) return
       if (oppRes.error) { setError(oppRes.error.message); setLoading(false); return }
       if (histRes.error) { setError(histRes.error.message); setLoading(false); return }
       setOpps(oppRes.data ?? [])
+      // Probabilidades configuradas pela clínica; sem tabela/linhas → padrão do sistema.
+      setStageProb(stageRes?.error ? undefined : stageProbFractions(resolveStages(stageRes?.data || [])))
       setHistory(histRes.data ?? [])
       setMembers((memRes.data ?? []).filter(m => m.user_id))
       setLoading(false)
@@ -104,7 +118,7 @@ export function CrmDashboard() {
     const late = waiting.filter(r => r.state === 'late').length
     return { avg, withinPct: responded.length ? within / responded.length : null, waiting: waiting.length, late }
   }, [opps])
-  const pipeline = useMemo(() => weightedPipeline(opps), [opps])
+  const pipeline = useMemo(() => weightedPipeline(opps, stageProb), [opps, stageProb])
   const funnel = useMemo(() => funnelCounts(opps, STAGE_ORDER), [opps])
   const sources = useMemo(() => leadsBySource(opps), [opps])
   const responsibles = useMemo(() => byResponsible(opps), [opps])

@@ -18,25 +18,27 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test('barra de filtros e botão criar aparecem; busca filtra por paciente', async ({ page }) => {
+test('barra de ferramentas e botão criar aparecem; busca filtra por paciente', async ({ page }) => {
   await page.goto('/app/funnel')
-  await expect(page.getByRole('heading', { name: 'Pipeline de Oportunidades' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'CRM — Gestão de Oportunidades' })).toBeVisible()
 
-  await expect(page.getByPlaceholder('🔍 Buscar paciente…')).toBeVisible()
+  await expect(page.getByLabel('Buscar oportunidades')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Nova oportunidade', exact: true })).toBeVisible()
 
   await expect(page.getByText('Ana Silva')).toBeVisible()
   await expect(page.getByText('Bia Souza')).toBeVisible()
 
   // Busca por "Ana" esconde a Bia (filtro no cliente, instantâneo).
-  await page.getByPlaceholder('🔍 Buscar paciente…').fill('Ana')
+  await page.getByLabel('Buscar oportunidades').fill('Ana')
   await expect(page.getByText('Ana Silva')).toBeVisible()
   await expect(page.getByText('Bia Souza')).toHaveCount(0)
 })
 
 test('botão abre o editor de nova oportunidade', async ({ page }) => {
   await page.goto('/app/funnel')
-  await page.getByRole('button', { name: 'Nova oportunidade', exact: true }).click()
+  // Oportunidade para paciente JÁ cadastrado fica no menu ao lado do botão principal.
+  await page.getByRole('button', { name: 'Mais opções de criação' }).click()
+  await page.getByRole('menuitem', { name: 'Oportunidade para paciente cadastrado' }).click()
   await expect(page.getByRole('heading', { name: 'Nova oportunidade' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Salvar' })).toBeVisible()
 })

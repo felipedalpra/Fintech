@@ -13,7 +13,7 @@ import { Person360Drawer } from './Person360Drawer.jsx'
 // Estágio só é escolhido na criação; depois muda por mover/arrastar (RPC auditada).
 const BLANK = { patient_id: '', contact_id: '', patient_name: '', title: '', value: '', stage: '', source: '', responsible_user_id: '', tags: [] }
 
-export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved }) {
+export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved, initialTab = 'dados' }) {
   const isEdit = !!opp
   const [tab, setTab] = useState('dados')
   const [form, setForm] = useState(BLANK)
@@ -26,7 +26,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
 
   useEffect(() => {
     if (!open) return
-    setError(null); setLosing(false); setLostReason(''); setTagDraft(''); setTab('dados'); setShow360(false)
+    setError(null); setLosing(false); setLostReason(''); setTagDraft(''); setTab(opp ? initialTab : 'dados'); setShow360(false)
     if (opp) {
       const person = opportunityPerson(opp)
       setForm({
@@ -38,7 +38,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
     } else {
       setForm({ ...BLANK, stage: stages?.[0]?.key || 'primeiro_contato' })
     }
-  }, [open, opp, stages])
+  }, [open, opp, stages, initialTab])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -64,7 +64,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
     const res = await setOpportunityOutcome(opp.id, status, lostReason)
     setSaving(false)
     if (res.error) { setError(res.error); return }
-    onSaved({ closed: opp.id })
+    onSaved({ closed: opp.id, status, lostReason: status === 'perdido' ? (lostReason || '').trim() || null : null })
     onClose()
   }
 
