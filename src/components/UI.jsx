@@ -83,6 +83,9 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
   const listId = useId()
+  // O rótulo não estava ligado ao campo: nem `htmlFor`, nem envolvendo o input. Isso impedia
+  // leitor de tela de anunciar o campo e tornava o formulário inalcançável por rótulo no teste.
+  const fieldId = useId()
 
   const displayValue = () => {
     if (!isNum) return value
@@ -114,14 +117,15 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
 
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
-      {label && <label style={base.label}>{label}{required&&<span style={{color:C.red}}> *</span>}</label>}
+      {label && <label htmlFor={fieldId} style={base.label}>{label}{required&&<span style={{color:C.red}}> *</span>}</label>}
       {options && !creatable
-        ? <select value={value} onChange={e=>onChange(e.target.value)}
+        ? <select id={fieldId} value={value} onChange={e=>onChange(e.target.value)}
             style={{ ...base.input, appearance:'none', cursor:'pointer' }}>
             {options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
         : <>
             <input
+              id={fieldId}
               type={isNum ? 'text' : type}
               inputMode={isNum ? 'decimal' : undefined}
               value={displayValue()}
