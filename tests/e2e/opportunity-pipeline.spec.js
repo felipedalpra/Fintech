@@ -20,9 +20,9 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('pipeline mostra oportunidades por estágio com valor', async ({ page }) => {
-  await page.goto('/app/funnel')
-  await expect(page).toHaveURL(/\/app\/funnel$/)
-  await expect(page.getByRole('heading', { name: 'Pipeline de Oportunidades' })).toBeVisible()
+  await page.goto('/app/funnel?view=kanban')
+  await expect(page).toHaveURL(/\/app\/funnel\?view=kanban$/)
+  await expect(page.getByRole('heading', { name: 'CRM — Gestão de Oportunidades' })).toBeVisible()
 
   for (const label of ['Consulta Agendada', 'Consultado', 'Orçamento Enviado', 'Reserva Paga', 'Follow-up']) {
     await expect(page.locator('span', { hasText: new RegExp(`^${label}$`) })).toBeVisible()
@@ -40,7 +40,7 @@ test('mover oportunidade via RPC reflete na hora (update otimista persiste)', as
   await page.route('**/move_opportunity*', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...OPPS[0], stage: 'consultado' }) }))
 
-  await page.goto('/app/funnel')
+  await page.goto('/app/funnel?view=kanban')
   await expect(page.getByText('Ana Silva')).toBeVisible()
 
   // Localiza o card da Ana pela identidade, sem depender da ordem de outros contatos.

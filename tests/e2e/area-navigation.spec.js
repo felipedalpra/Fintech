@@ -31,7 +31,7 @@ test('trocar de área troca a sub-navegação e navega', async ({ page }) => {
 
   await bar.getByRole('button', { name: /Relacionamento/ }).click()
   await expect(page).toHaveURL(/\/app\/funnel$/)
-  await expect(subNav.getByText('Funil')).toBeVisible()
+  await expect(subNav.getByText('CRM', { exact:true })).toBeVisible()
   // Itens exclusivos do Financeiro saíram da sub-nav da área Pacientes.
   await expect(subNav.getByText('Relatórios')).toHaveCount(0)
 })
@@ -68,10 +68,10 @@ test('deep-link antigo de impostos redireciona para o dashboard', async ({ page 
   await expect(page.getByTestId('sub-nav').getByText('Impostos')).toHaveCount(0)
 })
 
-test('funil continua acessível na área Pacientes', async ({ page }) => {
+test('CRM (funil) continua acessível na área Relacionamento', async ({ page }) => {
   await page.goto('/app/funnel')
   await expect(page).toHaveURL(/\/app\/funnel$/)
   const subNav = page.getByTestId('sub-nav')
-  await expect(subNav.getByText('Funil')).toBeVisible()
+  await expect(subNav.getByText('CRM', { exact:true })).toBeVisible()
   await expect(subNav.getByText('Pacientes')).toBeVisible()
 })

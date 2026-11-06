@@ -46,7 +46,12 @@ export function weightedPipeline(opps, prob = STAGE_PROB) {
   for (const o of opps || []) {
     if (o.status !== 'aberto') continue
     count++
-    total += (Number(o.value) || 0) * (prob[o.stage] ?? 0)
+    // Probabilidade própria da oportunidade (0–100, coluna probability) quando definida; senão a
+    // da etapa (`prob`, fração 0–1). Mesma regra de effectiveProbability (crmStages.js) da tabela.
+    const own = o.probability != null && o.probability !== '' && Number.isFinite(Number(o.probability))
+      ? Number(o.probability) / 100
+      : null
+    total += (Number(o.value) || 0) * (own ?? prob[o.stage] ?? 0)
   }
   return { total, count }
 }

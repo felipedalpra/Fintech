@@ -44,7 +44,7 @@ const BillingPage = lazyNamed(() => import('./BillingPage.jsx'), 'BillingPage')
 const Calendar = lazyNamed(() => import('../components/Calendar.jsx'), 'Calendar')
 const Patients = lazyNamed(() => import('../components/Patients.jsx'), 'Patients')
 const ClinicalRecords = lazyNamed(() => import('../components/ClinicalRecords.jsx'), 'ClinicalRecords')
-const OpportunityPipeline = lazyNamed(() => import('../components/OpportunityPipeline.jsx'), 'OpportunityPipeline')
+const CrmWorkspace = lazyNamed(() => import('../components/CrmWorkspace.jsx'), 'CrmWorkspace')
 const CrmDashboard = lazyNamed(() => import('../components/CrmDashboard.jsx'), 'CrmDashboard')
 const MeuDia = lazyNamed(() => import('../components/MeuDia.jsx'), 'MeuDia')
 const WhatsAppInbox = lazyNamed(() => import('../components/WhatsAppInbox.jsx'), 'WhatsAppInbox')
@@ -72,7 +72,7 @@ const AREAS = [
     id:'relacionamento', label:'Relacionamento', icon:'patients', roles:ALL_ROLES,
     sections:[
       { title:'Relacionamento', items:[
-        { id:'funnel',   label:'Funil',     icon:'funnel',   hint:'Jornada dos pacientes por estágio' },
+        { id:'funnel',   label:'CRM',       icon:'funnel',   hint:'Gestão de oportunidades: tabela, kanban e indicadores' },
         { id:'crm-painel', label:'Painel CRM', icon:'reports', hint:'Conversão, origem e desempenho do funil' },
         { id:'patients', label:'Pacientes', icon:'patients', hint:'Cadastro clínico e prontuários' },
         { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
@@ -181,7 +181,7 @@ const TITLES = {
   billing:'Assinatura',
   settings:'Configurações',
   patients:'Pacientes',
-  funnel:'Pipeline de Oportunidades',
+  funnel:'CRM — Gestão de Oportunidades',
   'crm-painel':'Painel de CRM',
   inbox:'WhatsApp',
   ads:'Anúncios — Meta Ads',
@@ -220,7 +220,7 @@ const SUBTITLES = {
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
   patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
-  funnel:'Oportunidades (negócios) por estágio: consulta agendada → consultado → orçamento → reserva paga → follow-up.',
+  funnel:'Oportunidades comerciais em tabela, kanban e indicadores — a mesma base, várias visualizações.',
   'crm-painel':'Conversão por etapa, origem e responsável, pipeline ponderado e motivos de perda — sem cruzar o financeiro.',
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
@@ -258,7 +258,7 @@ const PAGES = {
   billing:BillingPage,
   settings:Settings,
   patients:Patients,
-  funnel:OpportunityPipeline,
+  funnel:CrmWorkspace,
   'crm-painel':CrmDashboard,
   inbox:WhatsAppInbox,
   ads:MetaAdsDashboard,
