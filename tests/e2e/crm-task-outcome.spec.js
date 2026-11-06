@@ -104,3 +104,54 @@ test('a visão kanban também abre o desfecho — foi onde a tela quebrou em pro
   await expect.poll(() => attempts.length, { timeout:5000 }).toBe(1)
   await expect(page.getByText('tentativa registrada · segue pendente')).toBeVisible()
 })
+
+test('o menu de desfecho aparece inteiro, sem ser cortado pelo card', async ({ page }) => {
+  // Janela alta de propósito: com 720px o menu termina abaixo da dobra e `elementFromPoint`
+  // devolve null por estar FORA da viewport, não por recorte — isso mascarava o teste.
+  await page.setViewportSize({ width:1280, height:1100 })
+  // Bug real (05/11/2026): o card tinha overflow:hidden para arredondar a barra lateral, e o
+  // menu — que é absoluto e transborda o card — aparecia cortado pela metade.
+  await mock(page)
+  await page.goto('/app/tarefas')
+  await page.getByTestId(`task-outcome-${TASK_ID}`).click()
+
+  const menu = page.getByTestId(`task-outcome-menu-${TASK_ID}`)
+  await expect(menu).toBeVisible()
+
+  // Todas as opções precisam estar alcançáveis, inclusive a última.
+  for (const label of ['Concluída', 'Atendeu', 'Não atendeu', 'Remarcou', 'Sem interesse']) {
+    await expect(menu.getByRole('button', { name:new RegExp(label) })).toBeVisible()
+  }
+
+  // `boundingBox` devolve a caixa de LAYOUT e ignora overflow: com o corte, ele passava igual.
+  // A checagem honesta é perguntar ao navegador QUEM está desenhado no ponto: se o card recorta
+  // o menu, o que aparece na base dele é o fundo da página, não o próprio menu.
+  const ultimaOpcaoVisivel = await page.evaluate(testId => {
+    const menu = document.querySelector(`[data-testid="${testId}"]`)
+    if (!menu) return 'menu-ausente'
+    const rect = menu.getBoundingClientRect()
+    // Um ponto dentro da metade de baixo do menu — a parte que sumia.
+    const alvo = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 6)
+    return menu.contains(alvo) ? 'visivel' : 'recortado'
+  }, `task-outcome-menu-${TASK_ID}`)
+  expect(ultimaOpcaoVisivel).toBe('visivel')
+})
+
+test('em janela baixa o menu vira para cima, para as opções não ficarem abaixo da dobra', async ({ page }) => {
+  // Diagnóstico de 05/11: com 720px de altura o menu terminava em y=896 — fora da tela.
+  await page.setViewportSize({ width:1280, height:700 })
+  await mock(page)
+  await page.goto('/app/tarefas')
+
+  const botao = page.getByTestId(`task-outcome-${TASK_ID}`)
+  await botao.click()
+  const menu = page.getByTestId(`task-outcome-menu-${TASK_ID}`)
+  await expect(menu).toBeVisible()
+
+  const menuBox = await menu.boundingBox()
+  const botaoBox = await botao.boundingBox()
+  // Virou para cima: a base do menu fica acima do topo do botão.
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(botaoBox.y + 1)
+  // E o menu inteiro cabe na tela.
+  expect(menuBox.y).toBeGreaterThanOrEqual(0)
+})
