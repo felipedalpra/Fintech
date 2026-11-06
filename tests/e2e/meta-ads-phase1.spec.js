@@ -12,15 +12,20 @@ for (let i = 0; i < 5; i += 1) {
     updated_at:new Date().toISOString() })
 }
 
-async function mock(page) {
+async function mock(page, { lastRun = null, onSync } = {}) {
   await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
-  await page.route('**/api/**', route => route.fulfill({ status:200, contentType:'application/json', body:'{}' }))
+  await page.route('**/api/**', route => {
+    if (new URL(route.request().url()).search.includes('meta-sync-range')) onSync?.()
+    return route.fulfill({ status:200, contentType:'application/json', body:'{"ok":true}' })
+  })
   await page.route('**/rest/v1/**', route => {
     const path = new URL(route.request().url()).pathname
     let body = []
     if (path.endsWith('/meta_insights')) body = INSIGHTS
     if (path.endsWith('/meta_campaigns')) body = [{ campaign_id:'C1', name:'Rinoplastia — Tráfego', status:'ACTIVE' }]
     if (path.endsWith('/meta_connections')) body = { status:'conectado', ad_account_id:'act_1', updated_at:new Date().toISOString() }
+    if (path.endsWith('/meta_sync_runs')) body = lastRun
+    if (path.endsWith('/meta_adsets')) body = [{ adset_id:'AS1', name:'Conjunto A', status:'ACTIVE' }]
     return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/1' }, body:JSON.stringify(body) })
   })
 }
@@ -79,4 +84,44 @@ test('a aba Análises traz leituras por regra com o número que as sustenta', as
   const findings = page.getByTestId('rule-findings')
   await expect(findings).toBeVisible()
   await expect(findings.getByText('Rinoplastia — Tráfego').first()).toBeVisible()
+})
+
+test('clicar numa campanha abre os conjuntos só dela, e dá para voltar', async ({ page }) => {
+  await mock(page)
+  await page.goto('/app/ads')
+  await page.locator('table tbody tr').first().click()
+
+  const crumb = page.getByTestId('drill-crumb')
+  await expect(crumb).toBeVisible()
+  await expect(crumb.getByText('Rinoplastia — Tráfego')).toBeVisible()
+
+  await page.getByTestId('drill-clear').click()
+  await expect(page.getByTestId('drill-crumb')).toHaveCount(0)
+})
+
+test('existe atualização manual e ela consulta o Meta', async ({ page }) => {
+  let chamou = false
+  await mock(page, { onSync: () => { chamou = true } })
+  await page.goto('/app/ads')
+  await page.getByTestId('refresh-now').click()
+  await expect.poll(() => chamou, { timeout:5000 }).toBe(true)
+})
+
+test('limite de taxa da Meta é explicado, não mostrado como dado em branco', async ({ page }) => {
+  // Dado velho sem explicação é pior que dado velho com o motivo ao lado.
+  await mock(page, { lastRun:{ started_at:new Date().toISOString(), finished_at:new Date().toISOString(),
+    ok:false, counts:{}, error_code:'rate_limit', error_text:'(#17) User request limit reached', trigger:'cron' } })
+  await page.goto('/app/ads')
+  const bar = page.getByTestId('sync-status')
+  await expect(bar.getByText('A Meta limitou as consultas', { exact:false })).toBeVisible()
+  // E não pode se dizer "Sincronizado" na mesma linha em que avisa que a sincronização falhou.
+  await expect(bar.getByText('Sincronizado com o Meta', { exact:false })).toHaveCount(0)
+  await expect(bar.getByText('Dados de', { exact:false })).toBeVisible()
+})
+
+test('falha de autenticação manda reconectar, em vez de culpar a Meta', async ({ page }) => {
+  await mock(page, { lastRun:{ started_at:new Date().toISOString(), finished_at:new Date().toISOString(),
+    ok:false, counts:{}, error_code:'auth', error_text:'invalid token', trigger:'cron' } })
+  await page.goto('/app/ads')
+  await expect(page.getByTestId('sync-status').getByText('Reconecte em Configurações', { exact:false })).toBeVisible()
 })

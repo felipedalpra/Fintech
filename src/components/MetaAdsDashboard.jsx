@@ -71,6 +71,9 @@ export function MetaAdsDashboard() {
   const [query, setQuery] = useState('')
   const [prevInsights, setPrevInsights] = useState([])
   const [thumbs, setThumbs] = useState({})
+  const [drill, setDrill] = useState(null)  // { campaign_id, name } — filtra níveis abaixo
+  const [lastRun, setLastRun] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [level, setLevel] = useState('campaign')
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState(() => {
@@ -99,6 +102,20 @@ export function MetaAdsDashboard() {
       setRangeSyncError(e.message || 'Não foi possível sincronizar esse período.')
     } finally {
       setRangeSyncing(false)
+    }
+  }
+
+  // Atualização manual: busca no Meta o período que está na tela e recarrega.
+  async function refreshNow() {
+    setRefreshing(true)
+    try {
+      const { since, until } = rangeFor(period, customRange)
+      await syncMetaRange({ since, until })
+    } catch (e) {
+      setRangeSyncError(e.message || 'Não foi possível atualizar agora.')
+    } finally {
+      setRefreshing(false)
+      setReloadKey(k => k + 1)
     }
   }
 
@@ -135,6 +152,11 @@ export function MetaAdsDashboard() {
           .eq('user_id', uid).eq('level', level).gte('date', anterior.start).lte('date', anterior.end)
         if (mounted) setPrevInsights(prevRes.error ? [] : (prevRes.data ?? []))
       } else if (mounted) setPrevInsights([])
+
+      const runRes = await supabase.from('meta_sync_runs')
+        .select('started_at, finished_at, ok, counts, error_code, error_text, trigger')
+        .eq('user_id', uid).order('started_at', { ascending: false }).limit(1).maybeSingle()
+      if (mounted) setLastRun(runRes.error ? null : runRes.data)
 
       if (level === 'ad') {
         const thumbRes = await supabase.from('meta_ads').select('ad_id, thumbnail_url').eq('user_id', uid)
@@ -194,8 +216,10 @@ export function MetaAdsDashboard() {
         name: meta.name || a.ref_id, status: meta.status,
       }
     })
+    // Drill: ao abrir uma campanha, os níveis abaixo mostram só o que pertence a ela.
+    const doDrill = drill ? agg.filter(row => row.campaign_id === drill.campaign_id) : agg
     const busca = query.trim().toLowerCase()
-    const filtrado = busca ? agg.filter(row => String(row.name || '').toLowerCase().includes(busca)) : agg
+    const filtrado = busca ? doDrill.filter(row => String(row.name || '').toLowerCase().includes(busca)) : doDrill
     const dir = sort.dir === 'asc' ? 1 : -1
     const isText = sort.key === 'name' || sort.key === 'status'
     // null (ex.: CPL sem leads) vai pro fim, nunca é tratado como "melhor".
@@ -204,7 +228,7 @@ export function MetaAdsDashboard() {
       ? String(x[sort.key] ?? '').localeCompare(String(y[sort.key] ?? ''), 'pt-BR') * dir
       : (nval(x[sort.key]) - nval(y[sort.key])) * dir)
     return filtrado
-  }, [insights, names, reachMap, sort, query])
+  }, [insights, names, reachMap, sort, query, drill])
 
   const totals = useMemo(() => {
     const t = rows.reduce((a, r) => ({
@@ -306,7 +330,7 @@ export function MetaAdsDashboard() {
           <div style={s.bar}>
             <div style={s.seg}>
               {LEVELS.map(l => (
-                <button key={l.key} style={s.segBtn(level === l.key)} onClick={() => setLevel(l.key)}>{l.label}</button>
+                <button key={l.key} style={s.segBtn(level === l.key)} onClick={() => { setLevel(l.key); setDrill(null) }}>{l.label}</button>
               ))}
             </div>
             <div style={s.pills}>
@@ -343,9 +367,38 @@ export function MetaAdsDashboard() {
             </div>
           )}
 
-          {syncedAt && (
-            <div style={{ ...s.fresh, marginBottom: 14 }}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }} data-testid="sync-status">
+            {syncedAt && (lastRun?.ok === false
+              // Com a última tentativa falhada, "Sincronizado" seria falso: o número na tela
+              // é o da sincronização ANTERIOR, e é isso que a linha tem que dizer.
+              ? <span style={{ ...s.fresh, color: C.yellow || '#F59E0B' }}>
+                  <span style={{ ...s.dot, background: C.yellow || '#F59E0B' }} /> Dados de {freshness(syncedAt)}
+                </span>
+              : <span style={s.fresh}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</span>)}
+            <button
+              onClick={refreshNow}
+              disabled={refreshing}
+              data-testid="refresh-now"
+              style={{ padding: '6px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface,
+                color: refreshing ? C.textDim : C.text, fontSize: 12, fontWeight: 700, cursor: refreshing ? 'default' : 'pointer', fontFamily: 'inherit' }}
+            >
+              {refreshing ? 'Atualizando…' : 'Atualizar agora'}
+            </button>
+            {/* A última tentativa, mesmo quando falhou: dado velho sem explicação é pior que
+                dado velho com o motivo ao lado. */}
+            {lastRun?.ok === false && (
+              <span style={{ fontSize: 11.5, color: C.yellow || '#F59E0B' }}>
+                {lastRun.error_code === 'rate_limit'
+                  ? 'A Meta limitou as consultas na última tentativa — os números são da sincronização anterior. Tente de novo em alguns minutos.'
+                  : lastRun.error_code === 'auth'
+                    ? 'A última sincronização falhou por autenticação. Reconecte em Configurações → Meta Ads.'
+                    : `Última sincronização falhou${lastRun.error_text ? `: ${lastRun.error_text}` : '.'}`}
+              </span>
+            )}
+            {lastRun?.ok === false && lastRun.finished_at == null && (
+              <span style={{ fontSize: 11.5, color: C.textDim }}>Interrompida antes de terminar.</span>
+            )}
+          </div>
 
           {diagnosis.text && (
             <div style={s.banner}>
@@ -355,6 +408,22 @@ export function MetaAdsDashboard() {
           )}
 
           {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+          {drill && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }} data-testid="drill-crumb">
+              <span style={{ fontSize: 12.5, color: C.textSub }}>
+                Mostrando apenas <strong style={{ color: C.text }}>{drill.name}</strong>
+              </span>
+              <button
+                onClick={() => { setDrill(null); setLevel('campaign') }}
+                data-testid="drill-clear"
+                style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface,
+                  color: C.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Ver todas as campanhas
+              </button>
+            </div>
+          )}
 
           <div style={s.kpis}>
             <Kpi label="Gasto" value={fmtBRL(totals.spend)} cmp={compareMetric('spend', totals.spend, prevTotals.spend)} />
@@ -415,7 +484,12 @@ export function MetaAdsDashboard() {
                     </td></tr>
                   ) : (
                     rows.map(r => (
-                      <tr key={r.ref_id}>
+                      <tr
+                        key={r.ref_id}
+                        onClick={level === 'campaign' ? () => { setDrill({ campaign_id: r.ref_id, name: r.name }); setLevel('adset') } : undefined}
+                        title={level === 'campaign' ? 'Ver os conjuntos desta campanha' : undefined}
+                        style={level === 'campaign' ? { cursor: 'pointer' } : undefined}
+                      >
                         <td style={{ ...s.td, textAlign: 'left', color: C.text, fontWeight: 600 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
                             {/* A URL da miniatura expira no Meta: imagem quebrada some em vez de

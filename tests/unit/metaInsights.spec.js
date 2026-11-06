@@ -128,3 +128,14 @@ test('insight sem actions guarda null, não array vazio nem zero', () => {
   expect(row.cost_per_action).toBeNull()
   expect(row.leads).toBe(0)
 })
+
+test('erro de limite de taxa da Meta é distinguido de conexão quebrada', async () => {
+  // A ação do usuário muda: limite de taxa é esperar; token inválido é reconectar.
+  const { classifyMetaError } = await import('../../api/_lib/metaInsights.js')
+  expect(classifyMetaError({ code: 17 })).toBe('rate_limit')
+  expect(classifyMetaError({ code: 80004 })).toBe('rate_limit')
+  expect(classifyMetaError({ code: 190 })).toBe('auth')
+  expect(classifyMetaError({ statusCode: 401 })).toBe('auth')
+  expect(classifyMetaError({ code: 100 })).toBe('error')
+  expect(classifyMetaError(null)).toBe('error')
+})
