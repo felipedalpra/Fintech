@@ -163,6 +163,35 @@ const REACH_FIELDS = {
 
 // Código de erro da Meta que indica limite de taxa — a tela precisa distinguir "a Meta recusou
 // agora" de "a conexão quebrou", porque a ação do usuário é diferente em cada caso.
+/** Texto útil de um campo que a Meta às vezes devolve em branco. */
+function txt(v) {
+  const t = typeof v === 'string' ? v.trim() : ''
+  return t === '' ? null : t
+}
+
+/**
+ * Normaliza o criativo de um anúncio. A Meta coloca o MESMO texto em lugares diferentes
+ * conforme o formato (link, vídeo, criativo dinâmico), então ler só `creative.body` deixa
+ * a maioria dos anúncios sem texto na tela. Ausente vira null — nunca string vazia, que a
+ * interface exibiria como se o anunciante tivesse escrito nada.
+ */
+export function extractCreative(ad) {
+  const cr = ad?.creative
+  if (!cr) return { creative_id: null, thumbnail_url: null, image_url: null, body_text: null, title_text: null, object_story_id: null }
+  const spec = cr.object_story_spec || {}
+  const link = spec.link_data || {}
+  const video = spec.video_data || {}
+  const feed = cr.asset_feed_spec || {}
+  return {
+    creative_id: cr.id || null,
+    thumbnail_url: txt(cr.thumbnail_url),
+    image_url: txt(cr.image_url) || txt(link.picture) || txt(video.image_url),
+    body_text: txt(link.message) || txt(video.message) || txt(cr.body) || txt(feed.bodies?.[0]?.text),
+    title_text: txt(link.name) || txt(video.title) || txt(cr.title) || txt(feed.titles?.[0]?.text),
+    object_story_id: txt(cr.effective_object_story_id) || txt(cr.object_story_id),
+  }
+}
+
 export const META_RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80000, 80004])
 
 export function classifyMetaError(error) {
@@ -217,15 +246,24 @@ async function syncOwner(supabase, conn, { version, since, until, reachPeriods }
     if (error) throw error
     counts.adsets = rows.length
   }
-  // `creative{thumbnail_url}` está coberto por ads_read; vem junto da estrutura, sem requisição extra.
-  const ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: 'id,name,status,adset_id,campaign_id,creative{id,thumbnail_url}' })
+  // O criativo vem junto da estrutura, coberto por ads_read — nenhuma requisição a mais por
+  // anúncio. Se a versão da API em uso recusar algum campo do criativo, a chamada inteira
+  // falharia e derrubaria a sincronização de ads; por isso há um recuo para o conjunto mínimo,
+  // que é exatamente o que já funcionava antes da biblioteca de criativos.
+  const ADS_BASE = 'id,name,status,adset_id,campaign_id'
+  const CREATIVE_RICO = 'creative{id,thumbnail_url,image_url,body,title,object_story_spec,asset_feed_spec,effective_object_story_id}'
+  let ads
+  try {
+    ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: `${ADS_BASE},${CREATIVE_RICO}` })
+  } catch (e) {
+    ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: `${ADS_BASE},creative{id,thumbnail_url}` })
+  }
   if (ads.length) {
     const rows = ads.map(a => ({
       user_id, ad_id: a.id, adset_id: a.adset_id, campaign_id: a.campaign_id,
       name: a.name, status: a.status, updated_at: now,
-      creative_id: a.creative?.id || null,
       // A Meta expira a URL da miniatura; guardamos mesmo assim e a tela trata imagem quebrada.
-      thumbnail_url: a.creative?.thumbnail_url || null,
+      ...extractCreative(a),
     }))
     const { error } = await supabase.from('meta_ads').upsert(rows, { onConflict: 'user_id,ad_id' })
     if (error) throw error
