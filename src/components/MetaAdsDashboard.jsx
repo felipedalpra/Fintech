@@ -10,6 +10,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 import { aggregateInsights, deriveMetrics, fmtBRL, fmtInt, fmtPct } from '../lib/metaMetrics.js'
 import { requestMetaAnalysis } from '../lib/aiClient.js'
 import { syncMetaRange } from '../lib/metaOAuthClient.js'
+import MetaCreatives from './MetaCreatives.jsx'
 
 // Tela CRM → Anúncios (Meta Ads). Espelho fiel do Meta: só exibe o que vem de lá, não cruza
 // com o financeiro. Drill por nível (Campanhas / Conjuntos / Anúncios), métricas nativas.
@@ -319,11 +320,27 @@ export function MetaAdsDashboard() {
   return (
     <div style={s.wrap}>
       <div style={s.subtabs}>
-        <div style={s.subtab(subtab === 'desempenho')} onClick={() => setSubtab('desempenho')}>📊 Desempenho</div>
-        <div style={s.subtab(subtab === 'analises')} onClick={() => setSubtab('analises')}>💡 Análises</div>
+        <div style={s.subtab(subtab === 'desempenho')} data-testid="subtab-desempenho" onClick={() => setSubtab('desempenho')}>📊 Desempenho</div>
+        <div style={s.subtab(subtab === 'criativos')} data-testid="subtab-criativos" onClick={() => setSubtab('criativos')}>🖼️ Criativos</div>
+        <div style={s.subtab(subtab === 'analises')} data-testid="subtab-analises" onClick={() => setSubtab('analises')}>💡 Análises</div>
       </div>
 
-      {subtab === 'analises' ? (
+      {subtab === 'criativos' ? (
+        <>
+          <div style={s.pills}>
+            {PERIODS.filter(p => p.key !== 'custom' || period === 'custom').map(p => (
+              <span key={p.key} style={s.pill(period === p.key)} onClick={() => setPeriod(p.key)}>{p.label}</span>
+            ))}
+          </div>
+          <div style={{ height: 14 }} />
+          <MetaCreatives
+            uid={uid}
+            since={rangeFor(period, customRange).since}
+            until={rangeFor(period, customRange).until}
+            periodLabel={PERIODS.find(p => p.key === period)?.label ?? period}
+          />
+        </>
+      ) : subtab === 'analises' ? (
         <AnalysisView uid={uid} period={period} setPeriod={setPeriod} customRange={customRange} findings={findings} />
       ) : (
         <>
