@@ -8,8 +8,9 @@ const STEPS = [
   { id:'s2', track_id:TRACK_ID, offset_days:1, title:'Como passou a noite', task_type:'whatsapp', assigned_user_id:null, active:true, sort_order:3 },
 ]
 
-async function mock(page, { onInsert } = {}) {
+async function mock(page, { onInsert, role } = {}) {
   await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
+  if (role) await page.addInitScript(r => localStorage.setItem('surgimetrics_e2e_role', r), role)
   await page.route('**/api/**', route => route.fulfill({ status:200, contentType:'application/json', body:'{}' }))
   await page.route('**/rest/v1/**', async route => {
     const request = route.request()
@@ -81,4 +82,13 @@ test('não sobrou cópia da tela em Configurações', async ({ page }) => {
   await mock(page)
   await page.goto('/app/settings')
   await expect(page.getByRole('button', { name:'Esteiras de acompanhamento', exact:true })).toHaveCount(0)
+})
+
+test('a equipe inteira alcança as Esteiras, não só o administrador', async ({ page }) => {
+  // Decisão do Felipe: quem executa o acompanhamento é a secretária e o concierge.
+  for (const role of ['gestao', 'concierge', 'equipe']) {
+    await mock(page, { role })
+    await page.goto('/app/esteiras')
+    await expect(page.getByTestId('care-tracks'), `perfil ${role} deveria ver as esteiras`).toBeVisible()
+  }
 })
