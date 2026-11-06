@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://surgimetrics.com.br/sitemap.xml
+Sitemap: https://www.surgimetrics.com.br/sitemap.xml
