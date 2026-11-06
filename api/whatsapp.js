@@ -1177,7 +1177,7 @@ async function handleMetaSyncRange(req, res) {
   // skipReach: período personalizado nunca grava Alcance/Frequência (a tela já mostra "—"
   // pra esses campos nesse modo) — evita sobrescrever o cache de month/30d/quarter com
   // números calculados a partir de um `until` que pode ser bem antigo.
-  const summary = await syncMetaInsights(auth.supabase, { owner: auth.ownerId, since, until, skipReach: true })
+  const summary = await syncMetaInsights(auth.supabase, { owner: auth.ownerId, since, until, skipReach: true, trigger: 'manual' })
   if (!summary.ok) return res.status(500).json({ error: summary.reason || 'Falha ao sincronizar.' })
   if (summary.failures > 0) {
     const detail = summary.details.find(d => d.error)?.error

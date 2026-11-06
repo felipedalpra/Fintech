@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
+import { conversionBreakdown, engagementFromActions, sumActions } from '../lib/metaActions.js'
+import { buildFindings, compareMetric, previousPeriod } from '../lib/metaComparison.js'
+import { dailySeries } from '../lib/metaSeries.js'
+import { CampaignComparison, DailyBars, SERIES_COLORS } from './MetaAdsCharts.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { aggregateInsights, deriveMetrics, fmtBRL, fmtInt, fmtPct } from '../lib/metaMetrics.js'
@@ -64,6 +68,12 @@ export function MetaAdsDashboard() {
   const uid = ownerId || user?.id
 
   const [subtab, setSubtab] = useState('desempenho')
+  const [query, setQuery] = useState('')
+  const [prevInsights, setPrevInsights] = useState([])
+  const [thumbs, setThumbs] = useState({})
+  const [drill, setDrill] = useState(null)  // { campaign_id, name } — filtra níveis abaixo
+  const [lastRun, setLastRun] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [level, setLevel] = useState('campaign')
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState(() => {
@@ -95,6 +105,20 @@ export function MetaAdsDashboard() {
     }
   }
 
+  // Atualização manual: busca no Meta o período que está na tela e recarrega.
+  async function refreshNow() {
+    setRefreshing(true)
+    try {
+      const { since, until } = rangeFor(period, customRange)
+      await syncMetaRange({ since, until })
+    } catch (e) {
+      setRangeSyncError(e.message || 'Não foi possível atualizar agora.')
+    } finally {
+      setRefreshing(false)
+      setReloadKey(k => k + 1)
+    }
+  }
+
   useEffect(() => {
     if (!uid) return
     let mounted = true
@@ -104,7 +128,7 @@ export function MetaAdsDashboard() {
       const lvl = LEVELS.find(l => l.key === level)
       const [insRes, strRes, reachRes, connRes, campaignsRes] = await Promise.all([
         supabase.from('meta_insights')
-          .select('level, ref_id, campaign_id, date, spend, impressions, clicks, leads, updated_at')
+          .select('level, ref_id, campaign_id, date, spend, impressions, clicks, leads, actions, updated_at')
           .eq('user_id', uid).eq('level', level).gte('date', since).lte('date', until),
         supabase.from(lvl.table).select(`${lvl.idCol}, name, status`).eq('user_id', uid),
         supabase.from('meta_reach').select('level, ref_id, reach, frequency')
@@ -118,6 +142,26 @@ export function MetaAdsDashboard() {
       if (!mounted) return
       if (insRes.error) { setError(insRes.error.message); setLoading(false); return }
       setInsights(insRes.data ?? [])
+
+      // Período anterior: vem do MESMO cache, sem requisição nova à Meta. Sem ele não há
+      // comparação possível, e inventar uma base seria pior que não comparar.
+      const anterior = previousPeriod(since, until)
+      if (anterior) {
+        const prevRes = await supabase.from('meta_insights')
+          .select('ref_id, spend, impressions, clicks, leads')
+          .eq('user_id', uid).eq('level', level).gte('date', anterior.start).lte('date', anterior.end)
+        if (mounted) setPrevInsights(prevRes.error ? [] : (prevRes.data ?? []))
+      } else if (mounted) setPrevInsights([])
+
+      const runRes = await supabase.from('meta_sync_runs')
+        .select('started_at, finished_at, ok, counts, error_code, error_text, trigger')
+        .eq('user_id', uid).order('started_at', { ascending: false }).limit(1).maybeSingle()
+      if (mounted) setLastRun(runRes.error ? null : runRes.data)
+
+      if (level === 'ad') {
+        const thumbRes = await supabase.from('meta_ads').select('ad_id, thumbnail_url').eq('user_id', uid)
+        if (mounted) setThumbs(Object.fromEntries((thumbRes.data ?? []).map(r => [r.ad_id, r.thumbnail_url])))
+      } else if (mounted) setThumbs({})
       setReachRows(reachRes.data ?? [])
       setConn(connRes.data ?? null)
       setHasAnyCampaign((campaignsRes.count ?? 0) > 0)
@@ -172,15 +216,19 @@ export function MetaAdsDashboard() {
         name: meta.name || a.ref_id, status: meta.status,
       }
     })
+    // Drill: ao abrir uma campanha, os níveis abaixo mostram só o que pertence a ela.
+    const doDrill = drill ? agg.filter(row => row.campaign_id === drill.campaign_id) : agg
+    const busca = query.trim().toLowerCase()
+    const filtrado = busca ? doDrill.filter(row => String(row.name || '').toLowerCase().includes(busca)) : doDrill
     const dir = sort.dir === 'asc' ? 1 : -1
     const isText = sort.key === 'name' || sort.key === 'status'
     // null (ex.: CPL sem leads) vai pro fim, nunca é tratado como "melhor".
     const nval = v => (v == null ? Infinity : Number(v) || 0)
-    agg.sort((x, y) => isText
+    filtrado.sort((x, y) => isText
       ? String(x[sort.key] ?? '').localeCompare(String(y[sort.key] ?? ''), 'pt-BR') * dir
       : (nval(x[sort.key]) - nval(y[sort.key])) * dir)
-    return agg
-  }, [insights, names, reachMap, sort])
+    return filtrado
+  }, [insights, names, reachMap, sort, query, drill])
 
   const totals = useMemo(() => {
     const t = rows.reduce((a, r) => ({
@@ -190,6 +238,33 @@ export function MetaAdsDashboard() {
     const d = deriveMetrics(t)
     return { ...t, ...d, cpl: t.leads > 0 ? d.cpl : null }
   }, [rows])
+
+  // Tudo abaixo sai do `actions` que já vinha da Meta e era descartado — nenhuma chamada nova.
+  const actionsMap = useMemo(() => sumActions(insights), [insights])
+  const engagement = useMemo(() => engagementFromActions(actionsMap), [actionsMap])
+  const conversions = useMemo(() => conversionBreakdown(actionsMap), [actionsMap])
+
+  const prevTotals = useMemo(() => {
+    const t = (prevInsights || []).reduce((a, r) => ({
+      spend: a.spend + Number(r.spend || 0), impressions: a.impressions + Number(r.impressions || 0),
+      clicks: a.clicks + Number(r.clicks || 0), leads: a.leads + Number(r.leads || 0),
+    }), { spend: 0, impressions: 0, clicks: 0, leads: 0 })
+    const d = deriveMetrics(t)
+    return { ...t, ...d, cpl: t.leads > 0 ? d.cpl : null }
+  }, [prevInsights])
+
+  const series = useMemo(() => {
+    const { since, until } = rangeFor(period, customRange)
+    return dailySeries(insights, since, until)
+  }, [insights, period, customRange])
+
+  const findings = useMemo(() => {
+    const prevAgg = aggregateInsights(prevInsights).map(a => {
+      const d = deriveMetrics(a)
+      return { ...a, ...d, cpl: a.leads > 0 ? d.cpl : null }
+    })
+    return buildFindings({ current: rows, previous: prevAgg })
+  }, [rows, prevInsights])
 
   const bestCplId = useMemo(() => {
     const withLeads = rows.filter(r => r.leads > 0)
@@ -249,13 +324,13 @@ export function MetaAdsDashboard() {
       </div>
 
       {subtab === 'analises' ? (
-        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} customRange={customRange} />
+        <AnalysisView uid={uid} period={period} setPeriod={setPeriod} customRange={customRange} findings={findings} />
       ) : (
         <>
           <div style={s.bar}>
             <div style={s.seg}>
               {LEVELS.map(l => (
-                <button key={l.key} style={s.segBtn(level === l.key)} onClick={() => setLevel(l.key)}>{l.label}</button>
+                <button key={l.key} style={s.segBtn(level === l.key)} onClick={() => { setLevel(l.key); setDrill(null) }}>{l.label}</button>
               ))}
             </div>
             <div style={s.pills}>
@@ -263,6 +338,15 @@ export function MetaAdsDashboard() {
                 <span key={p.key} style={s.pill(period === p.key)} onClick={() => setPeriod(p.key)}>{p.label}</span>
               ))}
             </div>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder={`Buscar ${LEVELS.find(l => l.key === level)?.label.toLowerCase()}…`}
+              aria-label="Buscar pelo nome"
+              data-testid="ads-search"
+              style={{ flex: '1 1 180px', minWidth: 150, background: C.surface, border: `1px solid ${C.border}`,
+                borderRadius: 10, padding: '8px 12px', color: C.text, fontFamily: 'inherit', fontSize: 13, outline: 'none' }}
+            />
           </div>
 
           {period === 'custom' && (
@@ -283,9 +367,38 @@ export function MetaAdsDashboard() {
             </div>
           )}
 
-          {syncedAt && (
-            <div style={{ ...s.fresh, marginBottom: 14 }}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }} data-testid="sync-status">
+            {syncedAt && (lastRun?.ok === false
+              // Com a última tentativa falhada, "Sincronizado" seria falso: o número na tela
+              // é o da sincronização ANTERIOR, e é isso que a linha tem que dizer.
+              ? <span style={{ ...s.fresh, color: C.yellow || '#F59E0B' }}>
+                  <span style={{ ...s.dot, background: C.yellow || '#F59E0B' }} /> Dados de {freshness(syncedAt)}
+                </span>
+              : <span style={s.fresh}><span style={s.dot} /> Sincronizado com o Meta · {freshness(syncedAt)}</span>)}
+            <button
+              onClick={refreshNow}
+              disabled={refreshing}
+              data-testid="refresh-now"
+              style={{ padding: '6px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface,
+                color: refreshing ? C.textDim : C.text, fontSize: 12, fontWeight: 700, cursor: refreshing ? 'default' : 'pointer', fontFamily: 'inherit' }}
+            >
+              {refreshing ? 'Atualizando…' : 'Atualizar agora'}
+            </button>
+            {/* A última tentativa, mesmo quando falhou: dado velho sem explicação é pior que
+                dado velho com o motivo ao lado. */}
+            {lastRun?.ok === false && (
+              <span style={{ fontSize: 11.5, color: C.yellow || '#F59E0B' }}>
+                {lastRun.error_code === 'rate_limit'
+                  ? 'A Meta limitou as consultas na última tentativa — os números são da sincronização anterior. Tente de novo em alguns minutos.'
+                  : lastRun.error_code === 'auth'
+                    ? 'A última sincronização falhou por autenticação. Reconecte em Configurações → Meta Ads.'
+                    : `Última sincronização falhou${lastRun.error_text ? `: ${lastRun.error_text}` : '.'}`}
+              </span>
+            )}
+            {lastRun?.ok === false && lastRun.finished_at == null && (
+              <span style={{ fontSize: 11.5, color: C.textDim }}>Interrompida antes de terminar.</span>
+            )}
+          </div>
 
           {diagnosis.text && (
             <div style={s.banner}>
@@ -296,14 +409,59 @@ export function MetaAdsDashboard() {
 
           {error && <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{error}</div>}
 
+          {drill && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }} data-testid="drill-crumb">
+              <span style={{ fontSize: 12.5, color: C.textSub }}>
+                Mostrando apenas <strong style={{ color: C.text }}>{drill.name}</strong>
+              </span>
+              <button
+                onClick={() => { setDrill(null); setLevel('campaign') }}
+                data-testid="drill-clear"
+                style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface,
+                  color: C.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Ver todas as campanhas
+              </button>
+            </div>
+          )}
+
           <div style={s.kpis}>
-            <div style={s.kpi(false)}><div style={s.kLabel}>Gasto</div><div style={s.kVal(false)}>{fmtBRL(totals.spend)}</div></div>
-            <div style={s.kpi(false)}><div style={s.kLabel}>Alcance</div><div style={s.kVal(false)}>{fmtReach(accountReach?.reach)}</div><div style={{ fontSize: 11, color: C.textSub, marginTop: 3 }}>{accountReach ? `freq. ${fmtFreq(accountReach.frequency)}` : 'pessoas únicas'}</div></div>
-            <div style={s.kpi(false)}><div style={s.kLabel}>Impressões</div><div style={s.kVal(false)}>{fmtInt(totals.impressions)}</div></div>
-            <div style={s.kpi(false)}><div style={s.kLabel}>Cliques</div><div style={s.kVal(false)}>{fmtInt(totals.clicks)}</div></div>
-            <div style={s.kpi(false)}><div style={s.kLabel}>CTR</div><div style={s.kVal(false)}>{fmtPct(totals.ctr)}</div></div>
-            <div style={s.kpi(false)}><div style={s.kLabel}>Leads</div><div style={s.kVal(false)}>{fmtInt(totals.leads)}</div></div>
-            <div style={s.kpi(true)}><div style={s.kLabel}>CPL médio</div><div style={s.kVal(true)}>{fmtBRL(totals.cpl)}</div></div>
+            <Kpi label="Gasto" value={fmtBRL(totals.spend)} cmp={compareMetric('spend', totals.spend, prevTotals.spend)} />
+            <Kpi label="Alcance" value={fmtReach(accountReach?.reach)} hint={accountReach ? `freq. ${fmtFreq(accountReach.frequency)}` : 'pessoas únicas'} />
+            <Kpi label="Impressões" value={fmtInt(totals.impressions)} cmp={compareMetric('impressions', totals.impressions, prevTotals.impressions)} />
+            <Kpi label="Cliques" value={fmtInt(totals.clicks)} cmp={compareMetric('clicks', totals.clicks, prevTotals.clicks)} />
+            <Kpi label="CTR" value={fmtPct(totals.ctr)} cmp={compareMetric('ctr', totals.ctr, prevTotals.ctr)} />
+            <Kpi label="CPC" value={fmtBRL(totals.cpc)} cmp={compareMetric('cpc', totals.cpc, prevTotals.cpc)} />
+            <Kpi label="CPM" value={fmtBRL(totals.cpm)} cmp={compareMetric('cpm', totals.cpm, prevTotals.cpm)} />
+            {/* Engajamento ausente mostra "—": a Meta não informou, e isso não é zero. */}
+            <Kpi label="Engajamento" value={engagement == null ? '—' : fmtInt(engagement)} hint="interações com o anúncio" />
+            <Kpi label="Leads" value={fmtInt(totals.leads)} cmp={compareMetric('leads', totals.leads, prevTotals.leads)} />
+            {/* "Custo por resultado" e "CPL" são o MESMO cálculo quando o resultado é lead:
+                gasto ÷ leads. Dois cartões com o mesmo número davam a impressão de duas
+                métricas distintas. Fica um só, dizendo o que ele é. */}
+            <Kpi label="Custo por resultado" value={fmtBRL(totals.cpl)} cmp={compareMetric('cpl', totals.cpl, prevTotals.cpl)} hint="por lead · gasto ÷ leads" hero />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginBottom: 18 }}>
+            <DailyBars points={series} metric="spend" label="Investimento por dia" color={SERIES_COLORS.spend} fmt={fmtBRL} testId="chart-spend" />
+            <DailyBars points={series} metric="leads" label="Leads por dia" color={SERIES_COLORS.leads} fmt={fmtInt} testId="chart-leads" />
+            <DailyBars points={series} metric="clicks" label="Cliques por dia" color={SERIES_COLORS.clicks} fmt={fmtInt} testId="chart-clicks" />
+            <DailyBars points={series} metric="cpl" label="CPL por dia" color={SERIES_COLORS.cpl} fmt={fmtBRL} testId="chart-cpl" />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 18 }}>
+            <CampaignComparison rows={rows} metric="spend" label={`Investimento por ${LEVELS.find(l => l.key === level)?.label.toLowerCase()}`} fmt={fmtBRL} testId="chart-comparison" />
+            <div style={{ padding: 14, borderRadius: 14, border: `1px solid ${C.border}`, background: C.card }} data-testid="conversions-breakdown">
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: C.text, marginBottom: 12 }}>Conversões por tipo</div>
+              {conversions.length === 0
+                ? <div style={{ color: C.textDim, fontSize: 12, padding: '20px 0', textAlign: 'center' }}>A Meta não informou conversões neste período.</div>
+                : conversions.slice(0, 8).map(item => (
+                  <div key={item.type} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderBottom: `1px solid ${C.border}33` }}>
+                    <span style={{ fontSize: 12, color: C.textSub }}>{item.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{fmtInt(item.value)}</span>
+                  </div>
+                ))}
+            </div>
           </div>
 
           <div style={s.panel}>
@@ -326,10 +484,33 @@ export function MetaAdsDashboard() {
                     </td></tr>
                   ) : (
                     rows.map(r => (
-                      <tr key={r.ref_id}>
+                      <tr
+                        key={r.ref_id}
+                        onClick={level === 'campaign' ? () => { setDrill({ campaign_id: r.ref_id, name: r.name }); setLevel('adset') } : undefined}
+                        title={level === 'campaign' ? 'Ver os conjuntos desta campanha' : undefined}
+                        style={level === 'campaign' ? { cursor: 'pointer' } : undefined}
+                      >
                         <td style={{ ...s.td, textAlign: 'left', color: C.text, fontWeight: 600 }}>
-                          {r.name}
-                          {r.ref_id === bestCplId && <span style={{ marginLeft: 8, fontSize: 9.5, fontWeight: 700, color: C.green, background: 'rgba(16,185,129,.14)', padding: '2px 6px', borderRadius: 5 }}>★ melhor CPL</span>}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
+                            {/* A URL da miniatura expira no Meta: imagem quebrada some em vez de
+                                deixar um ícone de erro no meio da tabela. */}
+                            {level === 'ad' && thumbs[r.ref_id] && (
+                              <img src={thumbs[r.ref_id]} alt="" loading="lazy" onError={e => { e.currentTarget.style.display = 'none' }}
+                                style={{ width: 34, height: 34, borderRadius: 7, objectFit: 'cover', border: `1px solid ${C.border}`, flexShrink: 0 }} />
+                            )}
+                            <span>
+                              {r.name}
+                              {r.status && (
+                                <span style={{ marginLeft: 8, fontSize: 9.5, fontWeight: 700, textTransform: 'lowercase',
+                                  color: r.status === 'ACTIVE' ? (C.green || '#10B981') : C.textDim,
+                                  background: r.status === 'ACTIVE' ? 'rgba(16,185,129,.14)' : `${C.border}55`,
+                                  padding: '2px 6px', borderRadius: 5 }}>
+                                  {r.status === 'ACTIVE' ? 'ativo' : r.status === 'PAUSED' ? 'pausado' : String(r.status).toLowerCase()}
+                                </span>
+                              )}
+                              {r.ref_id === bestCplId && <span style={{ marginLeft: 8, fontSize: 9.5, fontWeight: 700, color: C.green, background: 'rgba(16,185,129,.14)', padding: '2px 6px', borderRadius: 5 }}>★ melhor CPL</span>}
+                            </span>
+                          </span>
                         </td>
                         {COLS.map(c => <td key={c.key} style={s.td}>{c.fmt(r[c.key])}</td>)}
                       </tr>
@@ -353,7 +534,7 @@ export function MetaAdsDashboard() {
 }
 
 // Aba Análises: leitura por IA das campanhas. Lê o cache (meta_analyses) ao abrir e regenera sob demanda.
-function AnalysisView({ uid, period, setPeriod, customRange }) {
+function AnalysisView({ uid, period, setPeriod, customRange, findings = [] }) {
   // Dentro do componente (lê C no render) — nunca no nível de módulo, senão não acompanha o tema.
   const TIPO = {
     escalar:  { icon: '↑', color: C.green,       bg: 'rgba(16,185,129,.14)' },
@@ -436,6 +617,31 @@ function AnalysisView({ uid, period, setPeriod, customRange }) {
         </div>
       </div>
 
+      {/* Leituras por regra, calculadas sobre os números do período — sem IA e sem espera.
+          Cada uma traz o valor que a sustenta, para ser conferível na tabela ao lado. */}
+      {findings.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10, marginBottom: 16 }} data-testid="rule-findings">
+          {findings.slice(0, 6).map((f, index) => {
+            const cor = f.tone === 'bad' ? (C.red || '#EF4444') : (C.green || '#10B981')
+            return (
+              <div key={`${f.kind}-${f.ref_id}-${index}`} style={{ padding: 12, borderRadius: 12, border: `1px solid ${cor}44`, background: `${cor}10` }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: cor, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {f.tone === 'bad' ? 'Atenção' : 'Destaque'}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginTop: 5, overflowWrap: 'anywhere' }}>{f.name}</div>
+                <div style={{ fontSize: 12, color: C.textSub, marginTop: 3, lineHeight: 1.5 }}>
+                  {f.text}
+                  {f.metric === 'cpl' && f.value != null && ` · ${fmtBRL(f.value)}`}
+                  {f.metric === 'ctr' && ` · ${fmtPct(f.value)}`}
+                  {f.metric === 'spend' && ` · ${fmtBRL(f.value)}`}
+                  {f.pct != null && ` (+${f.pct.toFixed(0)}%)`}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {period === 'custom' && (
         <div style={st.customNote}>Analisando {customRange.since} até {customRange.until} — ajuste as datas na aba Desempenho.</div>
       )}
@@ -467,6 +673,36 @@ function AnalysisView({ uid, period, setPeriod, customRange }) {
         <span>Leitura automática por IA a partir dos números do Meta do período — é uma sugestão de
         gestão de tráfego, não um dado oficial. Clique em <b>Reanalisar</b> para atualizar.</span>
       </div>
+    </div>
+  )
+}
+
+// Indicador com variação em relação ao período anterior.
+// A cor segue se a mudança foi BOA, não se o número subiu: em custo, cair é bom. Sem base
+// anterior não há seta nenhuma — "+100%" saindo de zero seria comparação inventada.
+function Kpi({ label, value, hint, cmp, hero = false }) {
+  const s = {
+    box: {
+      background: hero ? 'linear-gradient(160deg,rgba(59,130,246,.14),rgba(139,92,246,.07))' : C.card,
+      border: `1px solid ${hero ? 'rgba(59,130,246,.35)' : C.border}`,
+      borderRadius: 13, padding: '12px 14px',
+    },
+    label: { fontSize: 10.5, fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: C.textDim },
+    value: { fontSize: hero ? 21 : 18, fontWeight: 800, color: C.text, marginTop: 5, fontVariantNumeric: 'tabular-nums' },
+    hint: { fontSize: 11, color: C.textSub, marginTop: 3 },
+  }
+  const temVariacao = cmp && cmp.pct != null && cmp.direction !== 'flat'
+  const cor = cmp?.good === true ? (C.green || '#10B981') : cmp?.good === false ? (C.red || '#EF4444') : C.textSub
+  return (
+    <div style={s.box}>
+      <div style={s.label}>{label}</div>
+      <div style={s.value}>{value}</div>
+      {temVariacao && (
+        <div style={{ ...s.hint, color: cor, fontWeight: 700 }}>
+          {cmp.direction === 'up' ? '▲' : '▼'} {Math.abs(cmp.pct).toFixed(1).replace('.', ',')}% vs. período anterior
+        </div>
+      )}
+      {!temVariacao && hint && <div style={s.hint}>{hint}</div>}
     </div>
   )
 }

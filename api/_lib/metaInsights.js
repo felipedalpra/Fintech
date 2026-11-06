@@ -80,6 +80,10 @@ export function parseInsightsResponse(body, level) {
       reach: num(r.reach),
       clicks: num(r.clicks),
       leads: pickLeads(r.actions),
+      // O array inteiro, como veio. Antes só o lead era extraído e o resto — engajamento,
+      // conversões por tipo, custo por resultado — ia fora, exigindo nova chamada para recuperar.
+      actions: Array.isArray(r.actions) ? r.actions : null,
+      cost_per_action: Array.isArray(r.cost_per_action_type) ? r.cost_per_action_type : null,
     })
   }
   return rows
@@ -144,9 +148,9 @@ async function graphGetAll(version, token, path, params = {}, maxPages = 25) {
 
 // Campos de insights por nível.
 const INSIGHT_FIELDS = {
-  campaign: 'campaign_id,spend,impressions,reach,clicks,actions',
-  adset: 'adset_id,campaign_id,spend,impressions,reach,clicks,actions',
-  ad: 'ad_id,adset_id,campaign_id,spend,impressions,reach,clicks,actions',
+  campaign: 'campaign_id,spend,impressions,reach,clicks,actions,cost_per_action_type',
+  adset: 'adset_id,campaign_id,spend,impressions,reach,clicks,actions,cost_per_action_type',
+  ad: 'ad_id,adset_id,campaign_id,spend,impressions,reach,clicks,actions,cost_per_action_type',
 }
 
 // Campos de alcance/frequência por nível (consulta por intervalo, sem time_increment).
@@ -155,6 +159,40 @@ const REACH_FIELDS = {
   campaign: 'campaign_id,reach,frequency',
   adset: 'adset_id,reach,frequency',
   ad: 'ad_id,reach,frequency',
+}
+
+// Código de erro da Meta que indica limite de taxa — a tela precisa distinguir "a Meta recusou
+// agora" de "a conexão quebrou", porque a ação do usuário é diferente em cada caso.
+export const META_RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80000, 80004])
+
+export function classifyMetaError(error) {
+  const code = error?.code ?? null
+  if (code != null && META_RATE_LIMIT_CODES.has(Number(code))) return 'rate_limit'
+  if (error?.statusCode === 401 || Number(code) === 190) return 'auth'
+  return 'error'
+}
+
+// O registro nunca pode derrubar o sync: uma falha ao gravar histórico não vale perder a coleta.
+async function startSyncRun(supabase, userId, trigger) {
+  try {
+    const { data } = await supabase.from('meta_sync_runs')
+      .insert({ user_id: userId, trigger }).select('id').single()
+    return data?.id || null
+  } catch { return null }
+}
+
+async function finishSyncRun(supabase, runId, { ok, counts, error }) {
+  if (!runId) return
+  try {
+    await supabase.from('meta_sync_runs').update({
+      finished_at: new Date().toISOString(),
+      ok: Boolean(ok),
+      counts: counts || {},
+      error_code: ok ? null : classifyMetaError(error),
+      // Mensagem crua da Meta, truncada: é o que explica a falha para quem for investigar.
+      error_text: ok ? null : String(error?.message || '').slice(0, 500),
+    }).eq('id', runId)
+  } catch { /* histórico é secundário */ }
 }
 
 // Sincroniza estrutura + insights + alcance de UMA clínica para o cache. Retorna contagem por tabela.
@@ -179,9 +217,16 @@ async function syncOwner(supabase, conn, { version, since, until, reachPeriods }
     if (error) throw error
     counts.adsets = rows.length
   }
-  const ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: 'id,name,status,adset_id,campaign_id' })
+  // `creative{thumbnail_url}` está coberto por ads_read; vem junto da estrutura, sem requisição extra.
+  const ads = await graphGetAll(version, access_token, `${acct}/ads`, { fields: 'id,name,status,adset_id,campaign_id,creative{id,thumbnail_url}' })
   if (ads.length) {
-    const rows = ads.map(a => ({ user_id, ad_id: a.id, adset_id: a.adset_id, campaign_id: a.campaign_id, name: a.name, status: a.status, updated_at: now }))
+    const rows = ads.map(a => ({
+      user_id, ad_id: a.id, adset_id: a.adset_id, campaign_id: a.campaign_id,
+      name: a.name, status: a.status, updated_at: now,
+      creative_id: a.creative?.id || null,
+      // A Meta expira a URL da miniatura; guardamos mesmo assim e a tela trata imagem quebrada.
+      thumbnail_url: a.creative?.thumbnail_url || null,
+    }))
     const { error } = await supabase.from('meta_ads').upsert(rows, { onConflict: 'user_id,ad_id' })
     if (error) throw error
     counts.ads = rows.length
@@ -270,12 +315,18 @@ export async function syncMetaInsights(supabase, opts = {}) {
     .filter(conn => conn.access_token)
 
   const summary = { ok: true, owners: 0, synced: 0, failures: 0, since, until, details: [] }
+  const trigger = opts.trigger === 'manual' ? 'manual' : 'cron'
   for (const conn of conns) {
     summary.owners += 1
+    // Abre o registro ANTES de chamar o Meta: se a função morrer no meio (timeout, limite de
+    // taxa), fica a linha sem `finished_at` — que é a evidência de que rodou e não terminou.
+    // Sem isso, erro e rate limit sumiam no log do servidor e a tela não sabia explicar dado velho.
+    const run = await startSyncRun(supabase, conn.user_id, trigger)
     try {
       const counts = await syncOwner(supabase, conn, { version, since, until, reachPeriods })
       summary.synced += 1
       summary.details.push({ owner: conn.user_id, ...counts })
+      await finishSyncRun(supabase, run, { ok: true, counts })
       // Sync real bem-sucedido valida a conexão; ainda assim, nunca mostra "conectado"
       // com um token vencido ou perto de vencer (ver metaConnectionStatusAfterSync).
       const { error:statusError } = await supabase.from('meta_connections')
@@ -285,6 +336,7 @@ export async function syncMetaInsights(supabase, opts = {}) {
     } catch (e) {
       summary.failures += 1
       summary.details.push({ owner: conn.user_id, error: e?.message || 'erro no sync Meta' })
+      await finishSyncRun(supabase, run, { ok: false, error: e })
       console.error('meta insights sync error:', conn.user_id, e?.message)
       // Marca erro para o usuário ver (ex.: token expirado) em vez de falhar em silêncio.
       // PostgrestFilterBuilder só garante .then (thenable), não .catch — por isso try/await,
