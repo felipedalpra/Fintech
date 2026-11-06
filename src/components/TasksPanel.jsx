@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
+import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
 import { TASK_OUTCOMES, TASK_TYPE_LABEL, TASK_TYPES } from '../lib/taskQueue.js'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -379,7 +380,7 @@ function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, at
             data-testid={`task-whatsapp-${t.id}`}
             style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: hover ? C.surface : 'transparent', color: C.green || '#10B981', display: 'grid', placeItems: 'center', textDecoration: 'none', flexShrink: 0 }}
           >
-            <Ico d={ICON.chat || ICON.list} size={14} sw={2} />
+            <WhatsAppGlyph size={14} />
           </a>
         )}
 
