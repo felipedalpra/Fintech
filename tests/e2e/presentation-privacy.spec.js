@@ -122,3 +122,22 @@ test('o botao de ocultar valores explica por que nao funciona durante a apresent
   await expect(botao).toBeDisabled()
   await expect(botao).toHaveAttribute('title', /olho do cabe/i)
 })
+
+test('desligar o olho revela os valores mesmo com o modo financeiro ligado', async ({ page }) => {
+  // O controle do modo financeiro so existe no Dashboard: de outra tela, desligar o olho
+  // precisava ser suficiente para voltar a enxergar.
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('surgimetrics_onboarded', 'true')
+      window.localStorage.setItem('surgimetrics_presentation_privacy', '1')
+      window.localStorage.setItem('surgimetrics_financial_privacy', '1')
+    } catch { /* ignore */ }
+  })
+  await page.route('**/api/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' }))
+  await page.route('**/rest/v1/**', r => r.fulfill({ status: 200, contentType: 'application/json',
+    headers: { 'content-range': '0-0/0' }, body: '[]' }))
+  await page.goto('/app')
+  await page.getByTestId('presentation-toggle').click()
+  await expect.poll(() => page.evaluate(() => document.body.innerText.includes('R$ \u2022')),
+    { timeout: 5000 }).toBe(false)
+})

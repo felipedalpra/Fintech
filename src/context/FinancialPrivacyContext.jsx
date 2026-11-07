@@ -41,7 +41,14 @@ export function FinancialPrivacyProvider({ children }) {
     presentationMode: presentation,
     setPresentationMode: setPresentation,
     togglePresentationMode() {
-      setPresentation(current => !current)
+      setPresentation(current => {
+        // Desligar o olho tem que REVELAR, sempre. Sem isto, quem tivesse o modo
+        // financeiro ligado continuava sem ver os valores depois de desligar o olho,
+        // e o unico controle para aquele modo vive no Dashboard -- de outra tela,
+        // nao havia como voltar a enxergar.
+        if (current) setEnabled(false)
+        return !current
+      })
     },
   }), [enabled, presentation])
 
