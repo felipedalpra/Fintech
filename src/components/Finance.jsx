@@ -28,6 +28,7 @@ import { hasChangedReceiptFields, hasRecognizedReceipt, reverseReceivableInstall
 import { FiscalDocumentCell, FiscalDocumentModal, FiscalDocumentSummary } from './FiscalDocumentModal.jsx'
 import { documentsForTarget, fiscalDocumentsSearchText, fiscalTargetFromMetric, fiscalTargetFromModal, matchesFiscalFilter } from '../lib/fiscalDocuments.js'
 import { loadFiscalDocuments } from '../lib/fiscalDocumentStore.js'
+import { maskMoney } from '../lib/privacyMask.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -2496,7 +2497,7 @@ function BalanceList({ items, color, onEdit, onDelete, emptyMessage, hidden }) {
         <div style={{ color:C.textDim, fontSize:12 }}>{item.category || 'Sem categoria'}{item.notes ? ` · ${item.notes}` : ''}</div>
       </div>
       <div style={{ display:'flex', flexDirection:isMobile ? 'column' : 'row', gap:10, alignItems:isMobile ? 'flex-start' : 'center' }}>
-        <span style={{ color, fontWeight:700 }}>{hidden ? 'R$ XXXXX' : fmt(item.value)}</span>
+        <span style={{ color, fontWeight:700 }}>{hidden ? maskMoney() : fmt(item.value)}</span>
         <div style={{ display:'flex', gap:8 }}>
           <Btn variant="ghost" onClick={() => onEdit(item)} style={{ padding:'5px 12px', fontSize:12 }}>Editar</Btn>
           <Btn variant="danger" onClick={() => onDelete(item)} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn>

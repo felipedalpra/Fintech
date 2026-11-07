@@ -7,6 +7,8 @@ import { maskFinancialValue, useFinancialPrivacy } from '../context/FinancialPri
 import { CompareModal } from './CompareModal.jsx'
 import { InsuranceBreakdown } from './InsuranceBreakdown.jsx'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
+import { EyeIcon } from './EyeIcon.jsx'
+import { maskMoney } from '../lib/privacyMask.js'
 
 const PERIOD_OPTIONS = [
   { value:'day', label:'Hoje' },
@@ -160,7 +162,7 @@ export function Dashboard({ data, saveError }) {
   const windowWidth = useWindowWidth()
   const isMobile = windowWidth < 900
   const isNarrow = windowWidth < 380
-  const { financialPrivacyMode, toggleFinancialPrivacy } = useFinancialPrivacy()
+  const { financialPrivacyMode, toggleFinancialPrivacy, presentationMode } = useFinancialPrivacy()
   const [showCompareModal, setShowCompareModal] = useState(false)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
@@ -330,18 +332,28 @@ export function Dashboard({ data, saveError }) {
             {/* Privacy toggle */}
             <button
               onClick={toggleFinancialPrivacy}
-              aria-label={financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'}
+              disabled={presentationMode}
+              aria-label={presentationMode
+                ? 'Valores ocultos pelo modo apresentação; desligue no olho do cabeçalho'
+                : (financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros')}
+              /* Com o modo apresentacao ligado este botao nao consegue revelar nada, porque
+                 aquele modo e mais forte. Em vez de recusar em silencio -- clicar e nada
+                 acontecer --, ele se desabilita e diz onde esta o controle. */
+              title={presentationMode
+                ? 'O modo apresentação está ligado e esconde todos os dados. Desligue no olho do cabeçalho para voltar a ver os valores.'
+                : (financialPrivacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros')}
               style={{
                 display:'inline-flex', alignItems:'center', gap:6,
                 padding:'8px 12px', borderRadius:999,
                 border:`1px solid ${financialPrivacyMode ? C.accent + '55' : C.border}`,
                 background: financialPrivacyMode ? C.accent + '14' : 'transparent',
                 color: financialPrivacyMode ? C.accentLight : C.textSub,
-                cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700,
+                cursor:presentationMode ? 'not-allowed' : 'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700,
+                opacity:presentationMode ? 0.55 : 1,
               }}
             >
               <EyeIcon off={financialPrivacyMode} />
-              {financialPrivacyMode ? 'Mostrar' : 'Ocultar'}
+              {presentationMode ? 'Oculto na apresentação' : (financialPrivacyMode ? 'Mostrar' : 'Ocultar')}
             </button>
             {/* Sync status */}
             <span style={{
@@ -539,15 +551,6 @@ export function Dashboard({ data, saveError }) {
 }
 
 function Stack({ label, value, total, color, hidden, onClick }) {
-  return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onClick?.() }} title="Clique para ver os lançamentos" style={{ marginBottom:10, cursor:'pointer', padding:'3px 0' }}><div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}><span style={{ color:C.textSub, fontSize:12 }}>{label}</span><span style={{ color, fontSize:12, fontWeight:700 }}>{hidden ? 'R$ XXXXX' : fmt(value)}</span></div><Progress val={value} max={Math.max(total || 1, 1)} color={color} h={7} /></div>
+  return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') onClick?.() }} title="Clique para ver os lançamentos" style={{ marginBottom:10, cursor:'pointer', padding:'3px 0' }}><div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}><span style={{ color:C.textSub, fontSize:12 }}>{label}</span><span style={{ color, fontSize:12, fontWeight:700 }}>{hidden ? maskMoney() : fmt(value)}</span></div><Progress val={value} max={Math.max(total || 1, 1)} color={color} h={7} /></div>
 }
 
-function EyeIcon({ off }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M2 12C4.8 7.6 8.1 5.4 12 5.4C15.9 5.4 19.2 7.6 22 12C19.2 16.4 15.9 18.6 12 18.6C8.1 18.6 4.8 16.4 2 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-      {off ? <path d="M4 4L20 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /> : null}
-    </svg>
-  )
-}
