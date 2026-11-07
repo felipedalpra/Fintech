@@ -40,8 +40,28 @@ export function GoogleCalendarBar({ google }) {
     navigate(location.pathname, { replace:true })
   }, [location.search, location.pathname, navigate])
 
-  if (!google || !google.status.configured) return null
+  if (!google) return null
   const { status, syncError } = google
+
+  // Falhou ao consultar o estado: avisa em vez de desaparecer. Sem isto, a pessoa fica
+  // procurando um botão que a tela decidiu esconder por um erro que ninguém viu.
+  if (status.statusError) {
+    return (
+      <div className="google-calendar-control" data-testid="google-status-error">
+        <button
+          type="button"
+          className="google-calendar-button needs-reconnect"
+          onClick={() => google.refreshStatus?.()}
+          title={`${status.statusError}. Clique para tentar de novo.`}
+        >
+          <GoogleCalendarIcon />
+          <span>Google Agenda indisponível</span>
+        </button>
+      </div>
+    )
+  }
+
+  if (!status.configured) return null
 
   async function run(action) {
     setBusy(true)
