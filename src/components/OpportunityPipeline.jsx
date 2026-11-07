@@ -7,6 +7,7 @@ import { initials, avatarColor } from '../lib/avatar.js'
 import { opportunityPerson } from '../lib/crmContact.js'
 import { DEFAULT_STAGES } from '../lib/crmStages.js'
 import { isoDate } from '../lib/crmWorkspace.js'
+import { useMask } from '../lib/useMask.js'
 
 // Ícones SVG (leitura melhor que emoji). `d` é o miolo do path.
 function Ico({ d, size = 14, sw = 2, fill = 'none' }) {
@@ -197,6 +198,7 @@ function QuickAddLead({ ownerId, stage, onCreated }) {
 }
 
 function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, members, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, isMoving }) {
+  const mask = useMask()
   const person = opportunityPerson(opp)
   const patientName = person.name
   const hasPhone = !!person.phone
@@ -246,7 +248,7 @@ function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, me
       <div style={s.dhead}>
         <Avatar label={patientName} size={32} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={s.nm}>{patientName}</div>
+          <div style={s.nm}>{mask.name(patientName)}</div>
           {oppTitle && <div style={s.sub}>{oppTitle}</div>}
         </div>
       </div>

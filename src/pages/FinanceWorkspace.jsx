@@ -13,6 +13,9 @@ import { CrmBell } from '../components/CrmBell.jsx'
 import { FeatureExportButton } from '../components/FeatureExportButton.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
+import { useFinancialPrivacy } from '../context/FinancialPrivacyContext.jsx'
+import { maskEmail, maskMoney, maskName } from '../lib/privacyMask.js'
+import { EyeIcon } from '../components/EyeIcon.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { createEmptyData, normalizeData } from '../dataModel.js'
 import { importLegacyDataIfNeeded, saveFinanceData } from '../lib/financeStore.js'
@@ -706,6 +709,7 @@ export function FinanceWorkspace() {
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
   const { mode, toggleTheme } = useTheme()
+  const { presentationMode, togglePresentationMode } = useFinancialPrivacy()
   const { canAccess, clinicName, ownerId, role, loading: roleLoading, scopeError } = useUserRole()
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
@@ -1239,9 +1243,11 @@ export function FinanceWorkspace() {
 
         <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '10px 14px'), borderBottom:`1px solid ${C.border}`, background:C.accent+'08' }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Conta ativa</div>
-          <div style={{ fontSize:isMobile ? 14 : 13, fontWeight:700, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{user.user_metadata?.name || user.email}</div>
+          <div style={{ fontSize:isMobile ? 14 : 13, fontWeight:700, color:C.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{presentationMode
+            ? maskName(user.user_metadata?.name) || maskEmail(user.email)
+            : (user.user_metadata?.name || user.email)}</div>
           {clinicName && <div style={{ fontSize:11, color:C.textDim, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{clinicName}</div>}
-          {isMobile && <div style={{ fontSize:10, color:C.textDim, marginTop:1 }}>{user.email}</div>}
+          {isMobile && <div style={{ fontSize:10, color:C.textDim, marginTop:1 }}>{presentationMode ? maskEmail(user.email) : user.email}</div>}
         </div>
 
         {canAccess('finance') && activeAreaId !== 'clinico' && <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
@@ -1249,12 +1255,12 @@ export function FinanceWorkspace() {
           <div style={{ display:'flex', flexDirection:'column', gap:ultraCompactDesktop ? 2 : 4 }}>
             <div>
               <div style={{ fontSize:9, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:1 }}>Caixa hoje</div>
-              <div style={{ fontSize:isMobile ? 20 : (ultraCompactDesktop ? 14 : 16), fontWeight:900, color:C.accent, lineHeight:1.1 }}>{fmt(summary.cashBalance)}</div>
+              <div style={{ fontSize:isMobile ? 20 : (ultraCompactDesktop ? 14 : 16), fontWeight:900, color:C.accent, lineHeight:1.1 }}>{presentationMode ? maskMoney() : fmt(summary.cashBalance)}</div>
             </div>
             {!ultraCompactDesktop && (
               <div>
                 <div style={{ fontSize:9, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:1 }}>Lucro líq. mês</div>
-                <div style={{ fontSize:isMobile ? 14 : 12, fontWeight:700, color:summaryMonth.netProfit >= 0 ? C.green : C.red, lineHeight:1.1 }}>{fmt(summaryMonth.netProfit)}</div>
+                <div style={{ fontSize:isMobile ? 14 : 12, fontWeight:700, color:summaryMonth.netProfit >= 0 ? C.green : C.red, lineHeight:1.1 }}>{presentationMode ? maskMoney() : fmt(summaryMonth.netProfit)}</div>
               </div>
             )}
           </div>
@@ -1362,6 +1368,32 @@ export function FinanceWorkspace() {
                 }}
               >
                 {isLightMode ? '☾' : '☀'}
+              </button>
+              {/* Modo apresentacao: esconde dado pessoal da tela para gravar video ou
+                  demonstrar a plataforma. So exibicao -- nada e alterado no banco. */}
+              <button
+                onClick={togglePresentationMode}
+                title={presentationMode
+                  ? 'Mostrar dados pessoais novamente'
+                  : 'Ocultar dados pessoais (nomes, e-mails, telefones e valores) para gravar ou apresentar'}
+                aria-label={presentationMode ? 'Mostrar dados pessoais' : 'Ocultar dados pessoais'}
+                aria-pressed={presentationMode}
+                data-testid="presentation-toggle"
+                style={{
+                  ...getChipButton(),
+                  width:34,
+                  height:34,
+                  padding:0,
+                  borderRadius:999,
+                  border:`1px solid ${presentationMode ? C.accent : C.border}`,
+                  background:presentationMode ? `${C.accent}1F` : 'transparent',
+                  color:presentationMode ? C.accent : C.textSub,
+                  display:'grid',
+                  placeItems:'center',
+                  fontSize:15,
+                }}
+              >
+                <EyeIcon off={presentationMode} size={16} />
               </button>
               {/* Quick search chip */}
               <button

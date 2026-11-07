@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { forceImportBrowserData } from '../lib/financeStore.js'
 import { WhatsAppNumbers } from './WhatsAppNumbers.jsx'
 import { WhatsAppAutomations } from './WhatsAppAutomations.jsx'
+import { useMask } from '../lib/useMask.js'
 import { MetaConnection } from './MetaConnection.jsx'
 import { FollowupRules } from './FollowupRules.jsx'
 import { IntegrationHealth } from './IntegrationHealth.jsx'
@@ -433,6 +434,7 @@ function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
 }
 
 function TeamSettings({ clinicId }) {
+  const mask = useMask()
   const { role, ownerId } = useUserRole()
   const showOrgChart = canSeeOrgChart(role)
   const [teamView, setTeamView] = useState('lista')
@@ -583,12 +585,12 @@ function TeamSettings({ clinicId }) {
               <div key={m.id} data-testid={`team-member-${m.id}`} style={{ display:'grid', gap:12, padding:'12px 14px', borderRadius:14, border:`1px solid ${highlightedMember === m.id ? C.accent : C.border}`, background:C.bg }}>
                 <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
                   <div style={{ flex:1, minWidth:180 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{m.professional_name || m.member_email || '—'}</div>
+                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{mask.name(m.professional_name) || mask.email(m.member_email) || '—'}</div>
                     <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>
                       {ROLE_LABELS[m.role]}
                       {m.readOnly && <span style={{ color:C.accent, fontWeight:800, marginLeft:7 }}>· DONA DA CLÍNICA</span>}
                     </div>
-                    {m.readOnly && m.professional_name && m.member_email && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{m.member_email}</div>}
+                    {m.readOnly && m.professional_name && m.member_email && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{mask.email(m.member_email)}</div>}
                   </div>
                   {m.readOnly ? (
                     <span style={{ color:C.textDim, fontSize:11.5, maxWidth:300, lineHeight:1.5 }}>
@@ -658,6 +660,7 @@ function TeamSettings({ clinicId }) {
 // Organograma da equipe. Somente leitura de propósito: editar continua na lista, para não existir
 // um segundo caminho de escrita sobre as mesmas permissões. Clicar num card leva para a lista.
 function TeamOrgChart({ members, ownerId, onSelectMember }) {
+  const mask = useMask()
   const chart = buildClinicOrgChart(members, ownerId)
   const roleTone = { admin:C.accent, gestao:C.cyan || C.accentLight, concierge:C.yellow, equipe:C.textSub }
 
@@ -675,11 +678,11 @@ function TeamOrgChart({ members, ownerId, onSelectMember }) {
       }}
     >
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-        <span style={{ color:C.text, fontWeight:700, fontSize:13, overflowWrap:'anywhere' }}>{member.name}</span>
+        <span style={{ color:C.text, fontWeight:700, fontSize:13, overflowWrap:'anywhere' }}>{mask.name(member.name)}</span>
         {member.isOwner && <span style={{ fontSize:9.5, fontWeight:800, letterSpacing:'0.06em', color:C.accent, border:`1px solid ${C.accent}55`, background:`${C.accent}12`, borderRadius:999, padding:'2px 7px' }}>DONA DA CLÍNICA</span>}
       </div>
       <div style={{ color:roleTone[member.role] || C.textSub, fontSize:11, fontWeight:700, marginTop:3 }}>{member.roleLabel}</div>
-      {member.email && member.email !== member.name && <div style={{ color:C.textDim, fontSize:10.5, marginTop:2, overflowWrap:'anywhere' }}>{member.email}</div>}
+      {member.email && member.email !== member.name && <div style={{ color:C.textDim, fontSize:10.5, marginTop:2, overflowWrap:'anywhere' }}>{mask.email(member.email)}</div>}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:7 }}>
         {member.capabilities.record
           ? <span style={{ fontSize:10, fontWeight:700, color:C.green, border:`1px solid ${C.green}44`, background:`${C.green}10`, borderRadius:999, padding:'2px 7px' }}>prontuário</span>
