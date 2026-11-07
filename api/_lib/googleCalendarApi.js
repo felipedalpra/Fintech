@@ -24,6 +24,31 @@ export class NeedsReconnectError extends Error {
   }
 }
 
+/**
+ * Escolhe a linha principal quando a consulta devolve mais de uma.
+ *
+ * Por que existe: `maybeSingle()` tolera ZERO linhas mas ainda estoura com duas
+ * (PGRST116, "multiple (or no) rows returned"). Uma conta que acabou com duas clinicas
+ * -- ou com duas associacoes -- derrubava a integracao INTEIRA do Google Agenda, em vez
+ * de simplesmente usar uma delas.
+ *
+ * A escolha e deterministica (mais antiga primeiro, id como desempate) porque a clinica
+ * escolhida define de quem e a agenda sincronizada: alternar entre requisicoes faria a
+ * conexao pular de dono sem ninguem pedir.
+ */
+export function pickPrimaryRow(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return [...rows].sort((a, b) => {
+    const da = a?.created_at || ''
+    const db = b?.created_at || ''
+    // Linha sem data vai para o fim: data conhecida e sinal melhor que ausencia dela.
+    if (da && !db) return -1
+    if (!da && db) return 1
+    if (da !== db) return da < db ? -1 : 1
+    return String(a?.id ?? '').localeCompare(String(b?.id ?? ''))
+  })[0]
+}
+
 export function deriveCalendarAccess(userId, { ownedClinic = null, membership = null, memberClinic = null } = {}) {
   if (ownedClinic?.owner_id === userId) {
     return { ownerId:userId, clinicId:ownedClinic.id || null, role:'admin', isOwner:true, canManage:true }
@@ -44,21 +69,25 @@ export function deriveCalendarAccess(userId, { ownedClinic = null, membership = 
 
 export async function resolveCalendarAccess(userId) {
   const admin = getAdminSupabase()
-  const [{ data:ownedClinic, error:ownedError }, { data:membership, error:membershipError }] = await Promise.all([
-    admin.from('clinics').select('id, owner_id').eq('owner_id', userId).maybeSingle(),
-    admin.from('clinic_members').select('clinic_id, role').eq('user_id', userId).maybeSingle(),
+  // Sem `maybeSingle()`: duas clinicas (ou duas associacoes) na mesma conta nao podem
+  // derrubar a integracao -- ver pickPrimaryRow.
+  const [{ data:ownedRows, error:ownedError }, { data:membershipRows, error:membershipError }] = await Promise.all([
+    admin.from('clinics').select('id, owner_id, created_at').eq('owner_id', userId),
+    admin.from('clinic_members').select('clinic_id, role, created_at').eq('user_id', userId),
   ])
   if (ownedError) throw ownedError
   if (membershipError) throw membershipError
+  const ownedClinic = pickPrimaryRow(ownedRows)
+  const membership = pickPrimaryRow(membershipRows)
   if (ownedClinic) return deriveCalendarAccess(userId, { ownedClinic })
   if (!membership?.clinic_id) return deriveCalendarAccess(userId)
 
-  const { data:memberClinic, error:clinicError } = await admin
+  const { data:memberClinicRows, error:clinicError } = await admin
     .from('clinics')
-    .select('id, owner_id')
+    .select('id, owner_id, created_at')
     .eq('id', membership.clinic_id)
-    .maybeSingle()
   if (clinicError) throw clinicError
+  const memberClinic = pickPrimaryRow(memberClinicRows)
   return deriveCalendarAccess(userId, { membership, memberClinic })
 }
 
@@ -172,9 +201,11 @@ export async function revokeToken(refreshToken) {
 // perfis compartilham uma conexão e um conjunto de vínculos, sem criar eventos duplicados.
 
 export async function getConnection(userId) {
-  const { data, error } = await getAdminSupabase().from(CONNECTIONS).select('*').eq('user_id', userId).maybeSingle()
+  // Mesma razao de resolveCalendarAccess: uma segunda linha aqui (por corrida ou por dado
+  // antigo) nao pode derrubar o status inteiro -- usamos a mais antiga.
+  const { data, error } = await getAdminSupabase().from(CONNECTIONS).select('*').eq('user_id', userId)
   if (error) throw error
-  return data
+  return pickPrimaryRow(data)
 }
 
 export async function saveConnection(userId, { email, refreshToken }) {
