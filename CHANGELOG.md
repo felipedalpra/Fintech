@@ -31,6 +31,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - **Botão de ocultar valores explica por que não funciona durante a apresentação**: com o modo apresentação ligado ele não conseguia revelar nada (aquele modo é mais forte), e clicar simplesmente não fazia nada. Agora ele se desabilita, muda o rótulo para "Oculto na apresentação" e diz onde está o controle — inclusive no `aria-label`, que antes prometia "Mostrar valores" num botão que não mostrava. (`src/components/Dashboard.jsx`.)
 - **Ícone do olho extraído para `EyeIcon`**: a mesma ação tinha dois desenhos diferentes na plataforma. (`src/components/EyeIcon.jsx`, `src/components/Dashboard.jsx`.)
 
+### Fixed
+- **Botão do Google Agenda sumia em silêncio quando a consulta de estado falhava**: o `catch` do front degradava QUALQUER erro (500, rede, tabela ausente) para `configured: false`, e a tela esconde a barra do Google nesse caso — comportamento certo para uma clínica sem a integração, errado para uma falha. O resultado era indistinguível: quem olhava a agenda não tinha como saber se faltava permissão, faltava configuração ou se a requisição quebrou — e concluía que era falta de permissão. Agora falha vira **aviso visível** ("Google Agenda indisponível", com o motivo do servidor no título e clique para tentar de novo); "não configurado" de verdade continua escondendo, porque aí não há nada a avisar. A derivação do estado saiu para `src/lib/googleCalendarStatus.js`, com teste separando os três casos, e um e2e cobre os quatro estados da barra (erro, não configurado, sem permissão, pode conectar) — verificado que o aviso fica vermelho sem a correção. (`src/lib/googleCalendarStatus.js`, `src/lib/useGoogleCalendarSync.js`, `src/components/GoogleCalendarBar.jsx`, `tests/unit/googleCalendarStatus.spec.js`, `tests/e2e/google-calendar-visibility.spec.js`.)
+
 
 ## [Unreleased] - 2026-11-05
 ### Added
