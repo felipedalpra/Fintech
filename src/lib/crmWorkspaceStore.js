@@ -98,15 +98,15 @@ export async function loadLastContact(oppIds) {
   return { map, available: true }
 }
 
-// Tarefas pendentes vencidas por oportunidade: { oppId: quantidade }.
-export async function loadOverdueTasks(ownerId, today) {
-  const { data, error } = await fetchAll(() => supabase.from('tasks').select('opportunity_id')
-    .eq('user_id', ownerId).eq('status', 'pendente').lt('due_date', today)
-    .not('opportunity_id', 'is', null).order('id', { ascending: true }))
-  if (error) return {}
-  const out = {}
-  for (const t of data || []) out[t.opportunity_id] = (out[t.opportunity_id] || 0) + 1
-  return out
+// Tarefas vinculadas a oportunidades (subitens). Fonte única para os subitens, o contador e as
+// atrasadas (derivadas em crmWorkspace.overdueTaskCounts). { tasks, available }.
+const SUBITEM_FIELDS = 'id, opportunity_id, patient_id, title, due_date, due_time, task_type, status, outcome, assigned_user_id, done_at, created_at'
+export async function loadOpportunityTasks(ownerId) {
+  const { data, error } = await fetchAll(() => supabase.from('tasks').select(SUBITEM_FIELDS)
+    .eq('user_id', ownerId).not('opportunity_id', 'is', null)
+    .order('created_at', { ascending: true }).order('id', { ascending: true }))
+  if (error) return { tasks: [], available: false }
+  return { tasks: data || [], available: true }
 }
 
 // Quantidade de observações (notas) por oportunidade: { oppId: quantidade }.

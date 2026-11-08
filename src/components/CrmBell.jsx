@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
+// Tarefa aberta = pendente OU aguardando (crm_workspace_phase2.sql).
+import { OPEN_TASK_STATUSES } from '../lib/taskQueue.js'
 import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
 import { stageLabel } from '../lib/timeline.js'
 import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
@@ -63,7 +65,7 @@ export function CrmBell({ onNavigate }) {
           return result
         }
         const [taskRes, oppRes] = await Promise.all([
-          supabase.from('tasks').select('id, title, due_date, status, patients(full_name), opportunities(title)').eq('user_id', effectiveUserId).eq('status', 'pendente'),
+          supabase.from('tasks').select('id, title, due_date, status, patients(full_name), opportunities(title)').eq('user_id', effectiveUserId).in('status', OPEN_TASK_STATUSES),
           fetchOpportunities(),
         ])
         if (!mounted) return

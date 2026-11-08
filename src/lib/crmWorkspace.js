@@ -157,7 +157,7 @@ export const EMPTY_FILTERS = {
   procedure: [],
   stage: [],
   source: [],
-  status: 'all',          // all | aberto | ganho | perdido
+  status: 'all',          // all | aberto | ganho | perdido | arquivado ('all' NÃO inclui arquivadas)
   period: null,           // { field, preset, from, to }
   valueMin: null,
   valueMax: null,
@@ -185,7 +185,7 @@ function numOrNull(v) {
 
 export function normalizeFilters(f = {}) {
   const src = f && typeof f === 'object' ? f : {}
-  const status = ['all', 'aberto', 'ganho', 'perdido'].includes(src.status) ? src.status : 'all'
+  const status = ['all', 'aberto', 'ganho', 'perdido', 'arquivado'].includes(src.status) ? src.status : 'all'
   let period = null
   if (src.period && typeof src.period === 'object' && PERIOD_FIELDS.some(p => p.id === src.period.field)) {
     const preset = PERIOD_PRESETS.some(p => p.id === src.period.preset) ? src.period.preset : 'custom'
@@ -315,6 +315,53 @@ export function isOverdue(opp, ctx) {
   return Boolean(opp.next_action_due && ctx?.today && opp.next_action_due < ctx.today)
 }
 
+// ---------------------------------------------------------------------------
+// Subitens (tarefas vinculadas à oportunidade — mesmo registro do módulo de Tarefas)
+// ---------------------------------------------------------------------------
+// 'aguardando' (crm_workspace_phase2.sql) continua ABERTA: só 'feita' encerra.
+export function isTaskOpen(task) {
+  return Boolean(task) && task.status !== 'feita'
+}
+
+// { oppId: [tarefas] }: abertas por prazo (sem prazo no fim), depois concluídas.
+export function tasksByOpportunity(tasks) {
+  const map = {}
+  for (const t of tasks || []) {
+    if (!t?.opportunity_id) continue
+    ;(map[t.opportunity_id] ||= []).push(t)
+  }
+  for (const list of Object.values(map)) list.sort(compareSubitems)
+  return map
+}
+
+function compareSubitems(a, b) {
+  const da = isTaskOpen(a) ? 0 : 1
+  const db = isTaskOpen(b) ? 0 : 1
+  if (da !== db) return da - db
+  const ad = a.due_date || '9999-12-31'
+  const bd = b.due_date || '9999-12-31'
+  if (ad !== bd) return ad < bd ? -1 : 1
+  return String(a.created_at || '').localeCompare(String(b.created_at || ''))
+}
+
+// Tarefas ABERTAS vencidas por oportunidade (derivado — mesma regra em todas as visões).
+export function overdueTaskCounts(tasks, today) {
+  const out = {}
+  if (!today) return out
+  for (const t of tasks || []) {
+    if (!t?.opportunity_id || !isTaskOpen(t) || !t.due_date || t.due_date >= today) continue
+    out[t.opportunity_id] = (out[t.opportunity_id] || 0) + 1
+  }
+  return out
+}
+
+// "2/4" (concluídas/total) ou null quando não há subitens.
+export function subitemProgress(list) {
+  if (!list?.length) return null
+  const done = list.filter(t => !isTaskOpen(t)).length
+  return `${done}/${list.length}`
+}
+
 function normalizeText(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
@@ -338,7 +385,8 @@ export function applyFilters(opps, filters, ctx = {}) {
   const sourceSet = new Set(f.source)
 
   return (opps || []).filter(o => {
-    if (f.status !== 'all' && o.status !== f.status) return false
+    // Arquivadas só aparecem quando pedidas explicitamente (Situação → Arquivadas).
+    if (f.status === 'all' ? o.status === 'arquivado' : o.status !== f.status) return false
     if (q) {
       const person = opportunityPerson(o)
       const hay = normalizeText([
@@ -463,6 +511,7 @@ function baseGroups(groupBy, opps, ctx) {
       ...stages.map(s => ({ key: s.key, label: s.label, color: s.color, stage: s.key })),
       { key: 'ganho', label: OUTCOMES.ganho.label, color: OUTCOMES.ganho.color, outcome: 'ganho' },
       { key: 'perdido', label: OUTCOMES.perdido.label, color: OUTCOMES.perdido.color, outcome: 'perdido' },
+      { key: 'arquivado', label: OUTCOMES.arquivado.label, color: OUTCOMES.arquivado.color, outcome: 'arquivado' },
     ]
   }
   if (groupBy === 'none') return [{ key: 'all', label: 'Todas as oportunidades', color: '#3b82f6' }]

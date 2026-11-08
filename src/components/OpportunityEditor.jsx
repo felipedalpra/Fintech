@@ -13,7 +13,7 @@ import { Person360Drawer } from './Person360Drawer.jsx'
 // Estágio só é escolhido na criação; depois muda por mover/arrastar (RPC auditada).
 const BLANK = { patient_id: '', contact_id: '', patient_name: '', title: '', value: '', stage: '', source: '', responsible_user_id: '', tags: [] }
 
-export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved, initialTab = 'dados' }) {
+export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved, initialTab = 'dados', onTasksChanged }) {
   const isEdit = !!opp
   const [tab, setTab] = useState('dados')
   const [form, setForm] = useState(BLANK)
@@ -88,7 +88,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
       )}
 
       {isEdit && tab === 'tarefas' && (
-        <OpportunityTasks ownerId={ownerId} opportunityId={opp.id} patientId={opp.patient_id} members={members} userId={userId} />
+        <OpportunityTasks ownerId={ownerId} opportunityId={opp.id} patientId={opp.patient_id} members={members} userId={userId} onChange={onTasksChanged} />
       )}
       {isEdit && tab === 'timeline' && (
         <OpportunityTimeline ownerId={ownerId} opp={opp} userId={userId} />

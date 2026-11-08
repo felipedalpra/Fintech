@@ -72,6 +72,96 @@ export async function createManualLead(ownerId, { name, phone, title, source, va
 // editáveis direto no card do funil.
 export async function patchOpportunity(oppId, patch = {}) {
   if (!oppId) return { error: 'Oportunidade inválida' }
+  const built = buildOpportunityPatch(patch)
+  if (built.error) return { error: built.error }
+  const allowed = built.allowed
+  if (Object.keys(allowed).length === 0) return { ok: true }
+  allowed.updated_at = new Date().toISOString()
+  // READ-BACK: confirma que uma linha foi realmente atualizada (RLS permitiu) — senão seria um
+  // "salvo" falso (update de 0 linhas não dá erro).
+  const { data, error } = await supabase.from('opportunities').update(allowed).eq('id', oppId).select('id')
+  if (error) return { error: error.message }
+  if (!data || data.length === 0) return { error: 'Não foi possível salvar a alteração (sem permissão ou registro não encontrado).' }
+  return { ok: true }
+}
+
+// Edição EM MASSA dos mesmos campos (mesma validação da edição na célula). Uma única escrita;
+// devolve os ids realmente alterados (RLS) para a tela reverter o que não foi gravado.
+export async function patchOpportunities(oppIds, patch = {}) {
+  const ids = [...new Set((oppIds || []).filter(Boolean))]
+  if (!ids.length) return { error: 'Nenhuma oportunidade selecionada.' }
+  const built = buildOpportunityPatch(patch)
+  if (built.error) return { error: built.error }
+  const allowed = built.allowed
+  if (Object.keys(allowed).length === 0) return { ok: true, ids: [] }
+  allowed.updated_at = new Date().toISOString()
+  const { data, error } = await supabase.from('opportunities').update(allowed).in('id', ids).select('id')
+  if (error) return { error: error.message }
+  const updated = (data || []).map(r => r.id)
+  if (!updated.length) return { error: 'Não foi possível salvar (sem permissão ou registros não encontrados).' }
+  return { ok: true, ids: updated }
+}
+
+// Erro de RPC/coluna ausente = migração da Fase 2 ainda não aplicada.
+function phase2Error(error, fallback) {
+  if (['42883', 'PGRST202', '42703', 'PGRST204'].includes(error?.code)) {
+    return 'Recurso indisponível: a atualização do banco do CRM (crm_workspace_phase2.sql) ainda não foi aplicada.'
+  }
+  if (error?.code === '42501') return 'Sem permissão para esta ação.'
+  return error?.message || fallback
+}
+
+// Arquivar / restaurar (reversível; nada é apagado). Devolvem quantas foram alteradas.
+export async function archiveOpportunities(oppIds) {
+  const ids = [...new Set((oppIds || []).filter(Boolean))]
+  if (!ids.length) return { error: 'Nenhuma oportunidade selecionada.' }
+  const { data, error } = await supabase.rpc('crm_archive_opportunities', { p_ids: ids })
+  if (error) return { error: phase2Error(error, 'Não foi possível arquivar.') }
+  return { ok: true, count: Number(data) || 0 }
+}
+
+export async function restoreOpportunities(oppIds) {
+  const ids = [...new Set((oppIds || []).filter(Boolean))]
+  if (!ids.length) return { error: 'Nenhuma oportunidade selecionada.' }
+  const { data, error } = await supabase.rpc('crm_restore_opportunities', { p_ids: ids })
+  if (error) return { error: phase2Error(error, 'Não foi possível restaurar.') }
+  return { ok: true, count: Number(data) || 0 }
+}
+
+// Acrescenta tags (nunca remove; sem duplicar). Mesma limpeza do servidor, para a tela refletir.
+export function cleanTags(tags) {
+  const out = []
+  for (const t of tags || []) {
+    const v = String(t ?? '').trim().slice(0, 40)
+    if (v && !out.includes(v)) out.push(v)
+  }
+  return out
+}
+
+export async function addOpportunityTags(oppIds, tags) {
+  const ids = [...new Set((oppIds || []).filter(Boolean))]
+  const clean = cleanTags(tags)
+  if (!ids.length) return { error: 'Nenhuma oportunidade selecionada.' }
+  if (!clean.length) return { error: 'Informe ao menos uma tag.' }
+  const { data, error } = await supabase.rpc('crm_add_opportunity_tags', { p_ids: ids, p_tags: clean })
+  if (error) return { error: phase2Error(error, 'Não foi possível adicionar as tags.') }
+  return { ok: true, count: Number(data) || 0, tags: clean }
+}
+
+// Duplica UMA oportunidade (nova linha aberta, mesmo paciente/contato, mesma etapa). Não duplica
+// cadastro, mensagens, pagamentos, atendimentos, tarefas, notas nem histórico — ver a RPC.
+export async function duplicateOpportunity(oppId) {
+  if (!oppId) return { error: 'Oportunidade inválida' }
+  const { data, error } = await supabase.rpc('crm_duplicate_opportunity', { p_id: oppId })
+  if (error) return { error: phase2Error(error, 'Não foi possível duplicar.') }
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row?.id) return { error: 'Não foi possível duplicar.' }
+  return { opp: row }
+}
+
+// Valida e normaliza os campos editáveis. { allowed } ou { error } — valor inválido é recusado,
+// nunca vira nulo silencioso.
+export function buildOpportunityPatch(patch = {}) {
   const allowed = {}
   if ('value' in patch) {
     if (patch.value === '' || patch.value == null) {
@@ -110,14 +200,7 @@ export async function patchOpportunity(oppId, patch = {}) {
     if (!cv || typeof cv !== 'object' || Array.isArray(cv)) return { error: 'Campos personalizados inválidos.' }
     allowed.custom_values = cv
   }
-  if (Object.keys(allowed).length === 0) return { ok: true }
-  allowed.updated_at = new Date().toISOString()
-  // READ-BACK: confirma que uma linha foi realmente atualizada (RLS permitiu) — senão seria um
-  // "salvo" falso (update de 0 linhas não dá erro).
-  const { data, error } = await supabase.from('opportunities').update(allowed).eq('id', oppId).select('id')
-  if (error) return { error: error.message }
-  if (!data || data.length === 0) return { error: 'Não foi possível salvar a alteração (sem permissão ou registro não encontrado).' }
-  return { ok: true }
+  return { allowed }
 }
 
 // Atualiza campos editáveis (não mexe em estágio nem status).

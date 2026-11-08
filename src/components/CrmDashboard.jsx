@@ -52,8 +52,9 @@ async function fetchAll(makeQuery) {
 // sem a coluna, segue com o conjunto antigo — o ponderado usa então só a probabilidade da etapa.
 async function fetchOpps(ownerId, cutoff) {
   const base = 'id, stage, status, value, source, responsible_user_id, stage_entered_at, created_at, first_response_at, lost_reason'
+  // Arquivadas (crm_workspace_phase2.sql) saem de todo indicador, como saem da Tabela e do Kanban.
   const run = fields => fetchAll(() => supabase.from('opportunities').select(fields)
-    .eq('user_id', ownerId).gte('created_at', cutoff)
+    .eq('user_id', ownerId).gte('created_at', cutoff).neq('status', 'arquivado')
     .order('created_at', { ascending: true }).order('id', { ascending: true }))
   const withProb = await run(`${base}, probability`)
   if (!withProb.error || !['42703', 'PGRST204'].includes(withProb.error.code)) return withProb

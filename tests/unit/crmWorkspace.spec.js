@@ -2,8 +2,9 @@ import { expect, test } from '@playwright/test'
 import {
   resolveColumns, normalizeViewConfig, applyFilters, sortRows, groupRows, groupSummary, moveGroup,
   periodRange, coerceCustomValue, withCustomValue, validateFieldDraft, compatibleFieldTypes, activeFilterCount,
-  SYSTEM_COLUMNS, isOverdue,
+  SYSTEM_COLUMNS, isOverdue, tasksByOpportunity, overdueTaskCounts, subitemProgress, isTaskOpen,
 } from '../../src/lib/crmWorkspace.js'
+import { OPEN_TASK_STATUSES, TASK_STATUSES } from '../../src/lib/taskQueue.js'
 import { resolveStages, stageMap, effectiveProbability, stageProbFractions, DEFAULT_STAGES } from '../../src/lib/crmStages.js'
 import { weightedPipeline, STAGE_PROB } from '../../src/lib/crmMetrics.js'
 
@@ -204,4 +205,66 @@ test('definição de coluna: nome obrigatório, opções obrigatórias e sem rep
   expect(compatibleFieldTypes('number')).toEqual(['number', 'currency', 'percent'])
   expect(compatibleFieldTypes('date')).toEqual(['date'])
   expect(compatibleFieldTypes('status')).toContain('select')
+})
+
+// ---------------------------------------------------------------------------
+// Fase 2: arquivadas, subitens e atrasadas derivadas
+// ---------------------------------------------------------------------------
+const ARCHIVED = { id: 'o5', stage: 'consultado', status: 'arquivado', value: 9000, source: 'Instagram', procedure_id: 'p1', responsible_user_id: 'u1', created_at: '2026-11-02T12:00:00Z', patients: { full_name: 'Eva Arquivada' }, custom_values: {} }
+
+test('arquivadas: fora de "Todas" e de qualquer situação, só aparecem com o filtro Arquivadas', () => {
+  const all = [...OPPS, ARCHIVED]
+  expect(applyFilters(all, {}, ctx).map(o => o.id)).not.toContain('o5')
+  expect(applyFilters(all, { status: 'aberto' }, ctx).map(o => o.id)).not.toContain('o5')
+  expect(applyFilters(all, { status: 'arquivado' }, ctx).map(o => o.id)).toEqual(['o5'])
+  // Filtro salvo com valor desconhecido continua caindo em "Todas".
+  expect(normalizeViewConfig({ filters: { status: 'xpto' } }).filters.status).toBe('all')
+  expect(normalizeViewConfig({ filters: { status: 'arquivado' } }).filters.status).toBe('arquivado')
+})
+
+test('arquivadas: somas do grupo e agrupamento por etapa não contam arquivadas por padrão', () => {
+  const all = [...OPPS, ARCHIVED]
+  const groups = groupRows(applyFilters(all, {}, ctx), 'stage', ctx)
+  expect(groups.some(g => g.key === 'arquivado')).toBe(false)
+  const consultado = groups.find(g => g.key === 'consultado')
+  expect(consultado.rows).toHaveLength(0)
+  // Com o filtro, vão para o grupo próprio "Arquivadas" (não para a etapa onde estavam).
+  const onlyArchived = groupRows(applyFilters(all, { status: 'arquivado' }, { ...ctx, keepEmptyStages: false }), 'stage', { ...ctx, keepEmptyStages: false })
+  expect(onlyArchived.map(g => g.key)).toEqual(['arquivado'])
+  expect(onlyArchived[0].outcome).toBe('arquivado')
+  // Arquivada não é "atrasada" (não gera alerta).
+  expect(isOverdue({ ...ARCHIVED, next_action_due: '2026-01-01' }, ctx)).toBe(false)
+})
+
+test('subitens: tarefas agrupadas por oportunidade, abertas por prazo antes das concluídas', () => {
+  const tasks = [
+    { id: 't1', opportunity_id: 'o1', title: 'Consulta realizada', status: 'feita', due_date: '2026-10-01', created_at: '2026-10-01T10:00:00Z' },
+    { id: 't2', opportunity_id: 'o1', title: 'Confirmar reserva', status: 'aguardando', due_date: null, created_at: '2026-11-01T10:00:00Z' },
+    { id: 't3', opportunity_id: 'o1', title: 'Realizar follow-up', status: 'pendente', due_date: '2026-11-04', created_at: '2026-11-01T11:00:00Z' },
+    { id: 't4', opportunity_id: 'o2', title: 'Enviar orçamento', status: 'pendente', due_date: '2026-11-10', created_at: '2026-11-01T11:00:00Z' },
+    { id: 't5', opportunity_id: null, title: 'Avulsa', status: 'pendente', due_date: '2026-11-01' },
+  ]
+  const map = tasksByOpportunity(tasks)
+  expect(Object.keys(map).sort()).toEqual(['o1', 'o2'])
+  expect(map.o1.map(t => t.id)).toEqual(['t3', 't2', 't1'])
+  expect(subitemProgress(map.o1)).toBe('1/3')
+  expect(subitemProgress(map.o3)).toBeNull()
+})
+
+test('aguardando continua aberta: conta como atrasada e no Sino/Meu Dia (mesma lista de status)', () => {
+  expect(OPEN_TASK_STATUSES).toEqual(['pendente', 'aguardando'])
+  expect(TASK_STATUSES.map(s => s.key)).toEqual(['pendente', 'aguardando', 'feita'])
+  expect(isTaskOpen({ status: 'aguardando' })).toBe(true)
+  expect(isTaskOpen({ status: 'feita' })).toBe(false)
+  const tasks = [
+    { opportunity_id: 'o1', status: 'aguardando', due_date: '2026-11-01' },
+    { opportunity_id: 'o1', status: 'pendente', due_date: '2026-11-05' },
+    { opportunity_id: 'o1', status: 'feita', due_date: '2026-10-01' },
+    { opportunity_id: 'o2', status: 'pendente', due_date: '2026-11-06' }, // vence hoje: não atrasada
+    { opportunity_id: 'o2', status: 'pendente', due_date: null },
+  ]
+  expect(overdueTaskCounts(tasks, '2026-11-06')).toEqual({ o1: 2 })
+  // Concluir o subitem derruba o alerta (derivado, sem contador salvo).
+  const after = tasks.map(t => (t.status === 'aguardando' ? { ...t, status: 'feita' } : t))
+  expect(overdueTaskCounts(after, '2026-11-06')).toEqual({ o1: 1 })
 })

@@ -26,6 +26,7 @@ import { OpportunityPipeline } from './OpportunityPipeline.jsx'
 import { OpportunityEditor } from './OpportunityEditor.jsx'
 import { NewLeadModal } from './NewLeadModal.jsx'
 import { CrmDashboard } from './CrmDashboard.jsx'
+import { CrmBulkBar } from './CrmBulkBar.jsx'
 
 const SOURCE_SUGGESTIONS = ['Instagram', 'Indicação', 'WhatsApp', 'Google', 'Facebook', 'Site', 'Outro']
 const MAIN_KEY = 'table'
@@ -126,7 +127,7 @@ export function CrmWorkspace({ data }) {
   const sorted = useMemo(() => sortRows(filtered, config.sort, columns, ctx), [filtered, config.sort, columns, ctx])
   const groups = useMemo(() => groupRows(sorted, config.groupBy, ctx, config.groupOrder), [sorted, config.groupBy, ctx, config.groupOrder])
   const kanbanOpps = useMemo(() => {
-    const f = config.filters.status === 'ganho' || config.filters.status === 'perdido' ? { ...config.filters, status: 'all' } : config.filters
+    const f = ['ganho', 'perdido', 'arquivado'].includes(config.filters.status) ? { ...config.filters, status: 'all' } : config.filters
     return sortRows(applyFilters(ws.opps, f, ctx).filter(o => o.status === 'aberto'), null, columns, ctx)
   }, [ws.opps, config.filters, ctx, columns])
 
@@ -165,10 +166,127 @@ export function CrmWorkspace({ data }) {
   const onFiltersChange = useCallback(filters => setConfig(c => ({ ...c, filters })), [setConfig])
   const onSortChange = useCallback(sort => setConfig(c => ({ ...c, sort })), [setConfig])
 
+  // ----- seleção (edição em massa) -----
+  // Só conta o que está VISÍVEL na tabela: filtrar depois de selecionar nunca altera registro escondido.
+  const [selected, setSelected] = useState(() => new Set())
+  const lastPickRef = useRef(null)
+  const visibleIds = useMemo(() => groups.flatMap(g => (config.collapsed?.[g.key] ? [] : g.rows.map(o => o.id))), [groups, config.collapsed])
+  const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds])
+  const effectiveSelected = useMemo(() => new Set([...selected].filter(id => visibleSet.has(id))), [selected, visibleSet])
+  const selectedOpps = useMemo(() => ws.opps.filter(o => effectiveSelected.has(o.id)), [ws.opps, effectiveSelected])
+  const visibleIdsRef = useRef(visibleIds)
+  visibleIdsRef.current = visibleIds
+
+  const onToggleSelect = useCallback((id, shift) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      const ids = visibleIdsRef.current
+      const from = lastPickRef.current ? ids.indexOf(lastPickRef.current) : -1
+      const to = ids.indexOf(id)
+      if (shift && from >= 0 && to >= 0) {
+        // Shift+clique: aplica o estado do item de origem a todo o intervalo (como no Monday).
+        const value = prev.has(lastPickRef.current)
+        for (const x of ids.slice(Math.min(from, to), Math.max(from, to) + 1)) value ? next.add(x) : next.delete(x)
+      } else if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    lastPickRef.current = id
+  }, [])
+  const onSetSelected = useCallback((ids, checked) => setSelected(prev => {
+    const next = new Set(prev)
+    for (const id of ids) checked ? next.add(id) : next.delete(id)
+    return next
+  }), [])
+  const clearSelection = useCallback(() => { setSelected(new Set()); lastPickRef.current = null }, [])
+  // Esc limpa a seleção (os popovers tratam o próprio Esc antes, na fase de captura).
+  useEffect(() => {
+    if (!effectiveSelected.size) return
+    function onKey(e) {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (e.target.closest?.('input, textarea, select, [role="dialog"]')) return
+      clearSelection()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [effectiveSelected.size, clearSelection])
+
+  const tagSuggestions = useMemo(() => {
+    const count = new Map()
+    for (const o of ws.opps) for (const t of o.tags || []) count.set(t, (count.get(t) || 0) + 1)
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t)
+  }, [ws.opps])
+
+  function report(res, okText, { failedText = 'não foram alteradas (sem permissão ou erro)' } = {}) {
+    if (res.error) { toast(res.error, 'error'); return false }
+    const failed = res.failed || 0
+    if (failed) toast(`${okText} ${failed} ${failedText}.`, 'warning', 5000)
+    else toast(okText, 'success')
+    return true
+  }
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+  const bulkActions = useMemo(() => ({
+    moveStage: async (ids, stage, onProgress) => {
+      const res = await ws.bulkMoveStage(ids, stage, onProgress)
+      const label = ws.stagesByKey[stage]?.label || stage
+      if (res.failed) toast(`${plural(res.moved, 'movida', 'movidas')} para ${label}; ${res.failed} não puderam ser movidas.`, 'warning', 5000)
+      else toast(`${plural(res.moved, 'oportunidade movida', 'oportunidades movidas')} para ${label}.`, 'success')
+    },
+    setResponsible: async (ids, userId) => {
+      const res = await ws.bulkPatch(ids, { responsible_user_id: userId })
+      report(res, `Responsável atualizado em ${plural(res.count || 0, 'oportunidade', 'oportunidades')}.`)
+    },
+    setDue: async (ids, date) => {
+      const res = await ws.bulkPatch(ids, { next_action_due: date })
+      report(res, date ? `Prazo definido em ${plural(res.count || 0, 'oportunidade', 'oportunidades')}.` : `Prazo removido de ${plural(res.count || 0, 'oportunidade', 'oportunidades')}.`)
+    },
+    addTags: async (ids, tags) => {
+      const res = await ws.bulkAddTags(ids, tags)
+      report(res, `Tags adicionadas em ${plural(res.count || 0, 'oportunidade', 'oportunidades')}.`)
+    },
+    archive: async (ids) => {
+      const res = await ws.archive(ids)
+      if (report(res, `${plural(res.count || 0, 'oportunidade arquivada', 'oportunidades arquivadas')}.`)) clearSelection()
+    },
+    restore: async (ids) => {
+      const res = await ws.restore(ids)
+      if (report(res, `${plural(res.count || 0, 'oportunidade restaurada', 'oportunidades restauradas')}.`)) clearSelection()
+    },
+  }), [ws, toast, clearSelection]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ----- editor / criação -----
   const [editor, setEditor] = useState({ open: false, opp: null, tab: 'dados' })
   const [leadOpen, setLeadOpen] = useState(false)
   const onOpenOpp = useCallback((opp, initialTab = 'dados') => setEditor({ open: true, opp, tab: initialTab }), [])
+
+  // Ações do menu contextual da linha (uma oportunidade).
+  const rowActions = useMemo(() => ({
+    open: opp => onOpenOpp(opp),
+    duplicate: async opp => {
+      const res = await ws.duplicate(opp)
+      if (res.error) toast(res.error, 'error')
+      else toast('Oportunidade duplicada.', 'success')
+    },
+    moveStage: async (opp, stage) => {
+      const res = await ws.moveStage(opp.id, stage)
+      if (res.error) toast(res.error, 'error')
+    },
+    setResponsible: async (opp, userId) => {
+      const res = await ws.updateOpp(opp.id, { responsible_user_id: userId })
+      if (res.error) toast('Não foi possível salvar. A alteração foi desfeita.', 'error')
+    },
+    archive: async opp => {
+      const res = await ws.archive([opp.id])
+      if (res.error) toast(res.error, 'error')
+      else toast('Oportunidade arquivada. Para ver ou restaurar: Filtro → Situação → Arquivadas.', 'success', 4500)
+    },
+    restore: async opp => {
+      const res = await ws.restore([opp.id])
+      if (res.error) toast(res.error, 'error')
+      else toast('Oportunidade restaurada.', 'success')
+    },
+  }), [ws, toast, onOpenOpp])
 
   // ----- campos personalizados -----
   const [fieldEditor, setFieldEditor] = useState({ open: false, field: null })
@@ -305,9 +423,16 @@ export function CrmWorkspace({ data }) {
               onToggleCollapse={onToggleCollapse} onCollapseAll={onCollapseAll} onSort={onSort}
               onResizeColumn={onResizeColumn} onReorderColumn={onReorderColumn} onHideColumn={onHideColumn}
               onMoveGroup={onMoveGroup} onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null}
-              onOpenOpp={onOpenOpp} columnsMenu={columnsMenu} />
+              onOpenOpp={onOpenOpp} columnsMenu={columnsMenu}
+              selectedIds={effectiveSelected} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
+              rowActions={rowActions} userId={user?.id} />
           </>
         )
+      )}
+
+      {isTable && selectedOpps.length > 0 && (
+        <CrmBulkBar selected={selectedOpps} stages={ws.stages} members={ws.members} memberLabel={ws.memberLabel}
+          tagSuggestions={tagSuggestions} onClear={clearSelection} actions={bulkActions} />
       )}
 
       {isKanban && (
@@ -318,7 +443,8 @@ export function CrmWorkspace({ data }) {
       {isIndicators && <CrmDashboard />}
 
       <OpportunityEditor open={editor.open} onClose={() => setEditor(e => ({ ...e, open: false }))} opp={editor.opp} initialTab={editor.tab}
-        stages={ws.stages} members={ws.members} ownerId={effectiveOwner} userId={user?.id} onSaved={ws.onEditorSaved} />
+        stages={ws.stages} members={ws.members} ownerId={effectiveOwner} userId={user?.id} onSaved={ws.onEditorSaved}
+        onTasksChanged={ws.syncTask} />
       <NewLeadModal open={leadOpen} onClose={() => setLeadOpen(false)} ownerId={effectiveOwner} members={ws.members}
         stage="primeiro_contato" onCreated={opp => { ws.addOpp(opp); setLeadOpen(false) }} />
       <CrmFieldEditor open={fieldEditor.open} field={fieldEditor.field} onClose={() => setFieldEditor({ open: false, field: null })}
