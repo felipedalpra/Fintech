@@ -38,11 +38,13 @@ const S = {
   },
   row: {
     font: { ...FONT_BASE },
-    numFmt: 'R$ #,##0.00',
+    numFmt: 'R$ #,##0.00;[Red]-R$ #,##0.00',
+    border: { bottom: { style: 'hair', color: { rgb: 'E2E4EE' } } },
   },
   rowLabel: {
     font: { ...FONT_BASE },
     alignment: { indent: 1 },
+    border: { bottom: { style: 'hair', color: { rgb: 'E2E4EE' } } },
   },
   colHeader: {
     font: { ...FONT_BASE, bold: true, color: { rgb: 'FFFFFF' } },
@@ -51,11 +53,15 @@ const S = {
   },
   positive: {
     font: { ...FONT_BASE, color: { rgb: '1A7A3A' } },
-    numFmt: 'R$ #,##0.00',
+    fill: { fgColor: { rgb: 'E8F5EC' } },
+    border: { bottom: { style: 'hair', color: { rgb: 'CBE4D2' } } },
+    numFmt: 'R$ #,##0.00;[Red]-R$ #,##0.00',
   },
   negative: {
     font: { ...FONT_BASE, color: { rgb: 'AA2222' } },
-    numFmt: 'R$ #,##0.00',
+    fill: { fgColor: { rgb: 'FCE8E8' } },
+    border: { bottom: { style: 'hair', color: { rgb: 'EDCACA' } } },
+    numFmt: 'R$ #,##0.00;[Red]-R$ #,##0.00',
   },
   pct: {
     font: { ...FONT_BASE, italic: true, color: { rgb: '555566' } },
@@ -80,18 +86,28 @@ function download(wb, filename) {
 // ─── DRE ─────────────────────────────────────────────────────────────────────
 
 export function exportDRE(m, periodLabel) {
+  download(createDreWorkbook(m, periodLabel), `DRE_${periodLabel}.xlsx`)
+}
+
+export function createDreWorkbook(m, periodLabel) {
   const wb = XLSXStyle.utils.book_new()
   const rows = []
+  const analysisBase = n(m.grossRevenue)
 
-  const addRow = (label, value, labelStyle, valueStyle) => {
-    rows.push([cell(label, labelStyle), cell('', {}), value !== undefined ? cell(n(value), valueStyle) : cell('', {})])
+  const addRow = (label, value, labelStyle, valueStyle, { vertical = true } = {}) => {
+    const numericValue = value === undefined ? undefined : n(value)
+    rows.push([
+      cell(label, labelStyle),
+      numericValue !== undefined ? cell(numericValue, valueStyle) : cell('', {}),
+      vertical && numericValue !== undefined ? cell(analysisBase ? numericValue / analysisBase : 0, S.pct) : cell('', {}),
+    ])
   }
 
   // Title
   rows.push([cell(`DEMONSTRAÇÃO DO RESULTADO DO EXERCÍCIO — DRE`, S.title), cell('', S.title), cell('', S.title)])
   rows.push([cell(`Período: ${periodLabel}`, S.subtitle), cell('', S.subtitle), cell('', S.subtitle)])
   rows.push([cell('', {}), cell('', {}), cell('', {})])
-  rows.push([cell('Descrição', S.colHeader), cell('', S.colHeader), cell('Valor (R$)', S.colHeader)])
+  rows.push([cell('Descrição', S.colHeader), cell('Valor (R$)', S.colHeader), cell('Análise vertical', S.colHeader)])
 
   // 1. Receitas
   rows.push([cell('1. RECEITAS BRUTAS', S.sectionHeader), cell('', S.sectionHeader), cell('', S.sectionHeader)])
@@ -100,26 +116,26 @@ export function exportDRE(m, periodLabel) {
   addRow('   Receita de Produtos',              m.productSalesRevenue,      S.rowLabel, m.productSalesRevenue >= 0 ? S.positive : S.negative)
   addRow('   Outras Receitas',                  m.extraRevenueTotal,        S.rowLabel, m.extraRevenueTotal >= 0 ? S.positive : S.negative)
   addRow('= RECEITA BRUTA TOTAL',              m.grossRevenue,              S.totalLabel, S.subtotal)
-  addRow('   (-) Deduções da Receita',          m.revenueDeductions || 0,    S.rowLabel, S.negative)
+  addRow('   (-) Deduções da Receita',          -n(m.revenueDeductions),     S.rowLabel, S.negative)
   addRow('= RECEITA LÍQUIDA',                   m.netRevenue ?? m.grossRevenue, S.totalLabel, S.subtotal)
   rows.push([cell('', {}), cell('', {}), cell('', {})])
 
   // 2. Custos
   rows.push([cell('2. CUSTOS E DESPESAS', S.sectionHeader), cell('', S.sectionHeader), cell('', S.sectionHeader)])
-  addRow('   (-) Custos de Cirurgias',          m.surgeryCostTotal,         S.rowLabel, S.negative)
-  addRow('   (-) Custos de Consultas',          m.consultationCostTotal,    S.rowLabel, S.negative)
-  addRow('   (-) Custo dos Produtos Vendidos',  m.productPurchaseTotal,     S.rowLabel, S.negative)
-  addRow('   (-) Outros Custos Diretos',        m.additionalDirectCosts || 0, S.rowLabel, S.negative)
-  addRow('   (-) Despesas Operacionais',        m.operationalExpenses,      S.rowLabel, S.negative)
+  addRow('   (-) Custos de Cirurgias',          -n(m.surgeryCostTotal),      S.rowLabel, S.negative)
+  addRow('   (-) Custos de Consultas',          -n(m.consultationCostTotal), S.rowLabel, S.negative)
+  addRow('   (-) Custo dos Produtos Vendidos',  -n(m.productPurchaseTotal),  S.rowLabel, S.negative)
+  addRow('   (-) Outros Custos Diretos',        -n(m.additionalDirectCosts), S.rowLabel, S.negative)
+  addRow('   (-) Despesas Operacionais',        -n(m.operationalExpenses),   S.rowLabel, S.negative)
   addRow('= LUCRO OPERACIONAL',                m.operatingProfit,           S.totalLabel, m.operatingProfit >= 0 ? S.subtotal : { ...S.subtotal, font: { ...FONT_BASE, bold: true, color: { rgb: 'AA2222' } } })
   rows.push([cell('', {}), cell('', {}), cell('', {})])
 
   // 3. Resultado financeiro e impostos
   rows.push([cell('3. RESULTADO FINANCEIRO E TRIBUTAÇÃO', S.sectionHeader), cell('', S.sectionHeader), cell('', S.sectionHeader)])
   addRow('   (+) Receitas Financeiras',         m.financialRevenue || 0,    S.rowLabel, S.positive)
-  addRow('   (-) Despesas Financeiras',         m.financialExpenses || 0,   S.rowLabel, S.negative)
+  addRow('   (-) Despesas Financeiras',         -n(m.financialExpenses),     S.rowLabel, S.negative)
   addRow('= LUCRO ANTES DOS TRIBUTOS',          m.profitBeforeTax ?? m.operatingProfit, S.totalLabel, S.subtotal)
-  addRow('   (-) Tributos sobre o Lucro',       m.taxExpenses,              S.rowLabel, S.negative)
+  addRow('   (-) Tributos sobre o Lucro',       -n(m.taxExpenses),           S.rowLabel, S.negative)
   rows.push([cell('', {}), cell('', {}), cell('', {})])
 
   // Resultado
@@ -131,7 +147,7 @@ export function exportDRE(m, periodLabel) {
 
   // Total despesas
   const totalExp = (m.revenueDeductions || 0) + m.surgeryCostTotal + m.consultationCostTotal + m.productPurchaseTotal + (m.additionalDirectCosts || 0) + m.operationalExpenses + (m.financialExpenses || 0) + m.taxExpenses
-  addRow('   Total de Despesas (referência)',   totalExp,                   S.rowLabel, S.negative)
+  addRow('   Total de Despesas (referência)',   -totalExp,                  S.rowLabel, S.negative)
 
   const ws = XLSXStyle.utils.aoa_to_sheet(rows.map(r => r.map(c => c.v)))
   // Rewrite cells with style
@@ -142,7 +158,7 @@ export function exportDRE(m, periodLabel) {
     })
   })
 
-  ws['!cols'] = [{ wch: 42 }, { wch: 2 }, { wch: 20 }]
+  ws['!cols'] = [{ wch: 44 }, { wch: 20 }, { wch: 19 }]
   ws['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: 2 } },
@@ -150,7 +166,7 @@ export function exportDRE(m, periodLabel) {
   ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }]
 
   XLSXStyle.utils.book_append_sheet(wb, ws, 'DRE')
-  download(wb, `DRE_${periodLabel}.xlsx`)
+  return wb
 }
 
 // ─── Fluxo de Caixa ───────────────────────────────────────────────────────────
