@@ -4,8 +4,7 @@
 // estado compartilhado do workspace (useCrmWorkspace).
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
-import { coerceCustomValue, groupSummary, isOverdue, daysSince, sourceKey } from '../lib/crmWorkspace.js'
-import { effectiveProbability } from '../lib/crmStages.js'
+import { coerceCustomValue, groupSummary, groupFooterSummary, isOverdue, daysSince, sourceKey } from '../lib/crmWorkspace.js'
 import { createManualLead } from '../lib/opportunityActions.js'
 import {
   Ico, ICONS, Popover, MenuItem, fmtMoney,
@@ -195,7 +194,10 @@ function GroupBlock({
       </div>
 
       {isCollapsed ? (
-        <CollapsedBar group={group} visibleCols={visibleCols} widthOf={widthOf} ctx={ctx} />
+        <>
+          <CollapsedBar group={group} visibleCols={visibleCols} widthOf={widthOf} ctx={ctx} />
+          <GroupFooter group={group} ctx={ctx} />
+        </>
       ) : (
         <div role="table" aria-label={group.label} style={{ borderRadius: 8 }}>
           <HeaderRow group={group} visibleCols={visibleCols} widthOf={widthOf} sort={sort} canManage={canManage}
@@ -233,6 +235,7 @@ function GroupBlock({
               visibleCols={visibleCols} widthOf={widthOf} totalWidth={totalWidth} />
           )}
           <SummaryRow group={group} visibleCols={visibleCols} widthOf={widthOf} ctx={ctx} />
+          <GroupFooter group={group} ctx={ctx} />
         </div>
       )}
     </section>
@@ -431,7 +434,7 @@ const Row = memo(function Row({
       case 'whatsapp':
         return <WhatsAppCell opp={opp} />
       case 'notes':
-        return <NotesCell count={ctx.noteCounts?.[opp.id] || 0} onOpen={() => onOpenOpp(opp, 'timeline')} />
+        return <NotesCell count={ctx.noteCounts?.[opp.id] || 0} onOpen={() => onOpenOpp(opp, 'atualizacoes')} />
       case 'created_at':
         return <DateTimeCell value={opp.created_at} />
       case 'days_in_stage':
@@ -565,13 +568,44 @@ function DistBar({ parts, total }) {
   )
 }
 
+// Rodapé de resumo do grupo (estilo Monday), sempre visível — não depende das colunas exibidas.
+// Tudo derivado das linhas do grupo JÁ filtradas (groupFooterSummary): editar, mover ou arquivar
+// uma oportunidade muda o estado comum e o rodapé recalcula na hora.
+function GroupFooter({ group, ctx }) {
+  const f = useMemo(() => groupFooterSummary(group.rows, ctx), [group.rows, ctx])
+  if (!f.count) return null
+  const stat = (label, value, title) => (
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: 11, color: C.textDim, fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 13, color: C.text, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    </span>
+  )
+  return (
+    <div data-testid={`crm-group-footer-${group.key}`} aria-label={`Resumo de ${group.label}`}
+      style={{ position: 'sticky', left: 0, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', padding: '8px 12px', marginTop: 6, maxWidth: 'min(100%, calc(100vw - 48px))', boxSizing: 'border-box', borderRadius: 8, background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${group.color}` }}>
+      {stat('Oportunidades', <span data-testid="crm-footer-count">{f.count}</span>)}
+      {stat('Valor estimado', <span data-testid="crm-footer-sum">{f.valueCount ? fmtMoney(f.valueSum) : '—'}</span>, f.valueCount < f.count ? `${f.count - f.valueCount} sem valor informado` : undefined)}
+      {f.weighted != null && stat('Ponderado', <span data-testid="crm-footer-weighted">{fmtMoney(f.weighted)}</span>, 'Σ valor × probabilidade das oportunidades abertas (a da oportunidade ou, se vazia, a da etapa)')}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+        <span style={{ display: 'flex', width: 120, height: 8, borderRadius: 4, overflow: 'hidden', background: C.border }} aria-hidden="true">
+          {f.statusParts.map(p => <span key={p.key} style={{ width: `${(p.count / f.count) * 100}%`, background: p.color }} />)}
+        </span>
+        {f.statusParts.map(p => (
+          <span key={p.key} data-testid="crm-footer-status" title={`${p.label}: ${p.count}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: C.textSub, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color }} />{p.label}
+            <strong style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>{p.count}</strong>
+          </span>
+        ))}
+      </span>
+    </div>
+  )
+}
+
 function SummaryRow({ group, visibleCols, widthOf, ctx }) {
   const summary = useMemo(() => groupSummary(group.rows, visibleCols, ctx), [group.rows, visibleCols, ctx])
-  const weighted = useMemo(() => group.rows.reduce((s, o) => {
-    if (o.status !== 'aberto') return s
-    const p = effectiveProbability(o, ctx.stagesByKey)
-    return s + (Number(o.value) || 0) * ((p ?? 0) / 100)
-  }, 0), [group.rows, ctx.stagesByKey])
+  // Mesma regra do rodapé (fonte única do cálculo ponderado).
+  const weighted = useMemo(() => groupFooterSummary(group.rows, ctx).weighted || 0, [group.rows, ctx])
   if (!group.rows.length) return null
   return (
     <div role="row" aria-label={`Totais de ${group.label}`} style={{ display: 'flex', height: 40 }}>

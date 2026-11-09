@@ -227,7 +227,7 @@ const SUBTITLES = {
   'crm-painel':'Conversão por etapa, origem e responsável, pipeline ponderado e motivos de perda — sem cruzar o financeiro.',
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',
-  tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, agrupadas por vencimento.',
+  tarefas:'Tarefas e follow-ups da equipe — de qualquer oportunidade ou avulsas, em Kanban ou tabela, com filtros combinados.',
   esteiras:'Trilhas de acompanhamento definidas pela clínica. Cada passo vira uma tarefa com data ancorada na cirurgia.',
   'clinical-records':'Agenda do dia e ficha central do paciente em um workspace clínico compacto.',
   'clinical-patients':'Continuidade do cuidado, últimos atendimentos, próximos compromissos e situação de cada paciente.',

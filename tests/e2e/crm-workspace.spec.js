@@ -205,6 +205,10 @@ test('equipe não vê criação de coluna nem pode compartilhar visualização',
 
 test('sem a migração aplicada o CRM continua funcionando com os campos atuais', async ({ page }) => {
   await page.addInitScript(() => { try { window.localStorage.setItem('surgimetrics_onboarded', 'true') } catch { /* ignore */ } })
+  // Pega-tudo (registrado primeiro: as rotas abaixo têm prioridade): o que não foi mockado responde
+  // "tabela inexistente", como num banco sem as migrações. Sem isso, cada pedido ia para o
+  // Supabase fictício e a conexão recusada (lenta no Windows) estourava o tempo do teste.
+  await page.route('**/rest/v1/**', route => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: 'not found' }) }))
   await page.route('**/rest/v1/rpc/clinic_team', route => route.fulfill(json([])))
   await page.route('**/rest/v1/rpc/crm_last_contact', route => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST202', message: 'not found' }) }))
   await page.route('**/rest/v1/opportunities*', route => {

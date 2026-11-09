@@ -6,7 +6,7 @@ import { isValidTaskType, TASK_STATUSES } from './taskQueue.js'
 const TASK_COLS = 'id, opportunity_id, patient_id, title, due_date, due_time, task_type, status, outcome, assigned_user_id, created_by, done_at, created_at'
 
 // Cria uma tarefa. ownerId = dono/clínica (RLS). opportunityId/patientId opcionais (avulsa).
-export async function createTask(ownerId, { title, dueDate, dueTime = null, taskType = 'outro', assignedUserId, opportunityId = null, patientId = null, createdBy = null }) {
+export async function createTask(ownerId, { title, dueDate, dueTime = null, taskType = 'outro', assignedUserId, opportunityId = null, patientId = null, createdBy = null, priority = null, description = null, stageId = null }) {
   if (!ownerId) return { error: 'Sessão inválida' }
   if (!title?.trim()) return { error: 'Título obrigatório' }
   const row = {
@@ -21,7 +21,12 @@ export async function createTask(ownerId, { title, dueDate, dueTime = null, task
     created_by: createdBy || null,
     status: 'pendente',
   }
-  const { data, error } = await supabase.from('tasks').insert(row).select(TASK_COLS).single()
+  // Campos da Fase 4 só vão quando usados: sem a migração, criar tarefa continua funcionando.
+  if (priority) row.priority = priority
+  if (description?.trim()) row.description = description.trim()
+  if (stageId) row.stage_id = stageId
+  const extended = Boolean(priority || description?.trim() || stageId)
+  const { data, error } = await supabase.from('tasks').insert(row).select(extended ? '*' : TASK_COLS).single()
   if (error) return { error: error.message }
   return { task: data }
 }
@@ -54,6 +59,28 @@ export async function updateTask(taskId, patch = {}) {
     else return { error: 'Data inválida.' }
   }
   if ('assigned_user_id' in patch) allowed.assigned_user_id = patch.assigned_user_id || null
+  if ('due_time' in patch) {
+    const h = patch.due_time
+    if (h === '' || h == null) allowed.due_time = null
+    else if (/^\d{2}:\d{2}(:\d{2})?$/.test(String(h))) allowed.due_time = String(h).slice(0, 5)
+    else return { error: 'Hora inválida.' }
+  }
+  if ('task_type' in patch) {
+    if (!isValidTaskType(patch.task_type)) return { error: 'Categoria inválida.' }
+    allowed.task_type = patch.task_type
+  }
+  // Campos da Fase 4 (supabase/tasks_workspace_phase4.sql).
+  if ('priority' in patch) {
+    if (patch.priority != null && !['urgente', 'alta', 'media', 'baixa'].includes(patch.priority)) return { error: 'Prioridade inválida.' }
+    allowed.priority = patch.priority || null
+  }
+  if ('description' in patch) {
+    const d = String(patch.description || '').trim()
+    if (d.length > 5000) return { error: 'Descrição muito longa (máx. 5.000 caracteres).' }
+    allowed.description = d || null
+  }
+  // Coluna do Kanban: o banco ajusta status/conclusão pela coluna (trigger tasks_stage_sync).
+  if ('stage_id' in patch) allowed.stage_id = patch.stage_id || null
   if ('status' in patch) {
     if (!TASK_STATUSES.some(s => s.key === patch.status)) return { error: 'Status inválido.' }
     allowed.status = patch.status
@@ -74,6 +101,9 @@ export async function updateTask(taskId, patch = {}) {
     if (error.code === '23514' && allowed.status === 'aguardando') {
       return { error: 'O status "Aguardando" fica disponível depois da atualização do banco do CRM (crm_workspace_phase2.sql).' }
     }
+    if (['42703', 'PGRST204'].includes(error.code)) {
+      return { error: 'Prioridade, descrição e colunas personalizadas ficam disponíveis depois da atualização do banco de Tarefas (tasks_workspace_phase4.sql).' }
+    }
     return { error: error.message }
   }
   if (!data?.length) return { error: 'Não foi possível salvar a tarefa (sem permissão ou tarefa removida).' }
@@ -87,14 +117,20 @@ export async function deleteTask(taskId) {
   return { ok: true }
 }
 
-// Registra uma nota manual na oportunidade (entra na timeline).
-export async function addNote(ownerId, opportunityId, body, authorId = null) {
+// Registra uma nota manual na oportunidade (entra na timeline e nas Atualizações).
+// parentId/mentions (resposta e menções) dependem de supabase/crm_workspace_phase3.sql: só são
+// enviados quando usados, então a nota simples continua funcionando sem a migração.
+export async function addNote(ownerId, opportunityId, body, authorId = null, { parentId = null, mentions = [] } = {}) {
   if (!ownerId || !opportunityId) return { error: 'Dados inválidos' }
   if (!body?.trim()) return { error: 'Nota vazia' }
-  const { data, error } = await supabase.from('opportunity_notes')
-    .insert({ user_id: ownerId, opportunity_id: opportunityId, body: body.trim(), author_id: authorId })
-    .select('id, body, author_id, created_at').single()
-  if (error) return { error: error.message }
+  const row = { user_id: ownerId, opportunity_id: opportunityId, body: body.trim(), author_id: authorId }
+  if (parentId) row.parent_id = parentId
+  if (mentions?.length) row.mentions = mentions
+  const { data, error } = await supabase.from('opportunity_notes').insert(row).select('*').single()
+  if (error) {
+    if (['42703', 'PGRST204'].includes(error.code)) return { error: 'Respostas e menções ficam disponíveis depois da atualização do banco do CRM.' }
+    return { error: error.message }
+  }
   return { note: data }
 }
 

@@ -8,6 +8,12 @@ const TASKS = [
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => { try { window.localStorage.setItem('surgimetrics_onboarded', 'true') } catch { /* ignore */ } })
   await page.route('**/rest/v1/rpc/clinic_team', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }))
+  // Endpoints da Fase 4 respondendo como "migração ainda não aplicada": a página precisa
+  // funcionar igual com as colunas fixas (A fazer / Aguardando / Concluída).
+  const missing = { status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST205', message: 'relation does not exist' }) }
+  for (const p of ['**/rest/v1/task_stages*', '**/rest/v1/task_checklist_items*', '**/rest/v1/task_comments*', '**/rest/v1/rpc/task_ensure_default_stages']) {
+    await page.route(p, route => route.fulfill(missing))
+  }
   await page.route('**/rest/v1/tasks*', route =>
     route.request().method() === 'GET'
       ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(TASKS) })
