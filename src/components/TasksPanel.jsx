@@ -1,533 +1,474 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+// Gerenciador de tarefas da clínica (estilo Monday). Duas visualizações dos MESMOS dados
+// (useTaskWorkspace): Kanban com colunas configuráveis e Tabela interativa. Filtros combináveis
+// valem para as duas. Clicar numa tarefa abre o painel lateral sem sair da página.
+// As tarefas são as mesmas do CRM (subitens), Meu Dia e Sino.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { C } from '../theme.js'
-import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
-import { TASK_OUTCOMES, TASK_TYPE_LABEL, TASK_TYPES } from '../lib/taskQueue.js'
-import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { useToast } from '../context/ToastContext.jsx'
 import { Modal, Btn, FInput } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
-import { createTask, toggleTask, deleteTask , registerTaskAttempt } from '../lib/taskActions.js'
-import { groupTasksByDue, GROUP_ORDER } from '../lib/taskGroups.js'
-import { filterTasks, kanbanByStatus, urgencyOf, countDoneToday, dayKey } from '../lib/taskViews.js'
-import { initials, avatarColor } from '../lib/avatar.js'
-
-// Painel de tarefas da clínica (cross-oportunidade + avulsas). Agenda do dia da equipe.
-// Duas visões: Lista (agrupada por vencimento) e Kanban (A fazer / Concluídas, arrastar conclui/reabre).
-// Filtro por escopo (minhas/todas), múltiplos responsáveis e busca.
+import { Ico, ICONS, Popover, MenuItem, Avatar } from './CrmCells.jsx'
+import { TaskKanban } from './TaskKanban.jsx'
+import { TaskTable } from './TaskTable.jsx'
+import { TaskDrawer } from './TaskDrawer.jsx'
+import { TASK_TYPES } from '../lib/taskQueue.js'
+import { useTaskWorkspace } from '../lib/useTaskWorkspace.js'
+import {
+  EMPTY_TASK_FILTERS, normalizeTaskFilters, activeTaskFilterCount, applyTaskFilters, sortTasks, groupTasks,
+  resolveTaskColumns, serializeTaskColumns, moveColumn, TASK_GROUP_BY, PRIORITIES, CATEGORIES, DUE_PRESETS,
+  opportunityOptions, taskStats, isoDay,
+} from '../lib/taskWorkspace.js'
 
 const VIEW_KEY = 'surgimetrics_tasks_view'
+const PREFS_KEY = 'surgimetrics_tasks_prefs_v2'
 
-// Rótulo amigável do prazo (relativo para hoje/atraso, data curta no resto).
-function relDue(due) {
-  if (!due) return null
-  const d = String(due).slice(0, 10)
-  const now = new Date()
-  const today = dayKey(now)
-  if (d === today) return 'hoje'
-  const t = new Date(d + 'T00:00:00')
-  const diff = Math.round((t - new Date(today + 'T00:00:00')) / 86400000)
-  if (diff === 1) return 'amanhã'
-  if (diff === -1) return 'ontem'
-  if (diff < -1) return `${Math.abs(diff)} dias atrás`
-  try { return t.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) } catch { return d }
+function readPrefs(userId) {
+  try { return JSON.parse(window.localStorage.getItem(`${PREFS_KEY}:${userId || 'anon'}`) || '{}') } catch { return {} }
 }
-function urgColor(u) {
-  return ({ atrasada: C.red || '#EF4444', hoje: C.accent, semana: C.yellow || '#F59E0B', futura: C.textDim, feita: C.green || '#10B981' })[u] || C.textDim
-}
-
-// ---- Átomos visuais ----
-function Avatar({ label, size = 30, title }) {
-  const s = size
-  return (
-    <span title={title || label} style={{
-      width: s, height: s, borderRadius: '50%', display: 'grid', placeItems: 'center',
-      fontSize: s <= 20 ? 9 : 11.5, fontWeight: 800, color: '#fff', flexShrink: 0,
-      background: avatarColor(label), border: `2px solid ${C.card}`, boxShadow: '0 2px 6px -2px rgba(0,0,0,.4)',
-    }}>{initials(label)}</span>
-  )
-}
-function CheckIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-}
-function Ico({ d, size = 15, sw = 2, fill = 'none' }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{d}</svg>
-}
-const ICON = {
-  warn: <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />,
-  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
-  cal: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
-  check: <path d="M20 6 9 17l-5-5" />,
-  search: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
-  plus: <path d="M12 5v14M5 12h14" />,
-  user: <><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></>,
-  briefcase: <><rect x="3" y="7" width="18" height="12" rx="2" /><path d="M3 7l3-4h12l3 4M3 12h18" /></>,
-  chevron: <path d="m6 9 6 6 6-6" />,
-  list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
-  board: <><rect x="3" y="3" width="7" height="18" rx="1.5" /><rect x="14" y="3" width="7" height="11" rx="1.5" /></>,
-  x: <path d="M18 6 6 18M6 6l12 12" />,
+function writePrefs(userId, prefs) {
+  try { window.localStorage.setItem(`${PREFS_KEY}:${userId || 'anon'}`, JSON.stringify(prefs)) } catch { /* ignore */ }
 }
 
 export function TasksPanel() {
   const { user } = useAuth()
-  const { ownerId, role } = useUserRole()
-  const effectiveUserId = ownerId || user?.id
+  const { ownerId, role, isOwner } = useUserRole()
+  const { toast } = useToast()
+  const effectiveOwner = ownerId || user?.id
+  const canManage = Boolean(isOwner || role === 'admin' || role === 'gestao')
+  const ws = useTaskWorkspace(effectiveOwner, user?.id)
+  const [params, setParams] = useSearchParams()
 
-  const [tasks, setTasks] = useState([])
-  const [members, setMembers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [scope, setScope] = useState(role === 'admin' || role === 'gestao' ? 'todas' : 'minhas')
-  const [responsibles, setResponsibles] = useState([])
-  const [query, setQuery] = useState('')
-  const [showDone, setShowDone] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [attemptFlash, setAttemptFlash] = useState(null)
-  const [view, setView] = useState(() => {
-    try { return window.localStorage.getItem(VIEW_KEY) || 'lista' } catch { return 'lista' }
-  })
+  // ----- preferências (por navegador/usuário) -----
+  const [view, setView] = useState(() => { try { return window.localStorage.getItem(VIEW_KEY) || 'lista' } catch { return 'lista' } })
+  const [prefs, setPrefs] = useState(() => readPrefs(user?.id))
+  useEffect(() => { setPrefs(readPrefs(user?.id)) }, [user?.id])
+  useEffect(() => { writePrefs(user?.id, prefs) }, [user?.id, prefs])
+  const defaultScope = role === 'admin' || role === 'gestao' ? 'todas' : 'minhas'
+  const filters = useMemo(() => normalizeTaskFilters(prefs.filters || { ...EMPTY_TASK_FILTERS, scope: defaultScope }), [prefs.filters, defaultScope])
+  const setFilters = useCallback(f => setPrefs(p => ({ ...p, filters: typeof f === 'function' ? f(normalizeTaskFilters(p.filters || { scope: defaultScope })) : f })), [defaultScope])
+  const groupBy = TASK_GROUP_BY.some(g => g.id === prefs.groupBy) ? prefs.groupBy : 'status'
+  const sort = prefs.sort?.col ? prefs.sort : null
+  const columns = useMemo(() => resolveTaskColumns(prefs.columns), [prefs.columns])
+  const collapsed = prefs.collapsed || {}
 
   function changeView(v) {
     setView(v)
     try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* ignore */ }
   }
 
-  async function load() {
-    setLoading(true); setError(null)
-    const [taskRes, memRes] = await Promise.all([
-      supabase.from('tasks')
-        .select('id, title, due_date, due_time, task_type, status, outcome, assigned_user_id, done_at, created_at, opportunity_id, patient_id, patients(full_name, phone), opportunities(title)')
-        .order('due_date', { ascending: true, nullsFirst: false }),
-      supabase.rpc('clinic_team'), // time completo da clínica (inclui o dono) — admin/gestão/equipe atribuem a qualquer um
-    ])
-    if (taskRes.error) { setError(taskRes.error.message); setLoading(false); return }
-    setTasks(taskRes.data ?? [])
-    setMembers((memRes.data ?? []).filter(m => m.user_id))
-    setLoading(false)
-  }
-  useEffect(() => { if (effectiveUserId) load() }, [effectiveUserId])
+  // ----- dados derivados -----
+  const today = useMemo(() => isoDay(new Date()), [])
+  const ctx = useMemo(() => ({ userId: user?.id, today, stageIndex: ws.stageIndex, stages: ws.stages, memberLabel: ws.memberLabel }), [user?.id, today, ws.stageIndex, ws.stages, ws.memberLabel])
+  const filtered = useMemo(() => applyTaskFilters(ws.tasks, filters, ctx), [ws.tasks, filters, ctx])
+  const sorted = useMemo(() => sortTasks(filtered, sort, ctx), [filtered, sort, ctx])
+  const groups = useMemo(() => groupTasks(sorted, groupBy, ctx), [sorted, groupBy, ctx])
+  const stats = useMemo(() => taskStats(filtered, today), [filtered, today])
+  const oppOptions = useMemo(() => opportunityOptions(ws.tasks), [ws.tasks])
+  const nFilters = activeTaskFilterCount(filters)
 
-  const memberLabel = useMemo(() => Object.fromEntries(members.map(m => [m.user_id, m.member_email || m.user_id])), [members])
-  const filtered = useMemo(
-    () => filterTasks(tasks, { scope, currentUserId: user?.id, responsibles, query }),
-    [tasks, scope, user, responsibles, query],
-  )
-  const groups = useMemo(() => groupTasksByDue(filtered), [filtered])
-  const kanban = useMemo(() => kanbanByStatus(filtered), [filtered])
+  // ----- painel lateral -----
+  const [openId, setOpenId] = useState(null)
+  const [drawerTab, setDrawerTab] = useState('subtasks')
+  const openTask = ws.tasks.find(t => t.id === openId) || null
+  const onOpen = useCallback((task, tab = 'subtasks') => { setDrawerTab(tab); setOpenId(task.id) }, [])
+  // Link direto (menção no sino): /app/tarefas?task=<id>&tab=comments
+  const deepTask = params.get('task')
+  useEffect(() => {
+    if (!deepTask || ws.loading) return
+    if (ws.tasks.some(t => t.id === deepTask)) { setDrawerTab(params.get('tab') || 'subtasks'); setOpenId(deepTask) }
+    else toast('Tarefa não encontrada (pode ter sido excluída).', 'warning')
+    const p = new URLSearchParams(params)
+    p.delete('task'); p.delete('tab')
+    setParams(p, { replace: true })
+  }, [deepTask, ws.loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Estatísticas do conjunto visível.
-  const stats = useMemo(() => ({
-    atrasadas: groups.atrasadas.length,
-    hoje: groups.hoje.length,
-    semana: groups.semana.length + groups.futuras.length,
-    feitasHoje: countDoneToday(filtered),
-  }), [groups, filtered])
+  // ----- ações (com aviso de erro) -----
+  const [attemptFlash, setAttemptFlash] = useState(null)
+  const report = useCallback(res => { if (res?.error) toast(res.error, 'error'); return res }, [toast])
+  const actions = useMemo(() => ({
+    open: task => onOpen(task),
+    toggle: task => ws.toggle(task).then(report),
+    remove: task => ws.remove(task).then(res => { report(res); if (!res.error) { toast('Tarefa excluída.', 'success'); setOpenId(id => (id === task.id ? null : id)) } }),
+    setStage: (task, stageId) => ws.setStage(task.id, stageId).then(report),
+    setPriority: (task, priority) => ws.update(task.id, { priority }).then(report),
+    patch: (task, patch) => ws.update(task.id, patch).then(res => { if (res.error) toast(`${res.error} A alteração foi desfeita.`, 'error'); return res }),
+    outcome: (task, outcome) => ws.registerOutcome(task, outcome).then(res => {
+      report(res)
+      if (!res.error && !res.closes) setAttemptFlash({ id: task.id, outcome })
+    }),
+  }), [ws, report, toast, onOpen])
 
-  // Rollback por item (não desfaz mudanças concorrentes de outras tarefas).
-  async function toggle(task) {
-    setTasks(ts => ts.map(x => (x.id === task.id ? { ...x, status: x.status === 'feita' ? 'pendente' : 'feita', done_at: x.status === 'feita' ? null : new Date().toISOString() } : x)))
-    const res = await toggleTask(task)
-    if (res.error) { setTasks(ts => ts.map(x => (x.id === task.id ? task : x))); setError(res.error) }
-  }
-  // Conclusão com desfecho. Desfecho que NÃO encerra (não atendeu, remarcou) registra a
-  // tentativa e mantém a tarefa na fila — o trabalho continua pendente.
-  async function completeWithOutcome(task, outcome) {
-    const closes = TASK_OUTCOMES.find(item => item.key === outcome)?.closes === true
-    if (closes) {
-      setTasks(ts => ts.map(x => (x.id === task.id ? { ...x, status:'feita', outcome, done_at:new Date().toISOString() } : x)))
-    }
-    const res = await registerTaskAttempt({ task, ownerId:effectiveUserId, actorId:user?.id, outcome, closes })
-    if (res.error) {
-      if (closes) setTasks(ts => ts.map(x => (x.id === task.id ? task : x)))
-      setError(res.error)
-      return
-    }
-    if (!closes) setAttemptFlash({ id:task.id, outcome })
-  }
+  // ----- seleção (só o que está visível) -----
+  const [selected, setSelected] = useState(() => new Set())
+  const lastPick = useRef(null)
+  const visibleIds = useMemo(() => groups.flatMap(g => (collapsed[g.key] ? [] : g.rows.map(t => t.id))), [groups, collapsed])
+  const effectiveSelected = useMemo(() => new Set([...selected].filter(id => visibleIds.includes(id))), [selected, visibleIds])
+  const onToggleSelect = useCallback((id, shift) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      const from = lastPick.current ? visibleIds.indexOf(lastPick.current) : -1
+      const to = visibleIds.indexOf(id)
+      if (shift && from >= 0 && to >= 0) {
+        const value = prev.has(lastPick.current)
+        for (const x of visibleIds.slice(Math.min(from, to), Math.max(from, to) + 1)) value ? next.add(x) : next.delete(x)
+      } else if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    lastPick.current = id
+  }, [visibleIds])
+  const onSetSelected = useCallback((ids, checked) => setSelected(prev => {
+    const next = new Set(prev)
+    for (const id of ids) checked ? next.add(id) : next.delete(id)
+    return next
+  }), [])
+  const clearSelection = useCallback(() => { setSelected(new Set()); lastPick.current = null }, [])
 
-  async function remove(task) {
-    setTasks(ts => ts.filter(x => x.id !== task.id))
-    const res = await deleteTask(task.id)
-    if (res.error) { setTasks(ts => (ts.some(x => x.id === task.id) ? ts : [...ts, task])); setError(res.error) }
-  }
-  // Drop no kanban: só alterna quando o status realmente muda.
-  function dropToStatus(taskId, targetDone) {
-    const t = tasks.find(x => x.id === taskId)
-    if (!t) return
-    if ((t.status === 'feita') !== targetDone) toggle(t)
-  }
+  const [creating, setCreating] = useState(false)
 
-  if (loading) return <LoadingState />
-  if (error) return <div style={{ color: C.red || '#ef4444', fontSize: 14, padding: 24 }}>Erro: {error}</div>
+  if (ws.loading) return <LoadingState />
+  if (ws.error) {
+    return (
+      <div role="alert" style={{ color: C.red || '#ef4444', fontSize: 14, padding: 24 }}>
+        Erro ao carregar as tarefas: {ws.error}
+        <div style={{ marginTop: 12 }}><Btn variant="ghost" onClick={ws.reload}>Tentar novamente</Btn></div>
+      </div>
+    )
+  }
 
   return (
-    <div>
-      <Toolbar
-        scope={scope} setScope={setScope}
-        responsibles={responsibles} setResponsibles={setResponsibles}
-        query={query} setQuery={setQuery}
-        members={members} memberLabel={memberLabel}
-        view={view} setView={changeView}
-        onCreate={() => setCreating(true)}
-      />
+    <div data-testid="tasks-workspace">
+      <Toolbar filters={filters} setFilters={setFilters} nFilters={nFilters} ws={ws} oppOptions={oppOptions}
+        view={view} setView={changeView} onCreate={() => setCreating(true)}
+        groupBy={groupBy} setGroupBy={g => setPrefs(p => ({ ...p, groupBy: g }))}
+        columns={columns} setColumns={cols => setPrefs(p => ({ ...p, columns: serializeTaskColumns(cols) }))} />
 
       <StatStrip stats={stats} />
 
-      {view === 'kanban'
-        ? <KanbanView kanban={kanban} memberLabel={memberLabel} onToggle={toggle} onRemove={remove} onDrop={dropToStatus} onOutcome={completeWithOutcome} attemptFlash={attemptFlash} />
-        : <ListView groups={groups} memberLabel={memberLabel} onToggle={toggle} onRemove={remove} showDone={showDone} setShowDone={setShowDone} onOutcome={completeWithOutcome} attemptFlash={attemptFlash} />}
+      {!ws.ready && canManage && (
+        <div style={{ margin: '0 0 10px', padding: '7px 12px', borderRadius: 10, border: `1px solid ${C.yellow}55`, background: C.yellow + '14', color: C.textSub, fontSize: 12.5 }}>
+          Colunas personalizadas, prioridade, descrição, subtarefas, comentários e histórico aparecem depois que a atualização do banco de Tarefas
+          (<code>tasks_workspace_phase4.sql</code>) for aplicada. O restante já funciona normalmente.
+        </div>
+      )}
+
+      {filtered.length === 0 && ws.tasks.length > 0 && (
+        <div style={{ padding: '8px 2px 12px', fontSize: 13, color: C.textSub }}>
+          Nenhuma tarefa corresponde aos filtros.{' '}
+          {nFilters > 0 && <button type="button" onClick={() => setFilters(f => ({ ...EMPTY_TASK_FILTERS, scope: f.scope, q: f.q }))} style={{ border: 'none', background: 'transparent', color: C.accent, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Limpar filtros</button>}
+        </div>
+      )}
+      {ws.tasks.length === 0 && <EmptyState onCreate={() => setCreating(true)} />}
+
+      {ws.tasks.length > 0 && (view === 'kanban'
+        ? <TaskKanban tasks={filtered} ws={ws} today={today} canManage={canManage} actions={actions} onOpen={onOpen} attemptFlash={attemptFlash} toast={toast} />
+        : <TaskTable groups={groups} columns={columns} ws={ws} today={today} sort={sort}
+            onSort={col => setPrefs(p => {
+              const s = p.sort?.col === col ? (p.sort.dir === 'asc' ? { col, dir: 'desc' } : null) : { col, dir: 'asc' }
+              return { ...p, sort: s }
+            })}
+            onReorderColumn={(from, to) => setPrefs(p => ({ ...p, columns: serializeTaskColumns(moveColumn(resolveTaskColumns(p.columns), from, to)) }))}
+            collapsed={collapsed} onToggleCollapse={key => setPrefs(p => ({ ...p, collapsed: { ...(p.collapsed || {}), [key]: !(p.collapsed || {})[key] } }))}
+            selected={effectiveSelected} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
+            onOpen={onOpen} actions={actions} attemptFlash={attemptFlash} />)}
+
+      {view !== 'kanban' && effectiveSelected.size > 0 && (
+        <BulkBar ids={[...effectiveSelected]} ws={ws} onClear={clearSelection} toast={toast} />
+      )}
+
+      {openTask && (
+        <TaskDrawer task={openTask} ws={ws} ownerId={effectiveOwner} userId={user?.id} today={today} actions={actions}
+          initialTab={drawerTab} onClose={() => setOpenId(null)} toast={toast} />
+      )}
 
       {creating && (
-        <NewTaskModal ownerId={effectiveUserId} userId={user?.id} members={members}
-          onClose={() => setCreating(false)} onCreated={t => { setTasks(ts => [...ts, t]); setCreating(false) }} />
+        <NewTaskModal ws={ws} onClose={() => setCreating(false)}
+          onCreated={() => { setCreating(false); toast('Tarefa criada.', 'success') }} />
       )}
     </div>
   )
 }
 
-// ---- Toolbar (filtros + visão) ----
-function Toolbar({ scope, setScope, responsibles, setResponsibles, query, setQuery, members, memberLabel, view, setView, onCreate }) {
-  const seg = active => ({ padding: '7px 15px', borderRadius: 8, border: 'none', background: active ? C.card : 'transparent', color: active ? C.accent : C.textSub, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: active ? '0 6px 16px -10px rgba(0,0,0,.6)' : 'none' })
-  const segWrap = { display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 11, padding: 4 }
-  const field = { display: 'flex', alignItems: 'center', gap: 8, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', color: C.textSub, fontSize: 13 }
-  const createBtn = { padding: '9px 15px', borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentLight || C.accent})`, color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 7, boxShadow: `0 6px 18px -6px ${C.accent}88` }
+// ---------------------------------------------------------------------------
+// Barra de ferramentas + filtros avançados
+// ---------------------------------------------------------------------------
+function ToolButton({ icon, children, onClick, active, badge, btnRef, testId }) {
+  return (
+    <button ref={btnRef} type="button" onClick={onClick} data-testid={testId}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: 'none', background: active ? C.accent + '1f' : 'transparent', color: active ? C.accent : C.textSub, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+      <Ico d={icon} size={15} />{children}
+      {badge ? <span data-testid={testId ? `${testId}-count` : undefined} style={{ minWidth: 18, height: 18, borderRadius: 9, background: C.accent, color: '#fff', fontSize: 10.5, fontWeight: 800, display: 'grid', placeItems: 'center', padding: '0 5px' }}>{badge}</span> : null}
+    </button>
+  )
+}
+
+function Chip({ active, color, children, onClick, testId }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active} data-testid={testId}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 14, fontSize: 12, fontWeight: 600, border: `1px solid ${active ? (color || C.accent) : C.border}`, background: active ? (color || C.accent) + '26' : C.surface, color: active ? C.text : C.textSub, cursor: 'pointer', fontFamily: 'inherit' }}>
+      {color && <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />}{children}
+    </button>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ padding: '8px 8px 10px', borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: C.textDim, marginBottom: 7 }}>{title}</div>
+      {children}
+    </div>
+  )
+}
+
+const toggleIn = (list, v) => (list.includes(v) ? list.filter(x => x !== v) : [...list, v])
+
+function Toolbar({ filters, setFilters, nFilters, ws, oppOptions, view, setView, onCreate, groupBy, setGroupBy, columns, setColumns }) {
+  const filterRef = useRef(null)
+  const groupRef = useRef(null)
+  const colsRef = useRef(null)
+  const [open, setOpen] = useState(null)
+  const [oppQ, setOppQ] = useState('')
+  const close = () => setOpen(null)
+  const toggle = id => setOpen(o => (o === id ? null : id))
+  const set = patch => setFilters(f => ({ ...f, ...patch }))
+  const seg = active => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 7, border: 'none', background: active ? C.card : 'transparent', color: active ? C.accent : C.textSub, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: active ? '0 4px 12px -8px rgba(0,0,0,.6)' : 'none' })
+  const segWrap = { display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3 }
+  const input = { fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontFamily: 'inherit', boxSizing: 'border-box', width: '100%' }
+  const hiddenCount = columns.filter(c => c.hidden).length
+  const oppList = oppOptions.filter(o => !oppQ.trim() || o.label.toLowerCase().includes(oppQ.trim().toLowerCase())).slice(0, 40)
 
   return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+      <button type="button" onClick={onCreate}
+        style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 4 }}>
+        <Ico d={ICONS.plus} size={14} sw={2.6} />Nova tarefa
+      </button>
+
       <div style={segWrap} role="group" aria-label="Escopo">
-        <button type="button" style={seg(scope === 'minhas')} onClick={() => setScope('minhas')}>Minhas</button>
-        <button type="button" style={seg(scope === 'todas')} onClick={() => setScope('todas')}>Todas</button>
+        <button type="button" style={seg(filters.scope === 'minhas')} onClick={() => set({ scope: 'minhas' })}>Minhas</button>
+        <button type="button" style={seg(filters.scope === 'todas')} onClick={() => set({ scope: 'todas' })}>Todas</button>
       </div>
 
-      <ResponsibleFilter members={members} memberLabel={memberLabel} value={responsibles} onChange={setResponsibles} />
-
-      <label style={{ ...field, flex: '1 1 200px', minWidth: 150 }}>
-        <span style={{ color: C.textDim, display: 'inline-flex' }}><Ico d={ICON.search} size={15} /></span>
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar tarefa ou paciente…"
-          style={{ flex: 1, border: 'none', background: 'transparent', color: C.text, outline: 'none', fontFamily: 'inherit', fontSize: 13, minWidth: 0 }} />
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textDim, minWidth: 160, flex: '0 1 230px' }}>
+        <Ico d={ICONS.search} size={14} />
+        <input value={filters.q} onChange={e => set({ q: e.target.value })} placeholder="Buscar tarefa ou paciente…" aria-label="Buscar tarefas"
+          style={{ border: 'none', outline: 'none', background: 'transparent', color: C.text, fontSize: 13, width: '100%', fontFamily: 'inherit' }} />
       </label>
 
-      <div style={segWrap} role="group" aria-label="Visão">
-        <button type="button" style={{ ...seg(view === 'lista'), display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => setView('lista')} title="Lista"><Ico d={ICON.list} size={15} />Lista</button>
-        <button type="button" style={{ ...seg(view === 'kanban'), display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => setView('kanban')} title="Kanban"><Ico d={ICON.board} size={15} />Kanban</button>
-      </div>
-
-      <button type="button" style={createBtn} onClick={onCreate}><Ico d={ICON.plus} size={16} sw={2.4} />Nova tarefa</button>
-    </div>
-  )
-}
-
-// Filtro de responsáveis com múltipla seleção (popover de checkboxes).
-function ResponsibleFilter({ members, memberLabel, value, onChange }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    function onKey(e) { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [open])
-
-  const options = [{ id: 'none', label: 'Sem responsável' }, ...members.map(m => ({ id: m.user_id, label: memberLabel[m.user_id] || m.user_id }))]
-  const toggle = id => onChange(value.includes(id) ? value.filter(x => x !== id) : [...value, id])
-  const count = value.length
-  const summary = count === 0 ? 'Responsáveis: todos' : `${count} responsáve${count > 1 ? 'is' : 'l'}`
-
-  const btn = { display: 'inline-flex', alignItems: 'center', gap: 8, background: count ? C.accent + '18' : C.surface, border: `1px solid ${count ? C.accent : C.border}`, borderRadius: 10, padding: '8px 12px', color: count ? C.accent : C.textSub, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }
-  const pop = { position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 40, minWidth: 230, maxHeight: 300, overflowY: 'auto', background: C.card, border: `1px solid ${C.borderBright || C.border}`, borderRadius: 12, padding: 6, boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)' }
-  const opt = sel => ({ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: C.text, background: sel ? C.accent + '12' : 'transparent' })
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" style={btn} onClick={() => setOpen(o => !o)}>
-        <span style={{ display: 'inline-flex' }}><Ico d={ICON.user} size={14} /></span>
-        {summary}
-        <span style={{ display: 'inline-flex', opacity: 0.7 }}><Ico d={ICON.chevron} size={13} /></span>
-      </button>
-      {open && (
-        <div style={pop}>
-          {count > 0 && (
-            <button type="button" onClick={() => onChange([])}
-              style={{ width: '100%', textAlign: 'left', padding: '7px 9px', border: 'none', background: 'none', color: C.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Limpar seleção</button>
-          )}
-          {options.map(o => {
-            const sel = value.includes(o.id)
-            return (
-              <div key={o.id} style={opt(sel)} onClick={() => toggle(o.id)}>
-                <span style={{ width: 17, height: 17, borderRadius: 5, border: `2px solid ${sel ? C.accent : C.borderBright || C.border}`, background: sel ? C.accent : 'transparent', display: 'grid', placeItems: 'center', color: '#fff', flexShrink: 0 }}>{sel && <Ico d={ICON.check} size={11} sw={3.5} />}</span>
-                {o.id !== 'none' && <Avatar label={o.label} size={20} />}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
-              </div>
-            )
-          })}
-        </div>
+      <ToolButton btnRef={filterRef} icon={ICONS.filter} onClick={() => toggle('filter')} active={nFilters > 0} badge={nFilters || null} testId="task-filter-button">Filtro</ToolButton>
+      {nFilters > 0 && (
+        <button type="button" data-testid="task-filter-clear" onClick={() => setFilters(f => ({ ...EMPTY_TASK_FILTERS, scope: f.scope, q: f.q }))}
+          style={{ border: 'none', background: 'transparent', color: C.accent, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Limpar filtros
+        </button>
       )}
+      <Popover anchorRef={filterRef} open={open === 'filter'} onClose={close} width={400} label="Filtros de tarefas" testId="task-filter-panel">
+        <Section title="Responsáveis">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {ws.members.map(m => {
+              const label = ws.memberLabel[m.user_id]
+              return (
+                <Chip key={m.user_id} active={filters.responsible.includes(m.user_id)} onClick={() => set({ responsible: toggleIn(filters.responsible, m.user_id) })}>
+                  <Avatar label={label} size={16} />{String(label).split('@')[0]}
+                </Chip>
+              )
+            })}
+            <Chip active={filters.responsible.includes('none')} onClick={() => set({ responsible: toggleIn(filters.responsible, 'none') })}>Sem responsável</Chip>
+          </div>
+        </Section>
+        <Section title="Status">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {ws.stages.map(s => <Chip key={s.id} color={s.color} testId={`task-filter-stage-${s.seed_key || s.base_status}`} active={filters.stage.includes(s.id)} onClick={() => set({ stage: toggleIn(filters.stage, s.id) })}>{s.label}</Chip>)}
+          </div>
+        </Section>
+        <Section title="Prazo">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {DUE_PRESETS.map(p => (
+              <Chip key={p.id} testId={`task-filter-due-${p.id}`} active={filters.due?.preset === p.id}
+                onClick={() => set({ due: filters.due?.preset === p.id ? null : { preset: p.id, from: filters.due?.from || null, to: filters.due?.to || null } })}>{p.label}</Chip>
+            ))}
+          </div>
+          {filters.due?.preset === 'custom' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 7 }}>
+              <input type="date" aria-label="Prazo de" value={filters.due.from || ''} onChange={e => set({ due: { ...filters.due, from: e.target.value || null } })} style={input} />
+              <input type="date" aria-label="Prazo até" value={filters.due.to || ''} onChange={e => set({ due: { ...filters.due, to: e.target.value || null } })} style={input} />
+            </div>
+          )}
+        </Section>
+        {ws.ready && (
+          <Section title="Prioridade">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {PRIORITIES.map(p => <Chip key={p.key} color={p.color} testId={`task-filter-priority-${p.key}`} active={filters.priority.includes(p.key)} onClick={() => set({ priority: toggleIn(filters.priority, p.key) })}>{p.label}</Chip>)}
+              <Chip active={filters.priority.includes('none')} onClick={() => set({ priority: toggleIn(filters.priority, 'none') })}>Sem prioridade</Chip>
+            </div>
+          </Section>
+        )}
+        <Section title="Categoria">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {CATEGORIES.map(c => <Chip key={c.key} active={filters.category.includes(c.key)} onClick={() => set({ category: toggleIn(filters.category, c.key) })}>{c.label}</Chip>)}
+          </div>
+        </Section>
+        <Section title="Paciente">
+          <input value={filters.patient} onChange={e => set({ patient: e.target.value })} placeholder="Nome do paciente" aria-label="Filtrar por paciente" data-testid="task-filter-patient" style={input} />
+        </Section>
+        {oppOptions.length > 0 && (
+          <Section title="Oportunidade">
+            <input value={oppQ} onChange={e => setOppQ(e.target.value)} placeholder="Buscar negociação…" aria-label="Buscar oportunidade" style={{ ...input, marginBottom: 6 }} />
+            <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+              {oppList.map(o => (
+                <label key={o.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 4px', fontSize: 12.5, color: C.text, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={filters.opportunity.includes(o.key)} onChange={() => set({ opportunity: toggleIn(filters.opportunity, o.key) })} style={{ accentColor: C.accent }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                </label>
+              ))}
+            </div>
+          </Section>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 6px 4px' }}>
+          <span style={{ fontSize: 11.5, color: C.textDim }}>{nFilters ? `${nFilters} filtro${nFilters > 1 ? 's' : ''} ativo${nFilters > 1 ? 's' : ''}` : 'Nenhum filtro ativo'} · vale para Kanban e Tabela</span>
+          <button type="button" onClick={() => setFilters(f => ({ ...EMPTY_TASK_FILTERS, scope: f.scope, q: f.q }))}
+            style={{ border: 'none', background: 'transparent', color: C.accent, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>Limpar filtros</button>
+        </div>
+      </Popover>
+
+      {view !== 'kanban' && <>
+        <ToolButton btnRef={groupRef} icon={ICONS.group} onClick={() => toggle('group')} active={groupBy !== 'status'} testId="task-group-button">
+          Agrupar{groupBy !== 'status' ? `: ${TASK_GROUP_BY.find(g => g.id === groupBy)?.label}` : ''}
+        </ToolButton>
+        <Popover anchorRef={groupRef} open={open === 'group'} onClose={close} width={220} label="Agrupar por">
+          {TASK_GROUP_BY.map(g => <MenuItem key={g.id} active={groupBy === g.id} onClick={() => { close(); setGroupBy(g.id) }}>{g.label}</MenuItem>)}
+        </Popover>
+        <ToolButton btnRef={colsRef} icon={ICONS.eyeOff} onClick={() => toggle('cols')} active={hiddenCount > 0} badge={hiddenCount || null} testId="task-columns-button">Colunas</ToolButton>
+        <Popover anchorRef={colsRef} open={open === 'cols'} onClose={close} width={240} label="Mostrar ou ocultar colunas">
+          {columns.filter(c => !c.fixed && !c.trailing).map(c => (
+            <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', fontSize: 12.5, color: C.text, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!c.hidden} onChange={() => setColumns(columns.map(x => (x.id === c.id ? { ...x, hidden: !x.hidden } : x)))} style={{ accentColor: C.accent }} />{c.label}
+            </label>
+          ))}
+          <div style={{ fontSize: 11, color: C.textDim, padding: '6px 9px', lineHeight: 1.4 }}>Arraste o cabeçalho de uma coluna para mudar a ordem.</div>
+        </Popover>
+      </>}
+
+      <div style={{ flex: 1 }} />
+      <div style={segWrap} role="group" aria-label="Visualização">
+        <button type="button" data-testid="task-view-kanban" style={seg(view === 'kanban')} onClick={() => setView('kanban')}><Ico d={<><rect x="3" y="3" width="7" height="18" rx="1.5" /><rect x="14" y="3" width="7" height="11" rx="1.5" /></>} size={14} />Kanban</button>
+        <button type="button" data-testid="task-view-table" style={seg(view !== 'kanban')} onClick={() => setView('lista')}><Ico d={<path d="M3 5h18M3 12h18M3 19h18" />} size={14} />Tabela</button>
+      </div>
     </div>
   )
 }
 
-// ---- Faixa de estatísticas ----
+// Indicadores compactos (uma faixa só, sem cards grandes).
 function StatStrip({ stats }) {
   const items = [
-    { n: stats.atrasadas, l: 'Atrasadas', color: C.red || '#EF4444', d: ICON.warn },
-    { n: stats.hoje, l: 'Para hoje', color: C.accent, d: ICON.clock },
-    { n: stats.semana, l: 'Próximas', color: C.textSub, d: ICON.cal },
-    { n: stats.feitasHoje, l: 'Concluídas hoje', color: C.green || '#10B981', d: ICON.check },
+    { n: stats.atrasadas, l: 'atrasadas', color: C.red || '#e2445c', d: ICONS.warn },
+    { n: stats.hoje, l: 'para hoje', color: C.accent, d: ICONS.clock },
+    { n: stats.abertas, l: 'abertas', color: C.textSub, d: ICONS.calendar },
+    { n: stats.feitasHoje, l: 'concluídas hoje', color: C.green || '#00c875', d: ICONS.check },
   ]
-  const wrap = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '0 0 22px' }
   return (
-    <div style={wrap}>
-      {items.map((it, i) => (
-        <div key={i} style={{ position: 'relative', overflow: 'hidden', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
-          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: it.color }} />
-          <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', marginBottom: 10, background: it.color + '22', color: it.color }}><Ico d={it.d} size={18} sw={2} /></div>
-          <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', color: it.n > 0 ? it.color : C.text }}>{it.n}</div>
-          <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600, marginTop: 5 }}>{it.l}</div>
-        </div>
+    <div data-testid="task-stats" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+      {items.map(it => (
+        <span key={it.l} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 8, background: C.card, border: `1px solid ${C.border}`, fontSize: 12, color: C.textSub }}>
+          <span style={{ color: it.color, display: 'inline-flex' }}><Ico d={it.d} size={13} sw={2.2} /></span>
+          <strong style={{ fontSize: 14, color: it.n > 0 ? it.color : C.text, fontVariantNumeric: 'tabular-nums' }}>{it.n}</strong>{it.l}
+        </span>
       ))}
     </div>
   )
 }
 
-// ---- Cartão de tarefa (compartilhado entre lista e kanban) ----
-function TaskCard({ t, memberLabel, onToggle, onRemove, draggable, onOutcome, attemptFlash }) {
-  const done = t.status === 'feita'
-  const u = done ? 'feita' : urgencyOf(t)
-  const bar = urgColor(u)
-  const dueTxt = relDue(t.due_date)
-  const who = t.assigned_user_id ? (memberLabel[t.assigned_user_id] || '—') : null
-  const patient = t.patients?.full_name
-  const oppTitle = t.opportunities?.title && t.opportunities.title !== 'Oportunidade' ? t.opportunities.title : null
-  const avulsa = !patient && !t.opportunity_id
-
-  const [hover, setHover] = useState(false)
-  const [outcomeOpen, setOutcomeOpen] = useState(false)
-  // Numa janela baixa, ou com a tarefa no fim da lista, o menu abriria abaixo da dobra e a
-  // pessoa não veria as últimas opções. Mede o espaço e vira para cima quando não cabe.
-  const [outcomeUp, setOutcomeUp] = useState(false)
-  const outcomeRef = useRef(null)
-  const typeLabel = t.task_type && t.task_type !== 'outro' ? TASK_TYPE_LABEL[t.task_type] : ''
-  const hora = String(t.due_time || '').slice(0, 5)
-  const phone = t.patients?.phone || ''
-  const flash = attemptFlash && attemptFlash.id === t.id ? attemptFlash.outcome : ''
-  const dueStyle = {
-    atrasada: { color: C.red || '#EF4444', background: (C.red || '#EF4444') + '22' },
-    hoje: { color: C.accent, background: C.accent + '22' },
-    semana: { color: C.yellow || '#F59E0B', background: (C.yellow || '#F59E0B') + '22' },
-    futura: { color: C.textSub, background: C.surface },
-    feita: { color: C.textSub, background: C.surface },
-  }[u]
-
+// ---------------------------------------------------------------------------
+// Edição em massa (Tabela)
+// ---------------------------------------------------------------------------
+function BulkBar({ ids, ws, onClear, toast }) {
+  const refs = { stage: useRef(null), resp: useRef(null), prio: useRef(null), due: useRef(null) }
+  const [open, setOpen] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const n = ids.length
+  const close = () => setOpen(null)
+  async function run(fn, okText) {
+    setBusy(true); close()
+    const res = await fn()
+    setBusy(false)
+    if (res.error) { toast(res.error, 'error'); return }
+    if (res.failed) toast(`${okText} ${res.failed} não puderam ser alteradas.`, 'warning', 5000)
+    else toast(okText, 'success')
+  }
+  const btn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }
   return (
-    <div
-      draggable={draggable}
-      onDragStart={draggable ? e => e.dataTransfer.setData('text/plain', t.id) : undefined}
-      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{
-        // SEM overflow:hidden: ele existia só para arredondar a barra lateral, e cortava o menu
-        // de desfecho, que é absoluto e precisa transbordar o card. A barra arredonda sozinha.
-        display: 'flex', alignItems: 'center', gap: 13, position: 'relative',
-        background: hover ? (C.cardHover || C.card) : C.card, border: `1px solid ${hover ? (C.borderBright || C.border) : C.border}`,
-        borderRadius: 13, padding: '12px 14px', marginBottom: 9, opacity: done ? 0.62 : 1,
-        transform: hover ? 'translateY(-2px)' : 'none', boxShadow: hover ? '0 16px 40px -16px rgba(0,0,0,.6)' : 'none',
-        transition: 'transform .16s, box-shadow .16s, background .16s, border-color .16s', cursor: draggable ? 'grab' : 'default',
-      }}>
-      <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3.5, background: bar, borderTopLeftRadius: 13, borderBottomLeftRadius: 13 }} />
+    <div role="toolbar" aria-label="Ações em massa" data-testid="task-bulk-bar"
+      style={{ position: 'fixed', left: '50%', bottom: 18, transform: 'translateX(-50%)', zIndex: 900, display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderRadius: 12, background: C.card, border: `1px solid ${C.borderBright || C.border}`, boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)', maxWidth: 'calc(100vw - 24px)', flexWrap: 'wrap' }}>
+      <span style={{ padding: '0 8px', fontSize: 12.5, fontWeight: 800, color: C.accent }}>{n} selecionada{n > 1 ? 's' : ''}</span>
+      <button ref={refs.stage} type="button" style={btn} disabled={busy} data-testid="task-bulk-stage" onClick={() => setOpen('stage')}>Status</button>
+      <button ref={refs.resp} type="button" style={btn} disabled={busy} data-testid="task-bulk-responsible" onClick={() => setOpen('resp')}>Responsável</button>
+      {ws.ready && <button ref={refs.prio} type="button" style={btn} disabled={busy} data-testid="task-bulk-priority" onClick={() => setOpen('prio')}>Prioridade</button>}
+      <button ref={refs.due} type="button" style={btn} disabled={busy} onClick={() => setOpen('due')}>Prazo</button>
+      {!confirmDelete
+        ? <button type="button" style={{ ...btn, color: C.red }} disabled={busy} onClick={() => setConfirmDelete(true)}>Excluir</button>
+        : <button type="button" style={{ ...btn, color: '#fff', background: C.red }} disabled={busy} data-testid="task-bulk-delete-confirm"
+            onClick={() => { setConfirmDelete(false); run(() => ws.bulkRemove(ids), `${n} tarefa${n > 1 ? 's' : ''} excluída${n > 1 ? 's' : ''}.`).then(onClear) }}>Confirmar exclusão de {n}</button>}
+      <button type="button" aria-label="Limpar seleção" onClick={onClear} style={{ ...btn, color: C.textSub }}><Ico d={ICONS.x} size={14} /></button>
 
-      <button type="button" onClick={() => onToggle()} aria-label={done ? 'Reabrir' : 'Concluir'}
-        style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${done ? (C.green || '#10B981') : (C.borderBright || C.border)}`, background: done ? (C.green || '#10B981') : 'transparent', color: '#fff', flexShrink: 0, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 0, transition: '.16s' }}>
-        <span style={{ opacity: done ? 1 : 0, transform: done ? 'scale(1)' : 'scale(.4)', transition: '.18s' }}><CheckIcon /></span>
-      </button>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: done ? C.textSub : C.text, textDecoration: done ? 'line-through' : 'none', marginBottom: (patient || oppTitle || avulsa) ? 5 : 0, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-          {patient && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: C.text, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '3px 8px' }}>
-              <Avatar label={patient} size={18} /> {patient}
-            </span>
-          )}
-          {oppTitle && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: C.purple || '#8B5CF6', background: (C.purple || '#8B5CF6') + '1e', border: `1px solid ${(C.purple || '#8B5CF6')}44`, borderRadius: 7, padding: '3px 8px' }}>
-              <Ico d={ICON.briefcase} size={12} /> {oppTitle}
-            </span>
-          )}
-          {typeLabel && (
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.accentLight || C.accent, background: (C.accentLight || C.accent) + '1e', border: `1px solid ${(C.accentLight || C.accent)}44`, borderRadius: 7, padding: '3px 8px' }}>{typeLabel}</span>
-          )}
-          {flash && (
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.yellow || '#F59E0B', background: (C.yellow || '#F59E0B') + '1e', border: `1px solid ${(C.yellow || '#F59E0B')}44`, borderRadius: 7, padding: '3px 8px' }}>
-              tentativa registrada · segue pendente
-            </span>
-          )}
-          {avulsa && <span style={{ fontSize: 11.5, fontWeight: 600, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 7, padding: '3px 8px' }}>avulsa</span>}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        {dueTxt && <span style={{ ...dueStyle, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 8, whiteSpace: 'nowrap' }}>
-          {u === 'atrasada' && <Ico d={ICON.warn} size={12} sw={2.2} />}{dueTxt}{hora ? ` · ${hora}` : ''}
-        </span>}
-
-        {!done && phone && (
-          <a
-            href={`https://wa.me/${String(phone).replace(/\D/g, '')}`}
-            target="_blank"
-            rel="noreferrer"
-            title={`Abrir conversa com ${patient}`}
-            data-testid={`task-whatsapp-${t.id}`}
-            style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: hover ? C.surface : 'transparent', color: C.green || '#10B981', display: 'grid', placeItems: 'center', textDecoration: 'none', flexShrink: 0 }}
-          >
-            <WhatsAppGlyph size={14} />
-          </a>
-        )}
-
-        {!done && onOutcome && (
-          <div style={{ position: 'relative' }}>
-            <button
-              type="button"
-              ref={outcomeRef}
-              onClick={() => {
-                const rect = outcomeRef.current?.getBoundingClientRect()
-                const ESPACO_MENU = 230
-                setOutcomeUp(Boolean(rect) && window.innerHeight - rect.bottom < ESPACO_MENU)
-                setOutcomeOpen(open => !open)
-              }}
-              data-testid={`task-outcome-${t.id}`}
-              title="Registrar desfecho"
-              style={{ padding: '5px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: hover || outcomeOpen ? C.surface : 'transparent', color: C.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-            >
-              Desfecho
-            </button>
-            {outcomeOpen && (
-              <div data-testid={`task-outcome-menu-${t.id}`} style={{ position: 'absolute', right: 0, ...(outcomeUp ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }), zIndex: 60, background: C.card, border: `1px solid ${C.border}`, borderRadius: 11, padding: 5, minWidth: 190, boxShadow: '0 18px 44px -18px rgba(0,0,0,.75)' }}>
-                {TASK_OUTCOMES.map(option => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => { setOutcomeOpen(false); onOutcome(t, option.key) }}
-                    style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
-                  >
-                    {option.label}
-                    {/* Quem lê precisa saber, ANTES de clicar, se a tarefa vai sair da fila. */}
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: option.closes ? (C.green || '#10B981') : (C.yellow || '#F59E0B') }}>
-                      {option.closes ? 'encerra' : 'segue'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {who && <Avatar label={who} size={30} />}
-        <button type="button" onClick={() => onRemove()} title="Excluir"
-          style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: hover ? C.surface : 'transparent', color: C.textDim, cursor: 'pointer', display: 'grid', placeItems: 'center', transition: '.15s', padding: 0 }}>
-          <Ico d={ICON.x} size={14} sw={2} />
-        </button>
-      </div>
+      <Popover anchorRef={refs.stage} open={open === 'stage'} onClose={close} width={220} label="Mudar status">
+        {ws.stages.map(s => (
+          <MenuItem key={s.id} onClick={() => run(() => ws.bulkStage(ids, s.id), `Status de ${n} tarefa${n > 1 ? 's' : ''} atualizado.`)}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color }} />{s.label}
+          </MenuItem>
+        ))}
+      </Popover>
+      <Popover anchorRef={refs.resp} open={open === 'resp'} onClose={close} width={240} label="Atribuir responsável">
+        <MenuItem onClick={() => run(() => ws.bulkPatch(ids, { assigned_user_id: null }), 'Responsável removido.')}>Sem responsável</MenuItem>
+        {ws.members.map(m => (
+          <MenuItem key={m.user_id} onClick={() => run(() => ws.bulkPatch(ids, { assigned_user_id: m.user_id }), `Responsável atualizado em ${n} tarefa${n > 1 ? 's' : ''}.`)}>
+            <Avatar label={ws.memberLabel[m.user_id]} size={20} />{ws.memberLabel[m.user_id]}
+          </MenuItem>
+        ))}
+      </Popover>
+      <Popover anchorRef={refs.prio} open={open === 'prio'} onClose={close} width={200} label="Definir prioridade">
+        {PRIORITIES.map(p => (
+          <MenuItem key={p.key} onClick={() => run(() => ws.bulkPatch(ids, { priority: p.key }), `Prioridade definida em ${n} tarefa${n > 1 ? 's' : ''}.`)}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: p.color }} />{p.label}
+          </MenuItem>
+        ))}
+        <MenuItem onClick={() => run(() => ws.bulkPatch(ids, { priority: null }), 'Prioridade removida.')}>Sem prioridade</MenuItem>
+      </Popover>
+      <Popover anchorRef={refs.due} open={open === 'due'} onClose={close} width={220} label="Definir prazo">
+        <input type="date" aria-label="Novo prazo" autoFocus
+          onChange={e => { if (e.target.value) run(() => ws.bulkPatch(ids, { due_date: e.target.value }), `Prazo definido em ${n} tarefa${n > 1 ? 's' : ''}.`) }}
+          style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, colorScheme: 'inherit', fontFamily: 'inherit' }} />
+        <MenuItem onClick={() => run(() => ws.bulkPatch(ids, { due_date: null }), 'Prazo removido.')}>Remover prazo</MenuItem>
+      </Popover>
     </div>
   )
 }
 
-// ---- Visão em LISTA (agrupada por vencimento) ----
-function ListView({ groups, memberLabel, onToggle, onRemove, showDone, setShowDone, onOutcome, attemptFlash }) {
-  const empty = GROUP_ORDER.every(g => !groups[g.key].length)
-  const headColor = { atrasadas: C.red || '#EF4444', hoje: C.accent, semana: C.textSub, futuras: C.textSub }
-  const headBg = { atrasadas: (C.red || '#EF4444') + '22', hoje: C.accent + '22', semana: C.surface, futuras: C.surface }
-  const headIcon = { atrasadas: ICON.warn, hoje: ICON.clock, semana: ICON.cal, futuras: ICON.cal }
-
-  return (
-    <div>
-      {GROUP_ORDER.map(g => {
-        const items = groups[g.key]
-        if (!items.length) return null
-        return (
-          <div key={g.key} style={{ marginBottom: 22 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 11 }}>
-              <span style={{ width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center', background: headBg[g.key], color: headColor[g.key] }}><Ico d={headIcon[g.key]} size={15} sw={2.2} /></span>
-              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, letterSpacing: '0.02em', textTransform: 'uppercase', color: headColor[g.key] }}>{g.label}</h3>
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: C.textSub, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 20, padding: '2px 9px', fontVariantNumeric: 'tabular-nums' }}>{items.length}</span>
-              <span style={{ flex: 1, height: 1, background: C.border }} />
-            </div>
-            {items.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} onOutcome={onOutcome} attemptFlash={attemptFlash} />)}
-          </div>
-        )
-      })}
-
-      {empty && <EmptyState />}
-
-      {groups.concluidas.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <button type="button" onClick={() => setShowDone(v => !v)}
-            style={{ background: 'none', border: 'none', color: C.textSub, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '8px 0', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ display: 'inline-flex', transform: showDone ? 'none' : 'rotate(-90deg)', transition: '.15s' }}><Ico d={ICON.chevron} size={13} sw={2.4} /></span>
-            Concluídas ({groups.concluidas.length})
-          </button>
-          {showDone && <div style={{ marginTop: 8 }}>{groups.concluidas.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} onOutcome={onOutcome} attemptFlash={attemptFlash} />)}</div>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ---- Visão em KANBAN (A fazer / Concluídas; arrastar conclui/reabre) ----
-function KanbanView({ kanban, memberLabel, onToggle, onRemove, onDrop, onOutcome, attemptFlash }) {
-  const cols = [
-    { key: 'afazer', label: 'A fazer', items: kanban.afazer, done: false, color: C.accent },
-    { key: 'concluidas', label: 'Concluídas', items: kanban.concluidas, done: true, color: C.green || '#10B981' },
-  ]
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 15, alignItems: 'start' }}>
-      {cols.map(col => <KanbanColumn key={col.key} col={col} memberLabel={memberLabel} onToggle={onToggle} onRemove={onRemove} onDrop={onDrop} onOutcome={onOutcome} attemptFlash={attemptFlash} />)}
-    </div>
-  )
-}
-function KanbanColumn({ col, memberLabel, onToggle, onRemove, onDrop, onOutcome, attemptFlash }) {
-  const [over, setOver] = useState(false)
-  return (
-    <div
-      onDragOver={e => { e.preventDefault(); setOver(true) }}
-      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false) }}
-      onDrop={e => { e.preventDefault(); setOver(false); const id = e.dataTransfer.getData('text/plain'); if (id) onDrop(id, col.done) }}
-      style={{ background: over ? col.color + '10' : C.surface, border: `1px solid ${over ? col.color : C.border}`, borderRadius: 15, padding: 12, minHeight: 140, transition: 'background .12s, border-color .12s' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${C.border}` }}>
-        <span style={{ width: 9, height: 9, borderRadius: '50%', background: col.color }} />
-        <span style={{ fontSize: 13, fontWeight: 800, color: C.text, flex: 1 }}>{col.label}</span>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.textSub, background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: '1px 9px', fontVariantNumeric: 'tabular-nums' }}>{col.items.length}</span>
-      </div>
-      {col.items.length === 0
-        ? <div style={{ textAlign: 'center', color: C.textDim, fontSize: 12, padding: '26px 0', border: `1.5px dashed ${C.border}`, borderRadius: 11 }}>{over ? 'Soltar aqui' : 'Arraste tarefas pra cá'}</div>
-        : col.items.map(t => <TaskCard key={t.id} t={t} memberLabel={memberLabel} onToggle={() => onToggle(t)} onRemove={() => onRemove(t)} onOutcome={onOutcome} attemptFlash={attemptFlash} draggable />)}
-    </div>
-  )
-}
-
-function EmptyState() {
+function EmptyState({ onCreate }) {
   return (
     <div style={{ textAlign: 'center', padding: '48px 0' }}>
-      <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: (C.green || '#10B981') + '1e', color: C.green || '#10B981' }}><Ico d={ICON.check} size={28} sw={2.4} /></div>
-      <div style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Tudo em dia! 🎉</div>
-      <div style={{ color: C.textSub, fontSize: 13 }}>Nenhuma tarefa pendente com os filtros atuais.</div>
+      <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 14px', display: 'grid', placeItems: 'center', background: (C.green || '#10B981') + '1e', color: C.green || '#10B981' }}><Ico d={ICONS.check} size={28} sw={2.4} /></div>
+      <div style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Nenhuma tarefa ainda</div>
+      <div style={{ color: C.textSub, fontSize: 13, marginBottom: 12 }}>Crie a primeira tarefa da equipe.</div>
+      <Btn onClick={onCreate}>Criar tarefa</Btn>
     </div>
   )
 }
 
 function LoadingState() {
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 22 }}>
-        {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 92, borderRadius: 14, background: C.border, opacity: 0.4 }} />)}
-      </div>
-      {[1, 2, 3].map(i => <div key={i} style={{ height: 62, borderRadius: 13, background: C.border, opacity: 0.3, marginBottom: 9 }} />)}
+    <div aria-busy="true">
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>{[1, 2, 3, 4].map(i => <div key={i} style={{ width: 120, height: 30, borderRadius: 8, background: C.border, opacity: 0.4 }} />)}</div>
+      {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 38, borderRadius: 6, background: C.border, opacity: 0.3, marginBottom: 6 }} />)}
     </div>
   )
 }
 
-function NewTaskModal({ ownerId, userId, members, onClose, onCreated }) {
-  const [form, setForm] = useState({ title: '', due: '', time: '', type: 'outro', assigned: '', patient_id: '' })
+function NewTaskModal({ ws, onClose, onCreated }) {
+  const [form, setForm] = useState({ title: '', due: '', time: '', type: 'outro', assigned: '', patient_id: '', patient_name: '', priority: '', description: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -535,30 +476,32 @@ function NewTaskModal({ ownerId, userId, members, onClose, onCreated }) {
   async function save() {
     if (!form.title.trim() || saving) return
     setSaving(true); setError(null)
-    const res = await createTask(ownerId, {
+    const res = await ws.create({
       title: form.title, dueDate: form.due || null, dueTime: form.time || null, taskType: form.type,
-      assignedUserId: form.assigned || null, patientId: form.patient_id || null, createdBy: userId,
-    })
+      assignedUserId: form.assigned || null, patientId: form.patient_id || null,
+      priority: form.priority || null, description: form.description || null,
+    }, { patients: form.patient_id ? { full_name: form.patient_name || 'Paciente' } : null })
     setSaving(false)
     if (res.error) { setError(res.error); return }
     onCreated(res.task)
   }
 
   return (
-    <Modal open onClose={onClose} title="Nova tarefa avulsa" width={460}>
+    <Modal open onClose={onClose} title="Nova tarefa avulsa" width={480}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <FInput label="Tarefa" value={form.title} onChange={v => set('title', v)} placeholder="O que precisa ser feito?" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <FInput label="Tipo" value={form.type} onChange={v => set('type', v)}
-            options={TASK_TYPES.map(item => ({ v: item.key, l: item.label }))} />
+          <FInput label="Categoria" value={form.type} onChange={v => set('type', v)} options={TASK_TYPES.map(item => ({ v: item.key, l: item.label }))} />
           <FInput label="Responsável" value={form.assigned} onChange={v => set('assigned', v)}
-            options={[{ v: '', l: 'Sem responsável' }, ...(members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]} />
+            options={[{ v: '', l: 'Sem responsável' }, ...(ws.members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           <FInput label="Vencimento" type="date" value={form.due} onChange={v => set('due', v)} />
           <FInput label="Hora (opcional)" type="time" value={form.time} onChange={v => set('time', v)} />
+          {ws.ready && <FInput label="Prioridade" value={form.priority} onChange={v => set('priority', v)} options={[{ v: '', l: 'Sem prioridade' }, ...PRIORITIES.map(p => ({ v: p.key, l: p.label }))]} />}
         </div>
-        <PatientSelector userId={ownerId} value={form.patient_id} onChange={id => set('patient_id', id)} />
+        <PatientSelector userId={ws.ownerId} value={form.patient_id} onChange={(id, name) => setForm(f => ({ ...f, patient_id: id, patient_name: name || '' }))} />
+        {ws.ready && <FInput label="Descrição (opcional)" value={form.description} onChange={v => set('description', v)} placeholder="Detalhes da tarefa" />}
         {error && <div style={{ color: C.red || '#ef4444', fontSize: 12 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -568,3 +511,4 @@ function NewTaskModal({ ownerId, userId, members, onClose, onCreated }) {
     </Modal>
   )
 }
+

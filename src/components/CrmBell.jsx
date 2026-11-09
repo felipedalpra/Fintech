@@ -12,6 +12,7 @@ import { stageLabel } from '../lib/timeline.js'
 import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
 import { loadWorkspacePreferences, saveWorkspacePreferences } from '../lib/operationalWorkspace.js'
 import { loadMentions } from '../lib/crmWorkspaceStore.js'
+import { loadTaskMentions } from '../lib/taskWorkspaceStore.js'
 import { mentionAlerts, memberName } from '../lib/crmUpdates.js'
 
 const MENTION_DAYS = 30
@@ -91,8 +92,16 @@ export function CrmBell({ onNavigate }) {
     let mounted = true
     const refresh = async () => {
       const since = new Date(Date.now() - MENTION_DAYS * 86400000).toISOString()
-      const list = await loadMentions(effectiveUserId, user.id, since)
-      if (mounted) setMentions(list)
+      // Oportunidade (opportunity_notes) + tarefa (task_comments, tasks_workspace_phase4.sql).
+      const [oppList, taskList] = await Promise.all([
+        loadMentions(effectiveUserId, user.id, since),
+        loadTaskMentions(effectiveUserId, user.id, since),
+      ])
+      if (mounted) setMentions([...oppList, ...taskList.map(n => ({ ...n, kind: 'task' }))])
+    }
+    const onInsert = payload => {
+      const note = payload?.new
+      if (note && Array.isArray(note.mentions) && note.mentions.includes(user.id) && note.author_id !== user.id) refresh()
     }
     refresh()
     supabase.rpc('clinic_team').then(res => {
@@ -101,10 +110,8 @@ export function CrmBell({ onNavigate }) {
     let channel = null
     try {
       channel = supabase.channel(`crm-bell-mentions-${user.id}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'opportunity_notes', filter: `user_id=eq.${effectiveUserId}` }, payload => {
-          const note = payload?.new
-          if (note && Array.isArray(note.mentions) && note.mentions.includes(user.id) && note.author_id !== user.id) refresh()
-        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'opportunity_notes', filter: `user_id=eq.${effectiveUserId}` }, onInsert)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_comments', filter: `user_id=eq.${effectiveUserId}` }, onInsert)
         .subscribe()
     } catch { /* sem Realtime, as menções aparecem na próxima carga */ }
     return () => { mounted = false; if (channel) supabase.removeChannel(channel) }
@@ -136,14 +143,17 @@ export function CrmBell({ onNavigate }) {
     const g = groupTasksByDue(tasks)
     const list = []
     mentionAlerts(mentions, user?.id, { days: MENTION_DAYS }).forEach(note => {
+      const isTask = note.kind === 'task'
       const opp = note.opportunities
-      const oppName = opp?.patients?.full_name || (opp?.title && opp.title !== 'Oportunidade' ? opp.title : 'Oportunidade')
+      const where = isTask
+        ? `tarefa “${note.tasks?.title || 'Tarefa'}”`
+        : (opp?.patients?.full_name || (opp?.title && opp.title !== 'Oportunidade' ? opp.title : 'Oportunidade'))
       const text = String(note.body || '').replace(/\s+/g, ' ').trim()
       list.push({
-        k: `mention-${note.id}`, type: 'Menções', color: C.accent || '#3b82f6', icon: I.at,
-        title: `${memberName(teamLabel, note.author_id)} mencionou você · ${oppName}`,
+        k: `mention-${isTask ? 'task-' : ''}${note.id}`, type: 'Menções', color: C.accent || '#3b82f6', icon: I.at,
+        title: `${memberName(teamLabel, note.author_id)} mencionou você · ${where}`,
         desc: `“${text.length > 80 ? `${text.slice(0, 80)}…` : text}”`,
-        go: `funnel?opp=${note.opportunity_id}&tab=atualizacoes`,
+        go: isTask ? `tarefas?task=${note.task_id}&tab=comments` : `funnel?opp=${note.opportunity_id}&tab=atualizacoes`,
       })
     })
     opps.forEach(opportunity => {

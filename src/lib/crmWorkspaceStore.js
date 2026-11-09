@@ -204,6 +204,13 @@ export async function archiveCustomField(fieldId) {
 // ---------------------------------------------------------------------------
 const VIEW_FIELDS = 'id, owner_id, name, scope, view_type, config, position, created_at, updated_at'
 
+// Só as visualizações (releitura depois de criar as iniciais). null = indisponível.
+export async function loadViews(ownerId) {
+  const { data, error } = await supabase.from('crm_views').select(VIEW_FIELDS)
+    .eq('user_id', ownerId).order('position', { ascending: true }).order('created_at', { ascending: true })
+  return error ? null : (data || [])
+}
+
 export async function createView(ownerId, { name, scope, config, position }) {
   const { data, error } = await supabase.from('crm_views')
     .insert({ user_id: ownerId, name, scope, view_type: 'table', config, position })

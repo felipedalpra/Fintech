@@ -12,7 +12,7 @@ import { createTask, updateTask } from './taskActions.js'
 import { confirmSuggestion, dismissSuggestion } from './opportunitySuggestion.js'
 import {
   loadOpportunities, loadWorkspaceMeta, loadLastContact, loadOpportunityTasks, loadNoteCounts, saveCustomValue,
-  ensureDefaultViews,
+  ensureDefaultViews, loadViews,
 } from './crmWorkspaceStore.js'
 import { resolveStages, stageMap } from './crmStages.js'
 import { isoDate, tasksByOpportunity, overdueTaskCounts, openTaskCounts } from './crmWorkspace.js'
@@ -46,13 +46,12 @@ export function useCrmWorkspace(ownerId, { fallbackOwnerLabel } = {}) {
     async function load() {
       setLoading(true)
       setError(null)
-      // Antes de ler as visualizações: na primeira vez da clínica, cria Meus leads, Follow-ups
-      // pendentes e Orçamentos em negociação (crm_workspace_phase3.sql). Falha = segue sem elas.
-      if (!defaultViewsChecked.has(ownerId)) {
-        defaultViewsChecked.add(ownerId)
-        await ensureDefaultViews()
-        if (!mounted) return
-      }
+      // Na primeira vez da clínica, cria Meus leads, Follow-ups pendentes e Orçamentos em
+      // negociação (crm_workspace_phase3.sql) EM PARALELO com a carga — a tabela não espera.
+      // Se foram criadas agora, relê só as visualizações no fim. Falha = segue sem elas.
+      const firstVisit = !defaultViewsChecked.has(ownerId)
+      defaultViewsChecked.add(ownerId)
+      const seeding = firstVisit ? ensureDefaultViews() : Promise.resolve(0)
       const [oppRes, meta, taskRes, notes] = await Promise.all([
         loadOpportunities(ownerId),
         loadWorkspaceMeta(ownerId),
@@ -79,6 +78,11 @@ export function useCrmWorkspace(ownerId, { fallbackOwnerLabel } = {}) {
         tasks: taskRes.available,
       }))
       setLoading(false)
+      seeding.then(async created => {
+        if (!created || !mounted) return
+        const fresh = await loadViews(ownerId)
+        if (mounted && fresh) setViews(fresh)
+      })
       // Último contato vem depois (não bloqueia a tabela).
       const lc = await loadLastContact(oppRes.opps.map(o => o.id))
       if (!mounted) return
