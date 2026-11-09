@@ -28,7 +28,6 @@ import {
   buildEnvelopePayload,
   createEnvelope,
   MAX_DOCUMENTS_PER_ENVELOPE,
-  downloadEvidenceReport,
   downloadSignedDocument,
   fetchEnvelope,
   mapEnvelopeToInternalTransition,
@@ -40,6 +39,7 @@ import {
 import {
   bryVerifyConfig,
   BryVerifyError,
+  generateVerificationReport,
   normalizeVerificationEvidence,
   VERIFY_GAPS,
   verifySignedPdf,
@@ -70,9 +70,9 @@ export const defaultClinicalSignatureDeps = Object.freeze({
   loadSigner:loadSignerIdentity,
   renderPdf:renderClinicalDocumentPdf,
   bry:Object.freeze({
-    createEnvelope, fetchEnvelope, downloadSignedDocument, downloadEvidenceReport, startEnvelope,
+    createEnvelope, fetchEnvelope, downloadSignedDocument, startEnvelope,
   }),
-  verify:Object.freeze({ verifySignedPdf }),
+  verify:Object.freeze({ verifySignedPdf, generateVerificationReport }),
 })
 
 const ATTEMPT_PUBLIC_FIELDS = [
@@ -930,26 +930,6 @@ async function collectArtifact({ admin, ownerId, attempt, config, transition, de
     })
   }
 
-  // Relatorio de evidencias (PDF) arquivado junto. Nao substitui evidencia
-  // legivel por maquina, mas preserva a prova que a BRy oferece hoje.
-  if (!attempt.evidence_report_path) {
-    try {
-      const report = await deps.bry.downloadEvidenceReport(config, attempt.provider_request_id, attempt.provider_document_id)
-      const reportPath = `${SIGNED_BUCKET}/${ownerId}/${attempt.document_id}/${attempt.id}-report.pdf`
-      const { error:reportError } = await admin.storage.from(SIGNED_BUCKET).upload(reportPath, report, {
-        contentType:'application/pdf', upsert:false,
-      })
-      if (!reportError || String(reportError.message || '').toLowerCase().includes('exists')) {
-        await updatePending(admin, attempt.id, {
-          evidence_report_path:reportPath,
-          evidence_report_sha256:sha256Hex(report),
-        })
-      }
-    } catch {
-      // Relatorio indisponivel nao invalida o artefato ja guardado.
-    }
-  }
-
   await updatePending(admin, attempt.id, {
     provider_envelope_status:transition.envelopeStatus,
     reconciled_at:new Date().toISOString(),
@@ -996,6 +976,31 @@ async function collectArtifact({ admin, ownerId, attempt, config, transition, de
   if (!normalized.ok) {
     await updatePending(admin, attempt.id, { evidence_gap_code:normalized.gap })
     return
+  }
+
+  // O BRy Verifica devolve um verificationId de curta duracao. O relatorio
+  // qualificado precisa ser gerado e arquivado agora; sem ele a tentativa fica
+  // pendente e pode ser reconciliada novamente, sem declarar conclusao parcial.
+  if (!attempt.evidence_report_path) {
+    let report
+    try {
+      report = await deps.verify.generateVerificationReport(verifyConfig, normalized.verificationId)
+    } catch {
+      await updatePending(admin, attempt.id, { evidence_gap_code:VERIFY_GAPS.REPORT_UNAVAILABLE })
+      return
+    }
+    const reportPath = `${SIGNED_BUCKET}/${ownerId}/${attempt.document_id}/${attempt.id}-report.pdf`
+    const { error:reportError } = await admin.storage.from(SIGNED_BUCKET).upload(reportPath, report, {
+      contentType:'application/pdf', upsert:false,
+    })
+    if (reportError && !String(reportError.message || '').toLowerCase().includes('exists')) {
+      await updatePending(admin, attempt.id, { evidence_gap_code:VERIFY_GAPS.REPORT_UNAVAILABLE })
+      return
+    }
+    await updatePending(admin, attempt.id, {
+      evidence_report_path:reportPath,
+      evidence_report_sha256:sha256Hex(report),
+    })
   }
 
   // Confere o hash do artefato verificado contra o que esta persistido: a

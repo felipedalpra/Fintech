@@ -111,6 +111,14 @@ export function bryEasySignConfig(env = process.env) {
   // poucos minutos e precisa ser renovado, entao nao existe token fixo aqui.
   const auth = bryTokenConfig(env)
   problems.push(...auth.problems)
+  if (environment && auth.ready && auth.usesClientCredentials) {
+    const tokenEnvironment = auth.tokenBaseUrl.includes('cloud-hom.bry.com.br')
+      ? 'homologation'
+      : 'production'
+    if (environment !== tokenEnvironment) {
+      problems.push('BRY_EASY_SIGN_BASE_URL e BRY_EASY_SIGN_TOKEN_URL devem usar o mesmo ambiente')
+    }
+  }
 
   // UUID opaco emitido pelo cofre. Nao e o segredo: e a referencia a ele.
   const credentialId = read('BRY_EASY_SIGN_CREDENTIAL_ID')

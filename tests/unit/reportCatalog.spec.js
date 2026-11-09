@@ -125,6 +125,42 @@ test('DRE reconhece CMV na venda e não transforma compra de estoque em despesa'
   expect(afterSale.summary[1]).toEqual(['Resultado líquido', 100])
 })
 
+test('DRE exporta análise vertical sobre a receita bruta com sinais contábeis', () => {
+  const data = baseData()
+  data.surgeries = [{
+    id:'surgery-av', procedureId:'procedure-1', patient:'Ana', totalValue:1000,
+    date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'pendente', hospitalCost:200,
+  }]
+
+  const report = buildReport('dre', { data, range:RANGE })
+  expect(report.columns.map(column => column.key)).toEqual(['group', 'description', 'value', 'verticalAnalysis'])
+  expect(report.rows.find(row => row.description === 'Receita bruta')).toMatchObject({ value:1000, verticalAnalysis:1 })
+  expect(report.rows.find(row => row.description === 'Custos de cirurgias')).toMatchObject({ value:-200, verticalAnalysis:-0.2 })
+  expect(report.rows.find(row => row.description === 'Resultado líquido')).toMatchObject({ value:800, verticalAnalysis:0.8 })
+})
+
+test('Excel financeiro separa positivos, negativos, subtotais e total da DRE por cor', () => {
+  const report = buildReport('dre', {
+    data:{
+      ...baseData(),
+      surgeries:[{
+        id:'surgery-colors', procedureId:'procedure-1', patient:'Ana', totalValue:1000,
+        date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'pendente', hospitalCost:200,
+      }],
+    },
+    range:RANGE,
+  })
+  const workbook = createReportWorkbook(report, { clinicName:'Clínica Aurora' })
+  const sheet = workbook.Sheets['DRE por competência']
+
+  expect(sheet.D4.v).toBe('Análise vertical')
+  expect(sheet.C5.s.fill.fgColor.rgb).toBe('DCFCE7')
+  expect(sheet.C12.v).toBe(-200)
+  expect(sheet.C12.s.fill.fgColor.rgb).toBe('FEE2E2')
+  expect(sheet.C22.s.fill.fgColor.rgb).toBe('047857')
+  expect(sheet.D22.v).toBe(0.8)
+})
+
 test('posição de estoque respeita a data-base', () => {
   const data = baseData()
   data.products = [{ id:'product-1', name:'Cinta', category:'modelador', stock:5, purchasePrice:100, salePrice:200, active:true }]

@@ -218,11 +218,12 @@ function verifyOff() {
 }
 
 function verifyOn() {
-  return { ready:true, configured:true, problems:[], baseUrl:'https://hom.bry.com.br', token:'jwt', path:'/verify', timeoutMs:5000 }
+  return { ready:true, configured:true, problems:[], baseUrl:'https://verifica.hom.bry.com.br', timeoutMs:5000 }
 }
 
 function verificationPayload(overrides = {}) {
   return {
+    verificationId:'70000000-0000-4000-8000-000000000001',
     generalStatus:'VALID',
     signatureFormat:'PADES',
     signatureStatus:{
@@ -246,14 +247,17 @@ function verificationPayload(overrides = {}) {
   }
 }
 
-function deps({ admin, user = { id:AUTHOR }, ownerId = OWNER, configFactory = config(), bry = {}, renderPdf, signer, verifyConfigFactory = verifyOff, verifyImpl } = {}) {
+function deps({ admin, user = { id:AUTHOR }, ownerId = OWNER, configFactory = config(), bry = {}, renderPdf, signer, verifyConfigFactory = verifyOff, verifyImpl, reportImpl } = {}) {
   return {
     context:async () => ({ user, ownerId, admin, scoped:null }),
     config:configFactory,
     loadSigner:async () => signer || { ...signerIdentity, userId:user.id },
     renderPdf:renderPdf || (async () => ({ buffer:Buffer.from('%PDF-1.7 teste'), sha256:'c'.repeat(64) })),
     verifyConfig:verifyConfigFactory,
-    verify:{ verifySignedPdf:verifyImpl || (async () => verificationPayload()) },
+    verify:{
+      verifySignedPdf:verifyImpl || (async () => verificationPayload()),
+      generateVerificationReport:reportImpl || (async () => Buffer.from('%PDF-1.7 relatorio qualificado')),
+    },
     bry:{
       startEnvelope:async () => null,
       // Ecoa os nonces recebidos, como a BRy faz de verdade.
@@ -586,7 +590,7 @@ test('reconciliacao autenticada consulta a BRy e nunca confia em payload externo
   expect(result.attempt.status).toBe('pending')
 })
 
-test('envelope concluido guarda o PDF e o relatorio, mas nao declara assinatura', async () => {
+test('envelope concluido guarda o PDF, mas nao gera relatorio sem o Verifica', async () => {
   const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
   const result = await reconcileClinicalSignature(
     { headers:{ authorization:'Bearer s' }, query:{}, body:{ attemptId:ATTEMPT } },
@@ -601,7 +605,7 @@ test('envelope concluido guarda o PDF e o relatorio, mas nao declara assinatura'
   expect(row.evidence_gap_code).toBe('verify_service_not_configured')
   expect(row.signed_file_path).toBe(`clinical-signatures/${OWNER}/${DOCUMENT}/${ATTEMPT}.pdf`)
   expect(row.signed_file_sha256).toMatch(/^[0-9a-f]{64}$/)
-  expect(row.evidence_report_sha256).toMatch(/^[0-9a-f]{64}$/)
+  expect(row.evidence_report_sha256).toBeUndefined()
   expect(result.attempt.evidenceComplete).toBe(false)
   // O artefato vai para bucket privado, sem sobrescrever nada.
   expect(admin.calls.uploads[0].bucket).toBe('clinical-signatures')
@@ -621,7 +625,7 @@ test('reconciliar duas vezes o mesmo estado nao baixa nem sobrescreve o artefato
   await reconcileClinicalSignature(request, injected)
   expect(downloads).toBe(1)
   // Dois objetos por tentativa: o PDF assinado e o relatorio de evidencias.
-  expect(admin.calls.uploads).toHaveLength(2)
+  expect(admin.calls.uploads).toHaveLength(1)
 })
 
 test('expiracao e recusa terminalizam e deixam de aceitar nova reconciliacao', async () => {
@@ -800,7 +804,7 @@ test('callback duplicado nao duplica trabalho nem artefato', async () => {
   await handleBryWebhook(webhookRequest('s'.repeat(40), { uuid:ENVELOPE }), { uuid:ENVELOPE }, injected)
   await handleBryWebhook(webhookRequest('s'.repeat(40), { uuid:ENVELOPE }), { uuid:ENVELOPE }, injected)
   expect(downloads).toBe(1)
-  expect(admin.calls.uploads).toHaveLength(2)
+  expect(admin.calls.uploads).toHaveLength(1)
 })
 
 test('callback adulterado nao consegue marcar assinatura nem trocar o envelope', async () => {
@@ -964,6 +968,8 @@ test('evidencia verificada terminaliza a tentativa como assinada', async () => {
   expect(row.signed_at).toBe('2026-10-28T12:00:00.000Z')
   expect(row.evidence_gap_code).toBeNull()
   expect(row.signed_file_path).toBe(`clinical-signatures/${OWNER}/${DOCUMENT}/${ATTEMPT}.pdf`)
+  expect(row.evidence_report_path).toBe(`clinical-signatures/${OWNER}/${DOCUMENT}/${ATTEMPT}-report.pdf`)
+  expect(row.evidence_report_sha256).toMatch(/^[0-9a-f]{64}$/)
   expect(result.attempt.evidenceComplete).toBe(true)
 })
 
@@ -999,6 +1005,20 @@ test('assinatura reprovada pela verificacao nunca vira assinada', async () => {
   expect(row.evidence_gap_code).toBe('verify_signature_invalid')
   // O artefato continua guardado para analise.
   expect(row.signed_file_sha256).toMatch(/^[0-9a-f]{64}$/)
+})
+
+test('relatorio qualificado indisponivel mantem a tentativa reconciliavel', async () => {
+  const admin = fakeSupabase({ clinical_document_signatures:[pendingAttempt] })
+  const result = await reconcileClinicalSignature(reconcileRequest, finishedDeps({
+    admin,
+    reportImpl:async () => { throw new BryVerifyError('relatorio expirou', { kind:'provider' }) },
+  }))
+  expect(result.outcome).toBe('evidencia_pendente')
+  const row = admin.db.clinical_document_signatures[0]
+  expect(row.status).toBe('pending')
+  expect(row.evidence_gap_code).toBe('verify_report_unavailable')
+  expect(row.signed_file_sha256).toMatch(/^[0-9a-f]{64}$/)
+  expect(row.evidence_report_path).toBeUndefined()
 })
 
 test('verificador indisponivel preserva o artefato e permite tentar depois', async () => {

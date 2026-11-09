@@ -6,6 +6,7 @@
 - Referência técnica conferida na documentação pública da BRy na mesma data.
 - **28/10/2026 — integração implementada atrás de feature flag, desligada por padrão** (branch `feat/bry-easy-sign-clinical`). A migration `supabase/clinical_signature_bry_schema.sql` foi aplicada em produção nessa data.
 - **29/10/2026 — respostas da BRy recebidas e incorporadas.** O bloqueio de evidências foi resolvido: a evidência do certificado vem de um **segundo serviço** da BRy, de verificação de assinatura, que responde em JSON. O estado `signed` passou a ser alcançável. Foram corrigidos a caixa de `base64Document` e o fluxo de criação, que agora nasce como rascunho. Ver [Evidência do certificado](#evidência-do-certificado-como-o-signed-é-alcançado).
+- **05/11/2026 — contrato oficial do BRy Verifica recebido e incorporado em 09/11/2026.** Produção usa `https://verifica.bry.com.br`, homologação usa `https://verifica.hom.bry.com.br`, o arquivo vai como `document` em `multipart/form-data` e o serviço compartilha o JWT `client_credentials` da Easy Sign. A resposta oficial expõe certificado, cadeia ICP-Brasil, carimbo e `verificationId`; o relatório qualificado é gerado e arquivado imediatamente antes de a tentativa virar `signed`.
 - **Nenhuma chamada real foi feita à BRy, nenhuma credencial foi recebida ou armazenada e nenhum crédito foi comprado.** A integração segue desligada por `BRY_EASY_SIGN_ENABLED=false`.
 - Condições comerciais e comportamento da API devem ser reconfirmados com a BRy antes da ativação, pois podem mudar.
 
@@ -123,30 +124,35 @@ signatários (`GET /signatures/{requestId}/signers`) traz apenas `status`,
 a configuração **solicitada**, não o resultado. Os relatórios `/report` e
 `/reportunified` são PDFs.
 
-Em 29/10/2026 a BRy orientou o caminho correto: **baixar o PDF assinado e
-submetê-lo a um serviço de verificação**, que responde em JSON. As duas opções
-indicadas foram o **HUB Signer** (“Verifica uma assinatura PDF/PAdES”) e a
-**API BRy Verifica**. A implementação usa o HUB Signer, cujo contrato é o mais
-completo:
+Em 05/11/2026 a BRy forneceu o contrato oficial do **BRy Verifica**. A
+implementação baixa o PDF assinado e o envia para:
 
 ```
-POST /api/pdf-verification-service/v1/signatures/verify   (multipart/form-data)
-  signatures[0][nonce], signatures[0][content]
+POST https://verifica.bry.com.br/api/service/verifications/verify
+  multipart/form-data: document
 ```
 
 | Evidência exigida | Campo na resposta da verificação |
 | --- | --- |
-| Titular do certificado | `signatureStatus.chainStatus.certificateStatusList[].certificateInfo.subjectDN` (`formattedCn` / `cn` / `dn`) |
-| Número de série | `...certificateInfo.serial` |
-| Emissor | `...certificateInfo.issuerDN` (`cn` / `dn` / `o`) |
-| Validade do certificado | `...certificateInfo.validity.notBefore` / `notAfter` |
-| Instante da assinatura | `signatureStatus.signingTime` |
-| Resultado geral | `generalStatus` (aceitos: `VALID`, `VALID_WITH_ALERT`) |
-| Formato | `signatureFormat` (exigido: `PADES`) |
+| Titular do certificado | `verificationResult.signatures[].signatureCertificate.name` |
+| Número de série | `...signatureCertificate.serialNumber` |
+| Emissor | `...signatureCertificate.issuer` |
+| Validade do certificado | `...signatureCertificate.validity.notBefore` / `notAfter` |
+| Instante da assinatura | `verificationResult.signatures[].date` |
+| Cadeia ICP-Brasil | `signatureCertificate.icpBrasil` e `signatures[].icpBrasil` (ambos exigidos) |
+| Resultado geral | `verificationResult.status.status` (`VALID` ou alerta aceito explicitamente) |
+| Formato | `verificationResult.signatures[].format` (exigido: `PAdES`) |
+| Carimbo do tempo | `verificationResult.signatures[].signatureStamps[]` com status `VALID` |
+
+A resposta também devolve `verificationId`. Como ele expira, a reconciliação
+chama imediatamente `POST /api/service/reports/generate` e arquiva o relatório
+qualificado no bucket privado. Sem o relatório, a tentativa permanece pendente
+com `verify_report_unavailable`, para permitir nova reconciliação sem declarar
+uma conclusão parcial.
 
 ### O nível PAdES ainda não vem pronto — e como ele é derivado
 
-A verificação devolve `signatureFormat: "PADES"`, mas **não** devolve o nível
+A verificação devolve `format: "PAdES"`, mas **não** devolve o nível
 (`B-B`, `B-T`, `B-LT`, `B-LTA`). Como o nível não pode ser deduzido do modo
 solicitado, ele é derivado de evidência do próprio artefato:
 
@@ -158,25 +164,13 @@ solicitado, ele é derivado de evidência do próprio artefato:
 - `B-LT` e `B-LTA` **nunca** são declarados: esta resposta não comprova
   arquivamento. Subdeclarar é seguro; superdeclarar não.
 
-### O que ainda precisa de confirmação da BRy
+### Pendências comerciais e de homologação
 
-1. **O host oficial do serviço de verificação.** A documentação pública usa
-   `example.com` como placeholder. Por isso `BRY_VERIFY_BASE_URL` é obrigatória
-   e a allowlist aceita apenas o domínio `bry.com.br`; nenhum subdomínio foi
-   inventado.
-2. **Qual entrada de `certificateStatusList` é a do signatário.** A própria
-   documentação pede para confirmar com resposta real. A implementação prefere a
-   entrada marcada como final (`certificateType`/`cpf`), ignora a do carimbo e,
-   na falta de marcação, usa a última da cadeia — sempre conferindo os campos
-   obrigatórios depois.
-3. **Se `signatureStatus` vem como objeto ou lista** quando há mais de uma
-   assinatura. As duas formas são tratadas.
-4. **Se a verificação consome crédito** e qual o custo por documento. É uma
-   segunda API, com cobrança possivelmente separada da Easy Sign.
-5. **Se o certificado precisa ser conferido como ICP-Brasil** a partir de
-   `certificateType`, além do modo `QUALIFIED` solicitado.
-
-Até 1 e 4 estarem resolvidos, a integração permanece desligada.
+O host, o payload e a evidência ICP-Brasil deixaram de bloquear o código. Ainda
+é necessário medir em homologação/produção se cada verificação e relatório
+consomem créditos e confirmar o preço vigente do envelope com o Comercial da
+BRy. Esses itens afetam custo e ativação operacional, mas não deixam mais o
+estado `signed` tecnicamente inalcançável.
 
 ### Retenção de 30 dias
 
@@ -318,10 +312,12 @@ Verificação da assinatura (segunda API, sem a qual nenhuma tentativa vira `sig
 
 | Variável | Papel | Comportamento sem valor válido |
 | --- | --- | --- |
-| `BRY_VERIFY_BASE_URL` | Host do serviço de verificação; allowlist do domínio `bry.com.br` | Tentativa fica pendente com `verify_service_not_configured` |
-| `BRY_VERIFY_TOKEN` | JWT do serviço de verificação, só no header | Idem |
-| `BRY_VERIFY_PATH` | Caminho do endpoint (padrão: o documentado) | Usa o padrão |
+| `BRY_VERIFY_BASE_URL` | Host exato do BRy Verifica (`verifica.bry.com.br` ou `verifica.hom.bry.com.br`) | Tentativa fica pendente com `verify_service_not_configured` |
 | `BRY_VERIFY_REQUEST_TIMEOUT_MS` | Timeout (1.000–60.000; padrão 30.000) | Usa 30.000 |
+
+O Verifica reutiliza `BRY_EASY_SIGN_CLIENT_ID`,
+`BRY_EASY_SIGN_CLIENT_SECRET` e o cache de JWT da Easy Sign. Não existe
+`BRY_VERIFY_TOKEN` separado.
 
 Sem configuração completa a UI mostra “integração indisponível” e mantém a via
 manual. Os nomes estão em `.env.example` **sem valores reais**.
@@ -335,10 +331,11 @@ manual. Os nomes estão em `.env.example` **sem valores reais**.
 | Iniciar o envelope | `POST /api/service/sign/v1/signatures/{requestId}/start` |
 | Consultar envelope | `GET /api/service/sign/v1/signatures/{requestId}` |
 | Baixar PDF assinado | `GET /api/service/sign/v1/signatures/{requestId}/documents/{documentNonce}/signed` |
-| Relatório de evidências | `GET /api/service/sign/v1/signatures/{requestId}/documents/{documentNonce}/report` |
+| Relatório de evidências da Easy Sign | `GET /api/service/sign/v1/signatures/{requestId}/documents/{documentNonce}/report` |
 | Cancelar envelope | `DELETE /api/service/sign/v1/signatures/{requestId}` |
 | Listagem de envelopes (conferência manual de órfão) | `POST /api/service/list/v1/create` |
-| Verificar a assinatura (**outra API**) | `POST /api/pdf-verification-service/v1/signatures/verify` |
+| Verificar a assinatura (**BRy Verifica**) | `POST /api/service/verifications/verify` |
+| Gerar relatório qualificado | `POST /api/service/reports/generate` |
 
 ### Arquitetura
 
@@ -352,8 +349,9 @@ manual. Os nomes estão em `.env.example` **sem valores reais**.
   ações exigem sessão Supabase válida, clínica resolvida por `data_owner_id()` e
   `has_clinical_access()` confirmado.
 - **A verificação é isolada em `api/_lib/bryVerify.js`**, separada do cliente de
-  assinatura porque é outra API, com outro host, outro token e possivelmente
-  outra cobrança. Ela nunca é consultada antes de o artefato existir.
+  assinatura porque é outra API e outro host, embora compartilhe a autenticação
+  JWT e possivelmente tenha cobrança própria. Ela nunca é consultada antes de o
+  artefato existir.
 - **Comunicação externa isolada** em `api/_lib/bryEasySign.js`: allowlist de
   host, `AbortController`, limite de resposta, recusa de redirecionamento,
   verificação de que o download é realmente PDF, classificação de erros
@@ -522,6 +520,8 @@ documento clínico imutável
 - [x] `base64Document` com a caixa correta.
 - [x] Envelope criado como rascunho e iniciado em segunda chamada, com `name` único por tentativa.
 - [x] Evidência do certificado obtida do serviço de verificação e gravada; `signed` alcançável.
+- [x] BRy Verifica oficial usa o mesmo JWT renovável da Easy Sign, sem token fixo separado.
+- [x] Relatório qualificado gerado a partir do `verificationId` e arquivado antes de `signed`.
 - [x] Nível PAdES derivado de carimbo verificado, nunca do modo pedido; `B-LT`/`B-LTA` nunca declarados.
 - [x] Artefato relido do bucket privado nas verificações seguintes, sem depender da retenção de 30 dias.
 - [x] Página de assinatura reabrível sem criar envelope novo, para pop-up bloqueado ou aba fechada.
@@ -535,23 +535,27 @@ documento clínico imutável
 
 ### Respondido pela BRy em 29/10/2026
 
-- [x] Fonte da evidência verificável: baixar o PDF assinado e submetê-lo ao serviço de verificação (HUB Signer ou API BRy Verifica), que responde em JSON.
+- [x] Fonte da evidência verificável: baixar o PDF assinado e submetê-lo ao BRy Verifica, que responde em JSON.
 - [x] Modo para documento médico: `QUALIFIED`, com `SHA256` e `profile: TIMESTAMP`.
 - [x] Caixa do campo Base64: `base64Document`.
 - [x] Proteção do webhook: somente `authType: NONE`.
 - [x] Envelope órfão após `POST` ambíguo: criar como rascunho com `name` único e conferir pela página de listagem antes de repetir.
 - [x] Retenção do documento assinado e dos relatórios: até 30 dias.
 
-### Ainda depende da BRy (bloqueia a ativação)
+### Respondido pela BRy em 05/11/2026
 
-- [ ] **Host oficial do serviço de verificação.** A documentação pública usa `example.com`;
-      sem ele `BRY_VERIFY_BASE_URL` não pode ser preenchida e `signed` segue inalcançável.
-- [ ] **Se a verificação consome crédito** e qual o custo por documento (é uma segunda API).
-- [ ] Confirmar, com resposta real, qual entrada de `certificateStatusList` é a do signatário
-      e se `signatureStatus` vem como objeto ou lista.
+- [x] Produção do Verifica: `https://verifica.bry.com.br/api/service/verifications/verify`.
+- [x] Homologação do Verifica: `https://verifica.hom.bry.com.br/api/service/verifications/verify`.
+- [x] Entrada `multipart/form-data` no campo `document`.
+- [x] Mesmo JWT `client_credentials` da Easy Sign; sem credencial separada.
+- [x] Relatório qualificado por `POST /api/service/reports/generate`, solicitado imediatamente porque o `verificationId` expira.
+- [x] Homologação independente, com credenciais próprias e ACT de teste não reconhecida pelo ITI.
+
+### Ainda precisa de validação operacional/comercial
+
+- [ ] Medir se a verificação e o relatório consomem crédito e qual o custo por documento.
 - [ ] Confirmar se o `/start` é idempotente para um envelope que já saiu de `DRAFT`.
 - [ ] Confirmar contrato, preços por operação, validade dos créditos, impostos e estorno.
-- [ ] Confirmar se há homologação disponível para a conta Self-Service e se usa token/créditos próprios.
 - [ ] Confirmar efeito de `keepDocument`, limites de tamanho e rate limit.
 - [ ] Confirmar termos de tratamento de dados de saúde, suboperadores, localização e descarte (LGPD).
 
@@ -560,12 +564,11 @@ documento clínico imutável
 1. Criar a aplicação no BRy Cloud, gerar as credenciais e guardar `client_id` e
    `client_secret`; **não** colar em ticket, chat ou repositório. Não há JWT para
    guardar: ele é obtido a cada chamada.
-2. Resolver os itens “Ainda depende da BRy” acima — principalmente o host e o custo
-   da verificação — e registrar as respostas neste documento.
+2. Criar também a aplicação no portal de homologação, que é independente de produção.
 3. ~~Aplicar `supabase/clinical_signature_bry_schema.sql`.~~ **Feito em 28/10/2026.**
 4. Configurar as variáveis com `BRY_EASY_SIGN_ENABLED=false` e
-   `BRY_EASY_SIGN_BASE_URL=https://easysign.hom.bry.com.br`, para validar que a UI
-   reporta “indisponível” sem a flag.
+   hosts de homologação para Easy Sign, autenticação e Verifica, para validar que
+   a UI reporta “indisponível” sem a flag.
 5. Cadastrar o webhook no BRy Cloud apontando para
    `/api/secure-profile?action=bry-webhook`, com o segredo de endpoint.
 6. Ativar a flag **somente em homologação** e assinar um pedido de exames de teste com
@@ -577,6 +580,6 @@ documento clínico imutável
 8. Exercitar webhook duplicado, atrasado e adulterado, além de timeout e encerramento
    de tentativa ambígua.
 9. Validar a página da BRy no desktop e no celular, com certificado A1, A3 e em nuvem.
-10. Validar com resposta real do verificador quais campos vêm preenchidos e ajustar
-    `selectSignerCertificate`/`hasVerifiedTimestamp` se a forma divergir do schema.
+10. Conferir a resposta real do Verifica e o relatório arquivado, inclusive os
+    dois indicadores `icpBrasil` e o carimbo `VALID`.
 11. Ativar em produção apenas após a clínica aprovar, mantendo a via manual disponível.

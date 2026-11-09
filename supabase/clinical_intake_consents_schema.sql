@@ -236,7 +236,7 @@ create or replace function public.create_clinical_consent_template(
 returns uuid
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   owner_id uuid;
@@ -287,7 +287,7 @@ create or replace function public.create_clinical_intake_request(
 returns table(request_id uuid, access_token text, expires_at timestamptz)
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   owner_id uuid;
@@ -372,7 +372,7 @@ create or replace function public.get_public_clinical_intake(p_token text)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   target_request public.clinical_intake_requests;
@@ -424,7 +424,7 @@ create or replace function public.submit_public_clinical_intake(
 returns uuid
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   target_request public.clinical_intake_requests;

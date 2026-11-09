@@ -106,8 +106,10 @@ const EVIDENCE_GAP_NOTES = {
   verify_service_unavailable:'O serviço de verificação da BRy não respondeu. Tente atualizar o status mais tarde.',
   verify_signature_invalid:'A verificação da BRy não considerou a assinatura válida. Não use este documento como assinado.',
   verify_signature_not_pades:'O arquivo devolvido não tem assinatura no padrão PAdES.',
+  verify_certificate_not_icp_brasil:'A verificação não confirmou que o certificado e a assinatura pertencem à ICP-Brasil.',
   verify_certificate_evidence_incomplete:'A verificação não devolveu os dados completos do certificado.',
   verify_timestamp_not_verified:'Foi pedido carimbo do tempo, mas a verificação não o confirmou.',
+  verify_report_unavailable:'O relatório qualificado da verificação não pôde ser arquivado. Atualize o status para tentar novamente.',
 }
 
 export function clinicalSignatureEvidenceGapNote(code) {

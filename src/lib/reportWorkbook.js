@@ -9,23 +9,38 @@ const COLORS = {
   gray:'6B7280',
   red:'B91C1C',
   paleRed:'FEE2E2',
+  paleGreen:'DCFCE7',
+  paleAmber:'FEF3C7',
   white:'FFFFFF',
   green:'047857',
+  amber:'92400E',
+  line:'D1D5DB',
 }
 
 const FONT = { name:'Calibri', sz:11 }
 const EXPORT_TIME_ZONE = 'America/Sao_Paulo'
+const ROW_BORDER = { bottom:{ style:'hair', color:{ rgb:'D1D5DB' } } }
 
 const STYLES = {
   title:{ font:{ ...FONT, bold:true, sz:16, color:{ rgb:COLORS.white } }, fill:{ fgColor:{ rgb:COLORS.navy } }, alignment:{ vertical:'center' } },
   subtitle:{ font:{ ...FONT, italic:true, color:{ rgb:COLORS.gray } } },
   header:{ font:{ ...FONT, bold:true, color:{ rgb:COLORS.white } }, fill:{ fgColor:{ rgb:COLORS.blue } }, alignment:{ horizontal:'center', vertical:'center', wrapText:true }, border:{ bottom:{ style:'thin', color:{ rgb:'1D4ED8' } } } },
   label:{ font:{ ...FONT, bold:true }, fill:{ fgColor:{ rgb:COLORS.paleGray } } },
-  text:{ font:{ ...FONT }, alignment:{ vertical:'top', wrapText:true } },
-  number:{ font:{ ...FONT }, numFmt:'#,##0.00' },
-  integer:{ font:{ ...FONT }, numFmt:'#,##0' },
-  currency:{ font:{ ...FONT }, numFmt:'R$ #,##0.00;[Red]-R$ #,##0.00' },
-  percent:{ font:{ ...FONT }, numFmt:'0.00%' },
+  text:{ font:{ ...FONT }, alignment:{ vertical:'top', wrapText:true }, border:ROW_BORDER },
+  number:{ font:{ ...FONT }, numFmt:'#,##0.00;[Red]-#,##0.00', border:ROW_BORDER },
+  integer:{ font:{ ...FONT }, numFmt:'#,##0;[Red]-#,##0', border:ROW_BORDER },
+  currency:{ font:{ ...FONT }, numFmt:'R$ #,##0.00;[Red]-R$ #,##0.00', border:ROW_BORDER },
+  percent:{ font:{ ...FONT }, numFmt:'0.00%;[Red]-0.00%', border:ROW_BORDER },
+  positiveCurrency:{ font:{ ...FONT, color:{ rgb:COLORS.green } }, fill:{ fgColor:{ rgb:COLORS.paleGreen } }, border:ROW_BORDER, numFmt:'R$ #,##0.00;[Red]-R$ #,##0.00' },
+  negativeCurrency:{ font:{ ...FONT, color:{ rgb:COLORS.red } }, fill:{ fgColor:{ rgb:COLORS.paleRed } }, border:ROW_BORDER, numFmt:'R$ #,##0.00;[Red]-R$ #,##0.00' },
+  positiveNumber:{ font:{ ...FONT, color:{ rgb:COLORS.green } }, fill:{ fgColor:{ rgb:COLORS.paleGreen } }, border:ROW_BORDER, numFmt:'#,##0.00;[Red]-#,##0.00' },
+  negativeNumber:{ font:{ ...FONT, color:{ rgb:COLORS.red } }, fill:{ fgColor:{ rgb:COLORS.paleRed } }, border:ROW_BORDER, numFmt:'#,##0.00;[Red]-#,##0.00' },
+  positivePercent:{ font:{ ...FONT, color:{ rgb:COLORS.green } }, fill:{ fgColor:{ rgb:COLORS.paleGreen } }, border:ROW_BORDER, numFmt:'0.00%;[Red]-0.00%' },
+  negativePercent:{ font:{ ...FONT, color:{ rgb:COLORS.red } }, fill:{ fgColor:{ rgb:COLORS.paleRed } }, border:ROW_BORDER, numFmt:'0.00%;[Red]-0.00%' },
+  dreSubtotal:{ font:{ ...FONT, bold:true }, fill:{ fgColor:{ rgb:COLORS.paleBlue } }, border:{ top:{ style:'thin', color:{ rgb:COLORS.blue } }, bottom:{ style:'thin', color:{ rgb:COLORS.blue } } } },
+  dreTotal:{ font:{ ...FONT, bold:true, color:{ rgb:COLORS.white } }, fill:{ fgColor:{ rgb:COLORS.navy } }, border:{ top:{ style:'medium', color:{ rgb:COLORS.navy } }, bottom:{ style:'double', color:{ rgb:COLORS.navy } } } },
+  dreDeduction:{ font:{ ...FONT, color:{ rgb:COLORS.red } }, fill:{ fgColor:{ rgb:COLORS.paleRed } } },
+  dreRevenue:{ font:{ ...FONT, color:{ rgb:COLORS.green } }, fill:{ fgColor:{ rgb:COLORS.paleGreen } } },
   date:{ font:{ ...FONT }, alignment:{ horizontal:'center' } },
   warning:{ font:{ ...FONT, color:{ rgb:COLORS.red } }, fill:{ fgColor:{ rgb:COLORS.paleRed } }, alignment:{ wrapText:true, vertical:'top' } },
   success:{ font:{ ...FONT, color:{ rgb:COLORS.green } } },
@@ -125,7 +140,11 @@ function buildDataSheet(report, metadata = {}) {
   styleRow(ws, 3, STYLES.header, columns.length)
   dataRows.forEach((_row, index) => {
     const rowIndex = index + 4
-    columns.forEach((column, columnIndex) => setStyle(ws, rowIndex, columnIndex, STYLES[column.type] || STYLES.text))
+    columns.forEach((column, columnIndex) => {
+      const value = dataRows[index]?.[column.key]
+      setStyle(ws, rowIndex, columnIndex, valueStyle(column.type, value))
+    })
+    if (report.id === 'dre') styleDreRow(ws, rowIndex, columns.length, dataRows[index])
   })
   ws['!cols'] = [
     ...columns.map(column => ({ wch:column.width || 18 })),
@@ -134,6 +153,51 @@ function buildDataSheet(report, metadata = {}) {
   ws['!rows'] = [{ hpt:30 }, { hpt:20 }, undefined, { hpt:32 }]
   if (columns.length) ws['!autofilter'] = { ref:`A4:${XLSXStyle.utils.encode_col(lastColumn)}${Math.max(4, dataRows.length + 4)}` }
   return ws
+}
+
+function valueStyle(type, value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric === 0) return STYLES[type] || STYLES.text
+  if (type === 'currency') return numeric > 0 ? STYLES.positiveCurrency : STYLES.negativeCurrency
+  if (type === 'number') return numeric > 0 ? STYLES.positiveNumber : STYLES.negativeNumber
+  if (type === 'percent') return numeric > 0 ? STYLES.positivePercent : STYLES.negativePercent
+  return STYLES[type] || STYLES.text
+}
+
+function styleDreRow(ws, rowIndex, width, row = {}) {
+  const group = String(row.group || '')
+  const isTotal = group === 'Total'
+  const isSubtotal = group === 'Subtotal'
+  const isNegative = ['Dedução', 'Custo', 'Despesa'].includes(group)
+  const isPositive = group === 'Receita' || group === 'Resultado financeiro' && Number(row.value) >= 0
+  const signedSubtotal = Number(row.value) < 0
+    ? mergeStyles(STYLES.dreSubtotal, { font:{ color:{ rgb:COLORS.red } }, fill:{ fgColor:{ rgb:COLORS.paleRed } } })
+    : mergeStyles(STYLES.dreSubtotal, { font:{ color:{ rgb:COLORS.green } }, fill:{ fgColor:{ rgb:COLORS.paleGreen } } })
+  const signedTotal = mergeStyles(STYLES.dreTotal, { fill:{ fgColor:{ rgb:Number(row.value) < 0 ? COLORS.red : COLORS.green } } })
+  const rowStyle = isTotal ? signedTotal
+    : isSubtotal ? signedSubtotal
+      : isNegative ? STYLES.dreDeduction
+        : isPositive ? STYLES.dreRevenue
+          : STYLES.text
+  for (let column = 0; column < width; column += 1) {
+    const current = ws[XLSXStyle.utils.encode_cell({ r:rowIndex, c:column })]?.s || {}
+    setStyle(ws, rowIndex, column, mergeStyles(current, rowStyle))
+  }
+  if (isSubtotal || isTotal) {
+    setStyle(ws, rowIndex, 2, mergeStyles(STYLES.currency, rowStyle))
+    setStyle(ws, rowIndex, 3, mergeStyles(STYLES.percent, rowStyle))
+  }
+}
+
+function mergeStyles(base = {}, override = {}) {
+  return {
+    ...base,
+    ...override,
+    font:{ ...(base.font || {}), ...(override.font || {}) },
+    fill:override.fill || base.fill,
+    border:override.border || base.border,
+    alignment:{ ...(base.alignment || {}), ...(override.alignment || {}) },
+  }
 }
 
 function buildAuditSheet(report, metadata) {

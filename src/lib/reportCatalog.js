@@ -256,6 +256,7 @@ function buildProjectedCashFlow(ctx) {
 
 function buildDre(ctx) {
   const m = buildMetrics({ ...ctx.data, recurrences:ctx.recurrences }, { startDate:ctx.range.start, endDate:ctx.range.end, balanceDate:ctx.range.end })
+  const verticalAnalysis = value => m.grossRevenue ? value / m.grossRevenue : 0
   const rows = [
     ['Receita de cirurgias', m.surgeryRevenue, 'Receita'], ['Receita de consultas', m.consultationRevenue, 'Receita'],
     ['Receita de produtos', m.productSalesRevenue, 'Receita'], ['Outras receitas', m.extraRevenueTotal, 'Receita'],
@@ -267,9 +268,9 @@ function buildDre(ctx) {
     ['Receitas financeiras', m.financialRevenue || 0, 'Resultado financeiro'], ['Despesas financeiras', -(m.financialExpenses || 0), 'Resultado financeiro'],
     ['Resultado antes dos tributos', m.profitBeforeTax ?? m.operatingProfit, 'Subtotal'],
     ['Tributos sobre o lucro', -m.taxExpenses, 'Despesa'], ['Resultado líquido', m.netProfit, 'Total'],
-  ].map(([description, value, group]) => ({ group, description, value }))
+  ].map(([description, value, group]) => ({ group, description, value, verticalAnalysis:verticalAnalysis(value) }))
   return result(
-    [col('group','Grupo'), col('description','Descrição','text',38), col('value','Valor','currency',18)],
+    [col('group','Grupo','text',22), col('description','Descrição','text',38), col('value','Valor','currency',18), col('verticalAnalysis','Análise vertical','percent',18)],
     rows,
     [['Receita bruta', m.grossRevenue], ['Resultado líquido', m.netProfit], ['Margem líquida', m.grossRevenue ? m.netProfit / m.grossRevenue : 0, 'percent']],
     ['Este demonstrativo é gerencial e não substitui demonstração contábil assinada.'],

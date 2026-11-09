@@ -85,6 +85,19 @@ test('allowlist aceita apenas os hosts oficiais, em HTTPS, sem credencial embuti
   }
 })
 
+test('Easy Sign e emissao do JWT usam sempre o mesmo ambiente', () => {
+  const credentials = {
+    BRY_EASY_SIGN_TOKEN:'',
+    BRY_EASY_SIGN_CLIENT_ID:'cliente',
+    BRY_EASY_SIGN_CLIENT_SECRET:'segredo',
+  }
+  expect(bryEasySignConfig(env(credentials)).ready).toBe(false)
+  expect(bryEasySignConfig(env({
+    ...credentials,
+    BRY_EASY_SIGN_TOKEN_URL:'https://cloud-hom.bry.com.br',
+  })).ready).toBe(true)
+})
+
 test('credential id precisa ser o UUID opaco do cofre e o timeout fica dentro de limites seguros', () => {
   expect(bryEasySignConfig(env({ BRY_EASY_SIGN_CREDENTIAL_ID:'minha-senha' })).ready).toBe(false)
   expect(bryEasySignConfig(env({ BRY_EASY_SIGN_CREDENTIAL_ID:TOKEN })).ready).toBe(false)
@@ -583,6 +596,7 @@ test('a chamada troca credenciais por JWT e usa o token obtido no header', async
     BRY_EASY_SIGN_TOKEN:'',
     BRY_EASY_SIGN_CLIENT_ID:'fca2d1d1-0000-4000-8000-000000000001',
     BRY_EASY_SIGN_CLIENT_SECRET:'segredo-da-aplicacao',
+    BRY_EASY_SIGN_TOKEN_URL:'https://cloud-hom.bry.com.br',
   }
   const withCredentials = bryEasySignConfig(credentialsEnv)
   expect(withCredentials.ready).toBe(true)
@@ -628,6 +642,7 @@ test('o estado publico continua sem expor credencial depois da mudanca de auth',
     BRY_EASY_SIGN_TOKEN:'',
     BRY_EASY_SIGN_CLIENT_ID:'fca2d1d1-0000-4000-8000-000000000001',
     BRY_EASY_SIGN_CLIENT_SECRET:'segredo-da-aplicacao',
+    BRY_EASY_SIGN_TOKEN_URL:'https://cloud-hom.bry.com.br',
   }))
   const serialized = JSON.stringify(state)
   expect(serialized).not.toContain('segredo-da-aplicacao')
