@@ -356,7 +356,7 @@ export function WhatsAppCell({ opp }) {
 export function NotesCell({ count, onOpen }) {
   return (
     <ReadOnlyCell align="center">
-      <button type="button" onClick={onOpen} aria-label="Abrir observações e histórico" title="Observações e histórico"
+      <button type="button" onClick={onOpen} aria-label="Abrir atualizações" title="Atualizações da equipe"
         style={{ position: 'relative', border: 'none', background: 'transparent', color: count ? C.accent : C.textDim, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }}>
         <Ico d={ICONS.comment} size={18} sw={1.8} />
         {count > 0 && <span style={{ position: 'absolute', right: -2, bottom: -1, minWidth: 15, height: 15, borderRadius: 8, background: C.accent, color: '#fff', fontSize: 9.5, fontWeight: 800, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{count}</span>}

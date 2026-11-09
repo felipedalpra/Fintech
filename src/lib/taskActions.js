@@ -87,14 +87,20 @@ export async function deleteTask(taskId) {
   return { ok: true }
 }
 
-// Registra uma nota manual na oportunidade (entra na timeline).
-export async function addNote(ownerId, opportunityId, body, authorId = null) {
+// Registra uma nota manual na oportunidade (entra na timeline e nas Atualizações).
+// parentId/mentions (resposta e menções) dependem de supabase/crm_workspace_phase3.sql: só são
+// enviados quando usados, então a nota simples continua funcionando sem a migração.
+export async function addNote(ownerId, opportunityId, body, authorId = null, { parentId = null, mentions = [] } = {}) {
   if (!ownerId || !opportunityId) return { error: 'Dados inválidos' }
   if (!body?.trim()) return { error: 'Nota vazia' }
-  const { data, error } = await supabase.from('opportunity_notes')
-    .insert({ user_id: ownerId, opportunity_id: opportunityId, body: body.trim(), author_id: authorId })
-    .select('id, body, author_id, created_at').single()
-  if (error) return { error: error.message }
+  const row = { user_id: ownerId, opportunity_id: opportunityId, body: body.trim(), author_id: authorId }
+  if (parentId) row.parent_id = parentId
+  if (mentions?.length) row.mentions = mentions
+  const { data, error } = await supabase.from('opportunity_notes').insert(row).select('*').single()
+  if (error) {
+    if (['42703', 'PGRST204'].includes(error.code)) return { error: 'Respostas e menções ficam disponíveis depois da atualização do banco do CRM.' }
+    return { error: error.message }
+  }
   return { note: data }
 }
 

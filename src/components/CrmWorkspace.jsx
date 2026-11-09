@@ -118,9 +118,9 @@ export function CrmWorkspace({ data }) {
   const hasFilters = activeFilterCount(config.filters) > 0 || Boolean(config.filters.q.trim())
   const ctx = useMemo(() => ({
     stages: ws.stages, stagesByKey: ws.stagesByKey, members: ws.members, memberLabel: ws.memberLabel,
-    procedureName, procedureColor, lastContact: ws.lastContact, overdueTasks: ws.overdueTasks, noteCounts: ws.noteCounts,
-    today, now: clock, keepEmptyStages: !hasFilters, themeMode,
-  }), [ws.stages, ws.stagesByKey, ws.members, ws.memberLabel, procedureName, procedureColor, ws.lastContact, ws.overdueTasks, ws.noteCounts, today, clock, hasFilters, themeMode])
+    procedureName, procedureColor, lastContact: ws.lastContact, overdueTasks: ws.overdueTasks, openTasks: ws.openTasks, noteCounts: ws.noteCounts,
+    today, now: clock, keepEmptyStages: !hasFilters, themeMode, userId: user?.id,
+  }), [ws.stages, ws.stagesByKey, ws.members, ws.memberLabel, procedureName, procedureColor, ws.lastContact, ws.overdueTasks, ws.openTasks, ws.noteCounts, today, clock, hasFilters, themeMode, user?.id])
 
   const columns = useMemo(() => resolveColumns(config.columns, ws.customFields, { schemaReady: ws.features.schema }), [config.columns, ws.customFields, ws.features.schema])
   const filtered = useMemo(() => applyFilters(ws.opps, config.filters, ctx), [ws.opps, config.filters, ctx])
@@ -260,6 +260,18 @@ export function CrmWorkspace({ data }) {
   const [leadOpen, setLeadOpen] = useState(false)
   const onOpenOpp = useCallback((opp, initialTab = 'dados') => setEditor({ open: true, opp, tab: initialTab }), [])
 
+  // Link direto (ex.: menção no sino): /app/funnel?opp=<id>&tab=atualizacoes abre a oportunidade.
+  const deepOpp = params.get('opp')
+  useEffect(() => {
+    if (!deepOpp || ws.loading) return
+    const target = ws.opps.find(o => o.id === deepOpp)
+    if (target) onOpenOpp(target, params.get('tab') || 'dados')
+    else toast('Oportunidade não encontrada (pode ter sido removida ou estar fora do seu acesso).', 'warning')
+    const p = new URLSearchParams(params)
+    p.delete('opp'); p.delete('tab')
+    setParams(p, { replace: true })
+  }, [deepOpp, ws.loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Ações do menu contextual da linha (uma oportunidade).
   const rowActions = useMemo(() => ({
     open: opp => onOpenOpp(opp),
@@ -327,9 +339,16 @@ export function CrmWorkspace({ data }) {
   const [viewModal, setViewModal] = useState({ open: false, mode: 'new', view: null })
   async function submitView({ name, scope }) {
     if (viewModal.mode === 'rename') {
-      const res = await updateView(viewModal.view.id, { name })
+      const patch = { name }
+      if (scope !== viewModal.view.scope) {
+        patch.scope = scope
+        // Pessoal é sempre de quem a tornou pessoal (a RLS exige dono = quem vê).
+        if (scope === 'personal') patch.owner_id = user?.id
+      }
+      const res = await updateView(viewModal.view.id, patch)
       if (res.error) return res
       ws.setViews(list => list.map(v => (v.id === res.view.id ? res.view : v)))
+      toast('Visualização atualizada.', 'success')
       return res
     }
     const position = ws.views.reduce((m, v) => Math.max(m, Number(v.position) || 0), 0) + 1
@@ -444,7 +463,7 @@ export function CrmWorkspace({ data }) {
 
       <OpportunityEditor open={editor.open} onClose={() => setEditor(e => ({ ...e, open: false }))} opp={editor.opp} initialTab={editor.tab}
         stages={ws.stages} members={ws.members} ownerId={effectiveOwner} userId={user?.id} onSaved={ws.onEditorSaved}
-        onTasksChanged={ws.syncTask} />
+        onTasksChanged={ws.syncTask} onNotesChanged={ws.bumpNoteCount} />
       <NewLeadModal open={leadOpen} onClose={() => setLeadOpen(false)} ownerId={effectiveOwner} members={ws.members}
         stage="primeiro_contato" onCreated={opp => { ws.addOpp(opp); setLeadOpen(false) }} />
       <CrmFieldEditor open={fieldEditor.open} field={fieldEditor.field} onClose={() => setFieldEditor({ open: false, field: null })}
@@ -495,7 +514,7 @@ function TabButton({ t, active, onTab, canEdit, onRename, onDelete }) {
           <Ico d={ICONS.dots} size={14} />
         </button>
         <Popover anchorRef={ref} open={menu} onClose={() => setMenu(false)} width={210} label="Opções da visualização">
-          <MenuItem onClick={() => { setMenu(false); onRename(t.view) }}>Renomear</MenuItem>
+          <MenuItem onClick={() => { setMenu(false); onRename(t.view) }}>Renomear / quem vê</MenuItem>
           {!confirmDelete
             ? <MenuItem danger onClick={() => setConfirmDelete(true)}>Excluir visualização</MenuItem>
             : <MenuItem danger onClick={() => { setMenu(false); onDelete(t.view) }}>Confirmar exclusão</MenuItem>}
@@ -526,7 +545,7 @@ function ViewModal({ state, canShare, onClose, onSubmit }) {
   }
   const rename = state.mode === 'rename'
   return (
-    <Modal open={state.open} onClose={onClose} title={rename ? 'Renomear visualização' : 'Nova visualização'} width={440} trackDirty={false}>
+    <Modal open={state.open} onClose={onClose} title={rename ? 'Editar visualização' : 'Nova visualização'} width={440} trackDirty={false}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {!rename && <p style={{ margin: 0, fontSize: 12.5, color: C.textSub, lineHeight: 1.5 }}>Salva as colunas, larguras, filtros, ordenação e agrupamento que estão na tela agora.</p>}
         <div>
@@ -534,7 +553,6 @@ function ViewModal({ state, canShare, onClose, onSubmit }) {
           <input id="crm-view-name" autoFocus value={name} maxLength={60} onChange={e => setName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submit() }} placeholder="Ex.: Orçamentos da semana" style={{ ...base.input, fontSize: 13 }} />
         </div>
-        {!rename && (
           <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
             <legend style={base.label}>Quem vê</legend>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.text, marginBottom: 6, cursor: 'pointer' }}>
@@ -545,11 +563,10 @@ function ViewModal({ state, canShare, onClose, onSubmit }) {
               Toda a equipe (compartilhada){!canShare && ' — somente Administrador e Gestão'}
             </label>
           </fieldset>
-        )}
         {error && <div role="alert" style={{ color: C.red, fontSize: 12.5 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={saving}>{saving ? 'Salvando…' : rename ? 'Renomear' : 'Salvar visualização'}</Btn>
+          <Btn onClick={submit} disabled={saving}>{saving ? 'Salvando…' : rename ? 'Salvar' : 'Salvar visualização'}</Btn>
         </div>
       </div>
     </Modal>

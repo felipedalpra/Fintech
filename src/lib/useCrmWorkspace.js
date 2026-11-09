@@ -12,9 +12,13 @@ import { createTask, updateTask } from './taskActions.js'
 import { confirmSuggestion, dismissSuggestion } from './opportunitySuggestion.js'
 import {
   loadOpportunities, loadWorkspaceMeta, loadLastContact, loadOpportunityTasks, loadNoteCounts, saveCustomValue,
+  ensureDefaultViews,
 } from './crmWorkspaceStore.js'
 import { resolveStages, stageMap } from './crmStages.js'
-import { isoDate, tasksByOpportunity, overdueTaskCounts } from './crmWorkspace.js'
+import { isoDate, tasksByOpportunity, overdueTaskCounts, openTaskCounts } from './crmWorkspace.js'
+
+// Visualizações iniciais: a RPC é idempotente, mas basta perguntar uma vez por clínica e sessão.
+const defaultViewsChecked = new Set()
 
 export function useCrmWorkspace(ownerId, { fallbackOwnerLabel } = {}) {
   const [opps, setOpps] = useState([])
@@ -42,6 +46,13 @@ export function useCrmWorkspace(ownerId, { fallbackOwnerLabel } = {}) {
     async function load() {
       setLoading(true)
       setError(null)
+      // Antes de ler as visualizações: na primeira vez da clínica, cria Meus leads, Follow-ups
+      // pendentes e Orçamentos em negociação (crm_workspace_phase3.sql). Falha = segue sem elas.
+      if (!defaultViewsChecked.has(ownerId)) {
+        defaultViewsChecked.add(ownerId)
+        await ensureDefaultViews()
+        if (!mounted) return
+      }
       const [oppRes, meta, taskRes, notes] = await Promise.all([
         loadOpportunities(ownerId),
         loadWorkspaceMeta(ownerId),
@@ -82,6 +93,14 @@ export function useCrmWorkspace(ownerId, { fallbackOwnerLabel } = {}) {
   // linha e do card do Kanban na hora. O "hoje" é recalculado a cada mudança das tarefas.
   const subitems = useMemo(() => tasksByOpportunity(tasks), [tasks])
   const overdueTasks = useMemo(() => overdueTaskCounts(tasks, isoDate(new Date())), [tasks])
+  // Tarefas abertas por oportunidade (filtro "Com tarefa em aberto" / Follow-ups pendentes).
+  const openTasks = useMemo(() => openTaskCounts(tasks), [tasks])
+
+  // Atualização registrada no painel da oportunidade: mantém o contador da coluna em dia.
+  const bumpNoteCount = useCallback((oppId, delta = 1) => {
+    if (!oppId) return
+    setNoteCounts(prev => ({ ...prev, [oppId]: Math.max(0, (prev[oppId] || 0) + delta) }))
+  }, [])
 
   const stages = useMemo(() => resolveStages(stageSettings), [stageSettings])
   const stagesByKey = useMemo(() => stageMap(stages), [stages])
@@ -350,8 +369,8 @@ export function useCrmWorkspace(ownerId, { fallbackOwnerLabel } = {}) {
 
   return {
     opps, stages, stagesByKey, members, memberLabel, customFields, setCustomFields,
-    views, setViews, procedures, stageSettings, setStageSettings, lastContact, overdueTasks, noteCounts,
-    tasks, subitems, features, loading, error, movingId,
+    views, setViews, procedures, stageSettings, setStageSettings, lastContact, overdueTasks, openTasks, noteCounts,
+    bumpNoteCount, tasks, subitems, features, loading, error, movingId,
     updateOpp, updateCustomValue, moveStage, setOutcome, acceptSuggestion, rejectSuggestion,
     addOpp, onEditorSaved, reload,
     createSubitem, updateSubitem, syncTask,

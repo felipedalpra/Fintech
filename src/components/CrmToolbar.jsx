@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { Ico, ICONS, Popover, MenuItem, Avatar } from './CrmCells.jsx'
 import {
-  GROUP_BY_OPTIONS, PERIOD_FIELDS, PERIOD_PRESETS, EMPTY_FILTERS, activeFilterCount,
+  GROUP_BY_OPTIONS, PERIOD_FIELDS, PERIOD_PRESETS, EMPTY_FILTERS, activeFilterCount, ME,
 } from '../lib/crmWorkspace.js'
 
 function ToolButton({ icon, children, onClick, active, badge, btnRef, testId, ariaLabel }) {
@@ -96,6 +96,10 @@ export function CrmToolbar({
 
       <ToolButton btnRef={personRef} icon={ICONS.user} onClick={() => toggle('person')} active={filters.responsible.length > 0} badge={filters.responsible.length || null} testId="crm-filter-person">Pessoa</ToolButton>
       <Popover anchorRef={personRef} open={open === 'person'} onClose={close} width={260} label="Filtrar por responsável">
+        <MenuItem active={filters.responsible.includes(ME)} onClick={() => set({ responsible: toggleIn(filters.responsible, ME) })}>
+          <span style={{ width: 20, height: 20, borderRadius: '50%', background: C.accent, color: '#fff', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 800 }}>EU</span>
+          <span>Eu <span style={{ color: C.textDim, fontSize: 11 }}>(quem estiver vendo)</span></span>
+        </MenuItem>
         <MenuItem active={filters.responsible.includes('none')} onClick={() => set({ responsible: toggleIn(filters.responsible, 'none') })}>
           <span style={{ width: 20, height: 20, borderRadius: '50%', border: `1.5px dashed ${C.borderBright}` }} />Sem responsável
         </MenuItem>
@@ -169,6 +173,10 @@ export function CrmToolbar({
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.text, marginBottom: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={filters.overdue} onChange={e => set({ overdue: e.target.checked })} style={{ accentColor: C.accent }} />
             Com tarefa ou prazo atrasado
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.text, marginBottom: 8, cursor: 'pointer' }}>
+            <input type="checkbox" data-testid="crm-filter-open-tasks" checked={filters.openTasks} onChange={e => set({ openTasks: e.target.checked })} style={{ accentColor: C.accent }} />
+            Com tarefa em aberto (follow-up pendente)
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.text, flexWrap: 'wrap' }}>
             <input type="checkbox" checked={Boolean(filters.noContactDays)} onChange={e => set({ noContactDays: e.target.checked ? 5 : null })} style={{ accentColor: C.accent }} />
