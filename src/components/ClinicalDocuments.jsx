@@ -6,7 +6,9 @@ import {
   clinicalDocumentDefaults,
   clinicalDocumentTypeLabel,
   CLINICAL_DOCUMENT_TYPES,
+  hasCompletePatientAddress,
   openClinicalDocumentPrint,
+  patientResidentialAddress,
   professionalRegistration,
 } from '../lib/clinicalDocuments.js'
 import {
@@ -202,6 +204,8 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     prescriptions:records.filter(item => item.document_type === SIMPLE_PRESCRIPTION).length,
   }), [records])
   const signerReadiness = useMemo(() => clinicalSignerReadiness(profile), [profile])
+  const patientAddressComplete = hasCompletePatientAddress(patient)
+  const patientAddress = patientResidentialAddress(patient)
 
   function begin(type) {
     if (type === SIMPLE_PRESCRIPTION && !canPrescribe) {
@@ -440,6 +444,15 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
           </div>
         ) : (
           <div className="clinical-prescription-editor">
+            <div
+              className={patientAddressComplete ? 'clinical-document-access-note' : 'clinical-document-warning'}
+              data-testid="clinical-patient-address"
+            >
+              <strong>Endereço residencial do paciente (vem do cadastro):</strong>{' '}
+              {patientAddressComplete ? patientAddress : 'incompleto — faltam rua, número, cidade e/ou estado.'}
+              <br />
+              <span>Para corrigir, acesse Relacionamento → Pacientes → Editar → Endereço. O endereço profissional da clínica é outro dado e aparece separadamente abaixo.</span>
+            </div>
             <div className="clinical-document-warning"><strong>Somente receituário simples.</strong> Não inclua medicamentos controlados nem sujeitos à retenção nesta versão.</div>
             {form.items.map((item, index) => (
               <div className="clinical-medication-row" key={index}>
@@ -458,8 +471,9 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
         )}
 
         <section className="clinical-document-issuer">
-          <h4>Identificação profissional no documento</h4>
+          <h4>Identificação profissional e endereço da clínica</h4>
           <p><strong>{author.name || 'Profissional não configurado'}</strong> · {author.council || 'CRM'} {author.registration || 'não informado'}</p>
+          {editingType === SIMPLE_PRESCRIPTION && <p>Estes dados identificam o profissional e a clínica; não substituem o endereço residencial do paciente.</p>}
           <div>
             <label><span>Telefone ou e-mail profissional *</span><input aria-label="Telefone ou e-mail profissional *" value={form.issuer_contact} onChange={event => update('issuer_contact', event.target.value)} /></label>
             <label><span>Endereço profissional *</span><input aria-label="Endereço profissional *" value={form.issuer_address} onChange={event => update('issuer_address', event.target.value)} /></label>

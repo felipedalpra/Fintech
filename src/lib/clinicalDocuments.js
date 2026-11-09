@@ -125,7 +125,7 @@ export function validateClinicalDocument({ type, form, patient, author }) {
 
   if (type === SIMPLE_PRESCRIPTION) {
     if (!hasCompletePatientAddress(patient)) {
-      return 'Cadastre o endereço residencial completo do paciente (rua, número, cidade e estado) antes de emitir a receita.'
+      return 'Falta o endereço residencial do paciente no cadastro (rua, número, cidade e estado). O endereço profissional da clínica, preenchido abaixo, é outro dado. Atualize em Relacionamento > Pacientes > Editar > Endereço.'
     }
     if (!form.simple_prescription_confirmed) {
       return 'Confirme que o receituário não contém medicamento controlado nem sujeito à retenção.'

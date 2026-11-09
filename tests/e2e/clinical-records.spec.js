@@ -189,6 +189,9 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   expect(rpcPayloads[0].p_clinic_logo_data_url).toBe('data:image/png;base64,logo-e2e')
 
   await page.getByRole('button', { name:'+ Receita simples' }).click()
+  await expect(page.getByTestId('clinical-patient-address')).toContainText('Rua Paciente, 25 · Porto Alegre / RS · CEP 90000-000')
+  await expect(page.getByRole('heading', { name:'Identificação profissional e endereço da clínica' })).toBeVisible()
+  await expect(page.getByText('não substituem o endereço residencial do paciente')).toBeVisible()
   await page.getByLabel('Medicamento 1 *').fill('Dipirona')
   await page.getByLabel('Apresentação 1').fill('500 mg')
   await page.getByLabel('Quantidade 1').fill('1 caixa')
