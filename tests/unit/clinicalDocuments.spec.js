@@ -69,8 +69,27 @@ test('receita simples exige endereço, modo de usar e confirmação sanitária',
     form,
     patient:{ id:patient.id, full_name:patient.full_name },
     author,
-  })).toContain('endereço residencial')
+  })).toContain('O endereço profissional da clínica, preenchido abaixo, é outro dado')
   expect(validateClinicalDocument({ type:SIMPLE_PRESCRIPTION, form, patient, author })).toBe('')
+})
+
+test('não confunde o endereço profissional com o endereço residencial do paciente', () => {
+  const form = {
+    ...clinicalDocumentDefaults({ type:SIMPLE_PRESCRIPTION, issueDate:'2026-10-20' }),
+    issuer_contact:'contato@clinica.com.br',
+    issuer_address:'Av. Profissional, 100, Porto Alegre/RS',
+    simple_prescription_confirmed:true,
+    items:[{ medication:'Dipirona', presentation:'500 mg', quantity:'1 caixa', directions:'Tomar conforme orientação.' }],
+  }
+
+  const validation = validateClinicalDocument({
+    type:SIMPLE_PRESCRIPTION,
+    form,
+    patient:{ id:patient.id, full_name:patient.full_name },
+    author,
+  })
+
+  expect(validation).toContain('Relacionamento > Pacientes > Editar > Endereço')
 })
 
 test('gera impressão com identificação mínima e escapa conteúdo clínico', () => {
