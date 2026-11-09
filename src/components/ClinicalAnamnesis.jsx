@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { clinicalSignature } from '../lib/clinicalAuthorship.js'
 import { today, uid } from '../utils.js'
 import {
   buildClinicalAnamnesisRpcArgs,
   calculateClinicalBmi,
+  clinicalAnamnesisValidationIssue,
   clinicalAnamnesisFromLegacy,
   emptyClinicalAnamnesis,
   hasLegacyClinicalAnamnesis,
@@ -90,6 +91,8 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
   const [error, setError] = useState('')
   const [form, setForm] = useState(() => emptyClinicalAnamnesis(today()))
   const [protocols, setProtocols] = useState([])
+  const [invalidField, setInvalidField] = useState('')
+  const editorRef = useRef(null)
 
   useEffect(() => {
     let active = true
@@ -145,6 +148,19 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
 
   function updateField(field, value) {
     setForm(current => ({ ...current, [field]:value }))
+    if (invalidField === field) {
+      setInvalidField('')
+      setError('')
+    }
+  }
+
+  function revealInvalidField(field) {
+    if (!field) return
+    requestAnimationFrame(() => {
+      const target = editorRef.current?.querySelector(`[data-clinical-field="${field}"]`)
+      target?.scrollIntoView({ behavior:'smooth', block:'center' })
+      target?.focus({ preventScroll:true })
+    })
   }
 
   function applyProtocol(versionId) {
@@ -164,8 +180,16 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
 
   async function save() {
     if (saving) return
+    const validationIssue = clinicalAnamnesisValidationIssue(form, author)
+    if (validationIssue) {
+      setError(validationIssue.message)
+      setInvalidField(validationIssue.field || '')
+      revealInvalidField(validationIssue.field)
+      return
+    }
     setSaving(true)
     setError('')
+    setInvalidField('')
     let signatureCompleted = false
     try {
       const selectedProtocol = selectedProtocolVersion()
@@ -218,13 +242,11 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
     const activeProtocolVersions = protocols.map(item => item.currentVersion).filter(Boolean)
     const appliedVersionIsActive = activeProtocolVersions.some(item => item.id === appliedProtocol?.id)
     return (
-      <div className="clinical-anamnesis-editor">
+      <div className="clinical-anamnesis-editor" ref={editorRef}>
         <header className="clinical-anamnesis-toolbar">
           <div><span>Anamnese clínica</span><strong>Novo registro SOAP</strong></div>
-          <label>Data<input type="date" value={form.session_date} onChange={event => updateField('session_date', event.target.value)} /></label>
+          <label>Data<input type="date" data-clinical-field="session_date" aria-invalid={invalidField === 'session_date'} value={form.session_date} onChange={event => updateField('session_date', event.target.value)} /></label>
         </header>
-
-        {error && <div className="clinical-form-error" role="alert">{error}</div>}
 
         {(protocols.length > 0 || appliedProtocol) && <section className="clinical-protocol-apply"><div><strong>Protocolo do procedimento</strong><span>Use como roteiro e revise cada informação antes de assinar.</span></div><select aria-label="Protocolo clínico" value={form.protocol_version_id || ''} onChange={event => applyProtocol(event.target.value)}><option value="">Sem protocolo</option>{appliedProtocol && !appliedVersionIsActive && <option value={appliedProtocol.id}>{appliedProtocol.name} · v{appliedProtocol.version_number} (versão aplicada)</option>}{activeProtocolVersions.map(item => <option key={item.id} value={item.id}>{item.name} · v{item.version_number}</option>)}</select></section>}
 
@@ -234,14 +256,14 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
             {section.key === 'objective' && (
               <div className="clinical-vitals-grid">
                 {VITAL_FIELDS.map(([field, label, unit]) => (
-                  <label key={field}><span>{label}</span><div><input inputMode="decimal" value={form[field]} onChange={event => updateField(field, event.target.value)} aria-label={label} /><small>{unit}</small></div></label>
+                  <label key={field}><span>{label}</span><div><input inputMode="decimal" data-clinical-field={field} aria-invalid={invalidField === field} value={form[field]} onChange={event => updateField(field, event.target.value)} aria-label={label} /><small>{unit}</small></div></label>
                 ))}
                 <div className="clinical-bmi"><span>IMC</span><strong>{formBmi ?? '—'}</strong></div>
               </div>
             )}
             <div className="clinical-soap-fields">
               {section.fields.map(([field, label, placeholder]) => (
-                <label key={field}><span>{label}{['chief_complaint', 'history_present_illness', 'physical_exam', 'diagnostic_hypotheses', 'therapeutic_plan'].includes(field) && ' *'}</span><textarea rows={field === 'history_present_illness' ? 4 : 3} value={form[field]} placeholder={placeholder} onChange={event => updateField(field, event.target.value)} /></label>
+                <label key={field}><span>{label}{['chief_complaint', 'history_present_illness', 'physical_exam', 'diagnostic_hypotheses', 'therapeutic_plan'].includes(field) && ' *'}</span><textarea rows={field === 'history_present_illness' ? 4 : 3} data-clinical-field={field} aria-invalid={invalidField === field} value={form[field]} placeholder={placeholder} onChange={event => updateField(field, event.target.value)} /></label>
               ))}
             </div>
           </section>
@@ -252,6 +274,8 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
           const prompts = version ? protocolVersionToForm(version).anamnesisPrompts : []
           return prompts.length > 0 ? <section className="clinical-soap-section is-protocol"><header><span>+</span><div><strong>Campos do protocolo</strong><small>Complementos específicos de {form.protocol_name}</small></div></header><div className="clinical-soap-fields">{prompts.map(prompt => <label key={prompt.key}><span>{prompt.label}{prompt.required ? ' *' : ''}</span><textarea rows="3" value={form.protocol_responses?.[prompt.key] || ''} onChange={event => setForm(current => ({ ...current, protocol_responses:{ ...current.protocol_responses, [prompt.key]:event.target.value } }))} /></label>)}</div></section> : null
         })()}
+
+        {error && <div className="clinical-form-error" role="alert">{error}</div>}
 
         <footer className="clinical-anamnesis-actions">
           <p>Ao assinar, esta versão se torna imutável. Correções devem ser registradas em uma nova versão.</p>

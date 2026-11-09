@@ -93,18 +93,22 @@ export function calculateClinicalBmi(weightKg, heightCm) {
 }
 
 export function validateClinicalAnamnesis(form, author) {
-  if (!form?.session_date) return 'Informe a data da anamnese.'
+  return clinicalAnamnesisValidationIssue(form, author)?.message || ''
+}
+
+export function clinicalAnamnesisValidationIssue(form, author) {
+  if (!form?.session_date) return { field:'session_date', message:'Informe a data da anamnese.' }
   if (!author?.name?.trim() || !author?.registration?.trim()) {
-    return 'Cadastre o nome e o registro profissional antes de assinar a anamnese.'
+    return { field:null, message:'Cadastre o nome e o registro profissional antes de assinar a anamnese.' }
   }
   const missing = CORE_FIELDS.find(([field]) => !String(form?.[field] || '').trim())
-  if (missing) return `${missing[1]} é obrigatório.`
+  if (missing) return { field:missing[0], message:`${missing[1]} é obrigatório.` }
   const invalidNumber = NUMERIC_FIELDS.find(field => {
     const value = form?.[field]
     return value !== '' && value !== null && value !== undefined && nullableNumber(value) === null
   })
-  if (invalidNumber) return 'Revise os sinais vitais: há um valor numérico inválido.'
-  return ''
+  if (invalidNumber) return { field:invalidNumber, message:'Revise os sinais vitais: há um valor numérico inválido.' }
+  return null
 }
 
 export function buildClinicalAnamnesisRpcArgs({ patientId, requestId, form, author }) {

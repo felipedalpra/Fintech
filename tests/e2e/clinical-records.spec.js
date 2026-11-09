@@ -369,9 +369,14 @@ test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor'
   await page.getByLabel('PA diastólica').fill('80')
   await page.getByLabel('Peso').fill('60.5')
   await page.getByLabel('Altura').fill('165')
-  await page.getByLabel('Exame físico *').fill('Bom estado geral, eupneica.')
   await page.getByLabel('Hipóteses diagnósticas *').fill('Paciente clinicamente estável.')
   await page.getByLabel('Plano terapêutico *').fill('Solicitar exames pré-operatórios.')
+  await page.getByRole('button', { name:'Assinar anamnese' }).click()
+
+  await expect(page.getByRole('alert')).toHaveText('Exame físico é obrigatório.')
+  await expect(page.getByLabel('Exame físico *')).toBeFocused()
+  expect(rpcPayloads).toHaveLength(0)
+  await page.getByLabel('Exame físico *').fill('Bom estado geral, eupneica.')
   await page.getByRole('button', { name:'Assinar anamnese' }).click()
 
   await expect(page.getByText('A anamnese foi assinada, mas a lista de versões não pôde ser atualizada. Recarregue antes de registrar outra versão.')).toBeVisible()
