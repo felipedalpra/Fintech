@@ -38,6 +38,11 @@ export const ICONS = {
   arrowUp: <path d="m6 15 6-6 6 6" />,
   arrowDown: <path d="m6 9 6 6 6-6" />,
   x: <path d="M18 6 6 18M6 6l12 12" />,
+  copy: <><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></>,
+  archive: <><rect x="3" y="4" width="18" height="5" rx="1.5" /><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4" /></>,
+  restore: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></>,
+  tag: <><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.5" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></>,
 }
 
@@ -351,7 +356,7 @@ export function WhatsAppCell({ opp }) {
 export function NotesCell({ count, onOpen }) {
   return (
     <ReadOnlyCell align="center">
-      <button type="button" onClick={onOpen} aria-label="Abrir observações e histórico" title="Observações e histórico"
+      <button type="button" onClick={onOpen} aria-label="Abrir atualizações" title="Atualizações da equipe"
         style={{ position: 'relative', border: 'none', background: 'transparent', color: count ? C.accent : C.textDim, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }}>
         <Ico d={ICONS.comment} size={18} sw={1.8} />
         {count > 0 && <span style={{ position: 'absolute', right: -2, bottom: -1, minWidth: 15, height: 15, borderRadius: 8, background: C.accent, color: '#fff', fontSize: 9.5, fontWeight: 800, display: 'grid', placeItems: 'center', padding: '0 3px' }}>{count}</span>}
@@ -535,7 +540,7 @@ export function OutcomeCell({ opp, onClose, readOnly }) {
         title={closed ? (opp.lost_reason ? `Motivo: ${opp.lost_reason}` : 'Oportunidade encerrada') : 'Encerrar como ganho ou perdido'}
         onClick={() => { setLosing(false); setOpen(o => !o) }}
         style={cellBase({ justifyContent: 'center', background: meta.color, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: readOnly || closed ? 'default' : 'pointer' })}>
-        {opp.status === 'aberto' ? 'Aberta' : opp.status === 'ganho' ? 'Ganho' : 'Perdido'}
+        {opp.status === 'aberto' ? 'Aberta' : opp.status === 'ganho' ? 'Ganho' : opp.status === 'arquivado' ? 'Arquivada' : 'Perdido'}
       </button>
       <Popover anchorRef={ref} open={open} onClose={() => setOpen(false)} width={220} label="Encerrar oportunidade">
         {!losing ? <>
@@ -551,13 +556,16 @@ export function OutcomeCell({ opp, onClose, readOnly }) {
   )
 }
 
-export function PersonCell({ opp, onOpen, groupColor, overdue, stale }) {
+// `leading`: controles da linha antes do avatar (checkbox de seleção e seta dos subitens).
+// `trailing`: ação extra à direita, visível no hover (menu "⋯").
+export function PersonCell({ opp, onOpen, groupColor, overdue, stale, leading, trailing }) {
   const person = opportunityPerson(opp)
   const title = opp.title && opp.title !== 'Oportunidade' && opp.title !== person.name ? opp.title : null
   const [hover, setHover] = useState(false)
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', alignItems: 'center', height: '100%', gap: 8, paddingLeft: 6, paddingRight: 8, boxSizing: 'border-box', borderLeft: `5px solid ${groupColor}` }}>
+      style={{ display: 'flex', alignItems: 'center', height: '100%', gap: 8, paddingLeft: leading ? 2 : 6, paddingRight: 8, boxSizing: 'border-box', borderLeft: `5px solid ${groupColor}` }}>
+      {leading}
       <Avatar label={person.name} size={24} />
       <button type="button" onClick={onOpen} data-testid="crm-open-opportunity"
         title={title ? `${person.name} · ${title}` : person.name}
@@ -571,6 +579,7 @@ export function PersonCell({ opp, onOpen, groupColor, overdue, stale }) {
         style={{ border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, borderRadius: 6, padding: '2px 6px', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: hover ? 1 : 0, transition: 'opacity .12s', fontFamily: 'inherit' }}>
         <Ico d={ICONS.open} size={11} />Abrir
       </button>
+      {trailing && trailing(hover)}
     </div>
   )
 }

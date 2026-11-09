@@ -157,11 +157,12 @@ export const EMPTY_FILTERS = {
   procedure: [],
   stage: [],
   source: [],
-  status: 'all',          // all | aberto | ganho | perdido
+  status: 'all',          // all | aberto | ganho | perdido | arquivado ('all' NÃO inclui arquivadas)
   period: null,           // { field, preset, from, to }
   valueMin: null,
   valueMax: null,
   overdue: false,         // tarefa pendente vencida OU prazo da próxima ação vencido
+  openTasks: false,       // com tarefa (subitem) em aberto — follow-up pendente
   noContactDays: null,    // sem contato há mais de N dias
 }
 
@@ -185,7 +186,7 @@ function numOrNull(v) {
 
 export function normalizeFilters(f = {}) {
   const src = f && typeof f === 'object' ? f : {}
-  const status = ['all', 'aberto', 'ganho', 'perdido'].includes(src.status) ? src.status : 'all'
+  const status = ['all', 'aberto', 'ganho', 'perdido', 'arquivado'].includes(src.status) ? src.status : 'all'
   let period = null
   if (src.period && typeof src.period === 'object' && PERIOD_FIELDS.some(p => p.id === src.period.field)) {
     const preset = PERIOD_PRESETS.some(p => p.id === src.period.preset) ? src.period.preset : 'custom'
@@ -203,6 +204,7 @@ export function normalizeFilters(f = {}) {
     valueMin: numOrNull(src.valueMin),
     valueMax: numOrNull(src.valueMax),
     overdue: src.overdue === true,
+    openTasks: src.openTasks === true,
     noContactDays: noContact != null && noContact > 0 ? Math.floor(noContact) : null,
   }
 }
@@ -234,6 +236,7 @@ export function activeFilterCount(filters) {
   if (f.period) n++
   if (f.valueMin != null || f.valueMax != null) n++
   if (f.overdue) n++
+  if (f.openTasks) n++
   if (f.noContactDays) n++
   return n
 }
@@ -315,6 +318,63 @@ export function isOverdue(opp, ctx) {
   return Boolean(opp.next_action_due && ctx?.today && opp.next_action_due < ctx.today)
 }
 
+// ---------------------------------------------------------------------------
+// Subitens (tarefas vinculadas à oportunidade — mesmo registro do módulo de Tarefas)
+// ---------------------------------------------------------------------------
+// 'aguardando' (crm_workspace_phase2.sql) continua ABERTA: só 'feita' encerra.
+export function isTaskOpen(task) {
+  return Boolean(task) && task.status !== 'feita'
+}
+
+// { oppId: [tarefas] }: abertas por prazo (sem prazo no fim), depois concluídas.
+export function tasksByOpportunity(tasks) {
+  const map = {}
+  for (const t of tasks || []) {
+    if (!t?.opportunity_id) continue
+    ;(map[t.opportunity_id] ||= []).push(t)
+  }
+  for (const list of Object.values(map)) list.sort(compareSubitems)
+  return map
+}
+
+function compareSubitems(a, b) {
+  const da = isTaskOpen(a) ? 0 : 1
+  const db = isTaskOpen(b) ? 0 : 1
+  if (da !== db) return da - db
+  const ad = a.due_date || '9999-12-31'
+  const bd = b.due_date || '9999-12-31'
+  if (ad !== bd) return ad < bd ? -1 : 1
+  return String(a.created_at || '').localeCompare(String(b.created_at || ''))
+}
+
+// Tarefas ABERTAS vencidas por oportunidade (derivado — mesma regra em todas as visões).
+export function overdueTaskCounts(tasks, today) {
+  const out = {}
+  if (!today) return out
+  for (const t of tasks || []) {
+    if (!t?.opportunity_id || !isTaskOpen(t) || !t.due_date || t.due_date >= today) continue
+    out[t.opportunity_id] = (out[t.opportunity_id] || 0) + 1
+  }
+  return out
+}
+
+// Tarefas ABERTAS (pendente/aguardando) por oportunidade — filtro "Follow-ups pendentes".
+export function openTaskCounts(tasks) {
+  const out = {}
+  for (const t of tasks || []) {
+    if (!t?.opportunity_id || !isTaskOpen(t)) continue
+    out[t.opportunity_id] = (out[t.opportunity_id] || 0) + 1
+  }
+  return out
+}
+
+// "2/4" (concluídas/total) ou null quando não há subitens.
+export function subitemProgress(list) {
+  if (!list?.length) return null
+  const done = list.filter(t => !isTaskOpen(t)).length
+  return `${done}/${list.length}`
+}
+
 function normalizeText(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 }
@@ -327,18 +387,23 @@ export function sourceKey(source) {
 // ---------------------------------------------------------------------------
 // Filtros (combináveis — todos precisam passar)
 // ---------------------------------------------------------------------------
+// "me" no filtro de responsável = quem está vendo (ctx.userId). Permite uma visualização
+// compartilhada "Meus leads" que mostra a cada pessoa as próprias oportunidades.
+export const ME = 'me'
+
 export function applyFilters(opps, filters, ctx = {}) {
   const f = normalizeFilters(filters)
   const q = normalizeText(f.q.trim())
   const range = f.period ? periodRange(f.period, ctx.today) : null
   const now = ctx.now ?? Date.now()
-  const respSet = new Set(f.responsible)
+  const respSet = new Set(f.responsible.map(r => (r === ME ? (ctx.userId || ME) : r)))
   const procSet = new Set(f.procedure)
   const stageSet = new Set(f.stage)
   const sourceSet = new Set(f.source)
 
   return (opps || []).filter(o => {
-    if (f.status !== 'all' && o.status !== f.status) return false
+    // Arquivadas só aparecem quando pedidas explicitamente (Situação → Arquivadas).
+    if (f.status === 'all' ? o.status === 'arquivado' : o.status !== f.status) return false
     if (q) {
       const person = opportunityPerson(o)
       const hay = normalizeText([
@@ -365,6 +430,7 @@ export function applyFilters(opps, filters, ctx = {}) {
       if (range.to && d > range.to) return false
     }
     if (f.overdue && !isOverdue(o, ctx)) return false
+    if (f.openTasks && !((ctx.openTasks?.[o.id] || 0) > 0)) return false
     if (f.noContactDays) {
       // "Sem contato há mais de N dias": usa o último contato; sem nenhum contato, conta desde a entrada.
       const ref = lastContactOf(o, ctx) || o.created_at
@@ -463,6 +529,7 @@ function baseGroups(groupBy, opps, ctx) {
       ...stages.map(s => ({ key: s.key, label: s.label, color: s.color, stage: s.key })),
       { key: 'ganho', label: OUTCOMES.ganho.label, color: OUTCOMES.ganho.color, outcome: 'ganho' },
       { key: 'perdido', label: OUTCOMES.perdido.label, color: OUTCOMES.perdido.color, outcome: 'perdido' },
+      { key: 'arquivado', label: OUTCOMES.arquivado.label, color: OUTCOMES.arquivado.color, outcome: 'arquivado' },
     ]
   }
   if (groupBy === 'none') return [{ key: 'all', label: 'Todas as oportunidades', color: '#3b82f6' }]
@@ -570,6 +637,46 @@ export function groupSummary(rows, columns, ctx = {}) {
     }
   }
   return out
+}
+
+// Rodapé do grupo (independe das colunas visíveis): quantidade, soma do valor estimado, valor
+// ponderado e distribuição por status. Tudo DERIVADO das linhas já filtradas.
+//   - Ponderado: só oportunidades ABERTAS, valor × probabilidade efetiva (mesma regra de
+//     crmMetrics.weightedPipeline e da coluna Probabilidade). `weighted` é null quando nenhuma
+//     aberta tem valor (não há o que ponderar).
+//   - Status: etapa comercial para as abertas; desfecho (ganho/perdido/arquivado) para as demais.
+export function groupFooterSummary(rows, ctx = {}) {
+  let valueSum = 0
+  let valueCount = 0
+  let weighted = 0
+  let weightable = 0
+  const parts = new Map()
+  const outcomeKeys = Object.keys(OUTCOMES)
+  for (const o of rows || []) {
+    const v = o.value == null || o.value === '' ? null : Number(o.value)
+    const hasValue = v != null && Number.isFinite(v)
+    if (hasValue) { valueSum += v; valueCount++ }
+    const open = o.status === 'aberto' || !o.status
+    if (open && hasValue) {
+      weightable++
+      weighted += v * ((effectiveProbability(o, ctx.stagesByKey) ?? 0) / 100)
+    }
+    const key = open ? o.stage : o.status
+    const meta = open ? ctx.stagesByKey?.[key] : OUTCOMES[key]
+    const prev = parts.get(key) || {
+      key, label: meta?.label || key || 'Sem etapa', color: meta?.color || NONE_COLOR, count: 0,
+      position: open ? (meta?.position ?? 99) : 100 + outcomeKeys.indexOf(key),
+    }
+    prev.count++
+    parts.set(key, prev)
+  }
+  return {
+    count: (rows || []).length,
+    valueSum,
+    valueCount,
+    weighted: weightable ? weighted : null,
+    statusParts: [...parts.values()].sort((a, b) => a.position - b.position),
+  }
 }
 
 // ---------------------------------------------------------------------------

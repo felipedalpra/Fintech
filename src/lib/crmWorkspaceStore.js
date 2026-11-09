@@ -98,15 +98,15 @@ export async function loadLastContact(oppIds) {
   return { map, available: true }
 }
 
-// Tarefas pendentes vencidas por oportunidade: { oppId: quantidade }.
-export async function loadOverdueTasks(ownerId, today) {
-  const { data, error } = await fetchAll(() => supabase.from('tasks').select('opportunity_id')
-    .eq('user_id', ownerId).eq('status', 'pendente').lt('due_date', today)
-    .not('opportunity_id', 'is', null).order('id', { ascending: true }))
-  if (error) return {}
-  const out = {}
-  for (const t of data || []) out[t.opportunity_id] = (out[t.opportunity_id] || 0) + 1
-  return out
+// Tarefas vinculadas a oportunidades (subitens). Fonte única para os subitens, o contador e as
+// atrasadas (derivadas em crmWorkspace.overdueTaskCounts). { tasks, available }.
+const SUBITEM_FIELDS = 'id, opportunity_id, patient_id, title, due_date, due_time, task_type, status, outcome, assigned_user_id, done_at, created_at'
+export async function loadOpportunityTasks(ownerId) {
+  const { data, error } = await fetchAll(() => supabase.from('tasks').select(SUBITEM_FIELDS)
+    .eq('user_id', ownerId).not('opportunity_id', 'is', null)
+    .order('created_at', { ascending: true }).order('id', { ascending: true }))
+  if (error) return { tasks: [], available: false }
+  return { tasks: data || [], available: true }
 }
 
 // Quantidade de observações (notas) por oportunidade: { oppId: quantidade }.
@@ -117,6 +117,42 @@ export async function loadNoteCounts(ownerId) {
   const out = {}
   for (const n of data || []) out[n.opportunity_id] = (out[n.opportunity_id] || 0) + 1
   return out
+}
+
+// ---------------------------------------------------------------------------
+// Atualizações (comentários) da oportunidade = opportunity_notes.
+// ---------------------------------------------------------------------------
+// { notes, threaded, error }. threaded=false: migração da Fase 3 ainda não aplicada (sem
+// resposta/menção) — as atualizações continuam aparecendo e podem ser registradas.
+export async function loadOpportunityUpdates(oppId) {
+  const full = await supabase.from('opportunity_notes')
+    .select('id, opportunity_id, body, author_id, parent_id, mentions, created_at')
+    .eq('opportunity_id', oppId).order('created_at', { ascending: true }).order('id', { ascending: true })
+  if (!full.error) return { notes: full.data || [], threaded: true, error: null }
+  if (!isSchemaMissing(full.error)) return { notes: [], threaded: false, error: friendlyError(full.error) }
+  const basic = await supabase.from('opportunity_notes')
+    .select('id, opportunity_id, body, author_id, created_at')
+    .eq('opportunity_id', oppId).order('created_at', { ascending: true }).order('id', { ascending: true })
+  if (basic.error) return { notes: [], threaded: false, error: friendlyError(basic.error) }
+  return { notes: basic.data || [], threaded: false, error: null }
+}
+
+// Menções ao usuário (sino do CRM). Sem a migração, não há menções: lista vazia.
+export async function loadMentions(ownerId, userId, sinceIso) {
+  if (!ownerId || !userId) return []
+  const { data, error } = await supabase.from('opportunity_notes')
+    .select('id, opportunity_id, body, author_id, mentions, created_at, opportunities(title, patients(full_name))')
+    .eq('user_id', ownerId).contains('mentions', [userId]).gte('created_at', sinceIso)
+    .order('created_at', { ascending: false }).limit(50)
+  return error ? [] : (data || [])
+}
+
+// Cria as 3 visualizações iniciais da clínica (uma única vez — ver crm_workspace_phase3.sql).
+// Retorna quantas foram criadas (0 quando já existiam ou a migração não foi aplicada).
+export async function ensureDefaultViews() {
+  const { data, error } = await supabase.rpc('crm_ensure_default_views')
+  if (error) return 0
+  return Number(data) || 0
 }
 
 // Grava UM campo personalizado sem sobrescrever os demais: relê o objeto atual do banco,
@@ -168,6 +204,13 @@ export async function archiveCustomField(fieldId) {
 // ---------------------------------------------------------------------------
 const VIEW_FIELDS = 'id, owner_id, name, scope, view_type, config, position, created_at, updated_at'
 
+// Só as visualizações (releitura depois de criar as iniciais). null = indisponível.
+export async function loadViews(ownerId) {
+  const { data, error } = await supabase.from('crm_views').select(VIEW_FIELDS)
+    .eq('user_id', ownerId).order('position', { ascending: true }).order('created_at', { ascending: true })
+  return error ? null : (data || [])
+}
+
 export async function createView(ownerId, { name, scope, config, position }) {
   const { data, error } = await supabase.from('crm_views')
     .insert({ user_id: ownerId, name, scope, view_type: 'table', config, position })
@@ -178,7 +221,8 @@ export async function createView(ownerId, { name, scope, config, position }) {
 
 export async function updateView(viewId, patch) {
   const allowed = {}
-  for (const k of ['name', 'config', 'position']) if (k in patch) allowed[k] = patch[k]
+  // scope/owner_id: tornar pessoal ↔ compartilhada (a RLS de crm_views decide quem pode).
+  for (const k of ['name', 'config', 'position', 'scope', 'owner_id']) if (k in patch) allowed[k] = patch[k]
   const { data, error } = await supabase.from('crm_views').update(allowed).eq('id', viewId).select(VIEW_FIELDS)
   if (error) return { error: friendlyError(error) }
   if (!data?.length) return { error: 'Sem permissão para alterar esta visualização.' }

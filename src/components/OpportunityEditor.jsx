@@ -4,16 +4,17 @@ import { Modal, Btn, FInput } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { OpportunityTasks } from './OpportunityTasks.jsx'
 import { OpportunityTimeline } from './OpportunityTimeline.jsx'
+import { OpportunityUpdates } from './OpportunityUpdates.jsx'
 import { createOpportunity, updateOpportunity, setOpportunityOutcome } from '../lib/opportunityActions.js'
 import { opportunityPerson } from '../lib/crmContact.js'
 import { Person360Drawer } from './Person360Drawer.jsx'
 
 // Modal de criar/editar oportunidade (+ fechar como ganho/perdido).
-// Ao editar, ganha abas: Dados / Tarefas / Timeline.
+// Ao editar, ganha abas: Dados / Atualizações / Tarefas / Timeline.
 // Estágio só é escolhido na criação; depois muda por mover/arrastar (RPC auditada).
 const BLANK = { patient_id: '', contact_id: '', patient_name: '', title: '', value: '', stage: '', source: '', responsible_user_id: '', tags: [] }
 
-export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved, initialTab = 'dados' }) {
+export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId, userId, onSaved, initialTab = 'dados', onTasksChanged, onNotesChanged }) {
   const isEdit = !!opp
   const [tab, setTab] = useState('dados')
   const [form, setForm] = useState(BLANK)
@@ -81,6 +82,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
       {isEdit && (
         <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
           <button type="button" style={tabBtn(tab === 'dados')} onClick={() => setTab('dados')}>Dados</button>
+          <button type="button" style={tabBtn(tab === 'atualizacoes')} onClick={() => setTab('atualizacoes')} data-testid="opp-tab-updates">Atualizações</button>
           <button type="button" style={tabBtn(tab === 'tarefas')} onClick={() => setTab('tarefas')}>Tarefas</button>
           <button type="button" style={tabBtn(tab === 'timeline')} onClick={() => setTab('timeline')}>Timeline</button>
           <button type="button" style={{ ...tabBtn(false), marginLeft:'auto', color:C.accent }} onClick={() => setShow360(true)}>Pessoa 360°</button>
@@ -88,7 +90,11 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
       )}
 
       {isEdit && tab === 'tarefas' && (
-        <OpportunityTasks ownerId={ownerId} opportunityId={opp.id} patientId={opp.patient_id} members={members} userId={userId} />
+        <OpportunityTasks ownerId={ownerId} opportunityId={opp.id} patientId={opp.patient_id} members={members} userId={userId} onChange={onTasksChanged} />
+      )}
+      {isEdit && tab === 'atualizacoes' && (
+        <OpportunityUpdates ownerId={ownerId} opp={opp} userId={userId} members={members}
+          onCountChange={delta => onNotesChanged?.(opp.id, delta)} />
       )}
       {isEdit && tab === 'timeline' && (
         <OpportunityTimeline ownerId={ownerId} opp={opp} userId={userId} />

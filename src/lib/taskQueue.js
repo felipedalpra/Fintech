@@ -30,6 +30,15 @@ export const TASK_OUTCOMES = [
 ]
 export const TASK_OUTCOME_LABEL = Object.fromEntries(TASK_OUTCOMES.map(item => [item.key, item.label]))
 
+// Status da tarefa. 'aguardando' (supabase/crm_workspace_phase2.sql) continua ABERTA — entra em
+// toda fila de pendências (Sino, Meu Dia, atrasadas); só 'feita' encerra.
+export const TASK_STATUSES = [
+  { key:'pendente',   label:'Pendente',   color:'#f59e0b' },
+  { key:'aguardando', label:'Aguardando', color:'#6366f1' },
+  { key:'feita',      label:'Concluído',  color:'#16a34a' },
+]
+export const OPEN_TASK_STATUSES = ['pendente', 'aguardando']
+
 export function isValidTaskType(value) {
   return TASK_TYPES.some(item => item.key === value)
 }

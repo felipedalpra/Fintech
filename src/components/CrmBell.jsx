@@ -5,10 +5,17 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
+// Tarefa aberta = pendente OU aguardando (crm_workspace_phase2.sql).
+import { OPEN_TASK_STATUSES } from '../lib/taskQueue.js'
 import { slaForLead, SLA_CONFIG } from '../lib/slaBusinessTime.js'
 import { stageLabel } from '../lib/timeline.js'
 import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
 import { loadWorkspacePreferences, saveWorkspacePreferences } from '../lib/operationalWorkspace.js'
+import { loadMentions } from '../lib/crmWorkspaceStore.js'
+import { loadTaskMentions } from '../lib/taskWorkspaceStore.js'
+import { mentionAlerts, memberName } from '../lib/crmUpdates.js'
+
+const MENTION_DAYS = 30
 
 // Sininho de CRM: alertas derivados dos dados atuais (sem tabela nova) — tarefas atrasadas,
 // leads sem responsável e oportunidades paradas. Clicar leva pra tela do item.
@@ -35,6 +42,7 @@ const I = {
   warn: <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />,
   user: <><circle cx="9" cy="8" r="4" /><path d="M3 20a6 6 0 0 1 12 0M17 11h5M19.5 8.5v5" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  at: <><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9" /></>,
 }
 
 export function CrmBell({ onNavigate }) {
@@ -63,7 +71,7 @@ export function CrmBell({ onNavigate }) {
           return result
         }
         const [taskRes, oppRes] = await Promise.all([
-          supabase.from('tasks').select('id, title, due_date, status, patients(full_name), opportunities(title)').eq('user_id', effectiveUserId).eq('status', 'pendente'),
+          supabase.from('tasks').select('id, title, due_date, status, patients(full_name), opportunities(title)').eq('user_id', effectiveUserId).in('status', OPEN_TASK_STATUSES),
           fetchOpportunities(),
         ])
         if (!mounted) return
@@ -74,6 +82,40 @@ export function CrmBell({ onNavigate }) {
     load()
     return () => { mounted = false }
   }, [effectiveUserId])
+
+  // Menções em Atualizações de oportunidade (crm_workspace_phase3.sql). Chegam pelo Realtime:
+  // o sino acende sem recarregar a página.
+  const [mentions, setMentions] = useState([])
+  const [teamLabel, setTeamLabel] = useState({})
+  useEffect(() => {
+    if (!effectiveUserId || !user?.id) return undefined
+    let mounted = true
+    const refresh = async () => {
+      const since = new Date(Date.now() - MENTION_DAYS * 86400000).toISOString()
+      // Oportunidade (opportunity_notes) + tarefa (task_comments, tasks_workspace_phase4.sql).
+      const [oppList, taskList] = await Promise.all([
+        loadMentions(effectiveUserId, user.id, since),
+        loadTaskMentions(effectiveUserId, user.id, since),
+      ])
+      if (mounted) setMentions([...oppList, ...taskList.map(n => ({ ...n, kind: 'task' }))])
+    }
+    const onInsert = payload => {
+      const note = payload?.new
+      if (note && Array.isArray(note.mentions) && note.mentions.includes(user.id) && note.author_id !== user.id) refresh()
+    }
+    refresh()
+    supabase.rpc('clinic_team').then(res => {
+      if (mounted && !res.error) setTeamLabel(Object.fromEntries((res.data || []).map(m => [m.user_id, m.member_email])))
+    }, () => {})
+    let channel = null
+    try {
+      channel = supabase.channel(`crm-bell-mentions-${user.id}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'opportunity_notes', filter: `user_id=eq.${effectiveUserId}` }, onInsert)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_comments', filter: `user_id=eq.${effectiveUserId}` }, onInsert)
+        .subscribe()
+    } catch { /* sem Realtime, as menções aparecem na próxima carga */ }
+    return () => { mounted = false; if (channel) supabase.removeChannel(channel) }
+  }, [effectiveUserId, user?.id])
 
   useEffect(() => {
     if (!effectiveUserId || !user?.id) return
@@ -100,6 +142,20 @@ export function CrmBell({ onNavigate }) {
   const alerts = useMemo(() => {
     const g = groupTasksByDue(tasks)
     const list = []
+    mentionAlerts(mentions, user?.id, { days: MENTION_DAYS }).forEach(note => {
+      const isTask = note.kind === 'task'
+      const opp = note.opportunities
+      const where = isTask
+        ? `tarefa “${note.tasks?.title || 'Tarefa'}”`
+        : (opp?.patients?.full_name || (opp?.title && opp.title !== 'Oportunidade' ? opp.title : 'Oportunidade'))
+      const text = String(note.body || '').replace(/\s+/g, ' ').trim()
+      list.push({
+        k: `mention-${isTask ? 'task-' : ''}${note.id}`, type: 'Menções', color: C.accent || '#3b82f6', icon: I.at,
+        title: `${memberName(teamLabel, note.author_id)} mencionou você · ${where}`,
+        desc: `“${text.length > 80 ? `${text.slice(0, 80)}…` : text}”`,
+        go: isTask ? `tarefas?task=${note.task_id}&tab=comments` : `funnel?opp=${note.opportunity_id}&tab=atualizacoes`,
+      })
+    })
     opps.forEach(opportunity => {
       const sla = slaForLead(opportunity)
       if (sla.state === 'late') list.push({
@@ -125,7 +181,7 @@ export function CrmBell({ onNavigate }) {
       })
     })
     return list
-  }, [tasks, opps])
+  }, [tasks, opps, mentions, teamLabel, user?.id])
   const unreadAlerts = useMemo(() => alerts.filter(alert => !readKeys.includes(alert.k)), [alerts, readKeys])
   const total = unreadAlerts.length
   const groupedAlerts = useMemo(() => Object.values(unreadAlerts.reduce((groups, alert) => {
@@ -187,7 +243,10 @@ export function CrmBell({ onNavigate }) {
                   <span style={{ width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center', background: a.color + '22', color: a.color, flexShrink: 0 }}><Ico d={a.icon} size={16} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ marginBottom: 2, color: a.color, fontSize: 9, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>{a.type} · {a.items.length}</div>
-                    <div style={{ display:'grid', gap:4, marginTop:4 }}>{a.items.map(item => <div key={item.k} style={{ color:C.text, fontSize:11.5, fontWeight:650, padding:'3px 0', borderBottom:`1px solid ${C.border}66` }}>{item.title}<span style={{ color:C.textDim, fontWeight:500 }}> · {item.desc}</span></div>)}</div>
+                    <div style={{ display:'grid', gap:4, marginTop:4 }}>{a.items.map(item => <div key={item.k} data-testid={item.k.startsWith('mention-') ? 'crm-alert-mention' : undefined}
+                      // Cada menção leva à SUA oportunidade (os demais alertas seguem indo para a tela do grupo).
+                      onClick={item.go !== a.go ? (e => { e.stopPropagation(); setOpen(false); onNavigate?.(item.go) }) : undefined}
+                      style={{ color:C.text, fontSize:11.5, fontWeight:650, padding:'3px 0', borderBottom:`1px solid ${C.border}66` }}>{item.title}<span style={{ color:C.textDim, fontWeight:500 }}> · {item.desc}</span></div>)}</div>
                   </div>
                 </div>
               ))}
