@@ -23,6 +23,9 @@ export const OUTCOMES = {
   aberto:  { key: 'aberto',  label: 'Aberta',  color: '#3b82f6' },
   ganho:   { key: 'ganho',   label: 'Ganhos',  color: '#16a34a' },
   perdido: { key: 'perdido', label: 'Perdidos', color: '#ef4444' },
+  // Arquivada (supabase/crm_workspace_phase2.sql): fora do quadro, das somas e das buscas de
+  // "oportunidade aberta" do servidor; restaurar devolve o status anterior.
+  arquivado: { key: 'arquivado', label: 'Arquivadas', color: '#64748b' },
 }
 
 function toPercent(fraction) {

@@ -119,7 +119,7 @@ export function CrmToolbar({
         </Section>
         <Section title="Situação">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {[['all', 'Todas'], ['aberto', 'Abertas'], ['ganho', 'Ganhas'], ['perdido', 'Perdidas']].map(([k, l]) => (
+            {[['all', 'Todas'], ['aberto', 'Abertas'], ['ganho', 'Ganhas'], ['perdido', 'Perdidas'], ['arquivado', 'Arquivadas']].map(([k, l]) => (
               <Chip key={k} active={filters.status === k} onClick={() => set({ status: k })}>{l}</Chip>
             ))}
           </div>

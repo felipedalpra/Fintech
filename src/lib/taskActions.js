@@ -1,7 +1,7 @@
 // src/lib/taskActions.js
 // Ações de tarefas e notas (operacionais — não tocam financeiro).
 import { supabase } from './supabase.js'
-import { isValidTaskType } from './taskQueue.js'
+import { isValidTaskType, TASK_STATUSES } from './taskQueue.js'
 
 const TASK_COLS = 'id, opportunity_id, patient_id, title, due_date, due_time, task_type, status, outcome, assigned_user_id, created_by, done_at, created_at'
 
@@ -34,6 +34,50 @@ export async function toggleTask(task) {
   const { error } = await supabase.from('tasks').update(patch).eq('id', task.id)
   if (error) return { error: error.message }
   return { status: patch.status, done_at: patch.done_at }
+}
+
+// Update PARCIAL de uma tarefa (subitem do CRM): toca só os campos informados.
+// Sair de 'feita' limpa done_at e o desfecho (o banco exige outcome só em tarefa concluída);
+// as tentativas de contato ficam em task_attempts e não se perdem.
+export async function updateTask(taskId, patch = {}) {
+  if (!taskId) return { error: 'Tarefa inválida' }
+  const allowed = {}
+  if ('title' in patch) {
+    const t = String(patch.title || '').trim()
+    if (!t) return { error: 'Título obrigatório' }
+    allowed.title = t.slice(0, 300)
+  }
+  if ('due_date' in patch) {
+    const d = patch.due_date
+    if (d === '' || d == null) allowed.due_date = null
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(String(d))) allowed.due_date = String(d)
+    else return { error: 'Data inválida.' }
+  }
+  if ('assigned_user_id' in patch) allowed.assigned_user_id = patch.assigned_user_id || null
+  if ('status' in patch) {
+    if (!TASK_STATUSES.some(s => s.key === patch.status)) return { error: 'Status inválido.' }
+    allowed.status = patch.status
+    if (patch.status === 'feita') {
+      allowed.done_at = new Date().toISOString()
+    } else {
+      allowed.done_at = null
+      allowed.outcome = null
+      allowed.outcome_at = null
+      allowed.outcome_by = null
+    }
+  }
+  if (Object.keys(allowed).length === 0) return { ok: true, patch: {} }
+  allowed.updated_at = new Date().toISOString()
+  // READ-BACK: update de 0 linhas (RLS) não dá erro — sem isto seria um "salvo" falso.
+  const { data, error } = await supabase.from('tasks').update(allowed).eq('id', taskId).select('id')
+  if (error) {
+    if (error.code === '23514' && allowed.status === 'aguardando') {
+      return { error: 'O status "Aguardando" fica disponível depois da atualização do banco do CRM (crm_workspace_phase2.sql).' }
+    }
+    return { error: error.message }
+  }
+  if (!data?.length) return { error: 'Não foi possível salvar a tarefa (sem permissão ou tarefa removida).' }
+  return { ok: true, patch: allowed }
 }
 
 export async function deleteTask(taskId) {

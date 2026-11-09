@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { groupTasksByDue } from '../lib/taskGroups.js'
+// Tarefa aberta = pendente OU aguardando (crm_workspace_phase2.sql).
+import { OPEN_TASK_STATUSES } from '../lib/taskQueue.js'
 import { dayKey } from '../lib/taskViews.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { isCrmContactSchemaMissing, opportunityPerson } from '../lib/crmContact.js'
@@ -74,7 +76,7 @@ export function MeuDia({ data = {} }) {
       const [taskRes, oppRes, messageRes, stateRes] = await Promise.all([
         supabase.from('tasks')
           .select('id, title, due_date, status, assigned_user_id, patient_id, opportunity_id, patients(full_name), opportunities(title)')
-          .eq('assigned_user_id', uid).eq('status', 'pendente'),
+          .eq('assigned_user_id', uid).in('status', OPEN_TASK_STATUSES),
         fetchOpportunities(),
         supabase.from('whatsapp_messages').select('phone, direction, created_at, whatsapp_number_id, is_group, chat_lid, contact_phone').eq('user_id', effectiveUserId).eq('direction', 'inbound').order('created_at', { ascending:false }).limit(500),
         loadConversationStates(effectiveUserId),

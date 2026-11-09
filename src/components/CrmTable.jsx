@@ -2,7 +2,7 @@
 // fixo por grupo, primeira coluna fixa na rolagem horizontal, colunas redimensionáveis/reordenáveis,
 // edição na célula, totais por grupo e navegação por teclado (setas). Não carrega dados: recebe o
 // estado compartilhado do workspace (useCrmWorkspace).
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { coerceCustomValue, groupSummary, isOverdue, daysSince, sourceKey } from '../lib/crmWorkspace.js'
 import { effectiveProbability } from '../lib/crmStages.js'
@@ -14,6 +14,9 @@ import {
   CheckboxCell, LinkCell,
 } from './CrmCells.jsx'
 import { CrmColumnsMenu } from './CrmColumnsMenu.jsx'
+import { CrmSubitems } from './CrmSubitems.jsx'
+import { CrmRowMenu } from './CrmRowMenu.jsx'
+import { subitemProgress } from '../lib/crmWorkspace.js'
 
 const ROW_H = 38
 const ADD_COL_W = 44
@@ -23,9 +26,30 @@ export function CrmTable({
   groups, columns, ctx, ws, ownerId, canManage, groupBy, sort, collapsed, toast,
   procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onResizeColumn, onReorderColumn,
   onHideColumn, onMoveGroup, onConfigureStages, onOpenOpp, columnsMenu,
+  selectedIds, onToggleSelect, onSetSelected, rowActions, userId,
 }) {
   const scrollRef = useRef(null)
   const [liveWidths, setLiveWidths] = useState({})
+  // Subitens abertos (por oportunidade) e pedido de foco no "novo subitem" vindo do menu.
+  const [expanded, setExpanded] = useState(() => new Set())
+  const [focusNewFor, setFocusNewFor] = useState(null)
+  const [rowMenu, setRowMenu] = useState(null) // { opp, x, y }
+  const onToggleExpand = useCallback(id => setExpanded(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  }), [])
+  const onRowMenu = useCallback((opp, x, y) => setRowMenu({ opp, x, y }), [])
+  const clearFocusNew = useCallback(() => setFocusNewFor(null), [])
+  const menuActions = useMemo(() => ({
+    ...rowActions,
+    // "Criar tarefa": abre os subitens da linha com o campo de nova tarefa em foco.
+    createTask: opp => {
+      setExpanded(prev => new Set(prev).add(opp.id))
+      setFocusNewFor(opp.id)
+    },
+  }), [rowActions])
   const visibleCols = useMemo(() => columns.filter(c => !c.hidden), [columns])
   const widths = useMemo(() => Object.fromEntries(visibleCols.map(c => [c.id, liveWidths[c.id] ?? c.width])), [visibleCols, liveWidths])
   const widthOf = c => widths[c.id] ?? c.width
@@ -114,10 +138,15 @@ export function CrmTable({
               onToggleCollapse={onToggleCollapse} onCollapseAll={onCollapseAll} onSort={onSort}
               onHideColumn={onHideColumn} onMoveGroup={onMoveGroup} onConfigureStages={onConfigureStages}
               onReorderColumn={onReorderColumn} startResize={startResize} onOpenOpp={onOpenOpp} columnsMenu={columnsMenu}
-              commitField={commitField} commitCustom={commitCustom} commitStage={commitStage} commitOutcome={commitOutcome} />
+              commitField={commitField} commitCustom={commitCustom} commitStage={commitStage} commitOutcome={commitOutcome}
+              selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
+              expanded={expanded} onToggleExpand={onToggleExpand} focusNewFor={focusNewFor} onFocusedNew={clearFocusNew}
+              onRowMenu={onRowMenu} userId={userId} />
           )
         })}
       </div>
+      <CrmRowMenu menu={rowMenu} onClose={() => setRowMenu(null)} stages={ctx.stages} members={ws.members}
+        memberLabel={ctx.memberLabel} actions={menuActions} />
     </div>
   )
 }
@@ -126,6 +155,7 @@ function GroupBlock({
   group, index, groupKeys, isCollapsed, firstRow, visibleCols, widthOf, widths, totalWidth, ctx, ws, ownerId, canManage, groupBy, sort, toast,
   procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onHideColumn, onMoveGroup, onConfigureStages,
   onReorderColumn, startResize, onOpenOpp, columnsMenu, commitField, commitCustom, commitStage, commitOutcome,
+  selectedIds, onToggleSelect, onSetSelected, expanded, onToggleExpand, focusNewFor, onFocusedNew, onRowMenu, userId,
 }) {
   const [limit, setLimit] = useState(PAGE_ROWS)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -169,13 +199,27 @@ function GroupBlock({
       ) : (
         <div role="table" aria-label={group.label} style={{ borderRadius: 8 }}>
           <HeaderRow group={group} visibleCols={visibleCols} widthOf={widthOf} sort={sort} canManage={canManage}
-            onSort={onSort} onHideColumn={onHideColumn} onReorderColumn={onReorderColumn} startResize={startResize} columnsMenu={columnsMenu} />
-          {shown.map((opp, i) => (
-            <Row key={opp.id} opp={opp} rowIndex={firstRow + i} groupColor={group.color} visibleCols={visibleCols} widths={widths}
-              ctx={ctx} members={ws.members} procedureOptions={procedureOptions} sourceOptions={sourceOptions} onOpenOpp={onOpenOpp}
-              commitField={commitField} commitCustom={commitCustom} commitStage={commitStage} commitOutcome={commitOutcome}
-              busy={ws.movingId === opp.id} schemaReady={ws.features.schema} lastContactAvailable={ws.features.lastContact} />
-          ))}
+            onSort={onSort} onHideColumn={onHideColumn} onReorderColumn={onReorderColumn} startResize={startResize} columnsMenu={columnsMenu}
+            selectAll={<GroupCheckbox group={group} selectedIds={selectedIds} onSetSelected={onSetSelected} />} />
+          {shown.map((opp, i) => {
+            const isOpen = expanded.has(opp.id)
+            const list = ws.subitems[opp.id]
+            return (
+              <Fragment key={opp.id}>
+                <Row opp={opp} rowIndex={firstRow + i} groupColor={group.color} visibleCols={visibleCols} widths={widths}
+                  ctx={ctx} members={ws.members} procedureOptions={procedureOptions} sourceOptions={sourceOptions} onOpenOpp={onOpenOpp}
+                  commitField={commitField} commitCustom={commitCustom} commitStage={commitStage} commitOutcome={commitOutcome}
+                  busy={ws.movingId === opp.id} schemaReady={ws.features.schema} lastContactAvailable={ws.features.lastContact}
+                  selected={selectedIds.has(opp.id)} onToggleSelect={onToggleSelect}
+                  expanded={isOpen} onToggleExpand={onToggleExpand} progress={subitemProgress(list)}
+                  subitemsAvailable={ws.features.tasks} onRowMenu={onRowMenu} />
+                {isOpen && (
+                  <CrmSubitems opp={opp} tasks={list} members={ws.members} memberLabel={ctx.memberLabel} groupColor={group.color}
+                    today={ctx.today} focusNew={focusNewFor === opp.id} onFocusedNew={onFocusedNew} ws={ws} userId={userId} toast={toast} />
+                )}
+              </Fragment>
+            )
+          })}
           {n > limit && (
             <div style={{ position: 'sticky', left: 0, padding: '8px 14px' }}>
               <button type="button" onClick={() => setLimit(l => l + PAGE_ROWS)}
@@ -199,7 +243,30 @@ function stickyFirst(extra = {}) {
   return { position: 'sticky', left: 0, zIndex: 2, background: C.card, ...extra }
 }
 
-function HeaderRow({ group, visibleCols, widthOf, sort, canManage, onSort, onHideColumn, onReorderColumn, startResize, columnsMenu }) {
+// Caixa de seleção estilo Monday (com estado "parcial" para o cabeçalho do grupo).
+function SelectBox({ checked, indeterminate = false, onChange, label, testId }) {
+  const ref = useRef(null)
+  useEffect(() => { if (ref.current) ref.current.indeterminate = indeterminate }, [indeterminate])
+  return (
+    <span style={{ width: 26, flex: '0 0 26px', display: 'grid', placeItems: 'center' }}
+      onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+      <input ref={ref} type="checkbox" checked={checked} aria-label={label} data-testid={testId}
+        onChange={e => onChange(e.target.checked, e.nativeEvent?.shiftKey)}
+        style={{ width: 15, height: 15, margin: 0, cursor: 'pointer', accentColor: C.accent }} />
+    </span>
+  )
+}
+
+function GroupCheckbox({ group, selectedIds, onSetSelected }) {
+  const ids = group.rows.map(o => o.id)
+  const n = ids.filter(id => selectedIds.has(id)).length
+  if (!ids.length) return <span style={{ width: 26, flex: '0 0 26px' }} />
+  return <SelectBox checked={n === ids.length} indeterminate={n > 0 && n < ids.length}
+    label={`Selecionar todas de ${group.label}`} testId={`crm-select-group-${group.key}`}
+    onChange={checked => onSetSelected(ids, checked)} />
+}
+
+function HeaderRow({ group, visibleCols, widthOf, sort, canManage, onSort, onHideColumn, onReorderColumn, startResize, columnsMenu, selectAll }) {
   const [dragOver, setDragOver] = useState(null)
   const plusRef = useRef(null)
   const [plusOpen, setPlusOpen] = useState(false)
@@ -212,7 +279,7 @@ function HeaderRow({ group, visibleCols, widthOf, sort, canManage, onSort, onHid
           onDragOverCol={() => setDragOver(col.id)}
           onDragLeaveCol={() => setDragOver(d => (d === col.id ? null : d))}
           onDropCol={fromId => { setDragOver(null); if (fromId && fromId !== col.id) onReorderColumn(fromId, col.id) }}
-          columnsMenu={columnsMenu} />
+          columnsMenu={columnsMenu} leading={col.fixed ? selectAll : null} />
       ))}
       <div style={{ width: ADD_COL_W, flex: `0 0 ${ADD_COL_W}px`, display: 'grid', placeItems: 'center', borderLeft: `1px solid ${C.border}` }}>
         <button ref={plusRef} type="button" aria-label="Adicionar ou gerenciar colunas" title="Adicionar ou gerenciar colunas"
@@ -228,7 +295,7 @@ function HeaderRow({ group, visibleCols, widthOf, sort, canManage, onSort, onHid
   )
 }
 
-function HeaderCell({ col, group, width, sort, canManage, onSort, onHideColumn, startResize, dragOver, onDragOverCol, onDragLeaveCol, onDropCol, columnsMenu }) {
+function HeaderCell({ col, group, width, sort, canManage, onSort, onHideColumn, startResize, dragOver, onDragOverCol, onDragLeaveCol, onDropCol, columnsMenu, leading }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [hover, setHover] = useState(false)
   const menuRef = useRef(null)
@@ -236,7 +303,7 @@ function HeaderCell({ col, group, width, sort, canManage, onSort, onHideColumn, 
   const sortable = col.sortable !== false
   const base = {
     width, flex: `0 0 ${width}px`, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: col.fixed ? 'flex-start' : 'center', gap: 4,
-    padding: col.fixed ? '0 10px 0 16px' : '0 18px 0 8px', boxSizing: 'border-box', fontSize: 12.5, fontWeight: 600, color: C.textSub,
+    padding: col.fixed ? (leading ? '0 10px 0 2px' : '0 10px 0 16px') : '0 18px 0 8px', boxSizing: 'border-box', fontSize: 12.5, fontWeight: 600, color: C.textSub,
     borderLeft: col.fixed ? `5px solid ${group.color}` : `1px solid ${C.border}`, background: dragOver ? C.accent + '22' : C.card,
     userSelect: 'none',
   }
@@ -249,6 +316,8 @@ function HeaderCell({ col, group, width, sort, canManage, onSort, onHideColumn, 
       onDrop={e => { e.preventDefault(); onDropCol(e.dataTransfer.getData('text/crm-col')) }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={col.fixed ? { ...base, ...stickyFirst({ zIndex: 5, background: dragOver ? C.accent + '22' : C.card }) } : { ...base, cursor: 'grab' }}>
+      {leading}
+      {leading && <span style={{ width: 22, flex: '0 0 22px' }} />}
       <button type="button" disabled={!sortable} onClick={() => sortable && onSort(col.id)}
         title={sortable ? 'Ordenar' : undefined}
         style={{ border: 'none', background: 'transparent', color: sorted ? C.accent : C.textSub, font: 'inherit', fontWeight: 600, cursor: sortable ? 'pointer' : 'default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -279,17 +348,51 @@ function HeaderCell({ col, group, width, sort, canManage, onSort, onHideColumn, 
 const Row = memo(function Row({
   opp, rowIndex, groupColor, visibleCols, widths, ctx, members, procedureOptions, sourceOptions, onOpenOpp,
   commitField, commitCustom, commitStage, commitOutcome, busy, schemaReady, lastContactAvailable,
+  selected, onToggleSelect, expanded, onToggleExpand, progress, subitemsAvailable, onRowMenu,
 }) {
   const [hover, setHover] = useState(false)
   const overdue = isOverdue(opp, ctx)
   const stale = opp.status === 'aberto' && (daysSince(opp.stage_entered_at, ctx.now) ?? 0) >= 7
-  const rowBg = hover ? C.cardHover : C.card
+  const rowBg = selected ? (hover ? C.accent + '26' : C.accent + '18') : hover ? C.cardHover : C.card
+  // Fundo opaco na coluna fixa (a seleção usa cor translúcida e deixaria vazar o conteúdo rolado).
+  const fixedBg = selected ? `linear-gradient(${C.accent}22, ${C.accent}22), ${C.card}` : rowBg
+
+  const leading = (
+    <>
+      <SelectBox checked={selected} label={`Selecionar ${opp.title || 'oportunidade'}`} testId="crm-row-select"
+        onChange={(_, shift) => onToggleSelect(opp.id, shift)} />
+      <button type="button" onClick={() => onToggleExpand(opp.id)} disabled={!subitemsAvailable}
+        aria-expanded={expanded} aria-label={expanded ? 'Recolher subitens' : 'Mostrar subitens'} data-testid="crm-row-expand"
+        title={subitemsAvailable ? (progress ? `Subitens: ${progress} concluídos` : 'Subitens (tarefas)') : 'Tarefas indisponíveis'}
+        style={{ border: 'none', background: 'transparent', cursor: subitemsAvailable ? 'pointer' : 'default', padding: 0, width: 22, flex: '0 0 22px',
+          height: 22, display: 'grid', placeItems: 'center', color: progress ? C.textSub : C.textDim, opacity: progress || hover || expanded ? 1 : 0.35,
+          transition: 'transform .15s, opacity .12s', transform: expanded ? 'none' : 'rotate(-90deg)' }}>
+        <Ico d={ICONS.chevron} size={14} sw={2.4} />
+      </button>
+    </>
+  )
+  const trailing = h => (
+    <>
+      {progress && (
+        <button type="button" tabIndex={-1} onClick={() => onToggleExpand(opp.id)} data-testid="crm-row-progress"
+          title="Subitens concluídos / total"
+          style={{ border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}>
+          {progress}
+        </button>
+      )}
+      <button type="button" aria-label="Ações da oportunidade" aria-haspopup="menu" data-testid="crm-row-menu-button"
+        onClick={e => { const r = e.currentTarget.getBoundingClientRect(); onRowMenu(opp, r.left, r.bottom + 2) }}
+        style={{ border: 'none', background: 'transparent', color: C.textSub, cursor: 'pointer', padding: 3, borderRadius: 6, display: 'grid', placeItems: 'center', opacity: h || selected ? 1 : 0, transition: 'opacity .12s' }}>
+        <Ico d={ICONS.dots} size={15} />
+      </button>
+    </>
+  )
 
   function cell(col) {
     if (col.custom) return customCell(col)
     switch (col.id) {
       case 'person':
-        return <PersonCell opp={opp} groupColor={groupColor} overdue={overdue} stale={stale} onOpen={() => onOpenOpp(opp)} />
+        return <PersonCell opp={opp} groupColor={groupColor} overdue={overdue} stale={stale} onOpen={() => onOpenOpp(opp)} leading={leading} trailing={trailing} />
       case 'stage': {
         const st = ctx.stagesByKey[opp.stage]
         return <StatusCell testId="crm-cell-stage" label={st?.label || opp.stage} color={st?.color} value={opp.stage} busy={busy}
@@ -366,9 +469,22 @@ const Row = memo(function Row({
   }
 
   return (
-    <div role="row" data-testid="crm-row" data-opp-id={opp.id}
+    <div role="row" data-testid="crm-row" data-opp-id={opp.id} aria-selected={selected}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', height: ROW_H, borderBottom: `1px solid ${C.border}`, background: rowBg, opacity: opp.status === 'aberto' ? 1 : 0.86 }}>
+      onContextMenu={e => {
+        // Campo em edição mantém o menu nativo (copiar/colar).
+        if (e.target.closest?.('input, textarea')) return
+        e.preventDefault()
+        onRowMenu(opp, e.clientX, e.clientY)
+      }}
+      onKeyDown={e => {
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+          e.preventDefault()
+          const r = e.currentTarget.getBoundingClientRect()
+          onRowMenu(opp, r.left + 40, r.bottom)
+        }
+      }}
+      style={{ display: 'flex', height: ROW_H, borderBottom: `1px solid ${C.border}`, background: rowBg, opacity: opp.status === 'aberto' ? 1 : 0.86, transition: 'background .1s' }}>
       {visibleCols.map((col, ci) => {
         const w = widths[col.id] ?? col.width
         const style = {
@@ -377,7 +493,7 @@ const Row = memo(function Row({
         }
         return (
           <div key={col.id} role="cell" data-cell={`${rowIndex}:${ci}`} data-col={col.id}
-            style={col.fixed ? { ...style, ...stickyFirst({ background: rowBg }) } : style}>
+            style={col.fixed ? { ...style, ...stickyFirst({ background: fixedBg }) } : style}>
             {cell(col)}
           </div>
         )

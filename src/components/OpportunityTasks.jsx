@@ -18,7 +18,8 @@ function fmtDue(due) {
   try { return new Date(due + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) } catch { return due }
 }
 
-export function OpportunityTasks({ ownerId, opportunityId, patientId, members, userId }) {
+// `onChange` (opcional): avisa quem mantém as tarefas em outro lugar (subitens da Tabela do CRM).
+export function OpportunityTasks({ ownerId, opportunityId, patientId, members, userId, onChange }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -54,20 +55,23 @@ export function OpportunityTasks({ ownerId, opportunityId, patientId, members, u
     if (res.error) { setError(res.error); return }
     setTasks(t => [...t, res.task])
     setDraft({ title: '', due: '', assigned: '' })
+    onChange?.({ type: 'created', task: res.task })
   }
 
   async function toggle(task) {
     const prev = tasks
     setTasks(t => t.map(x => (x.id === task.id ? { ...x, status: x.status === 'feita' ? 'pendente' : 'feita', done_at: x.status === 'feita' ? null : new Date().toISOString() } : x)))
     const res = await toggleTask(task)
-    if (res.error) { setTasks(prev); setError(res.error) }
+    if (res.error) { setTasks(prev); setError(res.error); return }
+    onChange?.({ type: 'updated', task: { id: task.id, status: res.status, done_at: res.done_at } })
   }
 
   async function remove(task) {
     const prev = tasks
     setTasks(t => t.filter(x => x.id !== task.id))
     const res = await deleteTask(task.id)
-    if (res.error) { setTasks(prev); setError(res.error) }
+    if (res.error) { setTasks(prev); setError(res.error); return }
+    onChange?.({ type: 'removed', task: { id: task.id } })
   }
 
   const s = {
@@ -97,6 +101,7 @@ export function OpportunityTasks({ ownerId, opportunityId, patientId, members, u
                   {done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>}
                 </button>
                 <span style={s.title(done)}>{t.title}</span>
+                {t.status === 'aguardando' && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 7, color: '#fff', background: '#6366f1', whiteSpace: 'nowrap' }}>Aguardando</span>}
                 {t.due_date && <span style={s.due(late)}>{late ? '⚠ ' : ''}{fmtDue(t.due_date)}</span>}
                 {t.assigned_user_id && <MiniAvatar label={memberLabel[t.assigned_user_id] || '—'} />}
                 <button type="button" style={s.del} onClick={() => remove(t)} title="Excluir">×</button>
