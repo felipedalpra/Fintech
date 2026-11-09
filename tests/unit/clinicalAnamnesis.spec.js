@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   buildClinicalAnamnesisRpcArgs,
   calculateClinicalBmi,
+  clinicalAnamnesisValidationIssue,
   clinicalAnamnesisFromLegacy,
   emptyClinicalAnamnesis,
   hasLegacyClinicalAnamnesis,
@@ -57,6 +58,20 @@ test('exige o conteúdo clínico mínimo e a identidade profissional', () => {
   })
   expect(validateClinicalAnamnesis(form, {})).toContain('registro profissional')
   expect(validateClinicalAnamnesis(form, author)).toBe('')
+})
+
+test('identifica o campo obrigatório que deve receber foco na interface', () => {
+  const form = {
+    ...emptyClinicalAnamnesis('2026-10-17'),
+    chief_complaint:'Avaliação',
+    history_present_illness:'Sem intercorrências',
+    diagnostic_hypotheses:'Paciente saudável',
+    therapeutic_plan:'Orientações gerais',
+  }
+  expect(clinicalAnamnesisValidationIssue(form, author)).toEqual({
+    field:'physical_exam',
+    message:'Exame físico é obrigatório.',
+  })
 })
 
 test('monta payload SOAP sem confiar na autoria enviada pelo navegador', () => {
