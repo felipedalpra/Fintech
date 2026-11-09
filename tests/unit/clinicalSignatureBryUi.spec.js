@@ -83,6 +83,19 @@ test('evidencia pendente de homologacao nao vira assinatura concluida', () => {
   expect(gap.label).not.toContain('Assinado digitalmente')
 })
 
+test('certificado fora da ICP-Brasil e relatorio ausente ficam visiveis', () => {
+  const notIcp = state({
+    attempt:{ id:'a1', documentId:DOCUMENT, status:'pending', evidenceGapCode:'verify_certificate_not_icp_brasil' },
+  })
+  expect(notIcp.note).toContain('ICP-Brasil')
+
+  const noReport = state({
+    attempt:{ id:'a1', documentId:DOCUMENT, status:'pending', evidenceGapCode:'verify_report_unavailable' },
+  })
+  expect(noReport.note).toContain('relatório qualificado')
+  expect(noReport.canReconcile).toBe(true)
+})
+
 test('assinatura concluida com evidencia completa libera o PDF assinado', () => {
   const signed = state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'signed', evidenceComplete:true } })
   expect(signed.canOpenSigned).toBe(true)

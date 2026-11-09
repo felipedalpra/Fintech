@@ -1,37 +1,27 @@
 // api/_lib/bryVerify.js
-// Cliente do servico de verificacao de assinatura PDF/PAdES da BRy.
+// Cliente do BRy Verifica, usado para comprovar a assinatura do PDF baixado
+// da Easy Sign antes de declarar o documento clinico como assinado.
 //
-// Por que existe: a Easy Sign nao devolve, em campo legivel por maquina,
-// titular/serie/emissor/validade do certificado nem o instante da assinatura.
-// Em 29/10/2026 a BRy orientou baixar o PDF assinado e submete-lo ao servico de
-// verificacao, que responde em JSON. Este arquivo isola essa segunda API.
+// Contrato oficial confirmado em 09/11/2026:
+//   POST /api/service/verifications/verify (multipart/form-data: document)
+//   POST /api/service/reports/generate    ({ verificationId })
 //
-// Contrato conferido na documentacao oficial em 29/10/2026:
-//   POST /api/pdf-verification-service/v1/signatures/verify   (multipart/form-data)
-//     signatures[0][nonce], signatures[0][content]
-//   Resposta: generalStatus, signatureStatus, signatureFormat
-//     signatureStatus.signingTime
-//     signatureStatus.chainStatus.certificateStatusList[].certificateInfo
-//       .subjectDN{cn,formattedCn,dn} .serial .issuerDN{cn,o,dn}
-//       .validity{notBefore,notAfter}
-//
-// PENDENTE de confirmacao com a BRy (ver docs/BRY_EASY_SIGN_INTEGRATION.md):
-//  - o HOST oficial deste servico. A documentacao publica usa `example.com` como
-//    placeholder, por isso a allowlist aqui aceita somente o dominio bry.com.br
-//    e o host exato precisa vir de BRY_VERIFY_BASE_URL;
-//  - qual entrada de certificateStatusList e a do signatario (a doc pede para
-//    confirmar com resposta real);
-//  - se signatureStatus vem como objeto ou lista quando ha mais de uma
-//    assinatura. Tratamos as duas formas.
+// O Verifica usa o mesmo JWT client_credentials da Easy Sign. Nenhum token
+// fixo separado e armazenado, e o relatorio qualificado e gerado logo depois
+// da verificacao porque o verificationId expira.
 
-import crypto from 'crypto'
+import { bryTokenConfig, getBryAccessToken } from './bryToken.js'
 
-const DEFAULT_VERIFY_PATH = '/api/pdf-verification-service/v1/signatures/verify'
+const VERIFY_PATH = '/api/service/verifications/verify'
+const REPORT_PATH = '/api/service/reports/generate'
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAX_JSON_BYTES = 4 * 1024 * 1024
+const MAX_PDF_BYTES = 25 * 1024 * 1024
 
-// A verificacao so aceita um documento cujo resultado geral seja valido.
-const ACCEPTED_GENERAL_STATUSES = Object.freeze(['VALID', 'VALID_WITH_ALERT'])
+export const BRY_VERIFY_HOSTS = Object.freeze({
+  'verifica.bry.com.br':'production',
+  'verifica.hom.bry.com.br':'homologation',
+})
 
 export class BryVerifyError extends Error {
   constructor(message, { kind = 'provider', statusCode = null } = {}) {
@@ -42,54 +32,52 @@ export class BryVerifyError extends Error {
   }
 }
 
-// Motivos auditaveis de a verificacao nao sustentar o estado `signed`.
 export const VERIFY_GAPS = Object.freeze({
   NOT_CONFIGURED:'verify_service_not_configured',
   SERVICE_UNAVAILABLE:'verify_service_unavailable',
   SIGNATURE_INVALID:'verify_signature_invalid',
   NOT_PADES:'verify_signature_not_pades',
+  NOT_ICP_BRASIL:'verify_certificate_not_icp_brasil',
   CERTIFICATE_INCOMPLETE:'verify_certificate_evidence_incomplete',
   TIMESTAMP_NOT_VERIFIED:'verify_timestamp_not_verified',
+  REPORT_UNAVAILABLE:'verify_report_unavailable',
 })
-
-// ---------------------------------------------------------------------------
-// Configuracao
-// ---------------------------------------------------------------------------
-
-// Allowlist por dominio: a BRy ainda nao publicou o host deste servico, e
-// inventar um subdominio seria pior do que exigir configuracao explicita.
-function allowedVerifyHost(hostname) {
-  const host = String(hostname || '').toLowerCase()
-  return host === 'bry.com.br' || host.endsWith('.bry.com.br')
-}
 
 export function bryVerifyConfig(env = process.env) {
   const read = name => String(env[name] || '').trim()
   const problems = []
-
   const baseUrlRaw = read('BRY_VERIFY_BASE_URL')
   let baseUrl = ''
+  let environment = ''
+
   if (!baseUrlRaw) {
     problems.push('BRY_VERIFY_BASE_URL nao configurada')
   } else {
     try {
       const url = new URL(baseUrlRaw)
+      const matchedEnvironment = BRY_VERIFY_HOSTS[url.hostname.toLowerCase()]
       if (url.protocol !== 'https:' || url.username || url.password
-        || (url.port && url.port !== '443') || !allowedVerifyHost(url.hostname)) {
-        problems.push('BRY_VERIFY_BASE_URL deve ser HTTPS em um host oficial bry.com.br')
+        || (url.port && url.port !== '443') || !matchedEnvironment) {
+        problems.push('BRY_VERIFY_BASE_URL fora da allowlist oficial da BRy')
       } else {
         baseUrl = url.origin
+        environment = matchedEnvironment
       }
     } catch {
       problems.push('BRY_VERIFY_BASE_URL invalida')
     }
   }
 
-  const token = read('BRY_VERIFY_TOKEN')
-  if (!token) problems.push('BRY_VERIFY_TOKEN nao configurado')
-
-  const pathRaw = read('BRY_VERIFY_PATH') || DEFAULT_VERIFY_PATH
-  if (!pathRaw.startsWith('/')) problems.push('BRY_VERIFY_PATH deve comecar com /')
+  const auth = bryTokenConfig(env)
+  problems.push(...auth.problems)
+  if (environment && auth.ready && auth.usesClientCredentials) {
+    const tokenEnvironment = auth.tokenBaseUrl.includes('cloud-hom.bry.com.br')
+      ? 'homologation'
+      : 'production'
+    if (environment !== tokenEnvironment) {
+      problems.push('BRY_VERIFY_BASE_URL e BRY_EASY_SIGN_TOKEN_URL devem usar o mesmo ambiente')
+    }
+  }
 
   const timeoutRaw = Number(read('BRY_VERIFY_REQUEST_TIMEOUT_MS') || DEFAULT_TIMEOUT_MS)
   const timeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw >= 1000 && timeoutRaw <= 60_000
@@ -101,45 +89,75 @@ export function bryVerifyConfig(env = process.env) {
     ready:problems.length === 0,
     problems,
     baseUrl,
-    token,
-    path:pathRaw,
+    environment,
+    auth,
+    verifyPath:VERIFY_PATH,
+    reportPath:REPORT_PATH,
     timeoutMs,
   }
-}
-
-// ---------------------------------------------------------------------------
-// Normalizacao da resposta (pura e testavel)
-// ---------------------------------------------------------------------------
-
-function firstSignatureStatus(payload) {
-  const status = payload?.signatureStatus
-  if (Array.isArray(status)) return status[0] || null
-  return status || null
 }
 
 function text(value) {
   return String(value ?? '').trim()
 }
 
-// O certificado do signatario e o "final" da cadeia. A doc nao garante a
-// posicao, mas marca a entrada final com certificateType/cpf; usamos isso e,
-// na falta, o ultimo elemento, sempre conferindo os campos obrigatorios depois.
+function statusValue(value) {
+  return text(value?.status?.status ?? value?.status ?? value).toUpperCase()
+}
+
+function millisecondsDate(value) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = typeof value === 'number' || /^\d+$/.test(String(value))
+    ? new Date(Number(value))
+    : new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function normalizeNewVerification(payload) {
+  const result = payload?.verificationResult
+  if (!result || !Array.isArray(result.signatures)) return null
+  const signatures = result.signatures.filter(Boolean)
+  const signature = signatures.length === 1 ? signatures[0] : null
+  const certificate = signature?.signatureCertificate || null
+  const stamps = Array.isArray(signature?.signatureStamps) ? signature.signatureStamps : []
+  return {
+    generalStatus:statusValue(result),
+    signatureStatus:statusValue(signature),
+    certificateStatus:statusValue(certificate),
+    signatureCount:signatures.length,
+    signatureFormat:text(signature?.format).toUpperCase(),
+    certificateSubject:text(certificate?.name),
+    certificateSerial:text(certificate?.serialNumber),
+    certificateIssuer:text(certificate?.issuer),
+    certificateValidFrom:millisecondsDate(certificate?.validity?.notBefore),
+    certificateValidUntil:millisecondsDate(certificate?.validity?.notAfter),
+    signedAt:millisecondsDate(signature?.date),
+    icpBrasil:certificate?.icpBrasil === true && signature?.icpBrasil === true,
+    verifiedTimestamp:stamps.some(stamp => statusValue(stamp) === 'VALID'),
+  }
+}
+
+// Compatibilidade defensiva com a resposta antiga do HUB. Ela nao e mais
+// chamada pelo produto, mas tentativas anteriores continuam analisaveis.
+function firstLegacySignatureStatus(payload) {
+  const status = payload?.signatureStatus
+  if (Array.isArray(status)) return status.length === 1 ? status[0] : null
+  return status || null
+}
+
 export function selectSignerCertificate(signatureStatus) {
   const list = signatureStatus?.chainStatus?.certificateStatusList
-  const entries = Array.isArray(list) ? list : []
-  const certificates = entries
-    .filter(entry => entry && entry.certificateInfo)
+  const entries = (Array.isArray(list) ? list : [])
+    .filter(entry => entry?.certificateInfo)
     .filter(entry => text(entry.statusType).toUpperCase() !== 'TIMESTAMP')
-  if (certificates.length === 0) return null
-  const final = certificates.find(entry => {
+  if (entries.length === 0) return null
+  const final = entries.find(entry => {
     const info = entry.certificateInfo || {}
     return Boolean(info.cpf || info.certificateType || entry.type === 'FinalCertificate')
   })
-  return (final || certificates[certificates.length - 1]).certificateInfo
+  return (final || entries[entries.length - 1]).certificateInfo
 }
 
-// Um carimbo do tempo conta como evidencia somente se a propria verificacao o
-// reconhecer. Nada aqui olha o modo solicitado.
 export function hasVerifiedTimestamp(signatureStatus) {
   if (!signatureStatus) return false
   const referenceType = text(signatureStatus.verificationReferenceType
@@ -150,79 +168,72 @@ export function hasVerifiedTimestamp(signatureStatus) {
     .some(entry => text(entry?.statusType).toUpperCase() === 'TIMESTAMP')
 }
 
-function subjectName(certificateInfo) {
-  const subject = certificateInfo?.subjectDN || {}
-  return text(subject.formattedCn) || text(subject.cn) || text(subject.dn)
+function normalizeLegacyVerification(payload) {
+  const signatureStatus = firstLegacySignatureStatus(payload)
+  const certificate = selectSignerCertificate(signatureStatus)
+  const subject = certificate?.subjectDN || {}
+  const issuer = certificate?.issuerDN || {}
+  return {
+    generalStatus:text(payload?.generalStatus).toUpperCase(),
+    signatureStatus:text(payload?.generalStatus).toUpperCase(),
+    certificateStatus:text(payload?.generalStatus).toUpperCase(),
+    signatureCount:signatureStatus ? 1 : 0,
+    signatureFormat:text(payload?.signatureFormat).toUpperCase(),
+    certificateSubject:text(subject.formattedCn) || text(subject.cn) || text(subject.dn),
+    certificateSerial:text(certificate?.serial),
+    certificateIssuer:text(issuer.cn) || text(issuer.dn) || text(issuer.o),
+    certificateValidFrom:millisecondsDate(certificate?.validity?.notBefore),
+    certificateValidUntil:millisecondsDate(certificate?.validity?.notAfter),
+    signedAt:millisecondsDate(signatureStatus?.signingTime),
+    icpBrasil:true,
+    verifiedTimestamp:hasVerifiedTimestamp(signatureStatus),
+  }
 }
 
-function issuerName(certificateInfo) {
-  const issuer = certificateInfo?.issuerDN || {}
-  return text(issuer.cn) || text(issuer.dn) || text(issuer.o)
-}
-
-// Converte a resposta da verificacao em evidencia utilizavel, ou devolve o
-// motivo auditavel de nao servir. NUNCA deduz o padrao do modo pedido:
-//  - carimbo do tempo reconhecido pela verificacao -> PAdES-B-T;
-//  - sem carimbo reconhecido -> PAdES-B-B, e somente quando o perfil pedido
-//    tambem nao previa carimbo. Se o perfil pedido era TIMESTAMP e a
-//    verificacao nao confirma carimbo, isso e uma divergencia: falha fechada.
-// B-LT/B-LTA exigem evidencia de arquivamento que esta resposta nao oferece, e
-// por isso nunca sao declarados -- subdeclarar e seguro, superdeclarar nao.
 export function normalizeVerificationEvidence(payload, { requestedProfile = '' } = {}) {
-  const generalStatus = text(payload?.generalStatus).toUpperCase()
-  if (!ACCEPTED_GENERAL_STATUSES.includes(generalStatus)) {
-    return { ok:false, gap:VERIFY_GAPS.SIGNATURE_INVALID, generalStatus:generalStatus || null }
+  const normalized = normalizeNewVerification(payload) || normalizeLegacyVerification(payload)
+  const validStatuses = new Set(['VALID', 'VALID_WITH_ALERT', 'WARN'])
+  if (!validStatuses.has(normalized.generalStatus)
+    || !validStatuses.has(normalized.signatureStatus)
+    || !validStatuses.has(normalized.certificateStatus)
+    || normalized.signatureCount !== 1) {
+    return { ok:false, gap:VERIFY_GAPS.SIGNATURE_INVALID, generalStatus:normalized.generalStatus || null }
   }
-  if (text(payload?.signatureFormat).toUpperCase() !== 'PADES') {
-    return { ok:false, gap:VERIFY_GAPS.NOT_PADES, generalStatus }
+  if (normalized.signatureFormat !== 'PADES') {
+    return { ok:false, gap:VERIFY_GAPS.NOT_PADES, generalStatus:normalized.generalStatus }
   }
-
-  const signatureStatus = firstSignatureStatus(payload)
-  const certificateInfo = selectSignerCertificate(signatureStatus)
-  const subject = subjectName(certificateInfo)
-  const serial = text(certificateInfo?.serial)
-  const issuer = issuerName(certificateInfo)
-  const validFromRaw = certificateInfo?.validity?.notBefore
-  const validUntilRaw = certificateInfo?.validity?.notAfter
-  const signedAtRaw = signatureStatus?.signingTime
-
-  if (!subject || !serial || !issuer || !validFromRaw || !validUntilRaw || !signedAtRaw) {
-    return { ok:false, gap:VERIFY_GAPS.CERTIFICATE_INCOMPLETE, generalStatus }
+  if (!normalized.icpBrasil) {
+    return { ok:false, gap:VERIFY_GAPS.NOT_ICP_BRASIL, generalStatus:normalized.generalStatus }
   }
 
-  const validFrom = new Date(validFromRaw)
-  const validUntil = new Date(validUntilRaw)
-  const signedAt = new Date(signedAtRaw)
-  if ([validFrom, validUntil, signedAt].some(value => Number.isNaN(value.getTime()))
+  const validFrom = normalized.certificateValidFrom
+  const validUntil = normalized.certificateValidUntil
+  const signedAt = normalized.signedAt
+  if (!normalized.certificateSubject || !normalized.certificateSerial
+    || !normalized.certificateIssuer || !validFrom || !validUntil || !signedAt
     || validUntil <= validFrom || signedAt < validFrom || signedAt > validUntil) {
-    return { ok:false, gap:VERIFY_GAPS.CERTIFICATE_INCOMPLETE, generalStatus }
+    return { ok:false, gap:VERIFY_GAPS.CERTIFICATE_INCOMPLETE, generalStatus:normalized.generalStatus }
   }
 
-  const timestamped = hasVerifiedTimestamp(signatureStatus)
-  if (!timestamped && text(requestedProfile).toUpperCase().includes('TIMESTAMP')) {
-    // Pedimos carimbo do tempo e a verificacao nao confirma: nao e um nivel
-    // menor, e uma divergencia que precisa de analise humana.
-    return { ok:false, gap:VERIFY_GAPS.TIMESTAMP_NOT_VERIFIED, generalStatus }
+  if (!normalized.verifiedTimestamp && text(requestedProfile).toUpperCase().includes('TIMESTAMP')) {
+    return { ok:false, gap:VERIFY_GAPS.TIMESTAMP_NOT_VERIFIED, generalStatus:normalized.generalStatus }
   }
 
   return {
     ok:true,
-    generalStatus,
+    generalStatus:normalized.generalStatus,
+    verificationId:text(payload?.verificationId) || null,
     evidence:{
-      signatureStandard:timestamped ? 'PAdES-B-T' : 'PAdES-B-B',
-      certificateSubject:subject.slice(0, 300),
-      certificateSerial:serial.slice(0, 120),
-      certificateIssuer:issuer.slice(0, 300),
+      signatureStandard:normalized.verifiedTimestamp ? 'PAdES-B-T' : 'PAdES-B-B',
+      certificateSubject:normalized.certificateSubject.slice(0, 300),
+      certificateSerial:normalized.certificateSerial.slice(0, 120),
+      certificateIssuer:normalized.certificateIssuer.slice(0, 300),
       certificateValidFrom:validFrom.toISOString(),
       certificateValidUntil:validUntil.toISOString(),
       signedAt:signedAt.toISOString(),
     },
   }
 }
-
-// ---------------------------------------------------------------------------
-// HTTP
-// ---------------------------------------------------------------------------
 
 export function sanitizeVerifyDetail(detail) {
   return String(detail || '')
@@ -232,34 +243,36 @@ export function sanitizeVerifyDetail(detail) {
     .slice(0, 200)
 }
 
-// Submete o PDF assinado ao verificador. O token vai somente no header e o
-// documento clinico nao e registrado em log em nenhuma hipotese.
-export async function verifySignedPdf(config, pdfBuffer, { fileName = 'documento.pdf', fetchImpl = fetch } = {}) {
+function classifyHttpError(response, detail = '') {
+  const kind = response.status === 401 || response.status === 403 ? 'auth'
+    : response.status === 429 ? 'rate_limit'
+      : 'provider'
+  const safeDetail = sanitizeVerifyDetail(detail)
+  return new BryVerifyError(
+    `A verificacao recusou a solicitacao${safeDetail ? `: ${safeDetail}` : '.'}`,
+    { kind, statusCode:response.status },
+  )
+}
+
+async function bryVerifyFetch(config, path, init, { fetchImpl = fetch, tokenOptions = {} } = {}) {
   if (!config?.ready) throw new BryVerifyError('Servico de verificacao indisponivel.', { kind:'config' })
-  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
-    throw new BryVerifyError('PDF assinado ausente para verificacao.', { kind:'config' })
-  }
-
-  const form = new FormData()
-  // nonce apenas correlaciona a requisicao; nao e segredo nem identificador
-  // clinico, por isso e aleatorio e descartavel.
-  const nonce = crypto.randomBytes(8).toString('hex')
-  form.append('nonce', nonce)
-  form.append('signatures[0][nonce]', nonce)
-  form.append('signatures[0][content]', new Blob([pdfBuffer], { type:'application/pdf' }), fileName)
-
+  const accessToken = await getBryAccessToken(config.auth, tokenOptions)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeoutMs)
-  let response
   try {
-    response = await fetchImpl(`${config.baseUrl}${config.path}`, {
-      method:'POST',
-      headers:{ Authorization:`Bearer ${config.token}`, Accept:'application/json' },
-      body:form,
+    const response = await fetchImpl(`${config.baseUrl}${path}`, {
+      ...init,
+      headers:{ ...init.headers, Authorization:`Bearer ${accessToken}` },
       signal:controller.signal,
       redirect:'manual',
     })
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      throw new BryVerifyError('A verificacao redirecionou a chamada de forma inesperada.', { kind:'invalid_response' })
+    }
+    if (!response.ok) throw classifyHttpError(response, await response.text().catch(() => ''))
+    return response
   } catch (error) {
+    if (error instanceof BryVerifyError) throw error
     if (error?.name === 'AbortError') {
       throw new BryVerifyError('A verificacao nao respondeu no tempo limite.', { kind:'timeout' })
     }
@@ -267,20 +280,20 @@ export async function verifySignedPdf(config, pdfBuffer, { fileName = 'documento
   } finally {
     clearTimeout(timer)
   }
+}
 
-  if ([301, 302, 303, 307, 308].includes(response.status)) {
-    throw new BryVerifyError('A verificacao redirecionou a chamada de forma inesperada.', { kind:'invalid_response' })
+export async function verifySignedPdf(config, pdfBuffer, { fileName = 'documento.pdf', fetchImpl = fetch, tokenOptions = {} } = {}) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
+    throw new BryVerifyError('PDF assinado ausente para verificacao.', { kind:'config' })
   }
-  if (!response.ok) {
-    const detail = sanitizeVerifyDetail(await response.text().catch(() => ''))
-    const kind = response.status === 401 || response.status === 403 ? 'auth'
-      : response.status === 429 ? 'rate_limit'
-        : response.status >= 500 ? 'provider' : 'provider'
-    throw new BryVerifyError(`A verificacao recusou a solicitacao${detail ? `: ${detail}` : '.'}`, {
-      kind, statusCode:response.status,
-    })
-  }
+  const form = new FormData()
+  form.append('document', new Blob([pdfBuffer], { type:'application/pdf' }), fileName)
+  form.append('dateFormatZone', 'America/Sao_Paulo')
+  form.append('dateFormatLocale', 'pt-BR')
 
+  const response = await bryVerifyFetch(config, config.verifyPath, {
+    method:'POST', headers:{ Accept:'application/json' }, body:form,
+  }, { fetchImpl, tokenOptions })
   const raw = await response.text()
   if (Buffer.byteLength(raw, 'utf8') > MAX_JSON_BYTES) {
     throw new BryVerifyError('A resposta da verificacao excedeu o tamanho permitido.', { kind:'too_large' })
@@ -290,4 +303,25 @@ export async function verifySignedPdf(config, pdfBuffer, { fileName = 'documento
   } catch {
     throw new BryVerifyError('A verificacao devolveu uma resposta ilegivel.', { kind:'invalid_response' })
   }
+}
+
+export async function generateVerificationReport(config, verificationId, { fetchImpl = fetch, tokenOptions = {} } = {}) {
+  const id = text(verificationId)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    throw new BryVerifyError('Identificador da verificacao ausente ou invalido.', { kind:'invalid_response' })
+  }
+  const response = await bryVerifyFetch(config, config.reportPath, {
+    method:'POST',
+    headers:{ Accept:'application/pdf', 'Content-Type':'application/json' },
+    body:JSON.stringify({ verificationId:id }),
+  }, { fetchImpl, tokenOptions })
+  const declared = Number(response.headers.get('content-length') || 0)
+  if (declared > MAX_PDF_BYTES) {
+    throw new BryVerifyError('O relatorio excedeu o tamanho permitido.', { kind:'too_large' })
+  }
+  const buffer = Buffer.from(await response.arrayBuffer())
+  if (buffer.length === 0 || buffer.length > MAX_PDF_BYTES || !buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+    throw new BryVerifyError('A verificacao nao devolveu um relatorio PDF valido.', { kind:'invalid_response' })
+  }
+  return buffer
 }
