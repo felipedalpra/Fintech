@@ -153,7 +153,7 @@ export function ClinicalTodayInsights({ index, loading, unavailableSources, onNa
         <button type="button" onClick={() => onNavigate('pending')}><span>Críticas</span><strong>{pending ? '—' : urgent}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'retornos ou sessões vencidas'}</small></button>
         <button type="button" onClick={() => onNavigate('pending')}><span>Para revisar</span><strong>{pending ? '—' : reviews}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'pré-anamneses recebidas'}</small></button>
         <button type="button" onClick={() => onNavigate('pending')}><span>Retornos</span><strong>{pending ? '—' : returns}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'sem novo atendimento vinculado'}</small></button>
-        <button type="button" onClick={() => onNavigate('documents')}><span>Documentos</span><strong>{pending ? '—' : index.documents.length}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'pedidos e receitas no histórico'}</small></button>
+        <button type="button" onClick={() => onNavigate('documents')}><span>Documentos</span><strong>{pending ? '—' : index.documentTotal}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'emitidos e anexados ao prontuário'}</small></button>
       </div>
     </section>
   )

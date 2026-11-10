@@ -129,6 +129,7 @@ test('modo pedido nao vira promessa: desabilitado nao reporta modo algum', () =>
 test('cada tipo clinico usa o OID medico correto', () => {
   expect(documentTypeOid('exam_request')).toBe('2.16.76.1.12.1.3')
   expect(documentTypeOid('simple_prescription')).toBe('2.16.76.1.12.1.1')
+  expect(documentTypeOid('uploaded_pdf')).toBeNull()
   expect(BRY_DOCUMENT_TYPE_OIDS.exam_request).toBe('2.16.76.1.12.1.3')
   expect(() => documentTypeOid('atestado')).toThrow(/OID medico/)
   expect(() => documentTypeOid('')).toThrow(/OID medico/)
@@ -203,6 +204,13 @@ test('o envelope leva o OID do documento como chave e os OIDs CFM no signatario'
   expect(body.signersData[0].typeMessaging).toEqual(['LINK'])
   // A guarda definitiva do artefato e nossa, nao da BRy.
   expect(body.keepDocument).toBe(false)
+})
+
+test('PDF anexado sem classificação clínica explícita não recebe OID médico falso', () => {
+  const body = payload({
+    documents:[{ documentNonce:DOC_NONCE, fileName:'anexo.pdf', pdfBase64:'JVBERi0=', documentType:'uploaded_pdf' }],
+  })
+  expect(body.documents[0].metadata).toEqual({})
 })
 
 test('o envelope nasce como rascunho, para que um duplicado nunca chegue ao medico', () => {

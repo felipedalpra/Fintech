@@ -338,7 +338,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     today:daySchedule.length,
     patients:patients.length,
     pending:workspaceIndex.pendingItems.length,
-    documents:workspaceIndex.documents.length,
+    documents:workspaceIndex.documentTotal,
   }
 
   const themeVars = {
@@ -465,7 +465,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     onDocumentCreated={loadWorkspaceIndex}
                   />
                 )}
-                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} />}
+                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} viewerId={user?.id} onAssetsChanged={loadWorkspaceIndex} />}
                 {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} initialProtocolApplication={protocolApplication?.destination === 'treatment' ? protocolApplication : null} onProtocolApplicationConsumed={() => setProtocolApplication(null)} />}
               </div>
             </>

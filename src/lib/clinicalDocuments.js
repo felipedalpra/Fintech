@@ -7,6 +7,7 @@ export const CLINICAL_DOCUMENT_TYPES = {
 }
 
 export function clinicalDocumentTypeLabel(type) {
+  if (type === 'uploaded_pdf') return 'PDF anexado'
   return type === SIMPLE_PRESCRIPTION ? 'Receituário simples' : 'Pedido de exames'
 }
 

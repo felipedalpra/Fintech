@@ -153,7 +153,7 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
       <Modal open={showForm} onClose={() => setShowForm(false)} title="Nova evolução clínica" width={760} expandable>
         <div style={{ display:'grid', gap:14 }}>
           <div style={{ padding:'10px 12px', borderRadius:9, background:C.surface, border:`1px solid ${C.border}`, color:C.textSub, fontSize:12 }}>
-            Assinatura: <strong style={{ color:C.text }}>{author?.name}</strong> · {author?.council || 'CRM'} {author?.registration}
+            Profissional responsável: <strong style={{ color:C.text }}>{author?.name}</strong> · {author?.council || 'CRM'} {author?.registration}
           </div>
           <FInput label="Data do atendimento" type="date" required value={form.session_date} onChange={value => setForm(current => ({ ...current, session_date:value }))} />
           <label style={{ display:'grid', gap:6 }}>
@@ -162,10 +162,10 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
           </label>
           <FInput label="Procedimentos realizados" value={form.procedures_applied} onChange={value => setForm(current => ({ ...current, procedures_applied:value }))} placeholder="Descreva os procedimentos realizados" />
           <FInput label="Próximo atendimento" type="date" value={form.next_appointment_date} onChange={value => setForm(current => ({ ...current, next_appointment_date:value }))} />
-          <div style={{ color:C.textDim, fontSize:11, lineHeight:1.5 }}>Após assinar, esta evolução não poderá ser editada ou excluída. Correções serão registradas como adendo.</div>
+          <div style={{ color:C.textDim, fontSize:11, lineHeight:1.5 }}>Após salvar, esta evolução não poderá ser editada ou excluída. Correções serão registradas como adendo. Este registro não inicia uma assinatura digital.</div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
             <Btn variant="ghost" onClick={() => setShowForm(false)}>Cancelar</Btn>
-            <Btn onClick={saveRecord} disabled={saving || !form.session_date || !form.evolution_notes.trim()}>{saving ? 'Assinando…' : 'Assinar evolução'}</Btn>
+            <Btn onClick={saveRecord} disabled={saving || !form.session_date || !form.evolution_notes.trim()}>{saving ? 'Salvando…' : 'Salvar evolução'}</Btn>
           </div>
         </div>
       </Modal>

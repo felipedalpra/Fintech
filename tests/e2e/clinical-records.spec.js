@@ -290,7 +290,7 @@ test('assina evolução imutável e corrige somente por adendo', async ({ page }
 
   await page.getByRole('button', { name:'+ Nova evolução' }).click()
   await page.getByPlaceholder('Anamnese do atendimento, exame, hipóteses, conduta e evolução…').fill('Paciente estável, sem intercorrências.')
-  await page.getByRole('button', { name:'Assinar evolução' }).click()
+  await page.getByRole('button', { name:'Salvar evolução' }).click()
 
   await expect(page.getByText('1 evolução registrada')).toBeVisible()
   await expect(page.getByText('Paciente estável, sem intercorrências.')).toBeVisible()

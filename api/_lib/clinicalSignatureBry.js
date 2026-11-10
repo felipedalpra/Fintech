@@ -68,12 +68,41 @@ export const defaultClinicalSignatureDeps = Object.freeze({
   config:bryEasySignConfig,
   verifyConfig:bryVerifyConfig,
   loadSigner:loadSignerIdentity,
-  renderPdf:renderClinicalDocumentPdf,
+  renderPdf:renderDocumentForSignature,
   bry:Object.freeze({
     createEnvelope, fetchEnvelope, downloadSignedDocument, startEnvelope,
   }),
   verify:Object.freeze({ verifySignedPdf, generateVerificationReport }),
 })
+
+export async function renderDocumentForSignature(document, { admin } = {}) {
+  if (document.document_type !== 'uploaded_pdf') return renderClinicalDocumentPdf(document)
+  if (!admin || !document.source_asset_id) throw new Error('Origem do PDF anexado indisponivel.')
+
+  const { data:asset, error:assetError } = await admin
+    .from('clinical_assets')
+    .select('id,user_id,patient_id,created_by,asset_kind,status,bucket_id,object_path,observed_mime_type,file_size,client_sha256')
+    .eq('id', document.source_asset_id)
+    .eq('user_id', document.user_id)
+    .eq('patient_id', document.patient_id)
+    .maybeSingle()
+  if (assetError || !asset) throw new Error('PDF anexado nao encontrado.')
+  if (asset.asset_kind !== 'document' || asset.status !== 'available'
+      || asset.observed_mime_type !== 'application/pdf' || asset.created_by !== document.created_by) {
+    throw new Error('PDF anexado nao esta disponivel para assinatura.')
+  }
+
+  const { data:file, error:downloadError } = await admin.storage.from(asset.bucket_id).download(asset.object_path)
+  if (downloadError || !file) throw new Error('Nao foi possivel ler o PDF anexado.')
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const sha256 = sha256Hex(buffer)
+  if (buffer.length !== Number(asset.file_size)
+      || sha256 !== asset.client_sha256
+      || buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+    throw new Error('O PDF anexado diverge do arquivo registrado no prontuario.')
+  }
+  return { buffer, sha256 }
+}
 
 const ATTEMPT_PUBLIC_FIELDS = [
   'id', 'document_id', 'status', 'created_at', 'updated_at', 'provider',
@@ -454,7 +483,7 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
   try {
     for (const document of documents) {
       const attempt = attempts.find(item => item.document_id === document.id)
-      const rendered = await deps.renderPdf(document)
+      const rendered = await deps.renderPdf(document, { admin })
       envelopeDocuments.push({
         // O nonce e o id da tentativa: e por ele que o artefato volta ao
         // documento certo depois de assinado.
@@ -646,7 +675,7 @@ export async function clinicalSignatureQueue(req, deps = defaultClinicalSignatur
     .select('id, document_type, issue_date, patient_id, patient_name, created_at')
     .eq('user_id', ownerId)
     .eq('created_by', user.id)
-    .in('document_type', ['exam_request', 'simple_prescription'])
+    .in('document_type', ['exam_request', 'simple_prescription', 'uploaded_pdf'])
     .is('archived_at', null)
     .order('created_at', { ascending:false })
     .limit(200)

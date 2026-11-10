@@ -218,6 +218,10 @@ export function buildCfmSignerMetadata({ registration, council, specialty, fallb
 }
 
 export function documentTypeOid(documentType) {
+  // Um PDF anexado pode ser laudo, termo, relatório ou outro conteúdo. Sem
+  // classificação explícita não atribuímos um OID médico falso; a BRy aceita
+  // o documento genérico com metadata vazia.
+  if (documentType === 'uploaded_pdf') return null
   const oid = BRY_DOCUMENT_TYPE_OIDS[String(documentType || '')]
   if (!oid) throw configError('Tipo de documento clinico sem OID medico definido para a BRy.')
   return oid
@@ -289,19 +293,22 @@ export function buildEnvelopePayload({
     startAsDraft,
     // A BRy guarda o artefato de forma temporaria; a guarda definitiva e nossa.
     keepDocument:false,
-    documents:items.map(item => ({
-      // Identificador NOSSO: a BRy devolve o mesmo valor, e e por ele que o
-      // artefato assinado volta para a tentativa certa.
-      documentNonce:String(item.documentNonce).trim(),
-      filename:item.fileName,
-      // base64Document com "D" maiusculo: confirmado pela BRy em 29/10/2026.
-      // O schema publico grafa `base64document`, mas a API aceita a forma do
-      // Quickstart; a BRy vai corrigir a documentacao.
-      base64Document:item.pdfBase64,
-      // O OID do tipo de documento medico e a CHAVE, com valor vazio. Cada
-      // documento do envelope pode ter o seu (exame e receita juntos).
-      metadata:{ [documentTypeOid(item.documentType)]:'' },
-    })),
+    documents:items.map(item => {
+      const oid = documentTypeOid(item.documentType)
+      return {
+        // Identificador NOSSO: a BRy devolve o mesmo valor, e e por ele que o
+        // artefato assinado volta para a tentativa certa.
+        documentNonce:String(item.documentNonce).trim(),
+        filename:item.fileName,
+        // base64Document com "D" maiusculo: confirmado pela BRy em 29/10/2026.
+        // O schema publico grafa `base64document`, mas a API aceita a forma do
+        // Quickstart; a BRy vai corrigir a documentacao.
+        base64Document:item.pdfBase64,
+        // Tipos conhecidos recebem o OID medico. Anexos genericos ficam sem
+        // classificacao para nao transformar um termo em laudo, por exemplo.
+        metadata:oid ? { [oid]:'' } : {},
+      }
+    }),
     signersData:[{
       name:String(signer.name).trim(),
       personal_identifier:cpf,
