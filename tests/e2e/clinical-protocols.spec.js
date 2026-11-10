@@ -95,14 +95,14 @@ test('gerencia versões e aplica o protocolo como rascunho nos destinos clínico
   await expect(page.getByLabel('Data e hora (opcional)')).toHaveValue('2026-11-17T09:00')
 
   await page.getByRole('button', { name:'Cancelar' }).click()
-  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:'Protocolos' }).click()
+  await page.goto('/app/clinical-protocols')
   await page.getByRole('button', { name:'Aplicar em paciente' }).click()
   await page.getByRole('dialog', { name:'Mamoplastia segura revisada' }).getByRole('button', { name:/Ana Protocolo/ }).click()
   await page.getByRole('dialog', { name:'Mamoplastia segura revisada' }).getByRole('button', { name:'Abrir rascunho' }).click()
   await expect(page.getByLabel('Gestações anteriores *')).toBeVisible()
 
   await page.getByRole('button', { name:'Cancelar' }).click()
-  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:'Protocolos' }).click()
+  await page.goto('/app/clinical-protocols')
   await page.getByRole('button', { name:'Aplicar em paciente' }).click()
   const examDialog = page.getByRole('dialog', { name:'Mamoplastia segura revisada' })
   await examDialog.getByRole('button', { name:/Ana Protocolo/ }).click()
@@ -111,7 +111,7 @@ test('gerencia versões e aplica o protocolo como rascunho nos destinos clínico
   await expect(page.getByLabel('Exames solicitados *')).toHaveValue('Hemograma completo')
 
   await page.getByRole('button', { name:'Cancelar' }).click()
-  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:'Protocolos' }).click()
+  await page.goto('/app/clinical-protocols')
   await page.getByRole('button', { name:'Aplicar em paciente' }).click()
   const prescriptionDialog = page.getByRole('dialog', { name:'Mamoplastia segura revisada' })
   await prescriptionDialog.getByRole('button', { name:/Ana Protocolo/ }).click()

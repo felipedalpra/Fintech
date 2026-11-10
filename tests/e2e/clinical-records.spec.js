@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async ({ page }) => {
+test('abre a agenda do dia sem duplicar no conteúdo os módulos do menu lateral', async ({ page }) => {
   let releaseRecordMetadata
   const recordMetadataGate = new Promise(resolve => { releaseRecordMetadata = resolve })
   await page.setViewportSize({ width:390, height:844 })
@@ -42,18 +42,14 @@ test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async
   const pulse = page.getByRole('region', { name:'Pulso clínico' })
   await expect(pulse.getByText('Atualizando a visão clínica…')).toBeVisible()
   await expect(pulse.locator('.clinical-insight-grid strong').first()).toHaveText('—')
-  const modules = page.getByRole('navigation', { name:'Módulos clínicos' })
-  await expect(modules).toContainText('Pacientes')
-  await expect(modules).toContainText('Pendências')
-  await expect(modules).toContainText('Protocolos')
-  await expect(modules).toContainText('Documentos')
-  await modules.getByRole('button', { name:/Pacientes/ }).click()
+  await expect(page.getByRole('navigation', { name:'Módulos clínicos' })).toHaveCount(0)
+  await page.goto('/app/clinical-patients')
   await expect(page).toHaveURL(/\/app\/clinical-patients$/)
   await expect(page.getByTestId('clinical-patients-view')).toBeVisible()
   await expect(page.getByTestId('clinical-patients-view').getByText('Atualizando…', { exact:true })).toHaveText('Atualizando…')
   releaseRecordMetadata()
   await expect(page.getByText('Atualizando…', { exact:true })).toHaveCount(0)
-  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:/Hoje/ }).click()
+  await page.goto('/app/clinical-records')
   await expect(page).toHaveURL(/\/app\/clinical-records$/)
   await expect(page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ })).toBeVisible()
   await page.getByRole('button', { name:/09:30.*Ana Agenda.*Avaliação/ }).click()
@@ -224,7 +220,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await expect(page.getByText('Nenhum documento emitido')).toBeVisible()
   await expect(page.getByRole('heading', { name:'Pedido de exames' })).toHaveCount(0)
 
-  await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:/Documentos/ }).click()
+  await page.goto('/app/clinical-documents')
   await expect(page.getByTestId('clinical-documents-center')).toContainText('Ana Documentos')
   await expect(page.getByTestId('clinical-documents-center')).toContainText('laudo-anexado.pdf')
   await expect(page.locator('.clinical-documents-center-list > button')).toHaveCount(3)

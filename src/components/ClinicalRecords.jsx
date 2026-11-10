@@ -37,13 +37,13 @@ import { buildProtocolAnamnesisDraft } from '../lib/clinicalProtocols.js'
 import './ClinicalRecords.css'
 import './ClinicalRecordsReadability.css'
 
-const CLINICAL_MODULES = [
-  { id:'today', route:'clinical-records', label:'Hoje' },
-  { id:'patients', route:'clinical-patients', label:'Pacientes' },
-  { id:'pending', route:'clinical-pending', label:'Pendências' },
-  { id:'protocols', route:'clinical-protocols', label:'Protocolos' },
-  { id:'documents', route:'clinical-documents', label:'Documentos' },
-]
+const CLINICAL_MODULE_ROUTES = {
+  today:'clinical-records',
+  patients:'clinical-patients',
+  pending:'clinical-pending',
+  protocols:'clinical-protocols',
+  documents:'clinical-documents',
+}
 
 const CLINICAL_TABS = [
   { id:'overview', label:'Resumo' },
@@ -305,8 +305,8 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   }
 
   function navigateModule(view) {
-    const module = CLINICAL_MODULES.find(item => item.id === view)
-    if (!module) return
+    const route = CLINICAL_MODULE_ROUTES[view]
+    if (!route) return
     setModuleView(view)
     setSelected(null)
     setClinicalProfile(null)
@@ -317,7 +317,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setProfileStatus('idle')
     setTab('overview')
     setError('')
-    navigate(`/app/${module.route}`)
+    navigate(`/app/${route}`)
   }
 
   const filteredPatients = useMemo(() => {
@@ -334,13 +334,6 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   }, [daySchedule, selected])
   const selectedIndex = selected ? workspaceIndex.patientItems.find(item => item.id === selected.id) : null
   const selectedTimeline = selected ? workspaceIndex.timelineByPatient.get(selected.id) || [] : []
-  const moduleCounts = {
-    today:daySchedule.length,
-    patients:patients.length,
-    pending:workspaceIndex.pendingItems.length,
-    documents:workspaceIndex.documentTotal,
-  }
-
   const themeVars = {
     '--clinical-bg':C.bg,
     '--clinical-surface':C.surface,
@@ -386,10 +379,6 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
 
         <div className="clinical-toolbar-context"><span>{selected ? 'Ficha aberta' : 'Área clínica'}</span><strong>{selected?.full_name || 'Visão geral da operação'}</strong></div>
       </div>
-
-      <nav className="clinical-module-tabs" aria-label="Módulos clínicos">
-        {CLINICAL_MODULES.map(item => <button key={item.id} type="button" className={moduleView === item.id ? 'is-active' : ''} onClick={() => navigateModule(item.id)}><span>{item.label}</span>{moduleCounts[item.id] !== undefined && <small>{moduleCounts[item.id]}</small>}</button>)}
-      </nav>
 
       {error && <div className="clinical-alert" role="alert">{error}</div>}
       {identitySyncError && <div className="clinical-alert" role="alert">{identitySyncError}</div>}
