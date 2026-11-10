@@ -5,6 +5,16 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-10
+### Added
+- **Salvamento transacional de paciente e perfil clínico**: a nova RPC `save_patient_with_clinical_profile` deriva a clínica da sessão autenticada, valida o acesso clínico e grava os dados cadastrais e de saúde na mesma transação. Em caso de falha, nenhuma metade do cadastro fica pendente; o retorno inclui as duas linhas persistidas para conferência pelo cliente. (`supabase/patient_clinical_atomic_save.sql`, `src/lib/patientPersistence.js`, `tests/unit/patientPersistence.spec.js`, `tests/unit/patientClinicalAtomicSchema.spec.js`, `tests/e2e/patients-clinical-safety.spec.js`.)
+
+### Changed
+- **Preenchimento clínico mais legível e expansível**: cadastro de paciente, anamnese SOAP, pedidos/receitas, evoluções e adendos ganharam áreas de texto maiores que crescem conforme o conteúdo. Os formulários de paciente e prontuário podem ser expandidos no modal, enquanto anamnese e documentos possuem editor em tela ampliada; tipografia, espaçamento e rótulos clínicos também foram aumentados, inclusive em mobile. (`src/components/AutoGrowTextarea.jsx`, `src/components/UI.jsx`, `src/components/Patients.jsx`, `src/components/ClinicalAnamnesis.jsx`, `src/components/ClinicalDocuments.jsx`, `src/components/MedicalRecord.jsx`, `src/components/ClinicalRecordsReadability.css`.)
+
+### Fixed
+- **Cadastro não anuncia sucesso sem persistência integral**: o mapeamento de todos os campos cadastrais e clínicos agora é centralizado e testado; depois da RPC, a interface compara o paciente e o perfil clínico devolvidos pelo banco antes de fechar o formulário ou atualizar a lista. Isso elimina a antiga janela em que o cadastro básico podia ser salvo e o conteúdo clínico falhar numa segunda requisição. (`src/components/Patients.jsx`, `src/lib/patientPersistence.js`, `tests/e2e/patients-clinical-safety.spec.js`.)
+
 ## [Unreleased] - 2026-11-09
 ### Changed
 - **Exportações financeiras em Excel passam a distinguir estrutura e sinal contábil visualmente**: a DRE da Central de Relatórios e o template rápido ganham a coluna de análise vertical sobre a receita bruta, mantendo percentuais negativos para deduções, custos e despesas. Linhas positivas usam verde, negativas usam vermelho, subtotais e resultado líquido têm faixas próprias e todas as linhas recebem separadores sutis. O mesmo padrão de cor por sinal e formato negativo foi aplicado às colunas numéricas dos demais relatórios Excel, inclusive fluxo de caixa e balanço, sem alterar os cálculos nem os dados exportados. O template rápido também deixa de exibir custos positivos acompanhados apenas de um texto `(-)`: os valores agora carregam o sinal de fato. (`src/lib/xlsxExport.js`, `src/lib/reportCatalog.js`, `src/lib/reportWorkbook.js`, `tests/unit/xlsxExport.spec.js`, `tests/unit/reportCatalog.spec.js`.)

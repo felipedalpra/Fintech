@@ -1,0 +1,203 @@
+/* Camada de legibilidade para preenchimento clínico. Mantida separada do CSS
+   histórico para deixar explícitos os tamanhos mínimos dos campos críticos. */
+.clinical-tabs button {
+  min-height: 46px;
+  padding-inline: 14px;
+  font-size: 13px;
+}
+
+.clinical-tab-content {
+  padding: clamp(16px, 2vw, 28px);
+}
+
+.clinical-anamnesis-view,
+.clinical-anamnesis-editor,
+.clinical-documents,
+.clinical-document-editor {
+  gap: 16px;
+}
+
+.clinical-anamnesis-toolbar > div:first-child > span,
+.clinical-documents__toolbar > div:first-child > span,
+.clinical-document-editor__header > div > span {
+  font-size: 10px;
+}
+
+.clinical-anamnesis-toolbar > div:first-child > strong,
+.clinical-documents__toolbar > div:first-child > strong {
+  font-size: 14px;
+}
+
+.clinical-anamnesis-toolbar__actions,
+.clinical-document-editor__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.clinical-anamnesis-toolbar__actions > label,
+.clinical-document-editor__header-actions > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--clinical-sub);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.clinical-soap-section {
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+  border-radius: 12px;
+}
+
+.clinical-soap-section.is-objective {
+  grid-template-columns: 180px minmax(0, 1fr);
+}
+
+.clinical-soap-section > header strong {
+  font-size: 14px;
+}
+
+.clinical-soap-section > header small {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.clinical-soap-fields {
+  gap: 14px;
+}
+
+.clinical-soap-fields label,
+.clinical-document-fields label,
+.clinical-medication-row label,
+.clinical-document-issuer label {
+  gap: 7px;
+}
+
+.clinical-soap-fields label > span,
+.clinical-vitals-grid label > span,
+.clinical-bmi > span,
+.clinical-document-fields label > span,
+.clinical-medication-row label > span,
+.clinical-document-issuer label > span {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.clinical-soap-fields textarea,
+.clinical-document-editor input,
+.clinical-document-editor textarea {
+  padding: 11px 12px;
+  border-radius: 9px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.clinical-document-editor input {
+  height: 42px;
+}
+
+.clinical-document-editor__header-actions input {
+  width: auto;
+}
+
+.clinical-document-editor .clinical-confirmation input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.clinical-vitals-grid label > div,
+.clinical-bmi strong {
+  height: 40px;
+}
+
+.clinical-vitals-grid input {
+  padding-inline: 10px;
+  font-size: 13px;
+}
+
+.clinical-vitals-grid small {
+  font-size: 10px;
+}
+
+.clinical-form-error,
+.clinical-document-legal-note,
+.clinical-document-warning,
+.clinical-document-access-note,
+.clinical-confirmation,
+.clinical-anamnesis-actions p,
+.clinical-document-actions p,
+.clinical-document-issuer p {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.clinical-medication-row {
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.clinical-medication-row > header strong,
+.clinical-document-issuer h4 {
+  font-size: 14px;
+}
+
+.clinical-anamnesis-editor.is-expanded,
+.clinical-document-editor.is-expanded {
+  position: fixed;
+  inset: 12px;
+  z-index: 2400;
+  align-content: start;
+  padding: clamp(18px, 2.5vw, 34px);
+  border: 1px solid var(--clinical-border-bright);
+  border-radius: 18px;
+  background: var(--clinical-card);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .58);
+  overflow: auto;
+}
+
+.clinical-anamnesis-editor.is-expanded > .clinical-anamnesis-toolbar,
+.clinical-document-editor.is-expanded > .clinical-document-editor__header {
+  position: sticky;
+  top: calc(clamp(18px, 2.5vw, 34px) * -1);
+  z-index: 2;
+  padding-block: 16px;
+  background: var(--clinical-card);
+}
+
+[data-testid="medical-record"] textarea {
+  font-size: 14px !important;
+  line-height: 1.65 !important;
+}
+
+@media (max-width: 720px) {
+  .clinical-soap-section,
+  .clinical-soap-section.is-objective {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .clinical-anamnesis-toolbar__actions,
+  .clinical-document-editor__header-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clinical-anamnesis-toolbar__actions > label,
+  .clinical-document-editor__header-actions > label {
+    justify-content: space-between;
+  }
+
+  .clinical-anamnesis-editor.is-expanded,
+  .clinical-document-editor.is-expanded {
+    inset: 4px;
+    padding: 14px;
+    border-radius: 12px;
+  }
+}

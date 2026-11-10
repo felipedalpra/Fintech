@@ -9,6 +9,8 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { uploadPatientPhoto, signedPatientPhotoUrl, removePatientPhoto } from '../lib/patientPhoto.js'
+import { buildPatientSaveRpcArgs, confirmedPatientSave } from '../lib/patientPersistence.js'
+import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
 
 const SEX_OPTIONS = [
   { v: '', l: 'Não informado' },
@@ -172,83 +174,14 @@ export function Patients({ data }) {
     if (!form.full_name.trim()) return
     setSaving(true)
     setSaveError('')
-    const patientPayload = {
-      full_name: form.full_name.trim(),
-      cpf: form.cpf || null,
-      date_of_birth: form.date_of_birth || null,
-      sex: form.sex || null,
-      civil_status: form.civil_status || null,
-      profession: form.profession || null,
-      phone: form.phone || null,
-      email: form.email || null,
-      emergency_contact_name: form.emergency_contact_name || null,
-      emergency_contact_phone: form.emergency_contact_phone || null,
-      address_street: form.address_street || null,
-      address_number: form.address_number || null,
-      address_complement: form.address_complement || null,
-      address_district: form.address_district || null,
-      address_city: form.address_city || null,
-      address_state: form.address_state || null,
-      address_zip: form.address_zip || null,
-      start_date: form.start_date || null,
-    }
-
-    const clinicalPayload = {
-      user_id:effectiveUserId,
-      chief_complaint:form.chief_complaint || null,
-      hda:form.hda || null,
-      previous_surgeries:form.previous_surgeries || null,
-      hospitalizations:form.hospitalizations || null,
-      chronic_diseases:form.chronic_diseases || null,
-      allergies:form.allergies || null,
-      current_medications:form.current_medications || null,
-      smoking:form.smoking || null,
-      alcohol:form.alcohol || null,
-      physical_activity:form.physical_activity || null,
-      family_history:form.family_history || null,
-      gynecological_history:form.gynecological_history || null,
-      clinical_notes:form.clinical_notes || null,
-      consent_signed:Boolean(form.consent_signed),
-      consent_date:form.consent_signed ? (form.consent_date || null) : null,
-      updated_at:new Date().toISOString(),
-    }
-
-    let savedPatient = null
-    if (editingId) {
-      const { data:updated, error:updateError } = await supabase
-        .from('patients')
-        .update(patientPayload)
-        .eq('id', editingId)
-        .eq('user_id', effectiveUserId)
-        .select()
-        .single()
-      if (updateError) setSaveError(updateError.message)
-      savedPatient = updated
-    } else {
-      const { data:created, error:createError } = await supabase
-        .from('patients')
-        .insert({ ...patientPayload, user_id: effectiveUserId })
-        .select()
-        .single()
-      if (createError) setSaveError(createError.message)
-      savedPatient = created
-    }
-
-    if (savedPatient && clinicalAccess) {
-      const { data:savedClinical, error:clinicalError } = await supabase
-        .from('patient_clinical_profiles')
-        .upsert({ ...clinicalPayload, patient_id:savedPatient.id }, { onConflict:'patient_id' })
-        .select()
-        .single()
-      if (clinicalError) {
-        setSaveError('Os dados cadastrais foram salvos, mas o conteúdo clínico não foi confirmado. Tente salvar novamente.')
-        setSaving(false)
-        return
-      }
-      savedPatient = { ...savedPatient, ...savedClinical }
-    }
-
-    if (!savedPatient) {
+    let savedPatient
+    try {
+      const args = buildPatientSaveRpcArgs({ patientId:editingId, form, includeClinical:clinicalAccess })
+      const { data:saved, error:saveFailure } = await supabase.rpc('save_patient_with_clinical_profile', args)
+      if (saveFailure) throw saveFailure
+      savedPatient = confirmedPatientSave(saved, args)
+    } catch (caught) {
+      setSaveError(caught.message || 'Não foi possível confirmar o salvamento integral do paciente.')
       setSaving(false)
       return
     }
@@ -441,6 +374,7 @@ export function Patients({ data }) {
         onClose={() => setShowForm(false)}
         title={editingId ? 'Editar paciente' : 'Novo paciente'}
         width={720}
+        expandable
       >
         <PatientForm
           form={form}
@@ -900,21 +834,21 @@ function PatientForm({ form, setForm, onSave, onCancel, saving, clinicalAccess, 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={grid}>
           {fi('start_date', 'Início do acompanhamento', { type: 'date' })}
-          {clinicalAccess && fi('chief_complaint', 'Queixa principal', { placeholder: 'Motivo da busca pelo atendimento' })}
         </div>
+        {clinicalAccess && <AutoTextarea field="chief_complaint" label="Queixa principal" placeholder="Motivo da busca pelo atendimento…" form={form} setForm={setForm} />}
       </div>
     ),
     anamnese: (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <AutoTextarea field="hda" label="HDA — História da doença atual" placeholder="Descreva o histórico e evolução da queixa principal…" form={form} setForm={setForm} />
         <div style={grid}>
-          {fi('chronic_diseases', 'Doenças crônicas', { placeholder: 'HAS, DM, hipotireoidismo…' })}
-          {fi('allergies', 'Alergias', { placeholder: 'Medicamentos, látex, outros…' })}
+          <AutoTextarea field="chronic_diseases" label="Doenças crônicas" placeholder="HAS, DM, hipotireoidismo…" form={form} setForm={setForm} />
+          <AutoTextarea field="allergies" label="Alergias" placeholder="Medicamentos, látex, outros…" form={form} setForm={setForm} />
         </div>
         <AutoTextarea field="current_medications" label="Medicamentos em uso" placeholder="Nome, dose e frequência de cada medicamento…" form={form} setForm={setForm} />
         <div style={grid}>
-          {fi('previous_surgeries', 'Cirurgias anteriores', { placeholder: 'Ex.: apendicectomia 2010, colecistectomia 2018…' })}
-          {fi('hospitalizations', 'Internações', { placeholder: 'Motivo e ano…' })}
+          <AutoTextarea field="previous_surgeries" label="Cirurgias anteriores" placeholder="Ex.: apendicectomia 2010, colecistectomia 2018…" form={form} setForm={setForm} />
+          <AutoTextarea field="hospitalizations" label="Internações" placeholder="Motivo e ano…" form={form} setForm={setForm} />
         </div>
         <div style={grid}>
           {fi('smoking', 'Tabagismo', { placeholder: 'Nunca / Ex-tabagista (X anos) / Ativo (X cigarros/dia)' })}
@@ -922,8 +856,8 @@ function PatientForm({ form, setForm, onSave, onCancel, saving, clinicalAccess, 
           {fi('physical_activity', 'Atividade física', { placeholder: 'Tipo, frequência e intensidade…' })}
         </div>
         <div style={grid}>
-          {fi('family_history', 'Antecedentes familiares', { placeholder: 'Doenças cardiovasculares, câncer, diabetes…' })}
-          {fi('gynecological_history', 'Antecedentes ginecológicos', { placeholder: 'G P A, última menstruação, contraceptivos…' })}
+          <AutoTextarea field="family_history" label="Antecedentes familiares" placeholder="Doenças cardiovasculares, câncer, diabetes…" form={form} setForm={setForm} />
+          <AutoTextarea field="gynecological_history" label="Antecedentes ginecológicos" placeholder="G P A, última menstruação, contraceptivos…" form={form} setForm={setForm} />
         </div>
         <AutoTextarea field="clinical_notes" label="Observações gerais (opcional)" placeholder="Outras informações relevantes…" form={form} setForm={setForm} />
       </div>
@@ -1092,22 +1026,15 @@ function SectionTitle({ children }) {
 }
 
 function AutoTextarea({ field, label, placeholder, form, setForm }) {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.style.height = 'auto'
-      ref.current.style.height = Math.max(80, ref.current.scrollHeight) + 'px'
-    }
-  }, [form[field]])
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <label style={base.label}>{label}</label>
-      <textarea
-        ref={ref}
+      <AutoGrowTextarea
         value={form[field]}
         onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
         placeholder={placeholder}
-        style={{ ...base.input, resize: 'none', fontFamily: 'inherit', lineHeight: 1.6, overflow: 'hidden' }}
+        minHeight={104}
+        style={{ ...base.input, fontFamily:'inherit', fontSize:14 }}
       />
     </div>
   )

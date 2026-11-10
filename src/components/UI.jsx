@@ -58,7 +58,7 @@ export function Card({ children, style, glow, onClick, title, ariaLabel, 'data-t
   >{children}</div>
 }
 
-export function Btn({ children, onClick, variant='primary', disabled, style }) {
+export function Btn({ children, onClick, variant='primary', disabled, style, ...buttonProps }) {
   const v = {
     primary:{ background:C.accent,       color:'#fff',    border:'none' },
     ghost:  { background:'transparent',  color:C.textSub, border:`1px solid ${C.border}` },
@@ -67,7 +67,7 @@ export function Btn({ children, onClick, variant='primary', disabled, style }) {
     warn:   { background:C.yellow+'20',  color:C.yellow,  border:`1px solid ${C.yellow}40` },
   }[variant]
   return (
-    <button onClick={onClick} disabled={disabled}
+    <button {...buttonProps} onClick={onClick} disabled={disabled}
       style={{ ...v, padding:'9px 18px', borderRadius:10, fontSize:13, fontWeight:600,
         cursor:disabled?'not-allowed':'pointer', opacity:disabled?0.5:1,
         fontFamily:'inherit', transition:'opacity 0.15s', whiteSpace:'nowrap', ...style }}
@@ -169,14 +169,16 @@ export function Badge({ color, children, small }) {
   )
 }
 
-export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=true, trackDirty=true }) {
+export function Modal({ open, onClose, title, children, width=520, closeOnBackdrop=true, trackDirty=true, expandable=false }) {
   const [dirty, setDirty] = useState(false)
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setDirty(false)
       setConfirmingDiscard(false)
+      setExpanded(false)
     }
   }, [open])
 
@@ -208,17 +210,20 @@ export function Modal({ open, onClose, title, children, width=520, closeOnBackdr
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)',
-      display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}
+      display:'flex', alignItems:expanded?'stretch':'center', justifyContent:'center', zIndex:1000, padding:expanded?12:20 }}
       onClick={e=>closeOnBackdrop&&e.target===e.currentTarget&&requestClose()}>
       <div onInput={()=>trackDirty&&setDirty(true)} onChange={()=>trackDirty&&setDirty(true)} onClickCapture={trackDirty ? interceptCancel : undefined}
         style={{ background:C.card, border:`1px solid ${C.borderBright}`, borderRadius:20,
-        padding:28, width:'100%', maxWidth:width, maxHeight:'90vh', overflowY:'auto',
+        padding:expanded?32:28, width:'100%', maxWidth:expanded?'none':width, maxHeight:expanded?'calc(100vh - 24px)':'90vh', overflowY:'auto',
         boxShadow: lightTheme ? '0 24px 60px rgba(15,23,42,0.18)' : '0 24px 80px rgba(0,0,0,0.7)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
           <h3 style={{ margin:0, fontSize:18, fontWeight:700, color:C.text }}>{title}</h3>
-          <button onClick={requestClose} style={{ background:C.border, border:'none', color:C.textSub,
-            width:32, height:32, borderRadius:8, cursor:'pointer', fontSize:18,
-            display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            {expandable && <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} style={{ minHeight:32, padding:'0 11px', border:`1px solid ${C.border}`, borderRadius:8, background:C.surface, color:C.textSub, cursor:'pointer', fontFamily:'inherit', fontSize:12, fontWeight:700 }}>{expanded ? 'Reduzir' : 'Expandir'}</button>}
+            <button onClick={requestClose} aria-label="Fechar" style={{ background:C.border, border:'none', color:C.textSub,
+              width:32, height:32, borderRadius:8, cursor:'pointer', fontSize:18,
+              display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+          </div>
         </div>
         {children}
       </div>

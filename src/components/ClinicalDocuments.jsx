@@ -29,6 +29,7 @@ import {
 import { Btn } from './UI.jsx'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
 import { applyProtocolToDocumentDraft } from '../lib/clinicalProtocols.js'
+import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
 
 const { EXAM_REQUEST, SIMPLE_PRESCRIPTION } = CLINICAL_DOCUMENT_TYPES
 
@@ -142,6 +143,14 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
   // e o que o dispara de novo, sem duplicar a logica de busca.
   const [reloadToken, setReloadToken] = useState(0)
   const [protocols, setProtocols] = useState([])
+  const [editorExpanded, setEditorExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!editorExpanded) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [editorExpanded])
 
   useEffect(() => {
     let active = true
@@ -216,6 +225,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     setRequestId(uid())
     setForm(clinicalDocumentDefaults({ type, issueDate:today(), profile, clinicName }))
     setError('')
+    setEditorExpanded(false)
   }
 
   function update(field, value) {
@@ -262,6 +272,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
       issued = true
       setEditingType('')
       setForm(null)
+      setEditorExpanded(false)
       const fresh = await fetchDocumentBundle(patient.id, ownerId)
       setRecords(fresh.documents)
       setSignatureByDocument(latestAttemptByDocument(fresh.signatures.attempts))
@@ -422,10 +433,13 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
 
   if (editingType && form) {
     return (
-      <div className="clinical-document-editor">
+      <div className={`clinical-document-editor${editorExpanded ? ' is-expanded' : ''}`}>
         <header className="clinical-document-editor__header">
           <div><span>Novo documento</span><h3>{clinicalDocumentTypeLabel(editingType)}</h3></div>
-          <label>Data de emissão<input type="date" value={form.issue_date} readOnly aria-readonly="true" /></label>
+          <div className="clinical-document-editor__header-actions">
+            <label>Data de emissão<input type="date" value={form.issue_date} readOnly aria-readonly="true" /></label>
+            <Btn variant="ghost" aria-expanded={editorExpanded} onClick={() => setEditorExpanded(value => !value)}>{editorExpanded ? 'Reduzir editor' : 'Expandir editor'}</Btn>
+          </div>
         </header>
 
         {error && <div className="clinical-form-error" role="alert">{error}</div>}
@@ -438,9 +452,9 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
 
         {editingType === EXAM_REQUEST ? (
           <div className="clinical-document-fields">
-            <label><span>Exames solicitados *</span><textarea aria-label="Exames solicitados *" rows="7" value={form.exams_text} onChange={event => update('exams_text', event.target.value)} placeholder={'Um exame por linha\nHemograma completo\nCoagulograma\nEletrocardiograma'} /></label>
-            <label><span>Indicação clínica</span><textarea aria-label="Indicação clínica" rows="3" value={form.clinical_indication} onChange={event => update('clinical_indication', event.target.value)} placeholder="Hipótese ou contexto clínico pertinente" /></label>
-            <label><span>Orientações ao paciente</span><textarea aria-label="Orientações ao paciente" rows="3" value={form.instructions} onChange={event => update('instructions', event.target.value)} placeholder="Jejum, prazo ou outras orientações" /></label>
+            <label><span>Exames solicitados *</span><AutoGrowTextarea aria-label="Exames solicitados *" rows="7" minHeight={180} value={form.exams_text} onChange={event => update('exams_text', event.target.value)} placeholder={'Um exame por linha\nHemograma completo\nCoagulograma\nEletrocardiograma'} /></label>
+            <label><span>Indicação clínica</span><AutoGrowTextarea aria-label="Indicação clínica" rows="3" minHeight={108} value={form.clinical_indication} onChange={event => update('clinical_indication', event.target.value)} placeholder="Hipótese ou contexto clínico pertinente" /></label>
+            <label><span>Orientações ao paciente</span><AutoGrowTextarea aria-label="Orientações ao paciente" rows="3" minHeight={108} value={form.instructions} onChange={event => update('instructions', event.target.value)} placeholder="Jejum, prazo ou outras orientações" /></label>
           </div>
         ) : (
           <div className="clinical-prescription-editor">
@@ -461,7 +475,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
                   <label><span>Medicamento *</span><input aria-label={`Medicamento ${index + 1} *`} value={item.medication} onChange={event => updateMedication(index, 'medication', event.target.value)} placeholder="Princípio ativo ou nome" /></label>
                   <label><span>Apresentação</span><input aria-label={`Apresentação ${index + 1}`} value={item.presentation} onChange={event => updateMedication(index, 'presentation', event.target.value)} placeholder="Concentração e forma" /></label>
                   <label><span>Quantidade</span><input aria-label={`Quantidade ${index + 1}`} value={item.quantity} onChange={event => updateMedication(index, 'quantity', event.target.value)} placeholder="Ex.: 1 caixa" /></label>
-                  <label className="is-wide"><span>Modo de usar *</span><textarea aria-label={`Modo de usar ${index + 1} *`} rows="2" value={item.directions} onChange={event => updateMedication(index, 'directions', event.target.value)} placeholder="Via, dose, frequência e duração, sem abreviações ambíguas" /></label>
+                  <label className="is-wide"><span>Modo de usar *</span><AutoGrowTextarea aria-label={`Modo de usar ${index + 1} *`} rows="2" minHeight={92} value={item.directions} onChange={event => updateMedication(index, 'directions', event.target.value)} placeholder="Via, dose, frequência e duração, sem abreviações ambíguas" /></label>
                 </div>
               </div>
             ))}
@@ -483,7 +497,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
 
         <footer className="clinical-document-actions">
           <p>Depois de emitido, o registro fica imutável no histórico. Para corrigir, emita um novo documento.</p>
-          <div><Btn variant="ghost" disabled={saving} onClick={() => { setEditingType(''); setForm(null); setError('') }}>Cancelar</Btn><Btn disabled={saving} onClick={save}>{saving ? 'Emitindo…' : 'Emitir documento'}</Btn></div>
+          <div><Btn variant="ghost" disabled={saving} onClick={() => { setEditorExpanded(false); setEditingType(''); setForm(null); setError('') }}>Cancelar</Btn><Btn disabled={saving} onClick={save}>{saving ? 'Emitindo…' : 'Emitir documento'}</Btn></div>
         </footer>
       </div>
     )

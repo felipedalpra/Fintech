@@ -13,6 +13,7 @@ import {
 import { Btn } from './UI.jsx'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
 import { buildProtocolAnamnesisDraft, protocolVersionToForm, validateProtocolResponses } from '../lib/clinicalProtocols.js'
+import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
 
 const SOAP_SECTIONS = [
   {
@@ -92,7 +93,15 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
   const [form, setForm] = useState(() => emptyClinicalAnamnesis(today()))
   const [protocols, setProtocols] = useState([])
   const [invalidField, setInvalidField] = useState('')
+  const [expanded, setExpanded] = useState(false)
   const editorRef = useRef(null)
+
+  useEffect(() => {
+    if (!expanded) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [expanded])
 
   useEffect(() => {
     let active = true
@@ -127,6 +136,7 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
     setForm({ ...emptyClinicalAnamnesis(today()), ...source, ...initialDraft, session_date:today() })
     setRequestId(uid())
     setError('')
+    setExpanded(false)
     setEditing(true)
     onDraftConsumed?.()
   }, [initialDraft])
@@ -242,10 +252,13 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
     const activeProtocolVersions = protocols.map(item => item.currentVersion).filter(Boolean)
     const appliedVersionIsActive = activeProtocolVersions.some(item => item.id === appliedProtocol?.id)
     return (
-      <div className="clinical-anamnesis-editor" ref={editorRef}>
+      <div className={`clinical-anamnesis-editor${expanded ? ' is-expanded' : ''}`} ref={editorRef}>
         <header className="clinical-anamnesis-toolbar">
           <div><span>Anamnese clínica</span><strong>Novo registro SOAP</strong></div>
-          <label>Data<input type="date" data-clinical-field="session_date" aria-invalid={invalidField === 'session_date'} value={form.session_date} onChange={event => updateField('session_date', event.target.value)} /></label>
+          <div className="clinical-anamnesis-toolbar__actions">
+            <label>Data<input type="date" data-clinical-field="session_date" aria-invalid={invalidField === 'session_date'} value={form.session_date} onChange={event => updateField('session_date', event.target.value)} /></label>
+            <Btn variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Reduzir editor' : 'Expandir editor'}</Btn>
+          </div>
         </header>
 
         {(protocols.length > 0 || appliedProtocol) && <section className="clinical-protocol-apply"><div><strong>Protocolo do procedimento</strong><span>Use como roteiro e revise cada informação antes de assinar.</span></div><select aria-label="Protocolo clínico" value={form.protocol_version_id || ''} onChange={event => applyProtocol(event.target.value)}><option value="">Sem protocolo</option>{appliedProtocol && !appliedVersionIsActive && <option value={appliedProtocol.id}>{appliedProtocol.name} · v{appliedProtocol.version_number} (versão aplicada)</option>}{activeProtocolVersions.map(item => <option key={item.id} value={item.id}>{item.name} · v{item.version_number}</option>)}</select></section>}
@@ -263,7 +276,7 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
             )}
             <div className="clinical-soap-fields">
               {section.fields.map(([field, label, placeholder]) => (
-                <label key={field}><span>{label}{['chief_complaint', 'history_present_illness', 'physical_exam', 'diagnostic_hypotheses', 'therapeutic_plan'].includes(field) && ' *'}</span><textarea rows={field === 'history_present_illness' ? 4 : 3} data-clinical-field={field} aria-invalid={invalidField === field} value={form[field]} placeholder={placeholder} onChange={event => updateField(field, event.target.value)} /></label>
+                <label key={field}><span>{label}{['chief_complaint', 'history_present_illness', 'physical_exam', 'diagnostic_hypotheses', 'therapeutic_plan'].includes(field) && ' *'}</span><AutoGrowTextarea rows={field === 'history_present_illness' ? 4 : 3} minHeight={field === 'history_present_illness' ? 132 : 108} data-clinical-field={field} aria-invalid={invalidField === field} value={form[field]} placeholder={placeholder} onChange={event => updateField(field, event.target.value)} /></label>
               ))}
             </div>
           </section>
@@ -272,14 +285,14 @@ export function ClinicalAnamnesis({ patientId, ownerId, author, legacyProfile, i
         {form.protocol_version_id && (() => {
           const version = selectedProtocolVersion()
           const prompts = version ? protocolVersionToForm(version).anamnesisPrompts : []
-          return prompts.length > 0 ? <section className="clinical-soap-section is-protocol"><header><span>+</span><div><strong>Campos do protocolo</strong><small>Complementos específicos de {form.protocol_name}</small></div></header><div className="clinical-soap-fields">{prompts.map(prompt => <label key={prompt.key}><span>{prompt.label}{prompt.required ? ' *' : ''}</span><textarea rows="3" value={form.protocol_responses?.[prompt.key] || ''} onChange={event => setForm(current => ({ ...current, protocol_responses:{ ...current.protocol_responses, [prompt.key]:event.target.value } }))} /></label>)}</div></section> : null
+          return prompts.length > 0 ? <section className="clinical-soap-section is-protocol"><header><span>+</span><div><strong>Campos do protocolo</strong><small>Complementos específicos de {form.protocol_name}</small></div></header><div className="clinical-soap-fields">{prompts.map(prompt => <label key={prompt.key}><span>{prompt.label}{prompt.required ? ' *' : ''}</span><AutoGrowTextarea rows="3" minHeight={108} value={form.protocol_responses?.[prompt.key] || ''} onChange={event => setForm(current => ({ ...current, protocol_responses:{ ...current.protocol_responses, [prompt.key]:event.target.value } }))} /></label>)}</div></section> : null
         })()}
 
         {error && <div className="clinical-form-error" role="alert">{error}</div>}
 
         <footer className="clinical-anamnesis-actions">
           <p>Ao assinar, esta versão se torna imutável. Correções devem ser registradas em uma nova versão.</p>
-          <div><Btn variant="ghost" disabled={saving} onClick={() => setEditing(false)}>Cancelar</Btn><Btn disabled={saving} onClick={save}>{saving ? 'Assinando…' : 'Assinar anamnese'}</Btn></div>
+          <div><Btn variant="ghost" disabled={saving} onClick={() => { setExpanded(false); setEditing(false) }}>Cancelar</Btn><Btn disabled={saving} onClick={save}>{saving ? 'Assinando…' : 'Assinar anamnese'}</Btn></div>
         </footer>
       </div>
     )

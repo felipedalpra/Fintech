@@ -365,6 +365,8 @@ test('registra anamnese SOAP versionada com sinais vitais e autoria do servidor'
   await expect(page.getByText('Dados legados — ainda não assinados neste formato')).toBeVisible()
   await expect(page.locator('.clinical-legacy-alerts').getByText('Alergias:', { exact:true })).toBeVisible()
   await page.getByRole('button', { name:'Completar anamnese' }).click()
+  await page.getByRole('button', { name:'Expandir editor' }).click()
+  await expect(page.getByRole('button', { name:'Reduzir editor' })).toHaveAttribute('aria-expanded', 'true')
 
   await page.getByLabel('Queixa principal *').fill('Avaliação pré-operatória')
   await page.getByLabel('História da doença atual *').fill('Sem sintomas atuais.')
