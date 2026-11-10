@@ -357,14 +357,14 @@ export function ClinicalDocumentsCenter({ index, patients = [], loading, unavail
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = index.documents.filter(document => {
     if (filter !== 'all' && document.signature.status !== filter) return false
-    return !normalizedQuery || includesText([document.patientName, document.author_name, document.document_type], normalizedQuery)
+    return !normalizedQuery || includesText([document.patientName, document.author_name, document.document_type, document.file_name, document.procedure_name], normalizedQuery)
   })
   return (
     <section className="clinical-index-page" data-testid="clinical-documents-center">
       <header className="clinical-index-header">
-        <div><span>Central clínica</span><h2>Documentos</h2><p>Pedidos e receitas de todos os pacientes, com a situação real da assinatura.</p></div>
+        <div><span>Central clínica</span><h2>Documentos</h2><p>Pedidos, receitas e PDFs anexados aos prontuários, com a situação real da assinatura.</p></div>
         <div className="clinical-index-header-actions">
-          <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente ou profissional" /></label>
+          <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente, profissional ou arquivo" /></label>
           <span ref={createButtonRef}><Btn onClick={() => setCreating(true)}>+ Novo documento</Btn></span>
         </div>
       </header>
@@ -378,10 +378,10 @@ export function ClinicalDocumentsCenter({ index, patients = [], loading, unavail
           {rows.map(document => (
             <button key={document.id} type="button" onClick={() => {
               const patient = index.patientItems.find(item => item.id === document.patient_id)
-              if (patient) onOpenPatient(patient, 'prescriptions')
+              if (patient) onOpenPatient(patient, document.destinationTab || 'prescriptions')
             }}>
-              <span className={`clinical-document-center-icon is-${document.document_type}`}>{document.document_type === 'simple_prescription' ? 'Rx' : 'Ex'}</span>
-              <span><small>{document.document_type === 'simple_prescription' ? 'Receita simples' : 'Pedido de exames'}</small><strong>{document.patientName}</strong><em>{document.author_name || 'Profissional registrado'}</em></span>
+              <span className={`clinical-document-center-icon is-${document.document_type}`}>{document.document_type === 'simple_prescription' ? 'Rx' : document.document_type === 'attached_pdf' ? 'PDF' : 'Ex'}</span>
+              <span><small>{document.document_type === 'simple_prescription' ? 'Receita simples' : document.document_type === 'attached_pdf' ? 'PDF anexado' : 'Pedido de exames'}</small><strong>{document.patientName}</strong><em>{document.document_type === 'attached_pdf' ? document.file_name : document.author_name || 'Profissional registrado'}</em></span>
               <span><strong>{dateLabel(document.issue_date)}</strong><small className={`is-${document.signature.status}`}>{document.signature.label}</small></span>
               <b>Abrir ficha →</b>
             </button>
