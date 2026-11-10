@@ -211,19 +211,46 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
     return String(left.full_name || '').localeCompare(String(right.full_name || ''), 'pt-BR')
   })
 
-  const documents = (bundle.documents || []).filter(document => document.document_type !== 'uploaded_pdf').map(document => ({
+  const issuedDocuments = (bundle.documents || []).filter(document => document.document_type !== 'uploaded_pdf').map(document => ({
     ...document,
     patientName:names.get(document.patient_id) || document.patient_name || 'Paciente não identificado',
     signature:documentSignatureState(document, latestSignatureByDocument),
-  })).sort((left, right) => timeValue(right.created_at || right.issue_date) - timeValue(left.created_at || left.issue_date))
-  const attachedDocumentCount = (bundle.assets || []).filter(asset => asset.asset_kind === 'document' && asset.status === 'available').length
+    destinationTab:'prescriptions',
+  }))
+  const uploadedDocumentsByAsset = new Map((bundle.documents || [])
+    .filter(document => document.document_type === 'uploaded_pdf' && document.source_asset_id)
+    .map(document => [document.source_asset_id, document]))
+  const attachedDocuments = (bundle.assets || [])
+    .filter(asset => asset.asset_kind === 'document' && asset.status === 'available')
+    .map(asset => {
+      const signatureDocument = uploadedDocumentsByAsset.get(asset.id)
+      return {
+        id:`asset:${asset.id}`,
+        assetId:asset.id,
+        sourceDocumentId:signatureDocument?.id || null,
+        patient_id:asset.patient_id,
+        patientName:names.get(asset.patient_id) || 'Paciente não identificado',
+        document_type:'attached_pdf',
+        issue_date:asset.captured_on || asset.completed_at || asset.created_at,
+        created_at:asset.completed_at || asset.created_at || asset.captured_on,
+        author_name:signatureDocument?.author_name || '',
+        file_name:asset.file_name || 'Documento anexado',
+        procedure_name:asset.procedure_name || '',
+        signature:signatureDocument
+          ? documentSignatureState(signatureDocument, latestSignatureByDocument)
+          : { status:'manual', label:'Não assinado' },
+        destinationTab:'files',
+      }
+    })
+  const documents = [...issuedDocuments, ...attachedDocuments]
+    .sort((left, right) => timeValue(right.created_at || right.issue_date) - timeValue(left.created_at || left.issue_date))
 
   return {
     patientItems,
     pendingItems:pendingItems.map(item => ({ ...item, patientName:names.get(item.patientId) || 'Paciente não identificado' }))
       .sort((left, right) => timeValue(left.dueAt) - timeValue(right.dueAt)),
     documents,
-    documentTotal:documents.length + attachedDocumentCount,
+    documentTotal:documents.length,
     timelineByPatient:new Map(patients.map(patient => [patient.id, buildClinicalTimeline(bundle, patient.id)])),
   }
 }

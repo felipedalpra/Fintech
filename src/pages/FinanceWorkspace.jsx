@@ -1095,7 +1095,6 @@ export function FinanceWorkspace() {
   const searchSections = accessibleAreas
     .map(a => ({ items: a.sections.flatMap(s => s.items).filter(i => canAccess(i.id)) }))
     .filter(s => s.items.length > 0)
-  const quickLinks = accessibleItems.slice(0, 4)
   const desktopCompactNav = !isMobile
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900
   const compactForShortHeight = desktopCompactNav && viewportHeight < 860
@@ -1413,10 +1412,6 @@ export function FinanceWorkspace() {
                 <span>Busca</span>
                 {!isMobile && <kbd style={getKbdSmall()}>⌘K</kbd>}
               </button>
-              {!isMobile && !isClinicalPage && quickLinks.map(item => {
-                const active = item.id === page
-                return <button key={item.id} onClick={() => navigate(`/app/${item.id}`)} style={{ ...getChipButton(), border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`, background:active ? C.accent+'14' : 'transparent', color:active ? C.accentLight : C.textSub }}>{item.label}</button>
-              })}
             </div>
           </div>
         </div>}
@@ -1430,36 +1425,6 @@ export function FinanceWorkspace() {
             {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
             <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
           </div>
-        )}
-
-        {isMobile && !isInboxPage && !isClinicalPage && (
-          <Card style={{ marginBottom:16, padding:14 }}>
-            <div style={{ fontSize:11, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:10, fontWeight:700 }}>
-              Acesso rapido
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8 }}>
-              {quickLinks.map(item => {
-                const active = item.id === page
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => navigate(`/app/${item.id}`)}
-                    style={{
-                      ...getChipButton(),
-                      border:active ? `1px solid ${C.accent}44` : `1px solid ${C.border}`,
-                      background:active ? C.accent+'14' : 'transparent',
-                      color:active ? C.accentLight : C.textSub,
-                      borderRadius:12,
-                      padding:'10px 12px',
-                      textAlign:'left',
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                )
-              })}
-            </div>
-          </Card>
         )}
 
         {loadError && <Card style={{ marginBottom:16, border:`1px solid ${C.red}33` }}><div style={{ color:C.red, fontSize:13 }}>{loadError}</div></Card>}

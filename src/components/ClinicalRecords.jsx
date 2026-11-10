@@ -361,11 +361,6 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   return (
     <div className="clinical-workspace" data-testid="clinical-records-page" style={themeVars}>
       <div className="clinical-toolbar">
-        <button type="button" className="clinical-home-button is-active" onClick={() => navigateModule('today')}>
-          <span className="clinical-home-button__icon">✚</span>
-          <span><strong>Workspace clínico</strong><small>Cuidado e continuidade</small></span>
-        </button>
-
         <div className="clinical-patient-search" ref={searchWrapRef}>
           <span aria-hidden="true" className="clinical-search-icon">⌕</span>
           <input

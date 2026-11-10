@@ -71,6 +71,7 @@ test('abre a agenda do dia e mantém todos os módulos na ficha clínica', async
 
 test('emite pedido de exames e receita simples no histórico clínico', async ({ page }) => {
   const documents = []
+  const assets = []
   const rpcPayloads = []
 
   await page.setViewportSize({ width:390, height:844 })
@@ -117,9 +118,10 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
     return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(rows) })
   })
   await page.route('**/rest/v1/clinical_document_signatures*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
+  await page.route('**/rest/v1/clinical_assets*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(assets) }))
   await page.route('**/rest/v1/rpc/list_clinical_workspace_record_metadata*', route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   for (const table of [
-    'clinical_anamneses', 'clinical_intake_requests', 'clinical_intake_submissions', 'clinical_assets',
+    'clinical_anamneses', 'clinical_intake_requests', 'clinical_intake_submissions',
     'clinical_treatment_plans', 'clinical_treatment_plan_versions', 'clinical_treatment_plan_status_events',
     'clinical_treatment_sessions', 'clinical_treatment_session_events', 'clinical_protocols',
     'clinical_protocol_versions', 'clinical_protocol_status_events',
@@ -199,6 +201,15 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await page.getByText('Confirmo que esta receita não contém medicamento controlado nem sujeito à retenção.').click()
   await page.getByLabel('Telefone ou e-mail profissional *').fill('medica@clinica.test')
   await page.getByLabel('Endereço profissional *').fill('Av. Clínica, 100 — Porto Alegre/RS')
+  assets.push({
+    id:'asset-laudo',
+    patient_id:'patient-documents',
+    asset_kind:'document',
+    status:'available',
+    file_name:'laudo-anexado.pdf',
+    captured_on:'2026-10-21',
+    completed_at:'2026-10-21T12:00:00Z',
+  })
   await page.getByRole('button', { name:'Emitir documento' }).click()
 
   await expect(page.getByText(/Dipirona — 500 mg — Tomar um comprimido/)).toBeVisible()
@@ -215,8 +226,9 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
 
   await page.getByRole('navigation', { name:'Módulos clínicos' }).getByRole('button', { name:/Documentos/ }).click()
   await expect(page.getByTestId('clinical-documents-center')).toContainText('Ana Documentos')
-  await expect(page.locator('.clinical-documents-center-list > button')).toHaveCount(2)
-  await page.locator('.clinical-documents-center-list > button').first().click()
+  await expect(page.getByTestId('clinical-documents-center')).toContainText('laudo-anexado.pdf')
+  await expect(page.locator('.clinical-documents-center-list > button')).toHaveCount(3)
+  await page.getByRole('button', { name:/Pedido de exames.*Ana Documentos/ }).click()
   await expect(page.getByText('2 no histórico')).toBeVisible()
 })
 
