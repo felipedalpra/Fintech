@@ -2,6 +2,7 @@
 import { expect, test } from '@playwright/test'
 import {
   buildConnectionHealthPatch,
+  connectionHealthOrderFilter,
   parseEvolutionConnectionState,
   shouldProcessWebhookPayload,
 } from '../../api/_lib/evolutionConnection.js'
@@ -40,6 +41,15 @@ test('connection.update com estado "open" em número JÁ ativo: não mexe em act
   const patch = buildConnectionHealthPatch('open', { now, wasActive: true, canActivate: false })
   expect(patch).toEqual({ connection_state: 'open', last_health_at: now, connected_at: now })
   expect(patch).not.toHaveProperty('active')
+})
+
+test('compare-and-set usa a chegada durável para impedir regressão por conclusão fora de ordem', () => {
+  const older = '2026-11-10T01:19:46.068795+00:00'
+  const newer = '2026-11-10T01:19:46.114221+00:00'
+  expect(Date.parse(newer)).toBeGreaterThan(Date.parse(older))
+  expect(connectionHealthOrderFilter(older)).toBe(`last_health_at.is.null,last_health_at.lte.${older}`)
+  expect(connectionHealthOrderFilter(newer)).toBe(`last_health_at.is.null,last_health_at.lte.${newer}`)
+  expect(() => connectionHealthOrderFilter('sem-data')).toThrow('Data de recebimento do webhook inválida.')
 })
 
 test('shouldProcessWebhookPayload: mensagens comuns continuam bloqueadas enquanto o número está inativo', () => {

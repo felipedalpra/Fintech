@@ -19,6 +19,14 @@ export function buildConnectionHealthPatch(state, { now, wasActive, canActivate 
   return patch
 }
 
+// Filtro PostgREST usado no compare-and-set do número. `receivedAt` vem do
+// registro durável do webhook, portanto representa a ordem de chegada mesmo
+// quando duas funções serverless terminam na ordem inversa.
+export function connectionHealthOrderFilter(receivedAt) {
+  if (!Number.isFinite(Date.parse(receivedAt))) throw new Error('Data de recebimento do webhook inválida.')
+  return `last_health_at.is.null,last_health_at.lte.${receivedAt}`
+}
+
 // Decide se o webhook deve seguir para o processamento de mensagem/status/automação,
 // ou parar por aqui. Conexão foi tratada antes desta checagem (sempre atualiza estado);
 // isto só controla o restante — nunca processa mensagem de número que continua inativo.

@@ -418,7 +418,7 @@ export function WhatsAppNumbers() {
 
               {numberPending.length > 0 && (
                 <div style={{ ...s.row, color:C.textSub, fontSize:12 }}>
-                  <span>{numberPending.length} evento(s) aguardando reprocessamento.</span>
+                  <span>{numberPending.length === 1 ? '1 falha recente pode ser reprocessada.' : `${numberPending.length} falhas recentes podem ser reprocessadas.`}</span>
                   <button style={s.linkBtn} disabled={replayBusy === n.id} onClick={() => replayPending(n)}>
                     {replayBusy === n.id ? 'Reprocessando...' : 'Reprocessar agora'}
                   </button>
