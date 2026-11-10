@@ -10,13 +10,6 @@ test('admin cria instância Evolution por QR sem receber credenciais da infraest
     contentType:'application/json',
     body:'[]',
   }))
-  await page.route('**/rest/v1/whatsapp_numbers*', async route => {
-    if (route.request().method() !== 'GET') {
-      await route.fulfill({ status:200, contentType:'application/json', body:'[]' })
-      return
-    }
-    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(numbers) })
-  })
   await page.route('**/api/secure-profile?action=get', route => route.fulfill({ status:200, contentType:'application/json', body:'{"profile":{}}' }))
   await page.route('**/api/google/calendar?action=status', route => route.fulfill({ status:200, contentType:'application/json', body:'{}' }))
   await page.route('**/api/whatsapp?action=provision-number', async route => {

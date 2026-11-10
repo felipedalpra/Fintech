@@ -20,7 +20,8 @@ import {
   whatsappProvider,
 } from './_lib/whatsappProvider.js'
 import { evolutionConfig, evolutionInstanceMissing } from './_lib/evolutionClient.js'
-import { buildConnectionHealthPatch, parseEvolutionConnectionState, shouldProcessWebhookPayload } from './_lib/evolutionConnection.js'
+import { buildConnectionHealthPatch, connectionHealthOrderFilter, parseEvolutionConnectionState, shouldProcessWebhookPayload } from './_lib/evolutionConnection.js'
+import { isReplayableWebhookEvent, WEBHOOK_REPLAY_MAX_AGE_MS, WEBHOOK_REPLAY_MAX_ATTEMPTS } from './_lib/whatsappWebhookQueue.js'
 import {
   matchPatientId,
   clinicWhatsAppMediaPath,
@@ -230,7 +231,7 @@ function webhookEventTableMissing(error) {
 }
 
 async function beginWebhookEvent(supabase, number, metadata, req) {
-  if (req.replayAuditId) return { duplicate: false, id: req.replayAuditId, retry: true }
+  if (req.replayAuditId) return { duplicate: false, id: req.replayAuditId, receivedAt:req.replayAuditReceivedAt || null, retry: true }
   const provider = whatsappProvider(number)
   const dedupKey = webhookDedupKey(provider, metadata.eventType, req.rawBody, req.body)
   const result = await supabase.from('whatsapp_webhook_events').insert({
@@ -241,7 +242,7 @@ async function beginWebhookEvent(supabase, number, metadata, req) {
     event_type: metadata.eventType,
     dedup_key: dedupKey,
     payload: redactWebhookPayload(req.body || {}),
-  }).select('id').single()
+  }).select('id, received_at').single()
   if (result.error?.code === '23505') {
     const existingResult = await supabase.from('whatsapp_webhook_events')
       .select('id, processing_status, attempts, received_at')
@@ -250,7 +251,7 @@ async function beginWebhookEvent(supabase, number, metadata, req) {
       .maybeSingle()
     if (existingResult.error) throw existingResult.error
     const existing = existingResult.data
-    if (!existing) return { duplicate: true, id: null }
+    if (!existing) return { duplicate: true, id: null, receivedAt:null }
 
     // Falhas explícitas sempre podem ser reprocessadas. Um evento que ficou em
     // `received` por mais de um minuto é retomado depois de provável interrupção
@@ -269,13 +270,13 @@ async function beginWebhookEvent(supabase, number, metadata, req) {
         .select('id')
         .maybeSingle()
       if (retryResult.error) throw retryResult.error
-      if (retryResult.data?.id) return { duplicate: false, id: retryResult.data.id, retry: true }
+      if (retryResult.data?.id) return { duplicate: false, id: retryResult.data.id, receivedAt:existing.received_at, retry: true }
     }
-    return { duplicate: true, id: null }
+    return { duplicate: true, id: null, receivedAt:existing.received_at }
   }
-  if (webhookEventTableMissing(result.error)) return { duplicate: false, id: null }
+  if (webhookEventTableMissing(result.error)) return { duplicate: false, id: null, receivedAt:null }
   if (result.error) throw result.error
-  return { duplicate: false, id: result.data?.id || null }
+  return { duplicate: false, id: result.data?.id || null, receivedAt:result.data?.received_at || null }
 }
 
 async function finishWebhookEvent(supabase, id, status, errorMessage = null) {
@@ -718,16 +719,18 @@ async function handleListNumbers(req, res) {
   if (result.error) return res.status(500).json({ error: 'Não foi possível carregar os números.' })
   const eventFields = 'id, whatsapp_number_id, event_type, processing_status, attempts, error_message, received_at'
   const staleCutoff = new Date(Date.now() - 60_000).toISOString()
+  const replayCutoff = new Date(Date.now() - WEBHOOK_REPLAY_MAX_AGE_MS).toISOString()
   const eventResults = await Promise.all([
-    supabase.from('whatsapp_webhook_events').select(eventFields).eq('user_id', ownerId).eq('processing_status', 'failed').order('received_at', { ascending:false }).limit(50),
-    supabase.from('whatsapp_webhook_events').select(eventFields).eq('user_id', ownerId).eq('processing_status', 'ignored').not('error_message', 'is', null).order('received_at', { ascending:false }).limit(50),
-    supabase.from('whatsapp_webhook_events').select(eventFields).eq('user_id', ownerId).eq('processing_status', 'received').lt('received_at', staleCutoff).order('received_at', { ascending:false }).limit(50),
+    supabase.from('whatsapp_webhook_events').select(eventFields).eq('user_id', ownerId).eq('processing_status', 'failed').lt('attempts', WEBHOOK_REPLAY_MAX_ATTEMPTS).gte('received_at', replayCutoff).order('received_at', { ascending:false }).limit(50),
+    supabase.from('whatsapp_webhook_events').select(eventFields).eq('user_id', ownerId).eq('processing_status', 'ignored').not('error_message', 'is', null).lt('attempts', WEBHOOK_REPLAY_MAX_ATTEMPTS).gte('received_at', replayCutoff).order('received_at', { ascending:false }).limit(50),
+    supabase.from('whatsapp_webhook_events').select(eventFields).eq('user_id', ownerId).eq('processing_status', 'received').lt('received_at', staleCutoff).lt('attempts', WEBHOOK_REPLAY_MAX_ATTEMPTS).gte('received_at', replayCutoff).order('received_at', { ascending:false }).limit(50),
   ])
   const eventError = eventResults.find(item => item.error)?.error
   const eventTableUnavailable = ['42P01', '42703', 'PGRST204', 'PGRST205'].includes(eventError?.code)
   if (eventError && !eventTableUnavailable) return res.status(500).json({ error: 'Não foi possível carregar a fila de webhooks.' })
   const pendingEvents = eventError ? [] : eventResults
     .flatMap(item => item.data || [])
+    .filter(event => isReplayableWebhookEvent(event))
     .sort((a, b) => Date.parse(b.received_at) - Date.parse(a.received_at))
     .slice(0, 100)
   const numbers = (result.data || []).map(serializeWhatsAppNumberForClient)
@@ -745,7 +748,7 @@ async function handleReplayWebhook(req, res) {
   const eventId = String(req.body?.eventId || '').trim()
   if (!eventId) return res.status(400).json({ error: 'eventId é obrigatório.' })
   const { data: event, error } = await supabase.from('whatsapp_webhook_events')
-    .select('id, user_id, whatsapp_number_id, payload, processing_status, attempts, received_at')
+    .select('id, user_id, whatsapp_number_id, payload, processing_status, attempts, error_message, received_at')
     .eq('id', eventId)
     .maybeSingle()
   if (error || !event || event.user_id !== ownerId) return res.status(404).json({ error: 'Evento não encontrado.' })
@@ -754,6 +757,9 @@ async function handleReplayWebhook(req, res) {
   }
   if (event.processing_status === 'received' && Date.now() - Date.parse(event.received_at) <= 60_000) {
     return res.status(409).json({ error: 'Este evento ainda está sendo processado.' })
+  }
+  if (!isReplayableWebhookEvent(event)) {
+    return res.status(409).json({ error: 'Este evento permanece no histórico, mas não é mais reprocessável.' })
   }
   const { data: number } = await getWhatsAppNumber(supabase, event.whatsapp_number_id)
   if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número do evento não encontrado.' })
@@ -774,6 +780,7 @@ async function handleReplayWebhook(req, res) {
     body: event.payload || {},
     rawBody: Buffer.from(JSON.stringify(event.payload || {})),
     replayAuditId: event.id,
+    replayAuditReceivedAt: event.received_at,
   }, res)
 }
 
@@ -1613,10 +1620,12 @@ async function handleWebhook(req, res) {
   }
   if (audit.duplicate) return res.status(200).json({ ok: true, duplicate: true })
 
-  const receivedAt = new Date().toISOString()
+  // A ordem relevante é a de chegada durável ao inbox, não o instante em que
+  // cada função serverless terminou. Webhooks concorrentes podem concluir na
+  // ordem inversa (ex.: `connecting` antigo depois de `open` novo).
+  const receivedAt = audit.receivedAt || new Date().toISOString()
   const healthPatch = { last_webhook_at: receivedAt, last_webhook_event: metadata.eventType }
   const isConnectionUpdate = provider === 'evolution' && metadata.eventType === 'connection.update'
-  let reactivated = false
   if (isConnectionUpdate) {
     const state = parseEvolutionConnectionState(req.body)
     let canActivate = false
@@ -1629,19 +1638,35 @@ async function handleWebhook(req, res) {
       canActivate = Number(count || 0) < 3
     }
     Object.assign(healthPatch, buildConnectionHealthPatch(state, { now: receivedAt, wasActive: num.active, canActivate }))
-    reactivated = Boolean(healthPatch.active)
   }
   // Eventos de ciclo de vida da conexão (connection.update) sempre atualizam o estado,
   // mesmo com o número inativo — sem isso, escanear o QR de um número inativo nunca
   // destrava a reconexão (o evento real chega e é descartado antes de ser lido).
   // Mensagens/status/automações continuam bloqueados enquanto o número não reativar.
-  if (isConnectionUpdate || num.active) {
+  if (isConnectionUpdate) {
+    // Compare-and-set no próprio UPDATE: se um evento mais novo já venceu a
+    // corrida, o antigo não encontra linha e não consegue regredir `open` para
+    // `connecting`. Replays antigos obedecem à mesma proteção.
+    const connectionUpdate = await supabase.from('whatsapp_numbers')
+      .update(healthPatch)
+      .eq('id', num.id)
+      .or(connectionHealthOrderFilter(receivedAt))
+      .select('id')
+      .maybeSingle()
+    if (connectionUpdate.error) {
+      await finishWebhookEvent(supabase, audit.id, 'failed', connectionUpdate.error.message)
+      return res.status(500).json({ error: 'Connection state update failed' })
+    }
+    await finishWebhookEvent(supabase, audit.id, 'processed')
+    return res.status(200).json({ ok:true, connectionUpdated:Boolean(connectionUpdate.data), stale:!connectionUpdate.data })
+  }
+  if (num.active) {
     await supabase.from('whatsapp_numbers').update(healthPatch).eq('id', num.id)
   }
 
-  if (!shouldProcessWebhookPayload({ wasActive: num.active, reactivated })) {
-    await finishWebhookEvent(supabase, audit.id, isConnectionUpdate ? 'processed' : 'ignored', isConnectionUpdate ? null : 'Número inativo no recebimento.')
-    return res.status(200).json({ ok: true, inactive: true, connectionUpdated: isConnectionUpdate })
+  if (!shouldProcessWebhookPayload({ wasActive: num.active, reactivated:false })) {
+    await finishWebhookEvent(supabase, audit.id, 'ignored', 'Número inativo no recebimento.')
+    return res.status(200).json({ ok: true, inactive: true })
   }
 
   // Atualiza o ciclo real da mensagem enviada (enviada → entregue → lida).
