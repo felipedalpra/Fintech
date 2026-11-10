@@ -39,6 +39,7 @@ async function fetchDocuments(patientId, ownerId) {
     .select('*')
     .eq('patient_id', patientId)
     .eq('user_id', ownerId)
+    .in('document_type', [EXAM_REQUEST, SIMPLE_PRESCRIPTION])
     // Arquivado some das telas, mas permanece integro no banco: documento de
     // prontuario nao e apagado (CFM/LGPD).
     .is('archived_at', null)

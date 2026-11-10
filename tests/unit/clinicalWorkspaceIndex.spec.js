@@ -81,3 +81,17 @@ test('linha do tempo reúne metadados das fontes sem copiar o conteúdo da evolu
   expect(timeline.map(event => event.type)).toEqual(['asset', 'record'])
   expect(JSON.stringify(timeline)).not.toContain('conteúdo sensível')
 })
+
+test('conta PDFs anexados como documentos sem duplicar o snapshot usado pela assinatura', () => {
+  const index = buildClinicalWorkspaceIndex(bundle({
+    documents:[
+      { id:'issued-1', patient_id:'patient-1', document_type:'exam_request', created_at:'2026-10-20T10:00:00Z' },
+      { id:'shadow-1', patient_id:'patient-1', document_type:'uploaded_pdf', created_at:'2026-10-21T10:00:00Z' },
+    ],
+    assets:[{ id:'asset-1', patient_id:'patient-1', asset_kind:'document', status:'available', file_name:'laudo.pdf' }],
+  }), reference)
+
+  expect(index.documentTotal).toBe(2)
+  expect(index.documents.map(item => item.id)).toEqual(['issued-1'])
+  expect(index.patientItems[0].documentCount).toBe(2)
+})

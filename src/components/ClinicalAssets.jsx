@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { today } from '../utils.js'
+import { today, uid } from '../utils.js'
 import {
   buildClinicalAssetRpcArgs,
   clinicalAssetDateLabel,
@@ -11,6 +11,14 @@ import {
   validateClinicalAssetFile,
 } from '../lib/clinicalAssets.js'
 import { Btn } from './UI.jsx'
+import { clinicalSignatureActionState, latestAttemptByDocument } from '../lib/clinicalSignature.js'
+import {
+  fetchClinicalSignatureLink,
+  fetchClinicalSignatureState,
+  openClinicalSignatureArtifact,
+  reconcileClinicalSignature,
+  requestClinicalSignature,
+} from '../lib/clinicalSignatureBryClient.js'
 
 const ASSET_COLUMNS = 'id,user_id,patient_id,created_by,asset_kind,stage,captured_on,region,procedure_name,notes,bucket_id,object_path,file_name,expected_mime_type,expected_file_size,observed_mime_type,file_size,client_sha256,consent_acceptance_id,status,created_at,completed_at,failed_at,archived_at'
 const PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp'
@@ -55,7 +63,7 @@ function fileSizeLabel(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function ClinicalAssets({ patient, ownerId }) {
+export function ClinicalAssets({ patient, ownerId, viewerId = '', onAssetsChanged }) {
   const [assets, setAssets] = useState([])
   const [consents, setConsents] = useState([])
   const [urls, setUrls] = useState({})
@@ -76,6 +84,12 @@ export function ClinicalAssets({ patient, ownerId }) {
   const [previewId, setPreviewId] = useState('')
   const [compareFullscreen, setCompareFullscreen] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const [signatureDocuments, setSignatureDocuments] = useState({})
+  const [signatureAttempts, setSignatureAttempts] = useState({})
+  const [signatureIntegration, setSignatureIntegration] = useState({ available:false })
+  const [signatureBusy, setSignatureBusy] = useState('')
+  const [confirmSignatureFor, setConfirmSignatureFor] = useState('')
+  const [signatureNotice, setSignatureNotice] = useState('')
   const fileInputRef = useRef(null)
   const fileEntriesRef = useRef([])
   const loadRequestRef = useRef(0)
@@ -153,6 +167,8 @@ export function ClinicalAssets({ patient, ownerId }) {
       if (requestId !== loadRequestRef.current) return
       setAssets(bundle.assets)
       setConsents(bundle.consents)
+      await loadAssetSignatures(requestId)
+      if (requestId !== loadRequestRef.current) return
       setBeforeId(current => bundle.assets.some(asset => asset.id === current && asset.stage === 'before' && asset.status === 'available') ? current : bundle.assets.find(asset => asset.asset_kind === 'clinical_photo' && asset.stage === 'before' && asset.status === 'available')?.id || '')
       setAfterId(current => bundle.assets.some(asset => asset.id === current && asset.stage === 'after' && asset.status === 'available') ? current : bundle.assets.find(asset => asset.asset_kind === 'clinical_photo' && asset.stage === 'after' && asset.status === 'available')?.id || '')
       setStatus('ready')
@@ -161,6 +177,108 @@ export function ClinicalAssets({ patient, ownerId }) {
       if (requestId !== loadRequestRef.current) return
       setStatus('error')
       setError(nextError.message || 'Não foi possível carregar fotos e documentos clínicos.')
+    }
+  }
+
+  async function loadAssetSignatures(requestId = loadRequestRef.current) {
+    const { data:documents, error:documentsError } = await supabase
+      .from('clinical_documents')
+      .select('id,source_asset_id,created_by,document_type')
+      .eq('user_id', ownerId)
+      .eq('patient_id', patient.id)
+      .eq('document_type', 'uploaded_pdf')
+      .is('archived_at', null)
+    if (requestId !== loadRequestRef.current) return
+    if (documentsError) {
+      setSignatureDocuments({})
+      setSignatureAttempts({})
+      setSignatureIntegration({ available:false, reason:'migration_pendente' })
+      return
+    }
+    const byAsset = Object.fromEntries((documents || []).filter(item => item.source_asset_id).map(item => [item.source_asset_id, item]))
+    setSignatureDocuments(byAsset)
+    if (!documents?.length) {
+      setSignatureAttempts({})
+      try {
+        const state = await fetchClinicalSignatureState([])
+        if (requestId !== loadRequestRef.current) return
+        setSignatureIntegration(state.integration || { available:false })
+      } catch {
+        if (requestId !== loadRequestRef.current) return
+        setSignatureIntegration({ available:false, reason:'indisponivel' })
+      }
+      return
+    }
+    try {
+      const state = await fetchClinicalSignatureState(documents.map(item => item.id))
+      if (requestId !== loadRequestRef.current) return
+      setSignatureAttempts(latestAttemptByDocument(state.attempts || []))
+      setSignatureIntegration(state.integration || { available:false })
+    } catch {
+      if (requestId !== loadRequestRef.current) return
+      setSignatureAttempts({})
+      setSignatureIntegration({ available:false, reason:'indisponivel' })
+    }
+  }
+
+  function openExternal(url) {
+    const popup = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!popup) return false
+    popup.opener = null
+    return true
+  }
+
+  async function startAssetSignature(asset) {
+    if (signatureBusy) return
+    setSignatureBusy(asset.id)
+    setConfirmSignatureFor('')
+    setSignatureNotice('')
+    setError('')
+    try {
+      let document = signatureDocuments[asset.id]
+      if (!document) {
+        const { data:documentId, error:prepareError } = await supabase.rpc('prepare_clinical_asset_signature', { p_asset_id:asset.id })
+        if (prepareError || !documentId) throw prepareError || new Error('Não foi possível preparar o PDF para assinatura.')
+        document = { id:documentId, source_asset_id:asset.id, created_by:viewerId, document_type:'uploaded_pdf' }
+      }
+      const response = await requestClinicalSignature([document.id], uid())
+      await loadAssetSignatures()
+      if (response.signingUrl) {
+        if (!openExternal(response.signingUrl)) setSignatureNotice('O navegador bloqueou a janela da BRy. Use “Abrir página de assinatura” no documento.')
+      } else {
+        setSignatureNotice('A solicitação foi criada. Use “Atualizar status” ou “Abrir página de assinatura” no documento.')
+      }
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível iniciar a assinatura do PDF.')
+      await loadAssetSignatures().catch(() => {})
+    } finally {
+      setSignatureBusy('')
+    }
+  }
+
+  async function openAssetSigningPage(attempt) {
+    setSignatureBusy(attempt.id)
+    setError('')
+    try {
+      const response = await fetchClinicalSignatureLink(attempt.id)
+      if (!response.signingUrl || !openExternal(response.signingUrl)) throw new Error('O navegador bloqueou a página da BRy. Libere pop-ups e tente novamente.')
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível abrir a página de assinatura.')
+    } finally {
+      setSignatureBusy('')
+    }
+  }
+
+  async function refreshAssetSignature(attempt) {
+    setSignatureBusy(attempt.id)
+    setError('')
+    try {
+      await reconcileClinicalSignature(attempt.id)
+      await loadAssetSignatures()
+    } catch (nextError) {
+      setError(nextError.message || 'Não foi possível atualizar a assinatura.')
+    } finally {
+      setSignatureBusy('')
     }
   }
 
@@ -180,6 +298,11 @@ export function ClinicalAssets({ patient, ownerId }) {
     setBeforeId('')
     setAfterId('')
     setPreviewId('')
+    setSignatureDocuments({})
+    setSignatureAttempts({})
+    setSignatureIntegration({ available:false })
+    setConfirmSignatureFor('')
+    setSignatureNotice('')
     resetUpload()
     load()
   }, [patient.id, ownerId])
@@ -298,6 +421,7 @@ export function ClinicalAssets({ patient, ownerId }) {
 
     setProgress({ current:fileEntries.length, total:fileEntries.length, label:`${completed} de ${fileEntries.length} arquivo(s) enviado(s)` })
     await load({ preserveError:true })
+    await Promise.resolve(onAssetsChanged?.()).catch(() => {})
     setStatus('ready')
     if (failures.length) {
       setError(`${completed} arquivo(s) enviado(s). Não foi possível concluir: ${failures.join(' · ')}`)
@@ -317,6 +441,7 @@ export function ClinicalAssets({ patient, ownerId }) {
       return
     }
     await load()
+    await Promise.resolve(onAssetsChanged?.()).catch(() => {})
   }
 
   async function setArchived(asset, archived) {
@@ -329,6 +454,7 @@ export function ClinicalAssets({ patient, ownerId }) {
       return
     }
     await load()
+    await Promise.resolve(onAssetsChanged?.()).catch(() => {})
   }
 
   async function loadAssetUrl(asset, { force = false } = {}) {
@@ -415,13 +541,14 @@ export function ClinicalAssets({ patient, ownerId }) {
       </nav>
 
       {error && <div className="clinical-form-error" role="alert">{error}</div>}
+      {signatureNotice && <div className="clinical-assets-notice" role="status"><span>{signatureNotice}</span></div>}
       {mediaNotice && <div className="clinical-assets-notice" role="status"><span>{mediaNotice}</span><button type="button" onClick={() => load()}>Recarregar galeria</button></div>}
 
       {uploadOpen && <UploadPanel kind={uploadKind} entries={fileEntries} form={form} consents={consents} saving={status === 'saving'} dragActive={dragActive} progress={progress} fileInputRef={fileInputRef} onFiles={selectFiles} onRemoveFile={removeFile} onForm={updateForm} onDragActive={setDragActive} onCancel={resetUpload} onSubmit={upload} />}
 
       {section === 'compare' && <CompareWorkspace beforePhotos={beforePhotos} afterPhotos={afterPhotos} beforeId={beforeId} afterId={afterId} beforeAsset={beforeAsset} afterAsset={afterAsset} urls={urls} failures={urlFailures} onBefore={setBeforeId} onAfter={setAfterId} onOpen={openAsset} onRetry={retryPhoto} onAddBefore={() => startUpload('clinical_photo', 'before')} onAddAfter={() => startUpload('clinical_photo', 'after')} onFullscreen={() => setCompareFullscreen(true)} />}
 
-      {(section === 'photos' || section === 'documents') && <GalleryWorkspace section={section} assets={visibleAssets} filters={filters} urls={urls} failures={urlFailures} onFilters={setFilters} onOpen={openAsset} onRetry={retryPhoto} onArchive={setArchived} onComplete={completePending} onAdd={() => startUpload(section === 'documents' ? 'document' : 'clinical_photo', 'before')} />}
+      {(section === 'photos' || section === 'documents') && <GalleryWorkspace section={section} assets={visibleAssets} filters={filters} urls={urls} failures={urlFailures} onFilters={setFilters} onOpen={openAsset} onRetry={retryPhoto} onArchive={setArchived} onComplete={completePending} onAdd={() => startUpload(section === 'documents' ? 'document' : 'clinical_photo', 'before')} signatureDocuments={signatureDocuments} signatureAttempts={signatureAttempts} signatureIntegration={signatureIntegration} signatureBusy={signatureBusy} confirmSignatureFor={confirmSignatureFor} viewerId={viewerId} onConfirmSignature={setConfirmSignatureFor} onStartSignature={startAssetSignature} onOpenSigningPage={openAssetSigningPage} onRefreshSignature={refreshAssetSignature} onOpenSigned={attempt => openClinicalSignatureArtifact(attempt.id, 'signed').then(response => { if (!response.url || !openExternal(response.url)) throw new Error('Não foi possível abrir o PDF assinado.') }).catch(nextError => setError(nextError.message))} />}
 
       {previewAsset && <PhotoViewer modalRef={modalRef} asset={previewAsset} url={urls[previewAsset.id]} zoom={zoom} position={`${previewIndex + 1} de ${availablePhotos.length}`} onClose={closeViewer} onZoom={setZoom} onPrevious={() => showAdjacentPhoto(-1)} onNext={() => showAdjacentPhoto(1)} onFullscreen={requestBrowserFullscreen} />}
       {compareFullscreen && <CompareViewer modalRef={modalRef} beforeAsset={beforeAsset} afterAsset={afterAsset} urls={urls} onClose={closeViewer} onOpen={asset => { setCompareFullscreen(false); openAsset(asset) }} onFullscreen={requestBrowserFullscreen} />}
@@ -463,14 +590,19 @@ function ComparisonImage({ label, asset, url, failed, onOpen, onRetry, onAdd }) 
   return <article className={`clinical-compare-card is-${label === 'Antes' ? 'before' : 'after'}`}><header><span>{label}</span>{asset && <small>{clinicalAssetDateLabel(asset.captured_on)}</small>}</header>{asset && url ? <button type="button" className="clinical-compare-card__image" onClick={() => onOpen(asset)} aria-label={`Abrir foto de ${label.toLowerCase()} em tela cheia`}><img src={url} alt={`${label}: ${asset.file_name}`} /><span>⛶ Ver em tela cheia</span></button> : <div className="clinical-compare-card__empty"><span>{failed ? '!' : '＋'}</span><strong>{failed ? 'Não foi possível carregar a foto' : `Nenhuma foto de ${label.toLowerCase()} selecionada`}</strong><button type="button" onClick={() => asset && failed ? onRetry(asset) : onAdd()}>{asset && failed ? 'Tentar novamente' : `Adicionar foto de ${label.toLowerCase()}`}</button></div>}{asset && <div className="clinical-compare-card__meta"><strong>{asset.procedure_name || asset.region || asset.file_name}</strong><small>{asset.region || 'Região não informada'}</small></div>}</article>
 }
 
-function GalleryWorkspace({ section, assets, filters, urls, failures, onFilters, onOpen, onRetry, onArchive, onComplete, onAdd }) {
+function GalleryWorkspace({ section, assets, filters, urls, failures, onFilters, onOpen, onRetry, onArchive, onComplete, onAdd, signatureDocuments, signatureAttempts, signatureIntegration, signatureBusy, confirmSignatureFor, viewerId, onConfirmSignature, onStartSignature, onOpenSigningPage, onRefreshSignature, onOpenSigned }) {
   const isDocuments = section === 'documents'
-  return <section className="clinical-assets-gallery"><header className="clinical-assets-section-header"><div><span>{isDocuments ? 'Prontuário digital' : 'Histórico visual'}</span><h4>{isDocuments ? 'Documentos clínicos' : 'Galeria de fotos'}</h4><p>{isDocuments ? 'Laudos e anexos organizados por data.' : 'Clique em qualquer imagem para ampliar e navegar em tela cheia.'}</p></div><Btn onClick={onAdd}>+ {isDocuments ? 'Adicionar documento' : 'Adicionar fotos'}</Btn></header><div className="clinical-assets__filters"><label className="clinical-assets-search"><span>⌕</span><input aria-label="Buscar fotos e documentos" value={filters.query} onChange={event => onFilters(current => ({ ...current, query:event.target.value }))} placeholder={isDocuments ? 'Buscar documento ou procedimento' : 'Buscar por região ou procedimento'} /></label>{!isDocuments && <select aria-label="Filtrar etapa" value={filters.stage} onChange={event => onFilters(current => ({ ...current, stage:event.target.value }))}><option value="all">Todas as etapas</option><option value="before">Antes</option><option value="after">Depois</option><option value="neutral">Sem etapa</option></select>}<label className="clinical-assets-archived"><input type="checkbox" checked={filters.showArchived} onChange={event => onFilters(current => ({ ...current, showArchived:event.target.checked }))} /> Mostrar arquivados</label></div>{assets.length === 0 ? <div className="clinical-assets-empty"><span>{isDocuments ? '▤' : '▦'}</span><strong>{filters.query || filters.showArchived || filters.stage !== 'all' ? 'Nenhum item encontrado neste filtro' : isDocuments ? 'Nenhum documento adicionado' : 'Nenhuma foto adicionada'}</strong><small>{isDocuments ? 'Anexe PDFs para mantê-los junto ao prontuário.' : 'Adicione fotos de antes, depois ou registros clínicos gerais.'}</small><Btn onClick={onAdd}>+ {isDocuments ? 'Adicionar documento' : 'Adicionar fotos'}</Btn></div> : <div className={`clinical-assets-grid${isDocuments ? ' is-documents' : ''}`}>{assets.map(asset => <AssetCard key={asset.id} asset={asset} url={urls[asset.id]} failed={failures[asset.id]} onOpen={onOpen} onRetry={onRetry} onArchive={onArchive} onComplete={onComplete} />)}</div>}</section>
+  return <section className="clinical-assets-gallery"><header className="clinical-assets-section-header"><div><span>{isDocuments ? 'Prontuário digital' : 'Histórico visual'}</span><h4>{isDocuments ? 'Documentos anexados' : 'Galeria de fotos'}</h4><p>{isDocuments ? 'PDFs anexados ao paciente. Abra o original ou envie-o para assinatura segura pela BRy.' : 'Clique em qualquer imagem para ampliar e navegar em tela cheia.'}</p></div><Btn onClick={onAdd}>+ {isDocuments ? 'Adicionar documento' : 'Adicionar fotos'}</Btn></header><div className="clinical-assets__filters"><label className="clinical-assets-search"><span>⌕</span><input aria-label="Buscar fotos e documentos" value={filters.query} onChange={event => onFilters(current => ({ ...current, query:event.target.value }))} placeholder={isDocuments ? 'Buscar documento ou procedimento' : 'Buscar por região ou procedimento'} /></label>{!isDocuments && <select aria-label="Filtrar etapa" value={filters.stage} onChange={event => onFilters(current => ({ ...current, stage:event.target.value }))}><option value="all">Todas as etapas</option><option value="before">Antes</option><option value="after">Depois</option><option value="neutral">Sem etapa</option></select>}<label className="clinical-assets-archived"><input type="checkbox" checked={filters.showArchived} onChange={event => onFilters(current => ({ ...current, showArchived:event.target.checked }))} /> Mostrar arquivados</label></div>{assets.length === 0 ? <div className="clinical-assets-empty"><span>{isDocuments ? '▤' : '▦'}</span><strong>{filters.query || filters.showArchived || filters.stage !== 'all' ? 'Nenhum item encontrado neste filtro' : isDocuments ? 'Nenhum documento adicionado' : 'Nenhuma foto adicionada'}</strong><small>{isDocuments ? 'Anexe PDFs para mantê-los junto ao prontuário e assiná-los pela BRy.' : 'Adicione fotos de antes, depois ou registros clínicos gerais.'}</small><Btn onClick={onAdd}>+ {isDocuments ? 'Adicionar documento' : 'Adicionar fotos'}</Btn></div> : <div className={`clinical-assets-grid${isDocuments ? ' is-documents' : ''}`}>{assets.map(asset => {
+    const document = signatureDocuments[asset.id]
+    const attempt = document ? signatureAttempts[document.id] : null
+    const signatureState = clinicalSignatureActionState({ record:document || { document_type:'uploaded_pdf', created_by:asset.created_by }, attempt, integration:signatureIntegration, viewerId })
+    return <AssetCard key={asset.id} asset={asset} url={urls[asset.id]} failed={failures[asset.id]} onOpen={onOpen} onRetry={onRetry} onArchive={onArchive} onComplete={onComplete} signatureState={signatureState} signatureAttempt={attempt} signatureBusy={signatureBusy === asset.id || signatureBusy === attempt?.id} confirming={confirmSignatureFor === asset.id} onConfirmSignature={onConfirmSignature} onStartSignature={onStartSignature} onOpenSigningPage={onOpenSigningPage} onRefreshSignature={onRefreshSignature} onOpenSigned={onOpenSigned} />
+  })}</div>}</section>
 }
 
-function AssetCard({ asset, url, failed, onOpen, onRetry, onArchive, onComplete }) {
+function AssetCard({ asset, url, failed, onOpen, onRetry, onArchive, onComplete, signatureState, signatureAttempt, signatureBusy, confirming, onConfirmSignature, onStartSignature, onOpenSigningPage, onRefreshSignature, onOpenSigned }) {
   const isPhoto = asset.asset_kind === 'clinical_photo'
-  return <article className={`clinical-asset-card is-${asset.status}`}><div className="clinical-asset-card__media">{isPhoto && url ? <button type="button" onClick={() => onOpen(asset)} aria-label={`Abrir ${asset.file_name} em tela cheia`}><img src={url} alt={`${clinicalAssetStageLabel(asset.stage)} · ${asset.region || asset.file_name}`} /><span>⛶</span></button> : isPhoto ? <div><span>{failed ? '!' : '◌'}</span><strong>{failed ? 'Foto indisponível' : 'Carregando foto…'}</strong>{failed && <button type="button" onClick={() => onRetry(asset)}>Tentar novamente</button>}</div> : <button type="button" className="is-document" onClick={() => onOpen(asset)}><span>PDF</span><small>Abrir documento</small></button>}<span className={`clinical-asset-stage is-${asset.stage}`}>{clinicalAssetStageLabel(asset.stage)}</span></div><div className="clinical-asset-card__body"><div><strong title={asset.procedure_name || asset.region || asset.file_name}>{asset.procedure_name || asset.region || asset.file_name}</strong><small>{clinicalAssetStatusLabel(asset.status)}</small></div><p>{clinicalAssetDateLabel(asset.captured_on)}{asset.region ? ` · ${asset.region}` : ''}</p>{asset.notes && <em title={asset.notes}>{asset.notes}</em>}{asset.consent_acceptance_id && <span>✓ Aceite de imagem vinculado</span>}</div><footer>{asset.status === 'uploading' && <Btn variant="ghost" onClick={() => onComplete(asset)}>Finalizar envio</Btn>}{asset.status === 'available' && <><Btn variant="ghost" onClick={() => onOpen(asset)}>{isPhoto ? 'Visualizar' : 'Abrir PDF'}</Btn><button type="button" onClick={() => onArchive(asset, true)}>Arquivar</button></>}{asset.status === 'archived' && <Btn variant="ghost" onClick={() => onArchive(asset, false)}>Restaurar</Btn>}</footer></article>
+  return <article className={`clinical-asset-card is-${asset.status}`}><div className="clinical-asset-card__media">{isPhoto && url ? <button type="button" onClick={() => onOpen(asset)} aria-label={`Abrir ${asset.file_name} em tela cheia`}><img src={url} alt={`${clinicalAssetStageLabel(asset.stage)} · ${asset.region || asset.file_name}`} /><span>⛶</span></button> : isPhoto ? <div><span>{failed ? '!' : '◌'}</span><strong>{failed ? 'Foto indisponível' : 'Carregando foto…'}</strong>{failed && <button type="button" onClick={() => onRetry(asset)}>Tentar novamente</button>}</div> : <button type="button" className="is-document" onClick={() => onOpen(asset)}><span>PDF</span><small>Abrir documento original</small></button>}<span className={`clinical-asset-stage is-${asset.stage}`}>{clinicalAssetStageLabel(asset.stage)}</span></div><div className="clinical-asset-card__body"><div><strong title={asset.procedure_name || asset.region || asset.file_name}>{asset.procedure_name || asset.region || asset.file_name}</strong><small>{clinicalAssetStatusLabel(asset.status)}</small></div><p>{clinicalAssetDateLabel(asset.captured_on)}{asset.region ? ` · ${asset.region}` : ''}</p>{asset.notes && <em title={asset.notes}>{asset.notes}</em>}{asset.consent_acceptance_id && <span>✓ Aceite de imagem vinculado</span>}{!isPhoto && signatureState && <span className={`clinical-asset-signature is-${signatureState.tone}`}>{signatureState.label}</span>}{!isPhoto && signatureState?.note && <em>{signatureState.note}</em>}</div>{confirming ? <div className="clinical-asset-signature-confirm"><span>A BRy abrirá em outra aba e poderá consumir um crédito. Confirmar assinatura deste PDF?</span><div><Btn variant="ghost" disabled={signatureBusy} onClick={() => onConfirmSignature('')}>Cancelar</Btn><Btn disabled={signatureBusy} onClick={() => onStartSignature(asset)}>{signatureBusy ? 'Solicitando…' : 'Confirmar e assinar'}</Btn></div></div> : <footer>{asset.status === 'uploading' && <Btn variant="ghost" onClick={() => onComplete(asset)}>Finalizar envio</Btn>}{asset.status === 'available' && <><Btn variant="ghost" onClick={() => onOpen(asset)}>{isPhoto ? 'Visualizar' : 'Abrir original'}</Btn>{!isPhoto && signatureState?.canRequest && <Btn disabled={signatureBusy} onClick={() => onConfirmSignature(asset.id)}>Assinar com BRy</Btn>}{!isPhoto && signatureState?.canOpenSigningPage && <Btn disabled={signatureBusy} onClick={() => onOpenSigningPage(signatureAttempt)}>Abrir página de assinatura</Btn>}{!isPhoto && signatureState?.canReconcile && <Btn variant="ghost" disabled={signatureBusy} onClick={() => onRefreshSignature(signatureAttempt)}>{signatureBusy ? 'Atualizando…' : 'Atualizar status'}</Btn>}{!isPhoto && signatureState?.canOpenSigned && <Btn disabled={signatureBusy} onClick={() => onOpenSigned(signatureAttempt)}>Abrir PDF assinado</Btn>}<button type="button" onClick={() => onArchive(asset, true)}>Arquivar</button></>}{asset.status === 'archived' && <Btn variant="ghost" onClick={() => onArchive(asset, false)}>Restaurar</Btn>}</footer>}</article>
 }
 
 function ViewerShell({ modalRef, title, subtitle, children, onClose, onFullscreen, footer }) {

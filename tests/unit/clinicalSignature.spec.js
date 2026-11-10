@@ -11,6 +11,7 @@ import {
   clinicalSignaturePresentation,
   hasCompleteClinicalSignatureEvidence,
   isValidCpf,
+  isClinicalSignatureEligible,
   latestClinicalSignatureByDocument,
 } from '../../src/lib/clinicalSignature.js'
 import { sanitizeProfilePayload } from '../../api/_lib/secureProfile.js'
@@ -128,6 +129,11 @@ test('deriva status e prontidão sem declarar assinatura inexistente', () => {
   ])
   expect(latest['document-1'].status).toBe('signed')
   expect(clinicalSignaturePresentation(latest['document-1']).label).toBe('Assinado digitalmente')
+})
+
+test('PDF anexado preparado pelo backend é elegível para o mesmo fluxo BRy', () => {
+  expect(isClinicalSignatureEligible({ document_type:'uploaded_pdf', created_by:document.created_by })).toBe(true)
+  expect(isClinicalSignatureEligible({ document_type:'uploaded_pdf' })).toBe(false)
 })
 
 test('perfil seguro preserva CPF e RQE, mas descarta material de certificado', () => {

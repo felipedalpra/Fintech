@@ -184,7 +184,8 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
   const patientItems = patients.map(patient => {
     const patientAppointments = appointments.filter(item => item.patientId === patient.id)
     const patientRecords = (bundle.records || []).filter(item => item.patient_id === patient.id)
-    const patientDocuments = (bundle.documents || []).filter(item => item.patient_id === patient.id)
+    const patientDocuments = (bundle.documents || []).filter(item => item.patient_id === patient.id && item.document_type !== 'uploaded_pdf')
+    const patientAttachedDocuments = (bundle.assets || []).filter(item => item.patient_id === patient.id && item.asset_kind === 'document' && item.status === 'available')
     const patientAssets = (bundle.assets || []).filter(item => item.patient_id === patient.id && item.status === 'available')
     const patientPlans = (bundle.plans || []).filter(item => item.patient_id === patient.id)
     const careEvents = [
@@ -200,7 +201,7 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
       lastCareAt:previousCare?.occurredAt || '',
       nextAppointment:nextAppointment || null,
       recordCount:patientRecords.length,
-      documentCount:patientDocuments.length,
+      documentCount:patientDocuments.length + patientAttachedDocuments.length,
       assetCount:patientAssets.length,
       activePlanCount:activePlans,
       pendingCount:pendingItems.filter(item => item.patientId === patient.id).length,
@@ -210,17 +211,19 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
     return String(left.full_name || '').localeCompare(String(right.full_name || ''), 'pt-BR')
   })
 
-  const documents = (bundle.documents || []).map(document => ({
+  const documents = (bundle.documents || []).filter(document => document.document_type !== 'uploaded_pdf').map(document => ({
     ...document,
     patientName:names.get(document.patient_id) || document.patient_name || 'Paciente não identificado',
     signature:documentSignatureState(document, latestSignatureByDocument),
   })).sort((left, right) => timeValue(right.created_at || right.issue_date) - timeValue(left.created_at || left.issue_date))
+  const attachedDocumentCount = (bundle.assets || []).filter(asset => asset.asset_kind === 'document' && asset.status === 'available').length
 
   return {
     patientItems,
     pendingItems:pendingItems.map(item => ({ ...item, patientName:names.get(item.patientId) || 'Paciente não identificado' }))
       .sort((left, right) => timeValue(left.dueAt) - timeValue(right.dueAt)),
     documents,
+    documentTotal:documents.length + attachedDocumentCount,
     timelineByPatient:new Map(patients.map(patient => [patient.id, buildClinicalTimeline(bundle, patient.id)])),
   }
 }

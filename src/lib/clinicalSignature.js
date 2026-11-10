@@ -97,7 +97,7 @@ export function clinicalSignerReadiness(profile = {}) {
   }
 }
 
-export const CLINICAL_SIGNATURE_ELIGIBLE_TYPES = ['exam_request', 'simple_prescription']
+export const CLINICAL_SIGNATURE_ELIGIBLE_TYPES = ['exam_request', 'simple_prescription', 'uploaded_pdf']
 
 // Explicacao, para o profissional, de cada motivo auditavel de uma assinatura
 // concluida no provedor ainda nao poder ser declarada. Ver api/_lib/bryVerify.js.
