@@ -1,5 +1,5 @@
 // CRM — Gestão de Oportunidades. Workspace com visualizações dos MESMOS dados (estilo Monday):
-// Tabela (padrão) · visualizações salvas · Kanban · Agenda (Fase 2) · Indicadores.
+// Tabela (padrão) · visualizações salvas · Kanban · Agenda · Indicadores.
 // Estado único em useCrmWorkspace: o que muda numa visualização aparece nas demais.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -27,6 +27,7 @@ import { OpportunityEditor } from './OpportunityEditor.jsx'
 import { NewLeadModal } from './NewLeadModal.jsx'
 import { CrmDashboard } from './CrmDashboard.jsx'
 import { CrmBulkBar } from './CrmBulkBar.jsx'
+import { CrmAgenda } from './CrmAgenda.jsx'
 
 const SOURCE_SUGGESTIONS = ['Instagram', 'Indicação', 'WhatsApp', 'Google', 'Facebook', 'Site', 'Outro']
 const MAIN_KEY = 'table'
@@ -259,6 +260,11 @@ export function CrmWorkspace({ data }) {
   const [editor, setEditor] = useState({ open: false, opp: null, tab: 'dados' })
   const [leadOpen, setLeadOpen] = useState(false)
   const onOpenOpp = useCallback((opp, initialTab = 'dados') => setEditor({ open: true, opp, tab: initialTab }), [])
+  // A Agenda mantém as tarefas da clínica inteira; o editor da oportunidade avisa as duas listas.
+  const agendaTaskSync = useRef(null)
+  const registerAgendaTaskSync = useCallback(fn => { agendaTaskSync.current = fn }, [])
+  const onTasksChanged = useCallback(change => { ws.syncTask(change); agendaTaskSync.current?.(change) }, [ws.syncTask])
+  const openOppFromAgenda = useCallback(opp => onOpenOpp(opp), [onOpenOpp])
 
   // Link direto (ex.: menção no sino): /app/funnel?opp=<id>&tab=atualizacoes abre a oportunidade.
   const deepOpp = params.get('opp')
@@ -396,6 +402,7 @@ export function CrmWorkspace({ data }) {
   const isTable = tab === MAIN_KEY || isSavedView
   const isKanban = tab === 'kanban'
   const isIndicators = tab === 'indicators'
+  const isAgenda = tab === 'agenda'
   const showToolbar = isTable || isKanban
 
   const saveSlot = isTable && (
@@ -459,11 +466,16 @@ export function CrmWorkspace({ data }) {
           onEdit={opp => onOpenOpp(opp)} onError={msg => toast(msg, 'error')} />
       )}
 
+      {isAgenda && (
+        <CrmAgenda data={data} crm={ws} ownerId={effectiveOwner} userId={user?.id} canManage={canManage}
+          onOpenOpp={openOppFromAgenda} registerTaskSync={registerAgendaTaskSync} toast={toast} />
+      )}
+
       {isIndicators && <CrmDashboard />}
 
       <OpportunityEditor open={editor.open} onClose={() => setEditor(e => ({ ...e, open: false }))} opp={editor.opp} initialTab={editor.tab}
         stages={ws.stages} members={ws.members} ownerId={effectiveOwner} userId={user?.id} onSaved={ws.onEditorSaved}
-        onTasksChanged={ws.syncTask} onNotesChanged={ws.bumpNoteCount} />
+        onTasksChanged={onTasksChanged} onNotesChanged={ws.bumpNoteCount} />
       <NewLeadModal open={leadOpen} onClose={() => setLeadOpen(false)} ownerId={effectiveOwner} members={ws.members}
         stage="primeiro_contato" onCreated={opp => { ws.addOpp(opp); setLeadOpen(false) }} />
       <CrmFieldEditor open={fieldEditor.open} field={fieldEditor.field} onClose={() => setFieldEditor({ open: false, field: null })}
@@ -479,7 +491,7 @@ function ViewTabs({ tab, onTab, views, viewsAvailable, canEditView, onNewView, o
     { key: MAIN_KEY, label: 'Tabela' },
     ...views.map(v => ({ key: `v-${v.id}`, label: v.name, view: v })),
     { key: 'kanban', label: 'Kanban' },
-    { key: 'agenda', label: 'Agenda', disabled: true, hint: 'Disponível na Fase 2' },
+    { key: 'agenda', label: 'Agenda' },
     { key: 'indicators', label: 'Indicadores' },
   ]
   return (

@@ -467,31 +467,62 @@ function LoadingState() {
   )
 }
 
-function NewTaskModal({ ws, onClose, onCreated }) {
-  const [form, setForm] = useState({ title: '', due: '', time: '', type: 'outro', assigned: '', patient_id: '', patient_name: '', priority: '', description: '' })
+// Também usado pela Agenda do CRM (initial = data/hora/responsável do horário clicado).
+// `opportunities` (opcional, oportunidades abertas) liga o modo Follow-up: a atividade é a MESMA
+// tarefa, vinculada a uma oportunidade e ao paciente dela — nenhum registro paralelo.
+const FOLLOWUP_TYPES = ['ligar', 'whatsapp', 'retorno']
+export function NewTaskModal({ ws, onClose, onCreated, initial = {}, opportunities = null }) {
+  const [form, setForm] = useState({ title: '', due: '', time: '', type: 'outro', assigned: '', patient_id: '', patient_name: '', priority: '', description: '', kind: 'task', opp_id: '', ...initial })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const followup = Boolean(opportunities) && form.kind === 'followup'
+  const opp = followup ? (opportunities || []).find(o => o.id === form.opp_id) : null
+  const typeOptions = followup ? TASK_TYPES.filter(t => FOLLOWUP_TYPES.includes(t.key)) : TASK_TYPES
+
+  function setKind(kind) {
+    setForm(f => ({ ...f, kind, type: kind === 'followup' ? (FOLLOWUP_TYPES.includes(f.type) ? f.type : 'ligar') : f.type }))
+  }
 
   async function save() {
     if (!form.title.trim() || saving) return
+    if (followup && !opp) { setError('Escolha a oportunidade do follow-up.'); return }
     setSaving(true); setError(null)
+    const patientId = followup ? (opp.patient_id || null) : (form.patient_id || null)
+    const personName = followup ? (opp.patients?.full_name || opp.crm_contacts?.full_name || '') : form.patient_name
     const res = await ws.create({
       title: form.title, dueDate: form.due || null, dueTime: form.time || null, taskType: form.type,
-      assignedUserId: form.assigned || null, patientId: form.patient_id || null,
+      assignedUserId: form.assigned || null, patientId, opportunityId: followup ? opp.id : null,
       priority: form.priority || null, description: form.description || null,
-    }, { patients: form.patient_id ? { full_name: form.patient_name || 'Paciente' } : null })
+    }, {
+      patients: patientId ? { full_name: personName || 'Paciente' } : null,
+      opportunities: followup ? { title: opp.title || 'Oportunidade' } : null,
+    })
     setSaving(false)
     if (res.error) { setError(res.error); return }
     onCreated(res.task)
   }
 
   return (
-    <Modal open onClose={onClose} title="Nova tarefa avulsa" width={480}>
+    <Modal open onClose={onClose} title={opportunities ? 'Nova atividade' : 'Nova tarefa avulsa'} width={480}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <FInput label="Tarefa" value={form.title} onChange={v => set('title', v)} placeholder="O que precisa ser feito?" />
+        {opportunities && (
+          <div role="group" aria-label="Tipo de atividade" style={{ display: 'flex', gap: 6 }}>
+            {[['task', 'Tarefa'], ['followup', 'Follow-up']].map(([k, l]) => (
+              <button key={k} type="button" data-testid={`new-activity-${k}`} aria-pressed={form.kind === k} onClick={() => setKind(k)}
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: `1px solid ${form.kind === k ? C.accent : C.border}`, background: form.kind === k ? C.accent + '1f' : 'transparent', color: form.kind === k ? C.text : C.textSub, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+        <FInput label={followup ? 'Follow-up' : 'Tarefa'} value={form.title} onChange={v => set('title', v)} placeholder={followup ? 'Ex.: Ligar para confirmar o orçamento' : 'O que precisa ser feito?'} />
+        {followup && (
+          <FInput label="Oportunidade" value={form.opp_id} onChange={v => set('opp_id', v)}
+            options={[{ v: '', l: 'Selecione a oportunidade' }, ...(opportunities || []).map(o => ({ v: o.id, l: [o.patients?.full_name || o.crm_contacts?.full_name, o.title && o.title !== 'Oportunidade' ? o.title : ''].filter(Boolean).join(' — ') || 'Oportunidade' }))]} />
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <FInput label="Categoria" value={form.type} onChange={v => set('type', v)} options={TASK_TYPES.map(item => ({ v: item.key, l: item.label }))} />
+          <FInput label={followup ? 'Canal' : 'Categoria'} value={form.type} onChange={v => set('type', v)} options={typeOptions.map(item => ({ v: item.key, l: item.label }))} />
           <FInput label="Responsável" value={form.assigned} onChange={v => set('assigned', v)}
             options={[{ v: '', l: 'Sem responsável' }, ...(ws.members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]} />
         </div>
@@ -500,12 +531,12 @@ function NewTaskModal({ ws, onClose, onCreated }) {
           <FInput label="Hora (opcional)" type="time" value={form.time} onChange={v => set('time', v)} />
           {ws.ready && <FInput label="Prioridade" value={form.priority} onChange={v => set('priority', v)} options={[{ v: '', l: 'Sem prioridade' }, ...PRIORITIES.map(p => ({ v: p.key, l: p.label }))]} />}
         </div>
-        <PatientSelector userId={ws.ownerId} value={form.patient_id} onChange={(id, name) => setForm(f => ({ ...f, patient_id: id, patient_name: name || '' }))} />
+        {!followup && <PatientSelector userId={ws.ownerId} value={form.patient_id} onChange={(id, name) => setForm(f => ({ ...f, patient_id: id, patient_name: name || '' }))} />}
         {ws.ready && <FInput label="Descrição (opcional)" value={form.description} onChange={v => set('description', v)} placeholder="Detalhes da tarefa" />}
         {error && <div style={{ color: C.red || '#ef4444', fontSize: 12 }}>{error}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={save} disabled={saving || !form.title.trim()}>{saving ? 'Salvando…' : 'Criar tarefa'}</Btn>
+          <Btn onClick={save} disabled={saving || !form.title.trim()}>{saving ? 'Salvando…' : followup ? 'Criar follow-up' : 'Criar tarefa'}</Btn>
         </div>
       </div>
     </Modal>

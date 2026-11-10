@@ -257,9 +257,21 @@ export function useTaskWorkspace(ownerId, userId) {
 
   const reload = useCallback(() => setReloadKey(k => k + 1), [])
 
+  // Mudança feita em outra tela já confirmada pelo banco (ex.: aba Tarefas do editor da
+  // oportunidade aberto a partir da Agenda do CRM): espelha no estado local, sem nova escrita.
+  const syncTask = useCallback((change) => {
+    const task = change?.task
+    if (!task?.id) return
+    setTasks(prev => {
+      if (change.type === 'removed') return prev.filter(t => t.id !== task.id)
+      if (!prev.some(t => t.id === task.id)) return [...prev, task]
+      return prev.map(t => (t.id === task.id ? { ...t, ...task } : t))
+    })
+  }, [])
+
   return {
     ownerId, tasks, members, memberLabel, stages, stageIndex: index, checklist, ready, loading, error,
-    update, setStage, moveOnBoard, toggle, registerOutcome, remove, create, bulkPatch, bulkStage, bulkRemove,
+    update, setStage, moveOnBoard, toggle, registerOutcome, remove, create, bulkPatch, bulkStage, bulkRemove, syncTask,
     addStage, editStage, reorderStages, removeStage, setChecklistCount, reload,
   }
 }

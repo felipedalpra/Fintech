@@ -61,7 +61,7 @@ test('Tabela é a visualização padrão, com grupos por etapa, totais e abas', 
   await page.goto('/app/funnel')
   await expect(page.getByRole('heading', { name: 'CRM — Gestão de Oportunidades' })).toBeVisible()
   for (const name of ['Tabela', 'Kanban', 'Indicadores']) await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: /Agenda/ })).toBeDisabled()
+  await expect(page.getByRole('tab', { name: 'Agenda', exact: true })).toBeEnabled()
 
   const orc = page.getByTestId('crm-group-orcamento_enviado')
   await expect(orc.getByRole('heading', { name: 'Orçamento Enviado' })).toBeVisible()
