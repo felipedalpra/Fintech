@@ -11,6 +11,7 @@ import { initials, avatarColor } from '../lib/avatar.js'
 import { uploadPatientPhoto, signedPatientPhotoUrl, removePatientPhoto } from '../lib/patientPhoto.js'
 import { buildPatientSaveRpcArgs, confirmedPatientSave } from '../lib/patientPersistence.js'
 import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
+import { FIELD_STANDARDS, validateContactIdentity, isValidPhone } from '../lib/formFieldStandards.js'
 
 const SEX_OPTIONS = [
   { v: '', l: 'Não informado' },
@@ -172,6 +173,9 @@ export function Patients({ data }) {
 
   async function save() {
     if (!form.full_name.trim()) return
+    const identityError = validateContactIdentity(form)
+      || (form.emergency_contact_phone && !isValidPhone(form.emergency_contact_phone) ? 'Informe o telefone de emergência com DDD.' : '')
+    if (identityError) { setSaveError(identityError); return }
     setSaving(true)
     setSaveError('')
     let savedPatient
@@ -791,6 +795,12 @@ function PatientForm({ form, setForm, onSave, onCancel, saving, clinicalAccess, 
       placeholder={opts.placeholder}
       options={opts.options}
       required={opts.required}
+      format={opts.standard?.format}
+      maxLength={opts.standard?.maxLength}
+      inputMode={opts.standard?.inputMode}
+      validator={opts.standard?.validate}
+      autoComplete={opts.autoComplete}
+      help={opts.help}
     />
   )
 
@@ -804,7 +814,7 @@ function PatientForm({ form, setForm, onSave, onCancel, saving, clinicalAccess, 
     identificacao: (
       <div style={grid}>
         {fi('full_name', 'Nome completo', { required: true, placeholder: 'Nome completo do paciente' })}
-        {fi('cpf', 'CPF', { placeholder: '000.000.000-00' })}
+        {fi('cpf', 'CPF', { placeholder: '000.000.000-00', standard:FIELD_STANDARDS.cpf, autoComplete:'off' })}
         {fi('date_of_birth', 'Data de nascimento', { type: 'date' })}
         {fi('sex', 'Sexo', { options: SEX_OPTIONS })}
         {fi('civil_status', 'Estado civil', { options: CIVIL_STATUS_OPTIONS })}
@@ -813,21 +823,21 @@ function PatientForm({ form, setForm, onSave, onCancel, saving, clinicalAccess, 
     ),
     contato: (
       <div style={grid}>
-        {fi('phone', 'Telefone', { placeholder: '(11) 99999-9999' })}
-        {fi('email', 'E-mail', { type: 'email', placeholder: 'email@exemplo.com' })}
+        {fi('phone', 'Telefone', { placeholder: '(11) 99999-9999', standard:FIELD_STANDARDS.phone, autoComplete:'tel' })}
+        {fi('email', 'E-mail', { type: 'email', placeholder: 'email@exemplo.com', standard:FIELD_STANDARDS.email, autoComplete:'email' })}
         {fi('emergency_contact_name', 'Contato de emergência', { placeholder: 'Nome' })}
-        {fi('emergency_contact_phone', 'Telefone de emergência', { placeholder: '(11) 99999-9999' })}
+        {fi('emergency_contact_phone', 'Telefone de emergência', { placeholder: '(11) 99999-9999', standard:FIELD_STANDARDS.phone, autoComplete:'tel' })}
       </div>
     ),
     endereco: (
       <div style={grid}>
-        {fi('address_zip', 'CEP', { placeholder: '00000-000' })}
+        {fi('address_zip', 'CEP', { placeholder: '00000-000', standard:FIELD_STANDARDS.cep, autoComplete:'postal-code' })}
         {fi('address_street', 'Logradouro', { placeholder: 'Rua, Av., Praça…' })}
         {fi('address_number', 'Número', { placeholder: '123' })}
         {fi('address_complement', 'Complemento', { placeholder: 'Apto, Bloco…' })}
         {fi('address_district', 'Bairro')}
         {fi('address_city', 'Cidade')}
-        {fi('address_state', 'UF', { placeholder: 'SP' })}
+        {fi('address_state', 'UF', { placeholder: 'SP', standard:FIELD_STANDARDS.uf, autoComplete:'address-level1' })}
       </div>
     ),
     clinico: (

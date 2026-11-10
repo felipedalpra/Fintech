@@ -4,6 +4,7 @@ import { Btn, FInput, Modal } from './UI.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { FIELD_STANDARDS, isValidCnpj, isValidCpf, isValidPhone } from '../lib/formFieldStandards.js'
 
 // Seleciona (ou cadastra na hora) um fornecedor normalizado. Mesmo padrão do PatientSelector.
 // onChange(id, name) — o chamador guarda o id (vínculo) e o nome (snapshot).
@@ -34,6 +35,9 @@ export function SupplierSelector({ userId, value, onChange, label = 'Fornecedor'
   async function createSupplier() {
     if (!form.name.trim() || saving) return
     if (!effectiveUserId) { setError('Clínica não identificada. Recarregue a página.'); return }
+    const documentDigits = form.document.replace(/\D/g, '')
+    if (form.document && !(documentDigits.length <= 11 ? isValidCpf(form.document) : isValidCnpj(form.document))) { setError('Informe um CPF ou CNPJ válido.'); return }
+    if (form.phone && !isValidPhone(form.phone)) { setError('Informe o telefone com DDD.'); return }
     setSaving(true)
     setError('')
     try {
@@ -102,9 +106,11 @@ export function SupplierSelector({ userId, value, onChange, label = 'Fornecedor'
             onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="Nome do fornecedor" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <FInput label="CNPJ/CPF (opcional)" value={form.document}
-              onChange={v => setForm(f => ({ ...f, document: v }))} placeholder="00.000.000/0000-00" />
+              onChange={v => setForm(f => ({ ...f, document: v }))} placeholder="00.000.000/0000-00"
+              format={FIELD_STANDARDS.cpfCnpj.format} maxLength={FIELD_STANDARDS.cpfCnpj.maxLength} inputMode={FIELD_STANDARDS.cpfCnpj.inputMode} validator={FIELD_STANDARDS.cpfCnpj.validate} />
             <FInput label="Telefone (opcional)" value={form.phone}
-              onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="(11) 99999-9999" />
+              onChange={v => setForm(f => ({ ...f, phone: v }))} placeholder="(11) 99999-9999"
+              format={FIELD_STANDARDS.phone.format} maxLength={FIELD_STANDARDS.phone.maxLength} inputMode={FIELD_STANDARDS.phone.inputMode} validator={FIELD_STANDARDS.phone.validate} />
           </div>
           {error && <div role="alert" style={{ fontSize:12, color:C.red }}>{error}</div>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
