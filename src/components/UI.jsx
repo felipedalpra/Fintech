@@ -78,10 +78,11 @@ export function Btn({ children, onClick, variant='primary', disabled, style, ...
   )
 }
 
-export function FInput({ label, value, onChange, type='text', placeholder, options, required, creatable }) {
+export function FInput({ label, value, onChange, type='text', placeholder, options, required, creatable, format, help, maxLength, inputMode, autoComplete, validator }) {
   const isNum = type === 'number'
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
+  const [touched, setTouched] = useState(false)
   const listId = useId()
   // O rótulo não estava ligado ao campo: nem `htmlFor`, nem envolvendo o input. Isso impedia
   // leitor de tela de anunciar o campo e tornava o formulário inalcançável por rótulo no teste.
@@ -112,14 +113,17 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
       setDraft('')
       setFocused(false)
     }
+    setTouched(true)
     e.currentTarget.style.borderColor = C.border
   }
+
+  const validationMessage = touched && validator ? validator(value) : ''
 
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
       {label && <label htmlFor={fieldId} style={base.label}>{label}{required&&<span style={{color:C.red}}> *</span>}</label>}
       {options && !creatable
-        ? <select id={fieldId} value={value} onChange={e=>onChange(e.target.value)}
+        ? <select id={fieldId} value={value} required={required} onChange={e=>onChange(e.target.value)}
             style={{ ...base.input, appearance:'none', cursor:'pointer' }}>
             {options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
@@ -127,12 +131,16 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
             <input
               id={fieldId}
               type={isNum ? 'text' : type}
-              inputMode={isNum ? 'decimal' : undefined}
               value={displayValue()}
               placeholder={placeholder}
               list={options && creatable ? listId : undefined}
-              onChange={e => isNum ? setDraft(e.target.value) : onChange(e.target.value)}
-              style={base.input}
+              onChange={e => isNum ? setDraft(e.target.value) : onChange(format ? format(e.target.value) : e.target.value)}
+              maxLength={maxLength}
+              inputMode={isNum ? 'decimal' : inputMode}
+              autoComplete={autoComplete}
+              required={required}
+              aria-invalid={Boolean(validationMessage)}
+              style={{ ...base.input, borderColor:validationMessage ? C.red : C.border }}
               onFocus={handleFocus}
               onBlur={handleBlur} />
             {options && creatable && (
@@ -142,6 +150,7 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
             )}
           </>
       }
+      {validationMessage ? <span role="alert" style={{ color:C.red, fontSize:11, marginTop:5 }}>{validationMessage}</span> : help ? <span style={{ color:C.textDim, fontSize:11, marginTop:5, lineHeight:1.45 }}>{help}</span> : null}
     </div>
   )
 }

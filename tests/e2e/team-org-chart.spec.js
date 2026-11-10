@@ -80,7 +80,10 @@ test('a dona aparece na lista como não editável, nem com perfil nem com remove
   // Um membro comum continua editável.
   const augusto = page.getByTestId('team-member-m2')
   await expect(augusto.getByRole('button', { name:'Remover' })).toBeVisible()
-  await expect(augusto.locator('select')).toHaveCount(1)
+  await expect(augusto.locator('select')).toHaveCount(3)
+  await expect(augusto.getByLabel('Conselho profissional de Augusto Ribeiro')).toHaveValue('CRM')
+  await expect(augusto.getByLabel('UF do registro de Augusto Ribeiro')).toHaveValue('DF')
+  await expect(augusto.getByLabel('Número do registro de Augusto Ribeiro')).toHaveValue('29501')
 })
 
 test('gestão não chega nem em Configurações, então não vê o organograma', async ({ page }) => {

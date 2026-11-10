@@ -4,6 +4,7 @@ import { Btn, Card, FInput } from '../components/UI.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { C } from '../theme.js'
+import { FIELD_STANDARDS, isValidEmail } from '../lib/formFieldStandards.js'
 
 const OPTIONS = {
   mensal:{ label:'Mensal', price:297, description:'Flexibilidade total para começar agora.' },
@@ -38,7 +39,7 @@ export function CheckoutPage() {
   }
 
   const submit = async () => {
-    if (!form.fullName || !form.email) return
+    if (!form.fullName || !isValidEmail(form.email)) return
     setBusy(true)
     await new Promise(resolve => setTimeout(resolve, 1200))
     navigate(`/signup?cycle=${summary.cycle}&checkout=success&email=${encodeURIComponent(form.email)}`, { replace:true })
@@ -89,7 +90,8 @@ export function CheckoutPage() {
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:18 }}>
               <FInput label="Nome completo" value={form.fullName} onChange={value => setForm(current => ({ ...current, fullName:value }))} placeholder="Seu nome" required />
-              <FInput label="E-mail" value={form.email} onChange={value => setForm(current => ({ ...current, email:value }))} placeholder="voce@clinica.com" required />
+              <FInput label="E-mail" type="email" value={form.email} onChange={value => setForm(current => ({ ...current, email:value }))} placeholder="voce@clinica.com" required
+                format={FIELD_STANDARDS.email.format} maxLength={FIELD_STANDARDS.email.maxLength} inputMode={FIELD_STANDARDS.email.inputMode} validator={FIELD_STANDARDS.email.validate} autoComplete="email" />
             </div>
 
             <div style={{ padding:18, borderRadius:20, background:'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(255,111,60,0.08))', border:'1px solid rgba(255,255,255,0.08)', marginBottom:18 }}>
@@ -100,7 +102,7 @@ export function CheckoutPage() {
               </div>
             </div>
 
-            <Btn onClick={submit} disabled={busy || !form.fullName || !form.email} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'15px 20px' }}>
+            <Btn onClick={submit} disabled={busy || !form.fullName || !isValidEmail(form.email)} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'15px 20px' }}>
               {busy ? 'Processando...' : 'Continuar para criar conta'}
             </Btn>
             <div style={{ marginTop:12, color:'#7F98A3', fontSize:12, lineHeight:1.7 }}>

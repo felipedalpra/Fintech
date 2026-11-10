@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { C } from '../theme.js'
 import { Modal, Btn, FInput } from './UI.jsx'
 import { createManualLead } from '../lib/opportunityActions.js'
+import { FIELD_STANDARDS, isValidPhone } from '../lib/formFieldStandards.js'
 
 // Lead manual: cria contato mínimo + oportunidade sem exigir paciente pré-cadastrado.
 // Só o essencial — nome/telefone + procedimento de interesse, origem, responsável, valor.
@@ -24,6 +25,7 @@ export function NewLeadModal({ open, onClose, ownerId, members, stage = 'primeir
 
   async function save() {
     if (!canSave || saving) return
+    if (form.phone && !isValidPhone(form.phone)) { setError('Informe o telefone com DDD.'); return }
     setSaving(true); setError(null)
     const res = await createManualLead(ownerId, {
       name: form.name, phone: form.phone, title: form.title,
@@ -42,7 +44,8 @@ export function NewLeadModal({ open, onClose, ownerId, members, stage = 'primeir
         <div style={{ fontSize: 12.5, color: C.textSub, marginTop: -4 }}>Só o essencial — o resto completa depois. O lead cai no funil em <strong style={{ color: C.text }}>Primeiro contato</strong>.</div>
         <FInput label="Nome" value={form.name} onChange={v => set('name', v)} placeholder="Nome do lead" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <FInput label="WhatsApp / Telefone" value={form.phone} onChange={v => set('phone', v)} placeholder="(51) 9...." />
+          <FInput label="WhatsApp / Telefone" value={form.phone} onChange={v => set('phone', v)} placeholder="(51) 99999-9999"
+            format={FIELD_STANDARDS.phone.format} maxLength={FIELD_STANDARDS.phone.maxLength} inputMode={FIELD_STANDARDS.phone.inputMode} validator={FIELD_STANDARDS.phone.validate} />
           <FInput label="Valor estimado" type="number" value={form.value} onChange={v => set('value', v)} placeholder="R$ 0,00" />
         </div>
         <FInput label="Procedimento de interesse" value={form.title} onChange={v => set('title', v)}

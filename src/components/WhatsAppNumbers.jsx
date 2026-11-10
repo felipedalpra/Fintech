@@ -3,6 +3,7 @@ import { C } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { Btn, ConfirmModal, FInput } from './UI.jsx'
+import { FIELD_STANDARDS } from '../lib/formFieldStandards.js'
 
 // Gerência dos números de WhatsApp Business da clínica (admin). Evolution usa
 // chave global somente no backend; Z-API permanece disponível para rollback.
@@ -469,7 +470,9 @@ export function WhatsAppNumbers() {
           </select>
         </label>
         <FInput label="Nome/função" value={label} onChange={setLabel} placeholder="Ex: Concierge" />
-        <FInput label="Telefone (opcional)" value={phone} onChange={setPhone} placeholder="Ex: 5511999990000" />
+        <FInput label="Telefone (opcional)" value={phone} onChange={setPhone} placeholder="(11) 99999-0000"
+          help="Informe com DDD; o sistema normaliza o número para a integração."
+          format={FIELD_STANDARDS.phone.format} maxLength={FIELD_STANDARDS.phone.maxLength} inputMode={FIELD_STANDARDS.phone.inputMode} validator={FIELD_STANDARDS.phone.validate} />
         {provider === 'zapi' && <>
           <FInput label="URL da instância Z-API" value={instanceUrl} onChange={setInstanceUrl} placeholder="https://api.z-api.io/instances/ID/token/TOKEN" />
           <FInput label="Client-Token Z-API" value={apiToken} onChange={setApiToken} type="password" placeholder="token de segurança da conta" />

@@ -4,6 +4,7 @@ import { Btn, FInput, Modal } from './UI.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
+import { FIELD_STANDARDS, validateContactIdentity } from '../lib/formFieldStandards.js'
 
 export function PatientSelector({ userId, value, onChange, label = 'Paciente' }) {
   const { user } = useAuth()
@@ -31,6 +32,8 @@ export function PatientSelector({ userId, value, onChange, label = 'Paciente' })
   async function createPatient() {
     if (!form.full_name.trim() || saving) return
     if (!effectiveUserId) { setError('Clínica não identificada. Recarregue a página.'); return }
+    const identityError = validateContactIdentity(form)
+    if (identityError) { setError(identityError); return }
     setSaving(true)
     setError('')
     try {
@@ -118,12 +121,20 @@ export function PatientSelector({ userId, value, onChange, label = 'Paciente' })
               value={form.cpf}
               onChange={v => setForm(f => ({ ...f, cpf: v }))}
               placeholder="000.000.000-00"
+              format={FIELD_STANDARDS.cpf.format}
+              maxLength={FIELD_STANDARDS.cpf.maxLength}
+              inputMode={FIELD_STANDARDS.cpf.inputMode}
+              validator={FIELD_STANDARDS.cpf.validate}
             />
             <FInput
               label="Telefone (opcional)"
               value={form.phone}
               onChange={v => setForm(f => ({ ...f, phone: v }))}
               placeholder="(11) 99999-9999"
+              format={FIELD_STANDARDS.phone.format}
+              maxLength={FIELD_STANDARDS.phone.maxLength}
+              inputMode={FIELD_STANDARDS.phone.inputMode}
+              validator={FIELD_STANDARDS.phone.validate}
             />
           </div>
           {error && <div role="alert" style={{ fontSize:12, color:C.red }}>{error}</div>}

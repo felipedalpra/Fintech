@@ -18,6 +18,10 @@ import { BillingConnection } from './BillingConnection.jsx'
 import { clinicalSignerReadiness } from '../lib/clinicalSignature.js'
 import { ExportPeriodFields } from './ExportPeriodFields.jsx'
 import { emptyExportPeriod } from '../lib/exportPeriod.js'
+import {
+  BRAZIL_STATES, FIELD_STANDARDS, buildProfessionalRegistration, parseProfessionalRegistration,
+  isValidCpf, isValidCnpj, isValidEmail, isValidPhone, isValidUf,
+} from '../lib/formFieldStandards.js'
 
 const EMPTY_PROFILE = {
   doctor:{
@@ -25,6 +29,8 @@ const EMPTY_PROFILE = {
     professionalTitle:'Cirurgião plástico',
     specialty:'',
     registrationId:'',
+    registrationState:'',
+    registrationNumber:'',
     rqe:'',
     cpf:'',
     phone:'',
@@ -83,7 +89,7 @@ export function Settings({ google, data }) {
   }, [])
 
   const profileSummary = useMemo(() => ({
-    doctorFields:Object.values(profile.doctor).filter(Boolean).length,
+    doctorFields:Object.entries(profile.doctor).filter(([key, value]) => !['registrationState', 'registrationNumber'].includes(key) && Boolean(value)).length,
     clinicFields:Object.entries(profile.clinic).filter(([key, value]) => key !== 'logoDataUrl' && Boolean(value)).length,
     hasLogo:Boolean(profile.clinic.logoDataUrl),
   }), [profile])
@@ -100,12 +106,38 @@ export function Settings({ google, data }) {
     if (message) setMessage('')
   }
 
+  const updateProfessionalRegistration = (field, value) => {
+    setProfile(current => {
+      const state = field === 'registrationState' ? value : current.doctor.registrationState
+      const number = field === 'registrationNumber' ? value : current.doctor.registrationNumber
+      return {
+        ...current,
+        doctor:{
+          ...current.doctor,
+          [field]:value,
+          registrationId:buildProfessionalRegistration('CRM', state, number),
+        },
+      }
+    })
+    if (error) setError('')
+    if (message) setMessage('')
+  }
+
   const save = async () => {
     setSaving(true)
     setError('')
     setMessage('')
 
     try {
+      if (profile.doctor.cpf && !isValidCpf(profile.doctor.cpf)) throw new Error('Informe um CPF profissional válido.')
+      if (profile.doctor.phone && !isValidPhone(profile.doctor.phone)) throw new Error('Informe o telefone profissional com DDD.')
+      if (profile.doctor.email && !isValidEmail(profile.doctor.email)) throw new Error('Informe um e-mail profissional válido.')
+      if (profile.doctor.registrationNumber && !isValidUf(profile.doctor.registrationState)) throw new Error('Selecione a UF do CRM.')
+      if (profile.doctor.registrationState && !profile.doctor.registrationNumber) throw new Error('Informe o número do CRM.')
+      if (profile.clinic.documentId && !isValidCnpj(profile.clinic.documentId) && !isValidCpf(profile.clinic.documentId)) throw new Error('Informe um CNPJ ou CPF válido para a clínica.')
+      if (profile.clinic.phone && !isValidPhone(profile.clinic.phone)) throw new Error('Informe o telefone da clínica com DDD.')
+      if (profile.clinic.email && !isValidEmail(profile.clinic.email)) throw new Error('Informe um e-mail válido para a clínica.')
+      if (profile.clinic.state && !isValidUf(profile.clinic.state)) throw new Error('Selecione uma UF válida para a clínica.')
       await saveSecureProfile(profile)
       if (isOwner && clinicId) {
         const { error:clinicalIdentityError } = await supabase
@@ -192,16 +224,23 @@ export function Settings({ google, data }) {
               <div style={{ marginTop:24, color:C.textSub }}>Carregando perfil seguro...</div>
             ) : (
               <div style={{ display:'flex', flexDirection:'column', gap:22, marginTop:24 }}>
-                <SectionCard title="Informações do médico" subtitle="Dados pessoais e profissionais.">
+                <SectionCard title="Informações do médico" subtitle="Preencha cada parte do registro separadamente. O sistema monta o CRM no padrão correto automaticamente.">
                   <Grid>
                     <FInput label="Nome completo" value={profile.doctor.fullName} onChange={value => updateField('doctor', 'fullName', value)} />
                     <FInput label="Título profissional" value={profile.doctor.professionalTitle} onChange={value => updateField('doctor', 'professionalTitle', value)} />
                     <FInput label="Especialidade" value={profile.doctor.specialty} onChange={value => updateField('doctor', 'specialty', value)} />
-                    <FInput label="CRM (número + UF)" value={profile.doctor.registrationId} onChange={value => updateField('doctor', 'registrationId', value)} />
-                    <FInput label="RQE" value={profile.doctor.rqe} onChange={value => updateField('doctor', 'rqe', value)} />
-                    <FInput label="CPF do profissional" value={profile.doctor.cpf} onChange={value => updateField('doctor', 'cpf', value)} />
-                    <FInput label="Telefone" value={profile.doctor.phone} onChange={value => updateField('doctor', 'phone', value)} />
-                    <FInput label="E-mail profissional" value={profile.doctor.email} onChange={value => updateField('doctor', 'email', value)} />
+                    <FInput label="Conselho profissional" value="CRM" onChange={() => {}} options={[{ v:'CRM', l:'CRM — Conselho Regional de Medicina' }]} help="Para médicos, o conselho utilizado nos documentos e assinaturas é o CRM." />
+                    <FInput label="UF do CRM" value={profile.doctor.registrationState} onChange={value => updateProfessionalRegistration('registrationState', value)} options={[{ v:'', l:'Selecione a UF' }, ...BRAZIL_STATES.map(state => ({ v:state, l:state }))]} required />
+                    <FInput label="Número do CRM" value={profile.doctor.registrationNumber} onChange={value => updateProfessionalRegistration('registrationNumber', value)} placeholder="Ex.: 12345" required
+                      format={FIELD_STANDARDS.registration.format} maxLength={FIELD_STANDARDS.registration.maxLength} inputMode={FIELD_STANDARDS.registration.inputMode} validator={FIELD_STANDARDS.registration.validate} help={profile.doctor.registrationId ? `Será salvo como ${profile.doctor.registrationId}` : 'Somente números.'} />
+                    <FInput label="RQE (se houver)" value={profile.doctor.rqe} onChange={value => updateField('doctor', 'rqe', value)} placeholder="Ex.: 6789"
+                      format={FIELD_STANDARDS.registration.format} maxLength={FIELD_STANDARDS.registration.maxLength} inputMode={FIELD_STANDARDS.registration.inputMode} validator={FIELD_STANDARDS.registration.validate} help="Número do Registro de Qualificação de Especialista, sem letras." />
+                    <FInput label="CPF do profissional" value={profile.doctor.cpf} onChange={value => updateField('doctor', 'cpf', value)} placeholder="000.000.000-00"
+                      format={FIELD_STANDARDS.cpf.format} maxLength={FIELD_STANDARDS.cpf.maxLength} inputMode={FIELD_STANDARDS.cpf.inputMode} validator={FIELD_STANDARDS.cpf.validate} />
+                    <FInput label="Telefone" value={profile.doctor.phone} onChange={value => updateField('doctor', 'phone', value)} placeholder="(51) 99999-9999"
+                      format={FIELD_STANDARDS.phone.format} maxLength={FIELD_STANDARDS.phone.maxLength} inputMode={FIELD_STANDARDS.phone.inputMode} validator={FIELD_STANDARDS.phone.validate} autoComplete="tel" />
+                    <FInput label="E-mail profissional" type="email" value={profile.doctor.email} onChange={value => updateField('doctor', 'email', value)} placeholder="medico@clinica.com.br"
+                      format={FIELD_STANDARDS.email.format} maxLength={FIELD_STANDARDS.email.maxLength} inputMode={FIELD_STANDARDS.email.inputMode} validator={FIELD_STANDARDS.email.validate} autoComplete="email" />
                   </Grid>
                 </SectionCard>
 
@@ -223,13 +262,16 @@ export function Settings({ google, data }) {
                   <Grid>
                     <FInput label="Razão social" value={profile.clinic.legalName} onChange={value => updateField('clinic', 'legalName', value)} />
                     <FInput label="Nome fantasia" value={profile.clinic.tradeName} onChange={value => updateField('clinic', 'tradeName', value)} />
-                    <FInput label="CNPJ / Documento" value={profile.clinic.documentId} onChange={value => updateField('clinic', 'documentId', value)} />
-                    <FInput label="Telefone da clínica" value={profile.clinic.phone} onChange={value => updateField('clinic', 'phone', value)} />
-                    <FInput label="E-mail da clínica" value={profile.clinic.email} onChange={value => updateField('clinic', 'email', value)} />
-                    <FInput label="Site" value={profile.clinic.website} onChange={value => updateField('clinic', 'website', value)} />
+                    <FInput label="CNPJ / CPF" value={profile.clinic.documentId} onChange={value => updateField('clinic', 'documentId', value)} placeholder="00.000.000/0000-00"
+                      format={FIELD_STANDARDS.cpfCnpj.format} maxLength={FIELD_STANDARDS.cpfCnpj.maxLength} inputMode={FIELD_STANDARDS.cpfCnpj.inputMode} validator={FIELD_STANDARDS.cpfCnpj.validate} />
+                    <FInput label="Telefone da clínica" value={profile.clinic.phone} onChange={value => updateField('clinic', 'phone', value)} placeholder="(51) 3333-4444"
+                      format={FIELD_STANDARDS.phone.format} maxLength={FIELD_STANDARDS.phone.maxLength} inputMode={FIELD_STANDARDS.phone.inputMode} validator={FIELD_STANDARDS.phone.validate} />
+                    <FInput label="E-mail da clínica" type="email" value={profile.clinic.email} onChange={value => updateField('clinic', 'email', value)} placeholder="contato@clinica.com.br"
+                      format={FIELD_STANDARDS.email.format} maxLength={FIELD_STANDARDS.email.maxLength} inputMode={FIELD_STANDARDS.email.inputMode} validator={FIELD_STANDARDS.email.validate} />
+                    <FInput label="Site" type="url" value={profile.clinic.website} onChange={value => updateField('clinic', 'website', value)} placeholder="https://www.clinica.com.br" />
                     <FInput label="Endereço" value={profile.clinic.addressLine} onChange={value => updateField('clinic', 'addressLine', value)} />
                     <FInput label="Cidade" value={profile.clinic.city} onChange={value => updateField('clinic', 'city', value)} />
-                    <FInput label="Estado" value={profile.clinic.state} onChange={value => updateField('clinic', 'state', value)} />
+                    <FInput label="Estado (UF)" value={profile.clinic.state} onChange={value => updateField('clinic', 'state', value)} options={[{ v:'', l:'Selecione a UF' }, ...BRAZIL_STATES.map(state => ({ v:state, l:state }))]} />
                     <FInput label="Observações institucionais" value={profile.clinic.notes} onChange={value => updateField('clinic', 'notes', value)} />
                   </Grid>
 
@@ -469,6 +511,7 @@ function TeamSettings({ clinicId }) {
 
   const invite = async () => {
     if (!inviteEmail.trim()) return
+    if (!isValidEmail(inviteEmail)) { setTeamError('Informe um e-mail válido.'); return }
     setInviting(true)
     setTeamError('')
     setTeamMessage('')
@@ -539,6 +582,11 @@ function TeamSettings({ clinicId }) {
               value={inviteEmail}
               onChange={setInviteEmail}
               placeholder="email@exemplo.com"
+              type="email"
+              format={FIELD_STANDARDS.email.format}
+              maxLength={FIELD_STANDARDS.email.maxLength}
+              inputMode={FIELD_STANDARDS.email.inputMode}
+              validator={FIELD_STANDARDS.email.validate}
             />
           </div>
           <div style={{ minWidth:160 }}>
@@ -632,18 +680,47 @@ function TeamSettings({ clinicId }) {
                       placeholder="Nome profissional"
                       style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
                     />
-                    <input
-                      value={m.professional_registration || ''}
-                      onChange={event => setMembers(prev => prev.map(row => row.id === m.id ? { ...row, professional_registration:event.target.value } : row))}
-                      onBlur={event => updateClinicalIdentity(m.id, { professional_registration:event.target.value.trim() || null })}
-                      placeholder="Número do registro"
-                      style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
-                    />
-                    <input
+                    <select
+                      aria-label={`Conselho profissional de ${m.professional_name || m.member_email}`}
                       value={m.professional_council || 'CRM'}
-                      onChange={event => setMembers(prev => prev.map(row => row.id === m.id ? { ...row, professional_council:event.target.value } : row))}
-                      onBlur={event => updateClinicalIdentity(m.id, { professional_council:event.target.value.trim() || 'CRM' })}
-                      placeholder="Conselho"
+                      onChange={event => {
+                        const parsed = parseProfessionalRegistration(m.professional_registration)
+                        updateClinicalIdentity(m.id, {
+                          professional_council:event.target.value,
+                          professional_registration:buildProfessionalRegistration(event.target.value, parsed.state, parsed.number) || null,
+                        })
+                      }}
+                      style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
+                    >
+                      {['CRM','CRO','CRP','COREN','CRF','CRN','CRBM','CREFITO','CREFONO'].map(council => <option key={council} value={council}>{council}</option>)}
+                    </select>
+                    <select
+                      aria-label={`UF do registro de ${m.professional_name || m.member_email}`}
+                      value={parseProfessionalRegistration(m.professional_registration).state}
+                      onChange={event => {
+                        const parsed = parseProfessionalRegistration(m.professional_registration)
+                        updateClinicalIdentity(m.id, { professional_registration:buildProfessionalRegistration(m.professional_council || 'CRM', event.target.value, parsed.number) || null })
+                      }}
+                      style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
+                    >
+                      <option value="">UF do registro</option>
+                      {BRAZIL_STATES.map(state => <option key={state} value={state}>{state}</option>)}
+                    </select>
+                    <input
+                      aria-label={`Número do registro de ${m.professional_name || m.member_email}`}
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={parseProfessionalRegistration(m.professional_registration).number}
+                      onChange={event => {
+                        const parsed = parseProfessionalRegistration(m.professional_registration)
+                        const professional_registration = buildProfessionalRegistration(m.professional_council || 'CRM', parsed.state, event.target.value)
+                        setMembers(prev => prev.map(row => row.id === m.id ? { ...row, professional_registration } : row))
+                      }}
+                      onBlur={event => {
+                        const parsed = parseProfessionalRegistration(m.professional_registration)
+                        updateClinicalIdentity(m.id, { professional_registration:buildProfessionalRegistration(m.professional_council || 'CRM', parsed.state, event.target.value) || null })
+                      }}
+                      placeholder="Número do registro"
                       style={{ padding:'8px 10px', borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text }}
                     />
                   </div>
@@ -751,10 +828,13 @@ function Feedback({ color, text }) {
 }
 
 function mergeProfile(profile) {
+  const registration = parseProfessionalRegistration(profile?.doctor?.registrationId)
   return {
     doctor:{
       ...EMPTY_PROFILE.doctor,
       ...(profile?.doctor || {}),
+      registrationState:registration.state,
+      registrationNumber:registration.number,
     },
     clinic:{
       ...EMPTY_PROFILE.clinic,

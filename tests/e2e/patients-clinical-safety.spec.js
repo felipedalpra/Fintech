@@ -74,6 +74,13 @@ test('salva cadastro e dados clínicos juntos e só fecha após confirmação in
   await page.getByRole('button', { name:'Expandir' }).click()
   await expect(page.getByRole('button', { name:'Reduzir' })).toHaveAttribute('aria-expanded', 'true')
   await page.getByLabel('Nome completo').fill('Paciente Persistida')
+  await page.getByLabel('CPF').fill('52998224725123')
+  await expect(page.getByLabel('CPF')).toHaveValue('529.982.247-25')
+  await page.getByRole('button', { name:/2\. Contato/ }).click()
+  await page.getByLabel('Telefone', { exact:true }).fill('5199189747199')
+  await expect(page.getByLabel('Telefone', { exact:true })).toHaveValue('(51) 99189-7471')
+  await page.getByLabel('E-mail').fill(' Paciente@EXEMPLO.COM ')
+  await expect(page.getByLabel('E-mail')).toHaveValue('paciente@exemplo.com')
   await page.getByRole('button', { name:/4\. Clínico/ }).click()
   await page.getByPlaceholder('Motivo da busca pelo atendimento…').fill('Avaliação pré-operatória')
   await page.getByRole('button', { name:/5\. Anamnese/ }).click()
@@ -86,7 +93,9 @@ test('salva cadastro e dados clínicos juntos e só fecha após confirmação in
   await expect(page.getByRole('heading', { name:'Novo paciente' })).toHaveCount(0)
   await expect(page.getByText('Paciente Persistida')).toBeVisible()
   expect(rpcPayload.p_patient_id).toBeNull()
-  expect(rpcPayload.p_patient).toMatchObject({ full_name:'Paciente Persistida' })
+  expect(rpcPayload.p_patient).toMatchObject({
+    full_name:'Paciente Persistida', cpf:'529.982.247-25', phone:'(51) 99189-7471', email:'paciente@exemplo.com',
+  })
   expect(rpcPayload.p_clinical).toMatchObject({
     chief_complaint:'Avaliação pré-operatória',
     hda:'História clínica completa',

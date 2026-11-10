@@ -6,6 +6,7 @@ import { Btn, Card, FInput } from '../components/UI.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { C, base } from '../theme.js'
 import { BILLING_LABELS } from '../billing/plans.js'
+import { FIELD_STANDARDS, isValidEmail } from '../lib/formFieldStandards.js'
 
 const PASSWORD_POLICY = {
   minLength:8,
@@ -69,6 +70,10 @@ export function LoginPage({ initialMode = 'login' }) {
   }
 
   const submit = async () => {
+    if (!isValidEmail(form.email)) {
+      setError('Informe um e-mail válido.')
+      return
+    }
     if (isRegister && !searchParams.get('cycle')) {
       const checkoutParams = new URLSearchParams()
       if (form.email) checkoutParams.set('email', form.email)
@@ -158,7 +163,8 @@ export function LoginPage({ initialMode = 'login' }) {
             {isRegister && (
               <FInput label="Nome" value={form.name} onChange={value => onChange('name', value)} placeholder="Seu nome" required />
             )}
-            <FInput label="E-mail" value={form.email} onChange={value => onChange('email', value)} placeholder="voce@empresa.com" required />
+            <FInput label="E-mail" type="email" value={form.email} onChange={value => onChange('email', value)} placeholder="voce@empresa.com" required
+              format={FIELD_STANDARDS.email.format} maxLength={FIELD_STANDARDS.email.maxLength} inputMode={FIELD_STANDARDS.email.inputMode} validator={FIELD_STANDARDS.email.validate} autoComplete="email" />
             <FInput label="Senha" value={form.password} onChange={value => onChange('password', value)} type="password" placeholder="8+ caracteres, com maiúscula, minúscula, número e especial" required />
 
             {isRegister && (
