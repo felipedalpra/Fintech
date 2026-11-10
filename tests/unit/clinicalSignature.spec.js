@@ -3,6 +3,7 @@ import {
   assertSafeClinicalSignatureConnection,
   buildClinicalSignatureEnvelope,
   buildClinicalSignedFilePath,
+  clinicalSignerIdentityDifferences,
   hashClinicalSignatureEnvelope,
   normalizeClinicalSignatureEvidence,
 } from '../../api/_lib/clinicalSignature.js'
@@ -46,8 +47,18 @@ test('gera envelope e hash determinísticos sem depender da ordem das chaves', (
 test('bloqueia o envio ao provedor quando autor, identidade profissional ou CPF divergem', () => {
   const signer = { userId:document.created_by, name:'Dra. Vitória', registration:'CRM-RS 123', council:'CRM', cpf:'529.982.247-25' }
   expect(() => buildClinicalSignatureEnvelope({ document, signer:{ ...signer, userId:'20000000-0000-4000-8000-000000000002' } })).toThrow(/emitiu/)
-  expect(() => buildClinicalSignatureEnvelope({ document, signer:{ ...signer, registration:'CRM-RS 999' } })).toThrow(/identidade/)
+  expect(() => buildClinicalSignatureEnvelope({ document, signer:{ ...signer, registration:'CRM-RS 999' } })).toThrow(/registro atual "CRM-RS 999"/)
   expect(() => buildClinicalSignatureEnvelope({ document, signer:{ ...signer, cpf:'123.456.789-00' } })).toThrow(/CPF/)
+})
+
+test('aceita formatos equivalentes do mesmo CRM sem enfraquecer a autoria', () => {
+  const signer = { userId:document.created_by, name:'DRA. VITORIA', registration:'123', council:'crm', cpf:'529.982.247-25' }
+  expect(() => buildClinicalSignatureEnvelope({ document, signer })).not.toThrow()
+  expect(clinicalSignerIdentityDifferences(document, signer)).toEqual([])
+
+  expect(clinicalSignerIdentityDifferences(document, { ...signer, registration:'CRM-SC 123' })).toEqual(['registro profissional'])
+  expect(clinicalSignerIdentityDifferences(document, { ...signer, name:'Dra. Outra Pessoa' })).toEqual(['nome profissional'])
+  expect(clinicalSignerIdentityDifferences(document, { ...signer, council:'CRO' })).toEqual(['conselho profissional'])
 })
 
 test('rejeita certificado e senha dentro da configuração persistível', () => {

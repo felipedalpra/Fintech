@@ -10,6 +10,7 @@ export const CLINICAL_SIGNATURE_STANDARDS = new Set(['PAdES-B-B', 'PAdES-B-T', '
 
 const CONNECTION_FIELDS = new Set(['provider', 'signingMode'])
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const BRAZIL_STATE_PATTERN = /(?:^|[^A-Z])(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)(?:$|[^A-Z])/
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize)
@@ -22,6 +23,59 @@ function canonicalize(value) {
   return value ?? null
 }
 
+function normalizedIdentityText(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('pt-BR')
+}
+
+function normalizedCouncil(value) {
+  return String(value || 'CRM').replace(/[^a-z]/gi, '').toUpperCase() || 'CRM'
+}
+
+function parsedRegistration(value) {
+  const text = String(value || '').trim().toUpperCase()
+  return {
+    number:text.replace(/\D/g, ''),
+    state:text.match(BRAZIL_STATE_PATTERN)?.[1] || '',
+    council:text.match(/\b(CRM|CRO|CRP|COREN|CRF|CRN|CRBM|CREFITO|CREFONO)\b/)?.[1] || '',
+  }
+}
+
+function registrationsMatch(current, snapshot) {
+  const left = parsedRegistration(current)
+  const right = parsedRegistration(snapshot)
+  if (!left.number || !right.number || left.number !== right.number) return false
+  if (left.state && right.state && left.state !== right.state) return false
+  if (left.council && right.council && left.council !== right.council) return false
+  return true
+}
+
+export function clinicalSignerIdentityDifferences(document, signer) {
+  const differences = []
+  if (normalizedIdentityText(signer?.name) !== normalizedIdentityText(document?.author_name)) differences.push('nome profissional')
+  if (!registrationsMatch(signer?.registration, document?.author_registration)) differences.push('registro profissional')
+  if (normalizedCouncil(signer?.council) !== normalizedCouncil(document?.author_council)) differences.push('conselho profissional')
+  return differences
+}
+
+function signerIdentityDifferenceMessage(document, signer, differences) {
+  const details = []
+  if (differences.includes('nome profissional')) {
+    details.push(`nome atual "${String(signer.name || '').trim()}" e autor do documento "${String(document.author_name || '').trim()}"`)
+  }
+  if (differences.includes('registro profissional')) {
+    details.push(`registro atual "${String(signer.registration || '').trim()}" e registro do documento "${String(document.author_registration || '').trim()}"`)
+  }
+  if (differences.includes('conselho profissional')) {
+    details.push(`conselho atual "${normalizedCouncil(signer.council)}" e conselho do documento "${normalizedCouncil(document.author_council)}"`)
+  }
+  return `A assinatura foi bloqueada porque ${details.join('; ')} não correspondem. Confira a identidade profissional em Configurações. Se o documento foi emitido por outro profissional, somente o autor original pode assiná-lo.`
+}
+
 export function buildClinicalSignatureEnvelope({ document, signer, renderingVersion = CLINICAL_SIGNATURE_RENDERING_VERSION }) {
   if (!document?.id || !document?.user_id || !document?.patient_id) throw new Error('Documento clínico inválido para assinatura.')
   if (!signer?.userId || !signer?.name || !signer?.registration || !signer?.cpf) {
@@ -30,12 +84,10 @@ export function buildClinicalSignatureEnvelope({ document, signer, renderingVers
   if (!document.created_by || signer.userId !== document.created_by) {
     throw new Error('Somente o profissional que emitiu o documento pode assiná-lo.')
   }
-  const sameIdentity = [
-    [signer.name, document.author_name],
-    [signer.registration, document.author_registration],
-    [signer.council || 'CRM', document.author_council || 'CRM'],
-  ].every(([current, snapshot]) => String(current || '').trim().toLocaleLowerCase('pt-BR') === String(snapshot || '').trim().toLocaleLowerCase('pt-BR'))
-  if (!sameIdentity) throw new Error('A identidade do signatário diverge da autoria imutável do documento.')
+  const identityDifferences = clinicalSignerIdentityDifferences(document, signer)
+  if (identityDifferences.length > 0) {
+    throw new Error(signerIdentityDifferenceMessage(document, signer, identityDifferences))
+  }
   if (!isValidCpf(signer.cpf)) throw new Error('CPF do signatário inválido.')
 
   return canonicalize({
