@@ -35,6 +35,7 @@ import { buildClinicalWorkspaceIndex } from '../lib/clinicalWorkspaceIndex.js'
 import { emptyClinicalWorkspaceSources, loadClinicalWorkspaceSources } from '../lib/clinicalWorkspaceIndexClient.js'
 import { buildProtocolAnamnesisDraft } from '../lib/clinicalProtocols.js'
 import './ClinicalRecords.css'
+import './ClinicalRecordsReadability.css'
 
 const CLINICAL_MODULES = [
   { id:'today', route:'clinical-records', label:'Hoje' },

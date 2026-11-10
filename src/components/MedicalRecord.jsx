@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { C, base } from '../theme.js'
 import { formatDateBR, today } from '../utils.js'
 import { Btn, FInput, Modal, Badge } from './UI.jsx'
+import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
 import { supabase } from '../lib/supabase.js'
 import {
   buildAddendumPayload,
@@ -149,7 +150,7 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
         </div>
       )}
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Nova evolução clínica" width={640}>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Nova evolução clínica" width={760} expandable>
         <div style={{ display:'grid', gap:14 }}>
           <div style={{ padding:'10px 12px', borderRadius:9, background:C.surface, border:`1px solid ${C.border}`, color:C.textSub, fontSize:12 }}>
             Assinatura: <strong style={{ color:C.text }}>{author?.name}</strong> · {author?.council || 'CRM'} {author?.registration}
@@ -157,7 +158,7 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
           <FInput label="Data do atendimento" type="date" required value={form.session_date} onChange={value => setForm(current => ({ ...current, session_date:value }))} />
           <label style={{ display:'grid', gap:6 }}>
             <span style={base.label}>Evolução <span style={{ color:C.red }}>*</span></span>
-            <textarea value={form.evolution_notes} onChange={event => setForm(current => ({ ...current, evolution_notes:event.target.value }))} placeholder="Anamnese do atendimento, exame, hipóteses, conduta e evolução…" rows={7} maxLength={20000} style={{ ...base.input, resize:'vertical', minHeight:140, fontFamily:'inherit', lineHeight:1.6 }} />
+            <AutoGrowTextarea value={form.evolution_notes} onChange={event => setForm(current => ({ ...current, evolution_notes:event.target.value }))} placeholder="Anamnese do atendimento, exame, hipóteses, conduta e evolução…" rows={7} minHeight={180} maxLength={20000} style={{ ...base.input, fontFamily:'inherit', fontSize:14 }} />
           </label>
           <FInput label="Procedimentos realizados" value={form.procedures_applied} onChange={value => setForm(current => ({ ...current, procedures_applied:value }))} placeholder="Descreva os procedimentos realizados" />
           <FInput label="Próximo atendimento" type="date" value={form.next_appointment_date} onChange={value => setForm(current => ({ ...current, next_appointment_date:value }))} />
@@ -169,10 +170,10 @@ export function MedicalRecord({ patientId, userId, actorId, author }) {
         </div>
       </Modal>
 
-      <Modal open={Boolean(addendumTarget)} onClose={() => setAddendumTarget(null)} title="Adicionar adendo" width={600}>
+      <Modal open={Boolean(addendumTarget)} onClose={() => setAddendumTarget(null)} title="Adicionar adendo" width={720} expandable>
         <div style={{ display:'grid', gap:14 }}>
           <div style={{ color:C.textSub, fontSize:12, lineHeight:1.6 }}>O texto original de {addendumTarget?.session_date ? formatDateBR(addendumTarget.session_date) : 'esta evolução'} será preservado integralmente.</div>
-          <textarea value={addendumText} onChange={event => setAddendumText(event.target.value)} placeholder="Descreva a correção ou informação complementar…" rows={6} maxLength={20000} style={{ ...base.input, resize:'vertical', minHeight:130, fontFamily:'inherit', lineHeight:1.6 }} />
+          <AutoGrowTextarea value={addendumText} onChange={event => setAddendumText(event.target.value)} placeholder="Descreva a correção ou informação complementar…" rows={6} minHeight={160} maxLength={20000} style={{ ...base.input, fontFamily:'inherit', fontSize:14 }} />
           <div style={{ fontSize:11, color:C.textDim }}>Assinado por {author?.name} · {author?.council || 'CRM'} {author?.registration}</div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
             <Btn variant="ghost" onClick={() => setAddendumTarget(null)}>Cancelar</Btn>
