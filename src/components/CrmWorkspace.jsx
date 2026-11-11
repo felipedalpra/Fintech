@@ -1,5 +1,5 @@
 // CRM — Gestão de Oportunidades. Workspace com visualizações dos MESMOS dados (estilo Monday):
-// Tabela (padrão) · visualizações salvas · Kanban · Agenda · Indicadores.
+// Tabela (padrão) · visualizações salvas · Kanban · Agenda.
 // Estado único em useCrmWorkspace: o que muda numa visualização aparece nas demais.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -25,7 +25,6 @@ import { Ico, ICONS, Popover, MenuItem } from './CrmCells.jsx'
 import { OpportunityPipeline } from './OpportunityPipeline.jsx'
 import { OpportunityEditor } from './OpportunityEditor.jsx'
 import { NewLeadModal } from './NewLeadModal.jsx'
-import { CrmDashboard } from './CrmDashboard.jsx'
 import { CrmBulkBar } from './CrmBulkBar.jsx'
 import { CrmAgenda } from './CrmAgenda.jsx'
 
@@ -61,7 +60,10 @@ export function CrmWorkspace({ data }) {
   const ws = useCrmWorkspace(effectiveOwner, { fallbackOwnerLabel: user?.email || 'Dono' })
 
   const [params, setParams] = useSearchParams()
-  const tab = params.get('view') || MAIN_KEY
+  const requestedTab = params.get('view')
+  // Links antigos para a aba removida voltam para a Tabela; o Painel continua disponível
+  // como módulo próprio no menu lateral.
+  const tab = requestedTab === 'indicators' ? MAIN_KEY : requestedTab || MAIN_KEY
   const [lastTableKey, setLastTableKey] = useState(MAIN_KEY)
   const isSavedView = tab.startsWith('v-')
   const tableKey = tab === MAIN_KEY || isSavedView ? tab : lastTableKey
@@ -73,6 +75,10 @@ export function CrmWorkspace({ data }) {
     else p.set('view', next)
     setParams(p, { replace: true })
   }
+
+  useEffect(() => {
+    if (requestedTab === 'indicators') goTab(MAIN_KEY)
+  }, [requestedTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ----- configuração ativa (tabela principal local + rascunhos das visualizações salvas) -----
   const [mainConfig, setMainConfig] = useState(() => readLocalConfig(user?.id))
@@ -401,7 +407,6 @@ export function CrmWorkspace({ data }) {
 
   const isTable = tab === MAIN_KEY || isSavedView
   const isKanban = tab === 'kanban'
-  const isIndicators = tab === 'indicators'
   const isAgenda = tab === 'agenda'
   const showToolbar = isTable || isKanban
 
@@ -471,8 +476,6 @@ export function CrmWorkspace({ data }) {
           onOpenOpp={openOppFromAgenda} registerTaskSync={registerAgendaTaskSync} toast={toast} />
       )}
 
-      {isIndicators && <CrmDashboard />}
-
       <OpportunityEditor open={editor.open} onClose={() => setEditor(e => ({ ...e, open: false }))} opp={editor.opp} initialTab={editor.tab}
         stages={ws.stages} members={ws.members} ownerId={effectiveOwner} userId={user?.id} onSaved={ws.onEditorSaved}
         onTasksChanged={onTasksChanged} onNotesChanged={ws.bumpNoteCount} />
@@ -492,7 +495,6 @@ function ViewTabs({ tab, onTab, views, viewsAvailable, canEditView, onNewView, o
     ...views.map(v => ({ key: `v-${v.id}`, label: v.name, view: v })),
     { key: 'kanban', label: 'Kanban' },
     { key: 'agenda', label: 'Agenda' },
-    { key: 'indicators', label: 'Indicadores' },
   ]
   return (
     <div role="tablist" aria-label="Visualizações do CRM" style={{ display: 'flex', alignItems: 'flex-end', gap: 2, borderBottom: `1px solid ${C.border}`, overflowX: 'auto' }}>

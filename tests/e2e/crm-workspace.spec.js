@@ -60,8 +60,9 @@ test('Tabela é a visualização padrão, com grupos por etapa, totais e abas', 
   await mockBackend(page)
   await page.goto('/app/funnel')
   await expect(page.getByRole('heading', { name: 'CRM — Gestão de Oportunidades' })).toBeVisible()
-  for (const name of ['Tabela', 'Kanban', 'Indicadores']) await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+  for (const name of ['Tabela', 'Kanban']) await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Agenda', exact: true })).toBeEnabled()
+  await expect(page.getByRole('tab', { name: 'Indicadores', exact: true })).toHaveCount(0)
 
   const orc = page.getByTestId('crm-group-orcamento_enviado')
   await expect(orc.getByRole('heading', { name: 'Orçamento Enviado' })).toBeVisible()
@@ -80,6 +81,14 @@ test('Tabela é a visualização padrão, com grupos por etapa, totais e abas', 
   await expect(lost.getByTestId('crm-row')).toHaveCount(0)
   await lost.getByRole('button', { name: 'Expandir Perdidos' }).click()
   await expect(lost.getByTestId('crm-row')).toHaveCount(1)
+})
+
+test('link antigo de Indicadores volta para a Tabela sem exibir a aba duplicada', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/app/funnel?view=indicators')
+  await expect(page.getByRole('tab', { name: 'Tabela', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'Indicadores', exact: true })).toHaveCount(0)
+  await expect(page).toHaveURL(/\/app\/funnel$/)
 })
 
 test('edição inline grava só o campo alterado e reflete no Kanban', async ({ page }) => {
