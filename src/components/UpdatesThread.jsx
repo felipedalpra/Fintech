@@ -4,7 +4,7 @@
 //   load()                              → { notes, threaded, error, unavailable? }
 //   save(text, { parentId, mentions })  → { note } | { error }
 //   realtime = { key, table, filter }   (INSERTs novos entram sem recarregar)
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { C, base } from '../theme.js'
 import { supabase } from '../lib/supabase.js'
 import {
@@ -171,6 +171,18 @@ function Composer({ people, onSubmit, onCancel, placeholder, compact = false, au
   const [query, setQuery] = useState(null) // { query, start, caret }
   const [active, setActive] = useState(0)
   const ref = useRef(null)
+  const pendingCaret = useRef(null)
+
+  // Posiciona o cursor assim que o textarea controlado recebe o texto da menção. Fazer isso
+  // apenas no próximo frame deixava uma janela em que a digitação rápida entrava no meio do
+  // @handle recém-inserido.
+  useLayoutEffect(() => {
+    if (pendingCaret.current == null) return
+    const caret = pendingCaret.current
+    pendingCaret.current = null
+    const el = ref.current
+    if (el) { el.focus(); el.setSelectionRange(caret, caret) }
+  }, [text])
 
   const suggestions = useMemo(() => {
     if (!query) return []
@@ -187,12 +199,9 @@ function Composer({ people, onSubmit, onCancel, placeholder, compact = false, au
   function pick(person) {
     if (!query) return
     const next = insertMention(text, query.caret, query.start, person.handle)
+    pendingCaret.current = next.caret
     setText(next.text)
     setQuery(null)
-    requestAnimationFrame(() => {
-      const el = ref.current
-      if (el) { el.focus(); el.setSelectionRange(next.caret, next.caret) }
-    })
   }
 
   async function send() {
