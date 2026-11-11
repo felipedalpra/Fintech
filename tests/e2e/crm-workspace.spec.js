@@ -56,13 +56,16 @@ async function mockBackend(page, { patchFails = false } = {}) {
   return calls
 }
 
-test('Tabela é a visualização padrão, com grupos por etapa, totais e abas', async ({ page }) => {
+test('Tabela é o modo padrão, separado das visões salvas', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/app/funnel')
   await expect(page.getByRole('heading', { name: 'CRM — Gestão de Oportunidades' })).toBeVisible()
   for (const name of ['Tabela', 'Kanban']) await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
   await expect(page.getByRole('tab', { name: 'Agenda', exact: true })).toBeEnabled()
   await expect(page.getByRole('tab', { name: 'Indicadores', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('crm-view-switcher')).toContainText('Os modos mudam a forma de visualizar o mesmo CRM. Nenhum dado é duplicado.')
+  await expect(page.getByRole('tablist', { name: 'Modos do CRM' })).toContainText('Cadastre, edite, filtre e compare todos os dados.')
+  await expect(page.getByRole('tablist', { name: 'Visualizações do CRM' })).toContainText('Nenhuma visão salva')
 
   const orc = page.getByTestId('crm-group-orcamento_enviado')
   await expect(orc.getByRole('heading', { name: 'Orçamento Enviado' })).toBeVisible()
@@ -193,7 +196,9 @@ test('gestão cria coluna personalizada e salva visualização', async ({ page }
   await page.getByTestId('crm-new-view').click()
   await page.getByLabel('Nome').fill('Orçamentos da semana')
   await page.getByLabel(/Toda a equipe/).check()
-  await page.getByRole('button', { name: 'Salvar visualização' }).click()
+  await expect(page.getByRole('heading', { name: 'Criar visão do CRM' })).toBeVisible()
+  await expect(page.getByText('Uma visão não cria outro funil nem duplica oportunidades.')).toBeVisible()
+  await page.getByTestId('crm-view-submit').click()
   await expect.poll(() => calls.viewInserts.length).toBe(1)
   expect(calls.viewInserts[0]).toMatchObject({ name: 'Orçamentos da semana', scope: 'shared', view_type: 'table' })
   expect(calls.viewInserts[0].config).toHaveProperty('groupBy', 'stage')
