@@ -27,6 +27,7 @@ import {
   startOfCalendarWeek,
 } from '../lib/clinicalCalendar.js'
 import { buildCalendarFinancialPatch, createCalendarFinancialDraft } from '../lib/calendarFinancialDetails.js'
+import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import './Calendar.css'
 
 const WEEKDAYS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
@@ -468,18 +469,22 @@ export function Calendar({ data, setData, saveDataNow, google }) {
         const financialPatch = financeOpen ? buildCalendarFinancialPatch(selectedEvent.type, draft) : {}
         await persist(current => ({
           ...current,
-          [collection]:(current[collection] || []).map(item => item.id === selectedEvent.recordId ? {
-            ...item,
-            patient:draft.patient.trim(),
-            patientId:draft.patientId || item.patientId || null,
-            date:draft.date,
-            competenceDate:item.competenceDate === item.date || !item.competenceDate ? draft.date : item.competenceDate,
-            dueDate:item.dueDate === item.date || !item.dueDate ? draft.date : item.dueDate,
-            startTime:draft.startTime,
-            durationMinutes:Math.max(15, Number(draft.durationMinutes) || (selectedEvent.type === 'surgery' ? 180 : 60)),
-            ...(selectedEvent.type === 'surgery' ? { procedureId:draft.procedureId } : { consultationType:draft.consultationType }),
-            ...financialPatch,
-          } : item),
+          [collection]:(current[collection] || []).map(item => {
+            if (item.id !== selectedEvent.recordId) return item
+            const updated = {
+              ...item,
+              patient:draft.patient.trim(),
+              patientId:draft.patientId || item.patientId || null,
+              date:draft.date,
+              competenceDate:item.competenceDate === item.date || !item.competenceDate ? draft.date : item.competenceDate,
+              dueDate:item.dueDate === item.date || !item.dueDate ? draft.date : item.dueDate,
+              startTime:draft.startTime,
+              durationMinutes:Math.max(15, Number(draft.durationMinutes) || (selectedEvent.type === 'surgery' ? 180 : 60)),
+              ...(selectedEvent.type === 'surgery' ? { procedureId:draft.procedureId } : { consultationType:draft.consultationType }),
+              ...financialPatch,
+            }
+            return financeOpen ? withClinicalCostSettlementDefaults(updated, selectedEvent.type) : updated
+          }),
         }))
         toast('Atendimento atualizado e salvo.', 'success')
       } else {
@@ -503,7 +508,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             notes:'',
             referredBy:'',
           }
-          await persist(current => ({ ...current, surgeries:[...(current.surgeries || []), record] }))
+          const financialRecord = withClinicalCostSettlementDefaults(record, 'surgery')
+          await persist(current => ({ ...current, surgeries:[...(current.surgeries || []), financialRecord] }))
         } else {
           const record = {
             id,
@@ -518,7 +524,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             consultationType:draft.consultationType,
             costSettlements:{},
           }
-          await persist(current => ({ ...current, consultations:[...(current.consultations || []), record] }))
+          const financialRecord = withClinicalCostSettlementDefaults(record, 'consultation')
+          await persist(current => ({ ...current, consultations:[...(current.consultations || []), financialRecord] }))
         }
         toast('Atendimento criado e salvo.', 'success')
       }
