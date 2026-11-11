@@ -27,6 +27,7 @@ import { OpportunityEditor } from './OpportunityEditor.jsx'
 import { NewLeadModal } from './NewLeadModal.jsx'
 import { CrmBulkBar } from './CrmBulkBar.jsx'
 import { CrmAgenda } from './CrmAgenda.jsx'
+import './CrmViewSwitcher.css'
 
 const SOURCE_SUGGESTIONS = ['Instagram', 'Indicação', 'WhatsApp', 'Google', 'Facebook', 'Site', 'Outro']
 const MAIN_KEY = 'table'
@@ -490,48 +491,116 @@ export function CrmWorkspace({ data }) {
 }
 
 function ViewTabs({ tab, onTab, views, viewsAvailable, canEditView, onNewView, onRenameView, onDeleteView }) {
-  const tabs = [
-    { key: MAIN_KEY, label: 'Tabela' },
-    ...views.map(v => ({ key: `v-${v.id}`, label: v.name, view: v })),
-    { key: 'kanban', label: 'Kanban' },
-    { key: 'agenda', label: 'Agenda' },
+  const modes = [
+    { key: MAIN_KEY, label: 'Tabela', description: 'Cadastre, edite, filtre e compare todos os dados.', icon: <><path d="M4 5h16v14H4z" /><path d="M4 10h16M9 5v14" /></> },
+    { key: 'kanban', label: 'Kanban', description: 'Mova oportunidades pelas etapas do funil.', icon: <><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="11" rx="1" /><rect x="17" y="4" width="4" height="7" rx="1" /></> },
+    { key: 'agenda', label: 'Agenda', description: 'Organize prazos, tarefas e próximos contatos.', icon: ICONS.calendar },
   ]
+  const tableModeActive = tab === MAIN_KEY || tab.startsWith('v-')
   return (
-    <div role="tablist" aria-label="Visualizações do CRM" style={{ display: 'flex', alignItems: 'flex-end', gap: 2, borderBottom: `1px solid ${C.border}`, overflowX: 'auto' }}>
-      {tabs.map(t => <TabButton key={t.key} t={t} active={tab === t.key} onTab={onTab} canEdit={t.view && canEditView(t.view)} onRename={onRenameView} onDelete={onDeleteView} />)}
-      {viewsAvailable && (
-        <button type="button" onClick={onNewView} data-testid="crm-new-view"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 12px', border: 'none', background: 'transparent', color: C.textSub, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-          <Ico d={ICONS.plus} size={13} />Nova visualização
-        </button>
-      )}
-    </div>
+    <section className="crm-view-switcher" data-testid="crm-view-switcher" style={{
+      '--crm-switcher-card': C.card, '--crm-switcher-surface': C.surface, '--crm-switcher-border': C.border,
+      '--crm-switcher-border-strong': C.borderBright, '--crm-switcher-text': C.text, '--crm-switcher-sub': C.textSub,
+      '--crm-switcher-dim': C.textDim, '--crm-switcher-accent': C.accent,
+    }}>
+      <div className="crm-view-switcher__intro">
+        <div>
+          <span className="crm-view-switcher__eyebrow">Modo de trabalho</span>
+          <h2>Como você quer trabalhar agora?</h2>
+          <p>Os modos mudam a forma de visualizar o mesmo CRM. Nenhum dado é duplicado.</p>
+        </div>
+      </div>
+
+      <div role="tablist" aria-label="Modos do CRM" className="crm-view-switcher__modes">
+        {modes.map(mode => (
+          <ModeTab key={mode.key} mode={mode}
+            active={mode.key === MAIN_KEY ? tableModeActive : tab === mode.key}
+            onTab={onTab} />
+        ))}
+      </div>
+
+      <div className="crm-view-switcher__saved-head">
+        <div>
+          <span className="crm-view-switcher__eyebrow">Visões salvas</span>
+          <h3>Recortes prontos para a rotina</h3>
+          <p>Aplicam filtros, colunas e agrupamentos sobre as mesmas oportunidades.</p>
+        </div>
+        {viewsAvailable && (
+          <button type="button" onClick={onNewView} data-testid="crm-new-view" className="crm-view-switcher__create"
+            title="Salva os filtros, colunas, ordenação e agrupamento atuais">
+            <Ico d={ICONS.plus} size={15} />Criar visão
+          </button>
+        )}
+      </div>
+
+      <div role="tablist" aria-label="Visualizações do CRM" className="crm-view-switcher__saved-list">
+        {views.length === 0
+          ? <div className="crm-view-switcher__empty">Nenhuma visão salva. Ajuste os filtros da Tabela e crie um atalho para reutilizá-los.</div>
+          : views.map(view => <SavedViewTab key={view.id} view={view} active={tab === `v-${view.id}`} onTab={onTab}
+              canEdit={canEditView(view)} onRename={onRenameView} onDelete={onDeleteView} />)}
+      </div>
+    </section>
   )
 }
 
-function TabButton({ t, active, onTab, canEdit, onRename, onDelete }) {
+function ModeTab({ mode, active, onTab }) {
+  return (
+    <button type="button" role="tab" aria-label={mode.label} aria-selected={active} onClick={() => onTab(mode.key)} className={`crm-view-mode${active ? ' is-active' : ''}`}>
+      <span className="crm-view-mode__icon"><Ico d={mode.icon} size={19} /></span>
+      <span><strong>{mode.label}</strong><small>{mode.description}</small></span>
+      {active && <span className="crm-view-mode__current">Em uso</span>}
+    </button>
+  )
+}
+
+const SAVED_VIEW_DESCRIPTIONS = {
+  'meus leads': 'Somente oportunidades abertas sob sua responsabilidade.',
+  'follow-ups pendentes': 'Negociações abertas que ainda possuem tarefa a acompanhar.',
+  'orçamentos em negociação': 'Propostas enviadas que continuam abertas para negociação.',
+  tarefas: 'Oportunidades organizadas para acompanhamento das tarefas.',
+}
+
+function savedViewDescription(view) {
+  const known = SAVED_VIEW_DESCRIPTIONS[String(view?.name || '').trim().toLocaleLowerCase('pt-BR')]
+  if (known) return known
+  const config = normalizeViewConfig(view?.config)
+  const filters = config.filters || {}
+  const parts = []
+  if (filters.openTasks) parts.push('com tarefa aberta')
+  if (filters.responsible?.includes('me')) parts.push('sob sua responsabilidade')
+  if (filters.stage?.length === 1) parts.push(`na etapa ${stageName(filters.stage[0])}`)
+  if (filters.status && filters.status !== 'all') parts.push(filters.status === 'aberto' ? 'somente abertas' : `situação ${filters.status}`)
+  return parts.length ? `Oportunidades ${parts.join(' · ')}.` : 'Filtros, colunas e agrupamento personalizados para a sua rotina.'
+}
+
+function stageName(key) {
+  return ({ primeiro_contato: 'Primeiro contato', consulta_agendada: 'Consulta agendada', consultado: 'Consultado', orcamento_enviado: 'Orçamento enviado' })[key] || key
+}
+
+function SavedViewTab({ view, active, onTab, canEdit, onRename, onDelete }) {
   const ref = useRef(null)
   const [menu, setMenu] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const label = view.name
   return (
-    <div style={{ display: 'flex', alignItems: 'center', borderBottom: `2px solid ${active ? C.accent : 'transparent'}`, marginBottom: -1 }}>
-      <button type="button" role="tab" aria-selected={active} disabled={t.disabled} title={t.hint || (t.view ? (t.view.scope === 'shared' ? 'Visualização compartilhada' : 'Visualização pessoal') : undefined)}
-        onClick={() => !t.disabled && onTab(t.key)}
-        style={{ padding: '9px 12px', border: 'none', background: 'transparent', color: active ? C.text : t.disabled ? C.textDim : C.textSub, fontSize: 13.5, fontWeight: active ? 700 : 600, cursor: t.disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-        {t.label}
-        {t.view?.scope === 'shared' && <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: C.accent + '1a', borderRadius: 6, padding: '1px 5px' }}>equipe</span>}
-        {t.disabled && <span style={{ fontSize: 10, fontWeight: 700, color: C.textDim, border: `1px solid ${C.border}`, borderRadius: 6, padding: '0 5px' }}>em breve</span>}
+    <div className={`crm-saved-view${active ? ' is-active' : ''}`}>
+      <button type="button" role="tab" aria-selected={active} onClick={() => onTab(`v-${view.id}`)} className="crm-saved-view__main"
+        title={view.scope === 'shared' ? 'Visão compartilhada com a equipe' : 'Visão pessoal'}>
+        <span className="crm-saved-view__top">
+          <strong>{label}</strong>
+          <span className={`crm-saved-view__scope is-${view.scope}`}>{view.scope === 'shared' ? 'Equipe' : 'Pessoal'}</span>
+        </span>
+        <small>{savedViewDescription(view)}</small>
       </button>
       {canEdit && active && <>
-        <button ref={ref} type="button" aria-label={`Opções da visualização ${t.label}`} onClick={() => { setConfirmDelete(false); setMenu(m => !m) }}
-          style={{ border: 'none', background: 'transparent', color: C.textDim, cursor: 'pointer', display: 'grid', placeItems: 'center', padding: '2px 4px' }}>
+        <button ref={ref} type="button" aria-label={`Opções da visualização ${label}`} className="crm-saved-view__menu" onClick={() => { setConfirmDelete(false); setMenu(m => !m) }}>
           <Ico d={ICONS.dots} size={14} />
         </button>
         <Popover anchorRef={ref} open={menu} onClose={() => setMenu(false)} width={210} label="Opções da visualização">
-          <MenuItem onClick={() => { setMenu(false); onRename(t.view) }}>Renomear / quem vê</MenuItem>
+          <MenuItem onClick={() => { setMenu(false); onRename(view) }}>Renomear / quem vê</MenuItem>
           {!confirmDelete
             ? <MenuItem danger onClick={() => setConfirmDelete(true)}>Excluir visualização</MenuItem>
-            : <MenuItem danger onClick={() => { setMenu(false); onDelete(t.view) }}>Confirmar exclusão</MenuItem>}
+            : <MenuItem danger onClick={() => { setMenu(false); onDelete(view) }}>Confirmar exclusão</MenuItem>}
           <div style={{ fontSize: 11, color: C.textDim, padding: '4px 9px' }}>Excluir a visualização não apaga nenhuma oportunidade.</div>
         </Popover>
       </>}
@@ -559,9 +628,12 @@ function ViewModal({ state, canShare, onClose, onSubmit }) {
   }
   const rename = state.mode === 'rename'
   return (
-    <Modal open={state.open} onClose={onClose} title={rename ? 'Editar visualização' : 'Nova visualização'} width={440} trackDirty={false}>
+    <Modal open={state.open} onClose={onClose} title={rename ? 'Editar visão' : 'Criar visão do CRM'} width={480} trackDirty={false}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {!rename && <p style={{ margin: 0, fontSize: 12.5, color: C.textSub, lineHeight: 1.5 }}>Salva as colunas, larguras, filtros, ordenação e agrupamento que estão na tela agora.</p>}
+        {!rename && <div style={{ padding: '12px 14px', borderRadius: 10, border: `1px solid ${C.accent}45`, background: C.accent + '0d' }}>
+          <p style={{ margin: 0, fontSize: 12.5, color: C.textSub, lineHeight: 1.55 }}><strong style={{ color: C.text }}>Uma visão não cria outro funil nem duplica oportunidades.</strong> Ela salva os filtros, colunas, ordenação e agrupamento que estão na Tabela agora.</p>
+          <p style={{ margin: '6px 0 0', fontSize: 11.5, color: C.textDim, lineHeight: 1.5 }}>Exemplos: Follow-ups de hoje, Orçamentos aguardando retorno ou Leads da minha equipe.</p>
+        </div>}
         <div>
           <label htmlFor="crm-view-name" style={base.label}>Nome</label>
           <input id="crm-view-name" autoFocus value={name} maxLength={60} onChange={e => setName(e.target.value)}
@@ -570,17 +642,17 @@ function ViewModal({ state, canShare, onClose, onSubmit }) {
           <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
             <legend style={base.label}>Quem vê</legend>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.text, marginBottom: 6, cursor: 'pointer' }}>
-              <input type="radio" name="crm-view-scope" checked={scope === 'personal'} onChange={() => setScope('personal')} style={{ accentColor: C.accent }} />Só eu (pessoal)
+              <input type="radio" name="crm-view-scope" data-testid="crm-view-scope-personal" checked={scope === 'personal'} onChange={() => setScope('personal')} style={{ accentColor: C.accent }} />Só eu (pessoal)
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: canShare ? C.text : C.textDim, cursor: canShare ? 'pointer' : 'not-allowed' }}>
-              <input type="radio" name="crm-view-scope" disabled={!canShare} checked={scope === 'shared'} onChange={() => setScope('shared')} style={{ accentColor: C.accent }} />
+              <input type="radio" name="crm-view-scope" data-testid="crm-view-scope-shared" disabled={!canShare} checked={scope === 'shared'} onChange={() => setScope('shared')} style={{ accentColor: C.accent }} />
               Toda a equipe (compartilhada){!canShare && ' — somente Administrador e Gestão'}
             </label>
           </fieldset>
         {error && <div role="alert" style={{ color: C.red, fontSize: 12.5 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn onClick={submit} disabled={saving}>{saving ? 'Salvando…' : rename ? 'Salvar' : 'Salvar visualização'}</Btn>
+          <Btn data-testid="crm-view-submit" onClick={submit} disabled={saving}>{saving ? 'Salvando…' : rename ? 'Salvar' : 'Criar visão'}</Btn>
         </div>
       </div>
     </Modal>

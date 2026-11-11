@@ -38,6 +38,9 @@ async function mockBackend(page) {
       window.localStorage.setItem('surgimetrics_crm_agenda_v1:e2e-user-id', JSON.stringify({ view: 'month' }))
     } catch { /* ignore */ }
   })
+  // Evita que carregamentos gerais do workspace escapem para o Supabase real no
+  // primeiro teste do servidor frio. As rotas específicas abaixo têm precedência.
+  await page.route('**/rest/v1/**', route => route.fulfill(json([])))
   await page.route('**/rest/v1/rpc/clinic_team', route => route.fulfill(json([
     { user_id: 'u1', member_email: 'ana@clinica.com', role: 'gestao' },
     { user_id: 'u2', member_email: 'felipe@clinica.com', role: 'equipe' },
@@ -84,8 +87,8 @@ const agendaEvent = (page, id) => page.locator(`[data-testid="agenda-event"][dat
 test('Agenda reúne tarefas e follow-ups da clínica e abre na aba do CRM', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/app/funnel?view=agenda')
-  await expect(page.getByTestId('crm-agenda')).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Agenda', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: 'Agenda', exact: true })).toHaveAttribute('aria-selected', 'true', { timeout: 10_000 })
+  await expect(page.getByTestId('crm-agenda')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByTestId('agenda-month')).toBeVisible()
 
   await expect(agendaEvent(page, 'task:t1')).toHaveAttribute('data-event-type', 'followup')
