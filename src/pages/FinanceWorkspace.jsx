@@ -75,8 +75,8 @@ const AREAS = [
     id:'relacionamento', label:'Relacionamento', icon:'patients', roles:ALL_ROLES,
     sections:[
       { title:'Relacionamento', items:[
-        { id:'funnel',   label:'CRM',       icon:'funnel',   hint:'Gestão de oportunidades: tabela, kanban e indicadores' },
-        { id:'crm-painel', label:'Painel CRM', icon:'reports', hint:'Conversão, origem e desempenho do funil' },
+        { id:'funnel',   label:'CRM',       icon:'funnel',   hint:'Gestão de oportunidades: tabela, kanban e agenda' },
+        { id:'crm-painel', label:'Painel', icon:'reports', hint:'Conversão, origem e desempenho do funil' },
         { id:'patients', label:'Pacientes', icon:'patients', hint:'Cadastro clínico e prontuários' },
         { id:'inbox',    label:'WhatsApp',  icon:'chat',     hint:'Caixa de entrada de todas as conversas' },
         { id:'ads',      label:'Anúncios',  icon:'reports',  hint:'Desempenho dos anúncios do Meta' },
@@ -223,7 +223,7 @@ const SUBTITLES = {
   billing:'Gerencie a sua assinatura.',
   settings:'Ajuste perfil e preferências da plataforma.',
   patients:'Cadastro clínico CFM, prontuário eletrônico e histórico financeiro.',
-  funnel:'Oportunidades comerciais em tabela, kanban e indicadores — a mesma base, várias visualizações.',
+  funnel:'Oportunidades comerciais em tabela, kanban e agenda — a mesma base, várias visualizações.',
   'crm-painel':'Conversão por etapa, origem e responsável, pipeline ponderado e motivos de perda — sem cruzar o financeiro.',
   inbox:'Todas as conversas de WhatsApp da clínica, inclusive de números ainda não cadastrados como paciente.',
   ads:'Desempenho dos anúncios do Meta (Facebook/Instagram) por campanha, conjunto e anúncio.',

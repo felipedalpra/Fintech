@@ -108,7 +108,7 @@ export function CrmBulkBar({ selected, stages, members, memberLabel, tagSuggesti
           <div style={{ fontSize: 12.5, color: C.text, padding: '4px 6px 10px', lineHeight: 1.45 }}>
             {allArchived
               ? `Restaurar ${n} ${plural}? Cada uma volta para a situação que tinha antes de ser arquivada.`
-              : `Arquivar ${n - archivedCount} ${n - archivedCount === 1 ? 'oportunidade' : 'oportunidades'}? Elas saem da Tabela, do Kanban, dos Indicadores e dos alertas. Nada é apagado — dá para restaurar em Filtro → Situação → Arquivadas.`}
+              : `Arquivar ${n - archivedCount} ${n - archivedCount === 1 ? 'oportunidade' : 'oportunidades'}? Elas saem da Tabela, do Kanban, do Painel e dos alertas. Nada é apagado — dá para restaurar em Filtro → Situação → Arquivadas.`}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button type="button" onClick={close} style={btn(false)}>Cancelar</button>

@@ -110,7 +110,7 @@ export function CrmRowMenu({ menu, onClose, stages, members, memberLabel, action
         </>}
 
         {view === 'archive' && <>
-          <Note>A oportunidade sai da Tabela, do Kanban, dos Indicadores e dos alertas. Nada é apagado: dá para ver e restaurar em Filtro → Situação → Arquivadas.</Note>
+          <Note>A oportunidade sai da Tabela, do Kanban, do Painel e dos alertas. Nada é apagado: dá para ver e restaurar em Filtro → Situação → Arquivadas.</Note>
           <MenuItem testId="crm-menu-archive-confirm" danger disabled={busy} onClick={() => run(() => actions.archive(opp))}><Ico d={ICONS.archive} size={13} />{busy ? 'Arquivando…' : 'Confirmar arquivamento'}</MenuItem>
           {back}
         </>}

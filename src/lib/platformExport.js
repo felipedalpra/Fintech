@@ -141,7 +141,7 @@ const FEATURE_TITLES = {
   'financial-import':'Importação financeira',
   patients:'Pacientes',
   funnel:'Funil',
-  'crm-painel':'Painel CRM',
+  'crm-painel':'Painel',
   'meu-dia':'Meu dia',
   tarefas:'Tarefas',
   inbox:'WhatsApp',
