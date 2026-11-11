@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-11
+### Fixed
+- **Conferência do Razão deixa de sinalizar receita financeira como divergência da receita bruta**: a comparação com o Dashboard agora aplica o mesmo critério contábil dos indicadores, separando receita operacional de receita financeira. Quando houver rendimentos, a tela explica que o valor permanece no Razão e aparece no resultado financeiro da DRE, lista os lançamentos e contas responsáveis e oferece ações diretas para revisar o lançamento ou sua classificação. Diferenças reais continuam destacadas e ganham acesso à fila de qualidade dos dados. (`src/lib/ledgerCheckDiagnostics.js`, `src/components/LedgerCheck.jsx`, `tests/unit/ledgerCheckDiagnostics.spec.js`, `tests/e2e/ledger-check.spec.js`.)
+
 ## [Unreleased] - 2026-11-10
 ### Added
 - **CRM ganha Agenda comercial unificada**: a nova visualização reúne consultas, cirurgias, tarefas, orçamentos e próximas ações sem duplicar registros, com modos mês/semana/dia, filtros combináveis, criação de follow-up, abertura da tarefa/oportunidade original e reagendamento persistido na fonte. A agenda usa o fuso de São Paulo, mantém consultas e cirurgias somente leitura e sincroniza as alterações com as demais visões do CRM e de Tarefas. Não exige tabela ou migration nova. (`src/components/CrmAgenda.jsx`, `src/components/CrmAgenda.css`, `src/lib/crmAgenda.js`, `src/components/CrmWorkspace.jsx`, `src/components/TasksPanel.jsx`, `src/lib/useTaskWorkspace.js`, `tests/unit/crmAgenda.spec.js`, `tests/e2e/crm-agenda.spec.js`.)

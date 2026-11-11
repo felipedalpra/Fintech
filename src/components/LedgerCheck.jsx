@@ -1,28 +1,34 @@
+import { useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { fmt, today } from '../utils.js'
-import { Card } from './UI.jsx'
-import { buildMetrics } from '../financialMetrics.js'
-import { auditLedgerReadiness, buildLedger } from '../lib/financialLedger.js'
+import { Btn, Card } from './UI.jsx'
+import { auditLedgerReadiness } from '../lib/financialLedger.js'
+import { buildLedgerConsumerComparison } from '../lib/ledgerCheckDiagnostics.js'
 
 // Conferência contínua da fonte financeira canônica. Um gate + duas reconciliações:
 //  Gate) integridade e cobertura dos dados de autoridade — sem bloqueios na fonte ativa.
 //  A) Razão × Fonte — deve bater a centavo (prova que o razão capturou todos os registros).
 //  B) Razão × Métricas — garante que os consumidores seguem a projeção canônica.
 export function LedgerCheck({ data }) {
+  const navigate = useNavigate()
   const audit = auditLedgerReadiness(data)
   const recon = audit.reconciliation
-  const m = buildMetrics(data)
+  const currentDate = today()
+  const comparison = buildLedgerConsumerComparison(data, currentDate)
+  const m = comparison.metrics
   const mReceivableOpen = (m.accountsReceivable || []).reduce((a, x) => a + (x.value || 0), 0)
   const mPayableOpen = (m.accountsPayable || []).reduce((a, x) => a + (x.value || 0), 0)
-  const currentDate = today()
-  const recurrenceStart = `${currentDate.slice(0, 4)}-01-01`
-  const comparisonLedger = buildLedger(data, { recurrenceFrom:recurrenceStart, recurrenceTo:currentDate })
-  const comparisonTotals = ledgerOpenTotals(comparisonLedger, currentDate)
-  const currentRecurringRevenue = comparisonLedger.entries
-    .filter(entry => entry.source_type === 'recurrence' && entry.direction === 'receivable' && entry.competence_date === currentDate && entry.status !== 'canceled')
-    .reduce((sum, entry) => sum + Number(entry.total_amount || 0), 0)
+  const comparisonTotals = ledgerOpenTotals(comparison.ledger, currentDate)
 
   const allMatch = recon.sources.every(s => Math.abs(s.diff) < 0.01)
+  const consumerChecks = [
+    { key:'receivable', label:'Contas a receber (aberto)', dash:mReceivableOpen, led:comparisonTotals.receivableOpen, note:'Inclui ocorrências recorrentes ainda não materializadas.' },
+    { key:'payable', label:'Contas a pagar (aberto)', dash:mPayableOpen, led:comparisonTotals.payableOpen, note:'Inclui ocorrências recorrentes ainda não materializadas.' },
+    { key:'gross-revenue', label:'Receita bruta operacional (competência)', dash:m.grossRevenue, led:comparison.operatingGrossRevenue, note:'Compara somente receitas operacionais; receitas financeiras ficam no resultado financeiro da DRE.' },
+    ...(comparison.financialRevenue > 0 ? [{ key:'financial-revenue', label:'Receitas financeiras (competência)', dash:m.financialRevenue, led:comparison.financialRevenue, note:'Exibidas separadamente da receita bruta operacional.' }] : []),
+  ].map(item => ({ ...item, diff:Math.round(((item.dash || 0) - (item.led || 0)) * 100) / 100 }))
+  const consumerMismatches = consumerChecks.filter(item => Math.abs(item.diff) >= 0.01)
+  const consumerAllMatch = consumerMismatches.length === 0
 
   const s = {
     intro: { fontSize: 13, color: C.textSub, marginBottom: 18, lineHeight: 1.5 },
@@ -42,12 +48,12 @@ export function LedgerCheck({ data }) {
     </span>
   )
 
-  const CompareRow = ({ label, dash, led, note }) => (
-    <tr>
-      <td style={s.tdL}>{label}{note && <div style={{ fontSize: 10.5, color: C.textDim }}>{note}</div>}</td>
-      <td style={s.tdR}>{fmt(dash)}</td>
-      <td style={s.tdR}>{fmt(led)}</td>
-      <td style={s.tdR}>{diffCell((dash || 0) - (led || 0))}</td>
+  const CompareRow = ({ row }) => (
+    <tr data-testid={`ledger-consumer-${row.key}`}>
+      <td style={s.tdL}>{row.label}{row.note && <div style={{ fontSize: 10.5, color: C.textDim }}>{row.note}</div>}</td>
+      <td style={s.tdR}>{fmt(row.dash)}</td>
+      <td style={s.tdR}>{fmt(row.led)}</td>
+      <td style={s.tdR}>{diffCell(row.diff)}</td>
     </tr>
   )
 
@@ -122,33 +128,85 @@ export function LedgerCheck({ data }) {
       </Card>
 
       <Card>
-        <div style={s.h}>B) Razão × Métricas — consistência dos consumidores</div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10 }}>
+          <div>
+            <div style={s.h}>B) Razão × Métricas — consistência dos indicadores</div>
+            <div style={{ fontSize:11.5, color:C.textSub, lineHeight:1.5 }}>
+              Cada linha compara o valor exibido com o Razão usando exatamente o mesmo critério contábil.
+            </div>
+          </div>
+          <span style={s.badge(consumerAllMatch)}>{consumerAllMatch ? '✓ Indicadores coerentes' : `⚠ ${consumerMismatches.length} diferença(s) real(is)`}</span>
+        </div>
         <div style={{ overflowX:'auto' }}>
           <table style={{ ...s.table, minWidth:680 }}>
-            <thead><tr><th style={s.th}>Indicador</th><th style={{ ...s.th, textAlign: 'right' }}>Dashboard</th><th style={{ ...s.th, textAlign: 'right' }}>Razão</th><th style={{ ...s.th, textAlign: 'right' }}>Δ</th></tr></thead>
+            <thead><tr><th style={s.th}>Indicador na tela</th><th style={{ ...s.th, textAlign:'right' }}>Valor exibido</th><th style={{ ...s.th, textAlign:'right' }}>Razão no mesmo critério</th><th style={{ ...s.th, textAlign:'right' }}>Diferença</th></tr></thead>
             <tbody>
-              <CompareRow label="Contas a receber (aberto)" dash={mReceivableOpen} led={comparisonTotals.receivableOpen}
-                note="Inclui ocorrências recorrentes ainda não materializadas." />
-              <CompareRow label="Contas a pagar (aberto)" dash={mPayableOpen} led={comparisonTotals.payableOpen}
-                note="Inclui ocorrências recorrentes ainda não materializadas." />
-              <CompareRow label="Receita bruta (competência)" dash={m.grossRevenue} led={round2SourcesRevenue(recon) + currentRecurringRevenue}
-                note="Receitas operacionais e ocorrências recorrentes usam a mesma projeção canônica." />
+              {consumerChecks.map(row => <CompareRow key={row.key} row={row} />)}
             </tbody>
           </table>
         </div>
+
+        {comparison.financialRevenue > 0 && (
+          <div data-testid="ledger-financial-revenue-explanation" style={{ marginTop:14, padding:'14px 16px', borderRadius:12, border:`1px solid ${C.accent}55`, background:`${C.accent}0D` }}>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:14, alignItems:'flex-start', flexWrap:'wrap' }}>
+              <div style={{ maxWidth:760 }}>
+                <strong style={{ display:'block', color:C.text, fontSize:13.5 }}>
+                  {fmt(comparison.financialRevenue)} estão no Resultado financeiro — não é valor perdido
+                </strong>
+                <div style={{ marginTop:5, color:C.textSub, fontSize:12, lineHeight:1.55 }}>
+                  O Razão preserva esse valor, mas ele foi classificado como <strong>receita financeira</strong>.
+                  Por isso aparece separado da receita bruta operacional na DRE. Se a classificação estiver correta,
+                  nenhuma correção é necessária; se for receita de atendimento ou venda, revise a conta vinculada.
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <Btn variant="ghost" onClick={() => navigate('/app/finance')}>Revisar lançamentos</Btn>
+                <Btn onClick={() => navigate('/app/chart-of-accounts')}>Revisar classificação</Btn>
+              </div>
+            </div>
+            {comparison.financialRevenueDetails.length > 0 && (
+              <div style={{ display:'grid', gap:6, marginTop:12 }}>
+                {comparison.financialRevenueDetails.slice(0, 5).map(item => (
+                  <div key={item.id} style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'center', flexWrap:'wrap', padding:'8px 10px', borderRadius:8, background:C.surface, color:C.textSub, fontSize:11.5 }}>
+                    <span style={{ minWidth:0 }}>
+                      <strong style={{ display:'block', color:C.text, overflowWrap:'anywhere' }}>{item.description}</strong>
+                      <small style={{ color:C.textDim }}>{item.account}{item.competenceDate ? ` · ${formatDate(item.competenceDate)}` : ''}</small>
+                    </span>
+                    <strong style={{ color:C.text, fontVariantNumeric:'tabular-nums' }}>{fmt(item.value)}</strong>
+                  </div>
+                ))}
+                {comparison.financialRevenueDetails.length > 5 && <div style={{ color:C.textDim, fontSize:11 }}>Mais {comparison.financialRevenueDetails.length - 5} lançamento(s) com a mesma classificação.</div>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!consumerAllMatch && (
+          <div role="alert" data-testid="ledger-consumer-mismatch-help" style={{ marginTop:14, padding:'14px 16px', borderRadius:12, border:`1px solid ${C.red}55`, background:`${C.red}0D` }}>
+            <strong style={{ display:'block', color:C.red, fontSize:13.5 }}>Há uma diferença real que precisa de revisão</strong>
+            <div style={{ marginTop:5, color:C.textSub, fontSize:12, lineHeight:1.55 }}>
+              {consumerMismatches.map(item => `${item.label}: ${fmt(item.diff)}`).join(' · ')}.
+              Abra a qualidade dos dados para localizar datas, situações ou classificações incompletas; nenhum valor será alterado automaticamente.
+            </div>
+            <div style={{ display:'flex', gap:8, marginTop:10, flexWrap:'wrap' }}>
+              <Btn variant="ghost" onClick={() => navigate('/app/finance')}>Abrir lançamentos</Btn>
+              <Btn onClick={() => navigate('/app/data-quality')}>Diagnosticar pendências</Btn>
+            </div>
+          </div>
+        )}
         <div style={s.note}>
-          Esta tela é somente leitura. A seção A reconcilia a origem; a seção B monitora os principais
-          consumidores da fonte canônica. Cada ocorrência recorrente também é um título do razão e não é
-          duplicada quando já existe como lançamento operacional.
+          Esta conferência é somente leitura: os botões levam ao cadastro correto para revisão, mas nunca
+          alteram valores automaticamente. A seção A confere se a origem chegou ao Razão; a seção B confere
+          se cada indicador está lendo o mesmo conjunto de títulos.
         </div>
       </Card>
     </div>
   )
 }
 
-function round2SourcesRevenue(recon) {
-  const rev = ['Cirurgias (receita)', 'Consultas (receita)', 'Vendas de produto', 'Receitas extras']
-  return recon.sources.filter(s => rev.includes(s.label)).reduce((a, s) => a + s.ledger, 0)
+function formatDate(value) {
+  const [year, month, day] = String(value || '').slice(0, 10).split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
 function ledgerOpenTotals(ledger, balanceDate) {
