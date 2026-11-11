@@ -12,6 +12,7 @@ test('conferência do razão mostra a integridade da fonte ativa e as reconcilia
   await expect(page.getByRole('heading', { name:'Conferência do Razão' }).first()).toBeVisible()
   await expect(page.getByText('Integridade da fonte financeira')).toBeVisible()
   await expect(page.getByText('A) Razão × Fonte — reconciliação (deve bater a centavo)')).toBeVisible()
-  await expect(page.getByText('B) Razão × Métricas — consistência dos consumidores')).toBeVisible()
+  await expect(page.getByText('B) Razão × Métricas — consistência dos indicadores')).toBeVisible()
+  await expect(page.getByText('Razão no mesmo critério')).toBeVisible()
   await expect(page.getByText('Fonte ativa · dados íntegros', { exact:false })).toBeVisible()
 })
