@@ -29,6 +29,8 @@ import { FiscalDocumentCell, FiscalDocumentModal, FiscalDocumentSummary } from '
 import { documentsForTarget, fiscalDocumentsSearchText, fiscalTargetFromMetric, fiscalTargetFromModal, matchesFiscalFilter } from '../lib/fiscalDocuments.js'
 import { loadFiscalDocuments } from '../lib/fiscalDocumentStore.js'
 import { maskMoney } from '../lib/privacyMask.js'
+import { buildFinanceProfitTrend } from '../lib/financeProfitTrend.js'
+import { FinanceProfitTrend } from './FinanceProfitTrend.jsx'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -265,6 +267,10 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const mergedData = useMemo(() => ({ ...data, recurrences }), [data, recurrences])
   const m = useMemo(
     () => buildMetrics(mergedData, { startDate:range.start, endDate:range.end, balanceDate:range.end || today() }),
+    [mergedData, range.start, range.end],
+  )
+  const profitTrend = useMemo(
+    () => buildFinanceProfitTrend(mergedData, range),
     [mergedData, range.start, range.end],
   )
   const money = value => maskFinancialValue(value, financialPrivacyMode, fmt)
@@ -1342,6 +1348,8 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             )
           })}
         </div>
+
+        <FinanceProfitTrend points={profitTrend} formatMoney={money} privacyMode={financialPrivacyMode} />
 
         {nextDueItem && (
           <Card style={{ padding:'12px 18px', border:`1px solid ${C.yellow}44`, background:`${C.yellow}08`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
