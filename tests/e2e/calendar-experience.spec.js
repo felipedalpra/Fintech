@@ -135,6 +135,9 @@ test('cadastra valor e custos de cirurgia pela agenda sem criar lançamento para
   const hospitalInput = finance.getByText('Custo hospital', { exact:true }).locator('..').locator('input')
   await hospitalInput.fill('3000')
   await hospitalInput.press('Tab')
+  const invoiceTaxInput = finance.getByText('Emissão de NF (%)', { exact:true }).locator('..').locator('input')
+  await invoiceTaxInput.fill('5')
+  await invoiceTaxInput.press('Tab')
   await page.getByRole('button', { name:'Criar atendimento' }).click()
 
   await expect.poll(() => store.getPayload().surgeries.length).toBe(2)
@@ -143,7 +146,13 @@ test('cadastra valor e custos de cirurgia pela agenda sem criar lançamento para
     procedureId:PROCEDURE_ID,
     totalValue:18000,
     hospitalCost:3000,
+    invoiceTaxRate:5,
+    invoiceTaxAmount:900,
     paymentStatus:'pendente',
+    costSettlements:{
+      hospital_cost:{ status:'pendente' },
+      invoice_tax:{ status:'pendente' },
+    },
   })
 })
 
