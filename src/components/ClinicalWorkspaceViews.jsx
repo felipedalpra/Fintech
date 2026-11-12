@@ -10,6 +10,7 @@ import {
 } from '../lib/clinicalSignatureBryClient.js'
 import { clinicalPendingLabel, clinicalTimelineLabel } from '../lib/clinicalWorkspaceIndex.js'
 import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
+import { ClinicalIcon } from './ClinicalIcons.jsx'
 
 const MAIL_PATH = 'M2 5.5A1.5 1.5 0 0 1 3.5 4h17A1.5 1.5 0 0 1 22 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 2 18.5v-13Zm2.2.5 7.4 6.1a.6.6 0 0 0 .8 0L19.8 6H4.2ZM4 7.4V18h16V7.4l-7.1 5.85a2.6 2.6 0 0 1-3.4 0L4 7.4Z'
 
@@ -574,7 +575,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
                   const opened = openEmailForDocument({ patient, clinicName, document })
                   setNotice(opened ? 'E-mail aberto no seu cliente de correio. O arquivo clínico não foi enviado automaticamente; anexe-o manualmente quando autorizado.' : 'Não foi possível abrir o e-mail. Confira o e-mail cadastrado do paciente.')
                 }}><MailGlyph size={15} /></button>
-                <details><summary aria-label="Mais opções">•••</summary><div><button type="button" onClick={() => patient && onOpenPatient(patient, 'overview')}>Abrir ficha do paciente</button><button type="button" onClick={openDocument}>Ver detalhes do documento</button></div></details>
+                <details><summary aria-label="Mais opções"><ClinicalIcon name="more" size={16} /></summary><div><button type="button" onClick={() => patient && onOpenPatient(patient, 'overview')}>Abrir ficha do paciente</button><button type="button" onClick={openDocument}>Ver detalhes do documento</button></div></details>
               </div>
             </article>
           )})}

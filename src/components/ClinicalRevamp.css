@@ -24,7 +24,7 @@
 .clinical-index-search input {
   min-height: 44px;
   border-radius: 12px;
-  font-size: 13px;
+  font-size: 15px;
   transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
 }
 
@@ -54,7 +54,7 @@
 .clinical-index-header > div:first-child > span,
 .clinical-cockpit > header span,
 .clinical-assets-section-header > div > span {
-  font-size: 10px;
+  font-size: 13px;
   letter-spacing: .14em;
 }
 
@@ -67,7 +67,7 @@
 
 .clinical-index-header p {
   max-width: 680px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.6;
 }
 
@@ -111,7 +111,7 @@
 
 .clinical-cockpit > header small {
   color: var(--clinical-dim);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .clinical-insight-grid {
@@ -144,12 +144,12 @@
 
 .clinical-insight-grid span,
 .clinical-document-metrics span {
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .clinical-insight-grid small,
 .clinical-document-metrics small {
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -168,7 +168,7 @@
 }
 
 .clinical-agenda-row__body strong { font-size: 14px; }
-.clinical-agenda-row__body small { font-size: 11px; }
+.clinical-agenda-row__body small { font-size: 13px; }
 
 /* Ficha do paciente */
 .clinical-patient-header {
@@ -190,7 +190,7 @@
 }
 
 .clinical-patient-header__identity h2 { font-size: 20px; }
-.clinical-patient-header__identity p { font-size: 11px; }
+.clinical-patient-header__identity p { font-size: 13px; }
 
 .clinical-patient-header__actions {
   display: flex;
@@ -240,7 +240,7 @@
   padding: 0 14px;
   border: 1px solid transparent;
   border-radius: 10px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .clinical-tabs button.is-active {
@@ -287,8 +287,8 @@
   border-radius: 12px;
 }
 
-.clinical-patient-index__identity strong { font-size: 13px; }
-.clinical-patient-index__identity small { font-size: 10px; }
+.clinical-patient-index__identity strong { font-size: 15px; }
+.clinical-patient-index__identity small { font-size: 13px; }
 
 .clinical-filter-row {
   gap: 7px;
@@ -302,7 +302,7 @@
   min-height: 34px;
   padding-inline: 12px;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .clinical-work-queue {
@@ -322,10 +322,10 @@
   border-color: color-mix(in srgb, var(--clinical-accent) 45%, var(--clinical-border));
 }
 
-.clinical-work-queue strong { font-size: 12px; }
+.clinical-work-queue strong { font-size: 14px; }
 .clinical-work-queue small,
 .clinical-work-queue em,
-.clinical-work-queue b { font-size: 9px; }
+.clinical-work-queue b { font-size: 12px; }
 
 .clinical-pending-drawer {
   position: fixed;
@@ -365,7 +365,7 @@
 
 .clinical-pending-drawer header span {
   color: var(--clinical-accent);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 850;
   letter-spacing: .12em;
   text-transform: uppercase;
@@ -380,11 +380,11 @@
 }
 
 .clinical-pending-drawer h3 { margin: 12px 0 0; font-size: 24px; }
-.clinical-pending-drawer p { margin: 0; color: var(--clinical-sub); font-size: 13px; line-height: 1.65; }
+.clinical-pending-drawer p { margin: 0; color: var(--clinical-sub); font-size: 15px; line-height: 1.65; }
 .clinical-pending-drawer dl { display: grid; gap: 10px; margin: 6px 0 auto; }
 .clinical-pending-drawer dl > div { display: grid; gap: 4px; padding: 13px; border: 1px solid var(--clinical-border); border-radius: 11px; background: var(--clinical-surface); }
-.clinical-pending-drawer dt { color: var(--clinical-dim); font-size: 9px; font-weight: 800; text-transform: uppercase; }
-.clinical-pending-drawer dd { margin: 0; color: var(--clinical-text); font-size: 12px; }
+.clinical-pending-drawer dt { color: var(--clinical-dim); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.clinical-pending-drawer dd { margin: 0; color: var(--clinical-text); font-size: 14px; }
 
 /* Central de documentos */
 .clinical-document-metrics {
@@ -438,12 +438,12 @@
   border: 1px solid var(--clinical-border-bright);
   border-radius: 50%;
   color: var(--clinical-sub);
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .clinical-document-journey > div > span { display: grid; gap: 2px; }
-.clinical-document-journey strong { font-size: 10px; }
-.clinical-document-journey small { color: var(--clinical-dim); font-size: 8px; }
+.clinical-document-journey strong { font-size: 13px; }
+.clinical-document-journey small { color: var(--clinical-dim); font-size: 12px; }
 .clinical-document-journey > i { height: 1px; background: var(--clinical-border-bright); }
 .clinical-document-journey .is-complete,
 .clinical-document-journey .is-current,
@@ -481,7 +481,7 @@
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .clinical-document-row__identity,
@@ -492,10 +492,10 @@
 }
 
 .clinical-document-row__identity small,
-.clinical-document-row__status small { color: var(--clinical-dim); font-size: 9px; }
-.clinical-document-row__identity strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.clinical-document-row__identity em { overflow: hidden; color: var(--clinical-sub); font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
-.clinical-document-row__status strong { font-size: 11px; }
+.clinical-document-row__status small { color: var(--clinical-dim); font-size: 12px; }
+.clinical-document-row__identity strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.clinical-document-row__identity em { overflow: hidden; color: var(--clinical-sub); font-size: 12px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.clinical-document-row__status strong { font-size: 13px; }
 .clinical-document-row__status small { width: max-content; padding: 4px 7px; border-radius: 99px; background: var(--clinical-bg); font-weight: 750; }
 .clinical-document-row__status .is-signed { color: var(--clinical-green); }
 .clinical-document-row__status .is-pending,
@@ -548,7 +548,7 @@
 }
 
 .clinical-attach-dialog__body > label { display: grid; gap: 6px; }
-.clinical-attach-dialog__body > label > span { color: var(--clinical-dim); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.clinical-attach-dialog__body > label > span { color: var(--clinical-dim); font-size: 12px; font-weight: 800; text-transform: uppercase; }
 .clinical-attach-dialog__body input { min-height: 42px; padding: 0 12px; border: 1px solid var(--clinical-border); border-radius: 10px; outline: none; background: var(--clinical-bg); color: var(--clinical-text); font: 12px inherit; }
 
 .clinical-sign-document-dialog__body {
@@ -566,10 +566,10 @@
   background: var(--clinical-surface);
 }
 
-.clinical-sign-document-dialog__body > div > span { color: var(--clinical-dim); font-size: 9px; font-weight: 800; text-transform: uppercase; }
-.clinical-sign-document-dialog__body > div > strong { font-size: 13px; }
+.clinical-sign-document-dialog__body > div > span { color: var(--clinical-dim); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.clinical-sign-document-dialog__body > div > strong { font-size: 15px; }
 .clinical-sign-document-dialog__body > div > small,
-.clinical-sign-document-dialog__body > p { margin: 0; color: var(--clinical-sub); font-size: 11px; line-height: 1.55; }
+.clinical-sign-document-dialog__body > p { margin: 0; color: var(--clinical-sub); font-size: 13px; line-height: 1.55; }
 
 /* Protocolos: melhora a leitura sem alterar o editor ou a aplicação. */
 .clinical-protocols { padding: clamp(20px, 2.4vw, 34px); }
@@ -577,7 +577,7 @@
 .clinical-protocol-detail { padding: clamp(20px, 2.4vw, 34px); }
 .clinical-protocols__filters { align-items: end; gap: 12px; }
 .clinical-protocol-search { min-width: min(420px, 100%); display: grid !important; gap: 5px; }
-.clinical-protocol-search > span { color: var(--clinical-dim); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.clinical-protocol-search > span { color: var(--clinical-dim); font-size: 12px; font-weight: 800; text-transform: uppercase; }
 .clinical-protocol-search input { min-height: 42px; padding: 0 12px; border: 1px solid var(--clinical-border); border-radius: 10px; outline: none; background: var(--clinical-bg); color: var(--clinical-text); font: 12px inherit; }
 
 /* Campos clínicos: contraste, escala e foco consistentes. */
@@ -647,3 +647,17 @@
   .clinical-document-row__actions details { display: block; min-width: 0; }
   .clinical-document-row__actions details > summary { width: 100%; min-height: 34px; }
 }
+
+/* Ícones SVG no lugar de símbolos de texto (⛶ ✓ × ! ◌ ＋ •••): alinhamento inline com texto
+   e giro do spinner de carregamento. */
+@keyframes clinical-spin { to { transform: rotate(360deg); } }
+.clinical-btn-icon { display: inline-flex; align-items: center; vertical-align: -2px; margin-right: 6px; }
+.clinical-compare-card__image > span,
+.clinical-asset-card__body > span,
+.clinical-asset-viewer__footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.clinical-document-row__actions summary > svg,
+.clinical-document-row__actions button > svg { pointer-events: none; }
