@@ -9,6 +9,7 @@ import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
 import { ClinicalProtocols } from './ClinicalProtocols.jsx'
 import { ClinicalIcon } from './ClinicalIcons.jsx'
+import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { isProfessionalIdentitySyncConfirmed, resolveDocumentAuthor } from '../lib/clinicalDocuments.js'
 import {
@@ -545,6 +546,7 @@ function PatientHeader({ patient, profile, profileStatus, appointments, clinicNa
         <button type="button" onClick={() => onOpenTab('prescriptions')}>+ Documento</button>
         <button
           type="button"
+          className="is-whatsapp"
           disabled={!normalizeWhatsappPhone(patient.phone)}
           title={patient.phone ? 'Abrir conversa no WhatsApp' : 'Paciente sem telefone cadastrado'}
           onClick={() => {
@@ -553,7 +555,7 @@ function PatientHeader({ patient, profile, profileStatus, appointments, clinicNa
             const message = `Olá, ${String(patient.full_name || '').split(' ')[0]}. Tudo bem? Aqui é da ${clinicName || 'clínica'}. Como podemos ajudar?`
             window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
           }}
-        >WhatsApp</button>
+        ><WhatsAppGlyph size={13} /> WhatsApp</button>
       </div>
       <div className="clinical-patient-header__today"><span>Hoje</span><strong>{appointments[0]?.time || 'Sem horário'}</strong><small>{appointments[0]?.label || 'Ficha avulsa'}</small></div>
     </header>

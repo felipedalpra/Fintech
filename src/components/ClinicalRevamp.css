@@ -200,13 +200,16 @@
 }
 
 .clinical-patient-header__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 34px;
   padding: 0 10px;
   border: 1px solid var(--clinical-border);
   border-radius: 9px;
   background: var(--clinical-surface);
   color: var(--clinical-sub);
-  font: 750 10px inherit;
+  font: 750 13px inherit;
   cursor: pointer;
 }
 
@@ -215,9 +218,14 @@
   color: var(--clinical-text);
 }
 
-.clinical-patient-header__actions button:last-child {
-  border-color: color-mix(in srgb, var(--clinical-green) 38%, var(--clinical-border));
-  color: var(--clinical-green);
+.clinical-patient-header__actions button.is-whatsapp:not(:disabled) {
+  border-color: color-mix(in srgb, #25D366 45%, var(--clinical-border));
+  color: #25D366;
+}
+
+.clinical-patient-header__actions button.is-whatsapp:not(:disabled):hover {
+  border-color: #25D366;
+  background: color-mix(in srgb, #25D366 14%, var(--clinical-surface));
 }
 
 .clinical-patient-header__actions button:disabled {
@@ -520,7 +528,7 @@
   border-radius: 8px;
   background: var(--clinical-card);
   color: var(--clinical-sub);
-  font: 750 9px inherit;
+  font: 750 12px inherit;
   cursor: pointer;
 }
 
@@ -549,7 +557,7 @@
 
 .clinical-attach-dialog__body > label { display: grid; gap: 6px; }
 .clinical-attach-dialog__body > label > span { color: var(--clinical-dim); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.clinical-attach-dialog__body input { min-height: 42px; padding: 0 12px; border: 1px solid var(--clinical-border); border-radius: 10px; outline: none; background: var(--clinical-bg); color: var(--clinical-text); font: 12px inherit; }
+.clinical-attach-dialog__body input { min-height: 42px; padding: 0 12px; border: 1px solid var(--clinical-border); border-radius: 10px; outline: none; background: var(--clinical-bg); color: var(--clinical-text); font: 14px inherit; }
 
 .clinical-sign-document-dialog__body {
   display: grid;
@@ -578,7 +586,7 @@
 .clinical-protocols__filters { align-items: end; gap: 12px; }
 .clinical-protocol-search { min-width: min(420px, 100%); display: grid !important; gap: 5px; }
 .clinical-protocol-search > span { color: var(--clinical-dim); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-.clinical-protocol-search input { min-height: 42px; padding: 0 12px; border: 1px solid var(--clinical-border); border-radius: 10px; outline: none; background: var(--clinical-bg); color: var(--clinical-text); font: 12px inherit; }
+.clinical-protocol-search input { min-height: 42px; padding: 0 12px; border: 1px solid var(--clinical-border); border-radius: 10px; outline: none; background: var(--clinical-bg); color: var(--clinical-text); font: 14px inherit; }
 
 /* Campos clínicos: contraste, escala e foco consistentes. */
 .clinical-workspace input,
