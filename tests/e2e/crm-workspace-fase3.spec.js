@@ -123,7 +123,8 @@ test('atualizações: fio cronológico, nova atualização com @menção e respo
 test('menção acende o sino e leva direto às Atualizações da oportunidade', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/app/funnel')
-  await page.getByRole('button', { name: 'Alertas do CRM' }).click()
+  // O sino do CRM foi unificado com o financeiro num botão só ("Notificações").
+  await page.getByRole('button', { name: 'Notificações', exact: true }).click()
   const mention = page.getByTestId('crm-alert-mention')
   await expect(mention).toContainText('lunara mencionou você · Bia Souza')
   await mention.click()
