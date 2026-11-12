@@ -8,6 +8,7 @@ import { ClinicalIntake } from './ClinicalIntake.jsx'
 import { ClinicalAssets } from './ClinicalAssets.jsx'
 import { ClinicalTreatmentPlan } from './ClinicalTreatmentPlan.jsx'
 import { ClinicalProtocols } from './ClinicalProtocols.jsx'
+import { ClinicalIcon } from './ClinicalIcons.jsx'
 import { MedicalRecord } from './MedicalRecord.jsx'
 import { isProfessionalIdentitySyncConfirmed, resolveDocumentAuthor } from '../lib/clinicalDocuments.js'
 import {
@@ -488,7 +489,7 @@ function DayAgenda({ date, schedule, patients, loading, onAppointment, onPatient
         </div>
       ) : (
         <div className="clinical-agenda-empty">
-          <div className="clinical-agenda-empty__icon">✓</div>
+          <div className="clinical-agenda-empty__icon"><ClinicalIcon name="check-circle" size={22} /></div>
           <div><strong>Nenhum atendimento na agenda de hoje</strong><span>Use a busca acima ou abra um dos pacientes recentes.</span></div>
         </div>
       )}

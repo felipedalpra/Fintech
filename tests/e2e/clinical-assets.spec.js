@@ -90,7 +90,7 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
   await page.getByRole('button', { name:'Salvar 1 foto(s)' }).click()
 
   await expect(page.getByText('Abdominoplastia').first()).toBeVisible()
-  await expect(page.getByText('✓ Aceite de imagem vinculado')).toBeVisible()
+  await expect(page.getByText('Aceite de imagem vinculado', { exact:false })).toBeVisible()
   expect(uploadCount).toBe(1)
   expect(rpcPayloads[0]).toMatchObject({
     p_patient_id:'patient-assets',
