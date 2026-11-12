@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-12
+### Fixed
+- **"Marcar pago" nas contas a pagar passa a liquidar de fato custos de cirurgia/consulta lançados direto no atendimento**: Hospital, Anestesia, Material e Outros custos cadastrados na própria cirurgia/consulta viviam em `surgeries[].costSettlements`/`consultations[].costSettlements`, mas o botão atualizava apenas `data.expenses` por `sourceId` — nada correspondia, o toast de sucesso aparecia e o lançamento continuava em aberto, sem gerar saída no fluxo de caixa. Agora a baixa grava o `status`/`paymentDate` no componente de custo correto da cirurgia ou consulta, saindo de "a pagar" e entrando como saída paga, com o mesmo registro já usado para "Marcar recebido" em cirurgias/consultas. (`src/components/Finance.jsx`.)
+
 ## [Unreleased] - 2026-11-11
 ### Added
 - **Módulo Clínico ganha uma experiência operacional 2026, centrada no cuidado e em documentos**: as telas Hoje, Pacientes, Pendências, Protocolos e Documentos passam a compartilhar hierarquia visual, componentes, estados e ações mais claros. A central de documentos prioriza o fluxo real “anexar → assinar → compartilhar → acompanhar”, diferencia anexos, receitas e pedidos, expõe estados reais da BRy e oferece WhatsApp manual sem afirmar envio automático nem expor URLs clínicas. A ficha do paciente ganha cabeçalho com ações rápidas, melhor densidade e formulários mais legíveis, preservando APIs, permissões, auditoria e persistência existentes. (`src/components/ClinicalRecords.jsx`, `src/components/ClinicalWorkspaceViews.jsx`, `src/components/ClinicalAssets.jsx`, `src/components/ClinicalRevamp.css`, `tests/e2e/clinical-records.spec.js`.)
