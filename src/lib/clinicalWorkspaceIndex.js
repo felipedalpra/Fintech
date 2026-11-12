@@ -43,10 +43,11 @@ const operationalAppointments = data => [
 function documentSignatureState(document, latestSignatureByDocument) {
   const signature = latestSignatureByDocument.get(document.id)
   if (!signature) return { status:'manual', label:'Via manual' }
-  if (signature.status === 'signed') return { status:'signed', label:'Assinado digitalmente' }
-  if (signature.status === 'failed') return { status:'failed', label:'Falha na assinatura' }
-  if (signature.status === 'cancelled') return { status:'cancelled', label:'Assinatura cancelada' }
-  return { status:'pending', label:'Assinatura pendente' }
+  const attemptId = signature.id || ''
+  if (signature.status === 'signed') return { status:'signed', label:'Assinado digitalmente', attemptId }
+  if (signature.status === 'failed') return { status:'failed', label:'Falha na assinatura', attemptId }
+  if (signature.status === 'cancelled') return { status:'cancelled', label:'Assinatura cancelada', attemptId }
+  return { status:'pending', label:'Assinatura pendente', attemptId }
 }
 
 export function buildClinicalTimeline(bundle, patientId) {

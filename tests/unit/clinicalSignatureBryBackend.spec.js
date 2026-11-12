@@ -348,6 +348,30 @@ test('feature desabilitada falha fechada antes de qualquer chamada ou escrita', 
   expect(admin.calls.inserts).toHaveLength(0)
 })
 
+test('atualizacao real da identidade profissional substitui a conexao antiga antes de assinar', async () => {
+  const oldConnection = {
+    ...connectionRow,
+    professional_name:'Clínica da Vitória',
+    professional_registration:'CRM 12345',
+  }
+  const admin = fakeSupabase({
+    clinical_documents:[documentRow],
+    clinical_signature_connections:[oldConnection],
+  })
+
+  await requestClinicalSignature(requestBody(), deps({ admin }))
+
+  const connections = admin.db.clinical_signature_connections
+  expect(connections.find(item => item.id === CONNECTION)).toMatchObject({
+    status:'revoked',
+    last_error_code:'professional_identity_updated',
+  })
+  expect(connections.some(item => item.id !== CONNECTION
+    && item.status === 'active'
+    && item.professional_name === signerIdentity.name
+    && item.professional_registration === signerIdentity.registration)).toBe(true)
+})
+
 test('documento e solicitacao com identificador invalido sao recusados', async () => {
   const admin = fakeSupabase({ clinical_documents:[documentRow] })
   for (const body of [{ documentIds:['nao-uuid'] }, { requestId:'nao-uuid' }, { documentIds:['../../etc'] }, { documentIds:[] }]) {

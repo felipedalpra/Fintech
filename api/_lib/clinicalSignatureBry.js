@@ -49,6 +49,7 @@ import {
   buildClinicalSignatureEnvelope,
   buildClinicalSignedFilePath,
   CLINICAL_SIGNATURE_RENDERING_VERSION,
+  clinicalSignerIdentityDifferences,
   clinicalSignatureEvidenceComplete,
   hashClinicalSignatureEnvelope,
 } from './clinicalSignature.js'
@@ -279,15 +280,32 @@ async function ensureConnection({ admin, ownerId, user, signer, config }) {
         409, 'conexao_desatualizada',
       )
     }
-    if (existing.status !== 'active') {
-      const { error:activateError } = await admin
+    const identityDrift = clinicalSignerIdentityDifferences({
+      author_name:existing.professional_name,
+      author_registration:existing.professional_registration,
+      author_council:existing.professional_council,
+    }, signer)
+    if (identityDrift.length > 0) {
+      const { error:revokeError } = await admin
         .from('clinical_signature_connections')
-        .update({ status:'active', last_error_code:null, last_error_message:null })
+        .update({
+          status:'revoked',
+          last_error_code:'professional_identity_updated',
+          last_error_message:'Conexão substituída após atualização confirmada da identidade profissional.',
+        })
         .eq('id', existing.id)
-      if (activateError) throw activateError
-      return { ...existing, status:'active' }
+      if (revokeError) throw translateDatabaseError(revokeError)
+    } else {
+      if (existing.status !== 'active') {
+        const { error:activateError } = await admin
+          .from('clinical_signature_connections')
+          .update({ status:'active', last_error_code:null, last_error_message:null })
+          .eq('id', existing.id)
+        if (activateError) throw activateError
+        return { ...existing, status:'active' }
+      }
+      return existing
     }
-    return existing
   }
 
   const { data:created, error:insertError } = await admin
