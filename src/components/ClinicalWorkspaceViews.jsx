@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Btn } from './UI.jsx'
 import { uid } from '../utils.js'
+import { supabase } from '../lib/supabase.js'
 import {
   fetchClinicalSignatureQueue,
   requestClinicalSignature,
@@ -15,6 +16,69 @@ const dateLabel = (value, withTime = false) => {
 }
 
 const includesText = (values, query) => values.some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(query))
+
+const documentTypeLabel = type => ({
+  simple_prescription:'Receita simples',
+  attached_pdf:'PDF anexado',
+  exam_request:'Pedido de exames',
+})[type] || 'Documento clínico'
+
+const normalizeWhatsappPhone = value => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  return digits.startsWith('55') ? digits : `55${digits}`
+}
+
+function openWhatsappForDocument({ patient, clinicName, document }) {
+  const phone = normalizeWhatsappPhone(patient?.phone)
+  if (!phone) return false
+  const firstName = String(patient?.full_name || 'Olá').trim().split(/\s+/)[0]
+  const purpose = document.signature.status === 'pending' ? 'para continuidade da assinatura' : 'para visualização'
+  const message = `Olá, ${firstName}. Tudo bem? Aqui é da ${clinicName || 'clínica'}. Estamos entrando em contato sobre seu documento ${purpose}. Qualquer dúvida, estamos à disposição.`
+  const popup = window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+  if (popup) popup.opener = null
+  return Boolean(popup)
+}
+
+function ClinicalDocumentJourney({ signatureStatus = 'manual' }) {
+  const signed = signatureStatus === 'signed'
+  const signing = signatureStatus === 'pending'
+  const failed = ['failed', 'cancelled'].includes(signatureStatus)
+  return (
+    <div className="clinical-document-journey" aria-label="Etapas do documento">
+      <div className="is-complete"><b>1</b><span><strong>Anexar ou emitir</strong><small>Arquivo no prontuário</small></span></div>
+      <i aria-hidden="true" />
+      <div className={signed ? 'is-complete' : failed ? 'is-error' : signing ? 'is-current' : ''}><b>2</b><span><strong>Assinar</strong><small>{signed ? 'Confirmado pela BRy' : failed ? 'Exige atenção' : signing ? 'Em andamento' : 'Quando necessário'}</small></span></div>
+      <i aria-hidden="true" />
+      <div className={signed ? 'is-current' : ''}><b>3</b><span><strong>Compartilhar</strong><small>WhatsApp manual e seguro</small></span></div>
+      <i aria-hidden="true" />
+      <div><b>4</b><span><strong>Acompanhar</strong><small>Sem simular leitura</small></span></div>
+    </div>
+  )
+}
+
+function ClinicalDocumentAttachDialog({ patients, onCancel, onContinue }) {
+  const [query, setQuery] = useState('')
+  const [patientId, setPatientId] = useState('')
+  const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
+  const visiblePatients = patients.filter(patient => !normalizedQuery || includesText([patient.full_name, patient.phone, patient.email, patient.cpf], normalizedQuery)).slice(0, 30)
+  const selectedPatient = patients.find(patient => patient.id === patientId)
+  return (
+    <div className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-attach-title" onKeyDown={event => { if (event.key === 'Escape') onCancel() }}>
+      <div className="clinical-attach-dialog">
+        <header><div><span>Anexar ao prontuário</span><h3 id="clinical-attach-title">Selecione o paciente</h3><p>O upload privado será aberto diretamente em Fotos e documentos.</p></div><button type="button" onClick={onCancel} aria-label="Fechar">×</button></header>
+        <div className="clinical-attach-dialog__body">
+          <label><span>Buscar paciente</span><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome, telefone, e-mail ou CPF" /></label>
+          <div className="clinical-document-patient-list">
+            {visiblePatients.map(patient => <button key={patient.id} type="button" className={patient.id === patientId ? 'is-active' : ''} onClick={() => setPatientId(patient.id)}><strong>{patient.full_name}</strong><span>{patient.phone || patient.email || patient.cpf || 'Contato não informado'}</span></button>)}
+            {!visiblePatients.length && <p>Nenhum paciente encontrado.</p>}
+          </div>
+        </div>
+        <footer><Btn variant="ghost" onClick={onCancel}>Cancelar</Btn><Btn disabled={!selectedPatient} onClick={() => onContinue(selectedPatient)}>Continuar para o upload</Btn></footer>
+      </div>
+    </div>
+  )
+}
 
 function ClinicalDocumentCreateDialog({ patients, canPrescribe, onCancel, onContinue, returnFocusRef }) {
   const [query, setQuery] = useState('')
@@ -146,9 +210,9 @@ export function ClinicalTodayInsights({ index, loading, unavailableSources, onNa
   const reviews = index.pendingItems.filter(item => item.kind === 'intake_review').length
   const returns = index.pendingItems.filter(item => item.kind === 'return').length
   return (
-    <section className="clinical-today-insights" aria-label="Pulso clínico">
+    <section className="clinical-today-insights clinical-cockpit" aria-label="Pulso clínico">
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
-      <header><div><span>Continuidade do cuidado</span><strong>O que pede atenção além da agenda</strong></div><button type="button" onClick={() => onNavigate('pending')}>Ver todas as pendências →</button></header>
+      <header><div><span>Cockpit clínico</span><strong>Prioridades do dia</strong><small>Agenda, revisões e documentos em uma leitura rápida.</small></div><button type="button" onClick={() => onNavigate('pending')}>Abrir central de pendências →</button></header>
       <div className="clinical-insight-grid">
         <button type="button" onClick={() => onNavigate('pending')}><span>Críticas</span><strong>{pending ? '—' : urgent}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'retornos ou sessões vencidas'}</small></button>
         <button type="button" onClick={() => onNavigate('pending')}><span>Para revisar</span><strong>{pending ? '—' : reviews}</strong><small>{loading ? 'atualizando' : incomplete ? 'dados incompletos' : 'pré-anamneses recebidas'}</small></button>
@@ -194,7 +258,9 @@ export function ClinicalPendingView({ index, loading, unavailableSources, onOpen
   const incomplete = Boolean(unavailableSources?.length)
   const pending = loading || incomplete
   const [filter, setFilter] = useState('all')
+  const [selectedId, setSelectedId] = useState('')
   const rows = index.pendingItems.filter(item => filter === 'all' || item.kind === filter)
+  const selectedItem = index.pendingItems.find(item => item.id === selectedId)
   const filters = [
     ['all', 'Todas'], ['intake_review', 'Revisões'], ['intake_waiting', 'Aguardando paciente'], ['return', 'Retornos'],
     ['plan_review', 'Planos'], ['session_overdue', 'Sessões'], ['signature', 'Assinaturas'],
@@ -210,18 +276,22 @@ export function ClinicalPendingView({ index, loading, unavailableSources, onOpen
       {!loading && rows.length === 0 ? <div className="clinical-empty-panel"><strong>{incomplete ? 'Não foi possível confirmar as pendências' : 'Nenhuma pendência nesta categoria'}</strong><p>{incomplete ? 'Tente novamente depois que todas as fontes clínicas estiverem disponíveis.' : 'A fila é atualizada a partir de anamnese, agenda, planos e assinaturas.'}</p></div> : (
         <div className="clinical-work-queue">
           {rows.map(item => (
-            <button key={item.id} type="button" onClick={() => {
-              const patient = index.patientItems.find(row => row.id === item.patientId)
-              if (patient) onOpenPatient(patient, item.kind.startsWith('intake') ? 'intake' : item.kind === 'signature' ? 'prescriptions' : item.kind.includes('plan') || item.kind.includes('session') ? 'treatment' : 'overview')
-            }}>
+            <button key={item.id} type="button" onClick={() => setSelectedId(item.id)}>
               <span className={`clinical-queue-marker is-${item.tone}`} />
               <span><small>{clinicalPendingLabel(item.kind)}</small><strong>{item.title}</strong><em>{item.detail}</em></span>
               <span><strong>{item.patientName}</strong><small>{dateLabel(item.dueAt, true)}</small></span>
-              <b>Resolver →</b>
+              <b>Revisar →</b>
             </button>
           ))}
         </div>
       )}
+      {selectedItem && <aside className="clinical-pending-drawer" role="dialog" aria-modal="true" aria-label="Detalhes da pendência">
+        <button type="button" className="clinical-pending-drawer__backdrop" aria-label="Fechar detalhes" onClick={() => setSelectedId('')} />
+        <div><header><span>{clinicalPendingLabel(selectedItem.kind)}</span><button type="button" onClick={() => setSelectedId('')} aria-label="Fechar">×</button></header><h3>{selectedItem.title}</h3><p>{selectedItem.detail}</p><dl><div><dt>Paciente</dt><dd>{selectedItem.patientName}</dd></div><div><dt>Prazo ou registro</dt><dd>{dateLabel(selectedItem.dueAt, true)}</dd></div></dl><footer><Btn variant="ghost" onClick={() => setSelectedId('')}>Voltar</Btn><Btn onClick={() => {
+              const patient = index.patientItems.find(row => row.id === selectedItem.patientId)
+              if (patient) onOpenPatient(patient, selectedItem.kind.startsWith('intake') ? 'intake' : selectedItem.kind === 'signature' ? 'prescriptions' : selectedItem.kind.includes('plan') || selectedItem.kind.includes('session') ? 'treatment' : 'overview')
+            }}>Resolver na ficha</Btn></footer></div>
+      </aside>}
     </section>
   )
 }
@@ -348,44 +418,105 @@ function ClinicalSignatureQueue() {
   )
 }
 
-export function ClinicalDocumentsCenter({ index, patients = [], loading, unavailableSources, canPrescribe = false, onCreateDocument, onOpenPatient, onRefresh }) {
+export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '', viewerId = '', loading, unavailableSources, canPrescribe = false, onCreateDocument, onAttachDocument, onOpenPatient, onRefresh }) {
   const incomplete = Boolean(unavailableSources?.length)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
   const [creating, setCreating] = useState(false)
+  const [attaching, setAttaching] = useState(false)
+  const [signingDocument, setSigningDocument] = useState(null)
+  const [signatureBusy, setSignatureBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const createButtonRef = useRef(null)
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = index.documents.filter(document => {
-    if (filter !== 'all' && document.signature.status !== filter) return false
+    if (filter === 'attention' && !['failed', 'cancelled'].includes(document.signature.status)) return false
+    if (!['all', 'attention'].includes(filter) && document.signature.status !== filter) return false
     return !normalizedQuery || includesText([document.patientName, document.author_name, document.document_type, document.file_name, document.procedure_name], normalizedQuery)
   })
+  const counts = index.documents.reduce((totals, document) => {
+    totals.all += 1
+    if (document.signature.status === 'signed') totals.signed += 1
+    else if (document.signature.status === 'pending') totals.pending += 1
+    else if (['failed', 'cancelled'].includes(document.signature.status)) totals.attention += 1
+    return totals
+  }, { all:0, signed:0, pending:0, attention:0 })
+
+  async function startDocumentSignature() {
+    if (!signingDocument || signatureBusy) return
+    setSignatureBusy(true)
+    setNotice('')
+    try {
+      let documentId = signingDocument.sourceDocumentId || (signingDocument.document_type === 'attached_pdf' ? '' : signingDocument.id)
+      if (!documentId && signingDocument.assetId) {
+        const { data:preparedId, error:prepareError } = await supabase.rpc('prepare_clinical_asset_signature', { p_asset_id:signingDocument.assetId })
+        if (prepareError || !preparedId) throw prepareError || new Error('Não foi possível preparar o PDF para assinatura.')
+        documentId = preparedId
+      }
+      if (!documentId) throw new Error('Este documento ainda não possui um registro assinável.')
+      const response = await requestClinicalSignature([documentId], uid())
+      setSigningDocument(null)
+      await onRefresh?.()
+      if (response.signingUrl) {
+        const popup = window.open(response.signingUrl, '_blank', 'noopener,noreferrer')
+        if (popup) popup.opener = null
+        else setNotice('A solicitação foi criada, mas o navegador bloqueou a página da BRy. Use “Acompanhar assinatura” para continuar.')
+      } else {
+        setNotice('A solicitação foi criada. Use “Acompanhar assinatura” para abrir a página segura ou atualizar o estado.')
+      }
+    } catch (error) {
+      setNotice(error.message || 'Não foi possível iniciar a assinatura deste documento.')
+    } finally {
+      setSignatureBusy(false)
+    }
+  }
   return (
     <section className="clinical-index-page" data-testid="clinical-documents-center">
       <header className="clinical-index-header">
-        <div><span>Central clínica</span><h2>Documentos</h2><p>Pedidos, receitas e PDFs anexados aos prontuários, com a situação real da assinatura.</p></div>
+        <div><span>Central clínica</span><h2>Documentos clínicos</h2><p>Gerencie arquivos, assinaturas e compartilhamentos com o paciente.</p></div>
         <div className="clinical-index-header-actions">
           <label className="clinical-index-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Paciente, profissional ou arquivo" /></label>
+          <Btn variant="ghost" onClick={() => setAttaching(true)}>Anexar arquivo</Btn>
           <span ref={createButtonRef}><Btn onClick={() => setCreating(true)}>+ Novo documento</Btn></span>
         </div>
       </header>
       <WorkspaceState loading={loading} unavailableSources={unavailableSources} onRefresh={onRefresh} />
+      {notice && <div className="clinical-document-access-note" role="status">{notice}</div>}
+      <div className="clinical-document-metrics" aria-label="Resumo de documentos">
+        <button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}><span>Todos</span><strong>{loading ? '—' : counts.all}</strong><small>No prontuário</small></button>
+        <button type="button" className={filter === 'pending' ? 'is-active' : ''} onClick={() => setFilter('pending')}><span>Aguardando assinatura</span><strong>{loading ? '—' : counts.pending}</strong><small>Em andamento</small></button>
+        <button type="button" className={filter === 'signed' ? 'is-active' : ''} onClick={() => setFilter('signed')}><span>Assinados</span><strong>{loading ? '—' : counts.signed}</strong><small>Confirmados</small></button>
+        <button type="button" className={filter === 'attention' ? 'is-active is-danger' : 'is-danger'} onClick={() => setFilter('attention')}><span>Exigem atenção</span><strong>{loading ? '—' : counts.attention}</strong><small>Falha ou cancelamento</small></button>
+      </div>
+      <ClinicalDocumentJourney />
       <ClinicalSignatureQueue />
       <div className="clinical-filter-row" aria-label="Filtrar documentos">
         {[['all','Todos'],['signed','Assinados'],['pending','Pendentes'],['failed','Com falha'],['manual','Via manual']].map(([id, label]) => <button key={id} type="button" className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
       </div>
       {!loading && rows.length === 0 ? <div className="clinical-empty-panel">{incomplete ? 'Não foi possível confirmar os documentos desta clínica.' : 'Nenhum documento encontrado.'}</div> : (
-        <div className="clinical-documents-center-list">
-          {rows.map(document => (
-            <button key={document.id} type="button" onClick={() => {
-              const patient = index.patientItems.find(item => item.id === document.patient_id)
-              if (patient) onOpenPatient(patient, document.destinationTab || 'prescriptions')
-            }}>
+        <div className="clinical-documents-center-list is-revamped">
+          {rows.map(document => {
+            const patient = index.patientItems.find(item => item.id === document.patient_id)
+            const openDocument = () => patient && onOpenPatient(patient, document.destinationTab || 'prescriptions')
+            const canWhatsapp = Boolean(normalizeWhatsappPhone(patient?.phone))
+            const canStartSignature = Boolean(viewerId && document.created_by === viewerId)
+            const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Revisar falha' : 'Assinar'
+            return (
+            <article key={document.id}>
               <span className={`clinical-document-center-icon is-${document.document_type}`}>{document.document_type === 'simple_prescription' ? 'Rx' : document.document_type === 'attached_pdf' ? 'PDF' : 'Ex'}</span>
-              <span><small>{document.document_type === 'simple_prescription' ? 'Receita simples' : document.document_type === 'attached_pdf' ? 'PDF anexado' : 'Pedido de exames'}</small><strong>{document.patientName}</strong><em>{document.document_type === 'attached_pdf' ? document.file_name : document.author_name || 'Profissional registrado'}</em></span>
-              <span><strong>{dateLabel(document.issue_date)}</strong><small className={`is-${document.signature.status}`}>{document.signature.label}</small></span>
-              <b>Abrir ficha →</b>
-            </button>
-          ))}
+              <span className="clinical-document-row__identity"><small>{documentTypeLabel(document.document_type)}</small><strong>{document.document_type === 'attached_pdf' ? document.file_name : document.patientName}</strong><em>{document.document_type === 'attached_pdf' ? document.patientName : document.author_name || 'Profissional registrado'}</em></span>
+              <span className="clinical-document-row__status"><strong>{dateLabel(document.issue_date)}</strong><small className={`is-${document.signature.status}`}>{document.signature.label}</small></span>
+              <div className="clinical-document-row__actions">
+                <button type="button" onClick={openDocument}>Visualizar</button>
+                <button type="button" className="is-primary" onClick={() => canStartSignature && ['manual', 'failed', 'cancelled'].includes(document.signature.status) ? setSigningDocument(document) : openDocument()}>{signingLabel}</button>
+                <button type="button" disabled={!canWhatsapp} title={canWhatsapp ? 'Abrir conversa sem expor o arquivo clínico' : 'Paciente sem telefone cadastrado'} onClick={() => {
+                  const opened = openWhatsappForDocument({ patient, clinicName, document })
+                  setNotice(opened ? 'Conversa aberta no WhatsApp. O arquivo clínico não foi enviado automaticamente; anexe-o manualmente quando autorizado.' : 'Não foi possível abrir o WhatsApp. Confira o telefone do paciente e o bloqueio de pop-ups.')
+                }}>WhatsApp</button>
+                <details><summary aria-label="Mais opções">•••</summary><div><button type="button" onClick={() => patient && onOpenPatient(patient, 'overview')}>Abrir ficha do paciente</button><button type="button" onClick={openDocument}>Ver detalhes do documento</button></div></details>
+              </div>
+            </article>
+          )})}
         </div>
       )}
       {creating && (
@@ -400,6 +531,14 @@ export function ClinicalDocumentsCenter({ index, patients = [], loading, unavail
           }}
         />
       )}
+      {attaching && <ClinicalDocumentAttachDialog patients={patients} onCancel={() => setAttaching(false)} onContinue={patient => { setAttaching(false); onAttachDocument?.(patient) }} />}
+      {signingDocument && <div className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-sign-document-title">
+        <div className="clinical-sign-document-dialog">
+          <header><div><span>Assinatura eletrônica</span><h3 id="clinical-sign-document-title">Assinar com BRy</h3><p>A página segura da BRy será aberta para o certificado do profissional.</p></div><button type="button" onClick={() => setSigningDocument(null)} aria-label="Fechar">×</button></header>
+          <div className="clinical-sign-document-dialog__body"><ClinicalDocumentJourney signatureStatus={signingDocument.signature.status} /><div><span>Documento</span><strong>{signingDocument.file_name || documentTypeLabel(signingDocument.document_type)}</strong><small>{signingDocument.patientName} · {dateLabel(signingDocument.issue_date)}</small></div><p>A criação do envelope pode consumir crédito. O status só muda para assinado depois da confirmação real do provedor.</p></div>
+          <footer><Btn variant="ghost" disabled={signatureBusy} onClick={() => setSigningDocument(null)}>Cancelar</Btn><Btn disabled={signatureBusy} onClick={startDocumentSignature}>{signatureBusy ? 'Abrindo BRy…' : 'Confirmar e assinar'}</Btn></footer>
+        </div>
+      </div>}
     </section>
   )
 }

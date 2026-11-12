@@ -63,7 +63,7 @@ function fileSizeLabel(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function ClinicalAssets({ patient, ownerId, viewerId = '', onAssetsChanged }) {
+export function ClinicalAssets({ patient, ownerId, viewerId = '', initialAction = '', onInitialActionConsumed, onAssetsChanged }) {
   const [assets, setAssets] = useState([])
   const [consents, setConsents] = useState([])
   const [urls, setUrls] = useState({})
@@ -306,6 +306,13 @@ export function ClinicalAssets({ patient, ownerId, viewerId = '', onAssetsChange
     resetUpload()
     load()
   }, [patient.id, ownerId])
+
+  useEffect(() => {
+    if (initialAction !== 'upload-document') return
+    setSection('documents')
+    startUpload('document', 'neutral')
+    onInitialActionConsumed?.()
+  }, [initialAction])
 
   useEffect(() => {
     if (!previewId && !compareFullscreen) return undefined

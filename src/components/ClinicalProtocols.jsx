@@ -62,6 +62,7 @@ export function ClinicalProtocols({ ownerId, patients = [], canManage = false, c
   const [applicationError, setApplicationError] = useState('')
   const [saving, setSaving] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [query, setQuery] = useState('')
 
   async function reload() {
     setStatus('loading'); setError('')
@@ -70,7 +71,16 @@ export function ClinicalProtocols({ ownerId, patients = [], canManage = false, c
   }
   useEffect(() => { reload() }, [ownerId])
 
-  const visible = useMemo(() => protocols.filter(item => showArchived || item.currentStatus === 'active'), [protocols, showArchived])
+  const visible = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
+    return protocols.filter(item => {
+      if (!showArchived && item.currentStatus !== 'active') return false
+      if (!normalizedQuery) return true
+      const version = item.currentVersion || {}
+      return [version.name, version.procedure_name, version.description, version.indication]
+        .some(value => String(value || '').toLocaleLowerCase('pt-BR').includes(normalizedQuery))
+    })
+  }, [protocols, query, showArchived])
   const update = (field, value) => setEditor(current => ({ ...current, form:{ ...current.form, [field]:value } }))
 
   function startCreate() { setEditor({ protocolId:null, requestId:newRequestId(), form:formForEditor() }); setError(''); setNotice('') }
@@ -147,10 +157,10 @@ export function ClinicalProtocols({ ownerId, patients = [], canManage = false, c
     <div className="clinical-protocols__guardrail"><strong>Modelo, não automação clínica</strong><span>Ao aplicar um protocolo, o sistema apenas preenche um rascunho. O profissional revisa e confirma antes de registrar.</span></div>
     {error && <div className="clinical-alert" role="alert">{error}</div>}
     {notice && <div className="treatment-notice" role="status">{notice}</div>}
-    <div className="clinical-protocols__filters"><label><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Mostrar arquivados</label><span>{visible.length} protocolo{visible.length === 1 ? '' : 's'}</span></div>
+    <div className="clinical-protocols__filters"><label className="clinical-protocol-search"><span>Buscar protocolo</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome, procedimento ou indicação" /></label><label><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} /> Mostrar arquivados</label><span>{visible.length} protocolo{visible.length === 1 ? '' : 's'}</span></div>
     {status === 'loading' && <div className="clinical-loading">Carregando protocolos…</div>}
     {status === 'error' && <div className="clinical-empty-panel"><Btn variant="ghost" onClick={reload}>Tentar novamente</Btn></div>}
-    {status === 'ready' && visible.length === 0 && <div className="treatment-empty"><span>▤</span><h4>Nenhum protocolo configurado</h4><p>{canManage ? 'Crie o primeiro modelo da clínica.' : 'Um administrador clínico ainda não publicou modelos.'}</p>{canManage && <Btn onClick={startCreate}>Criar protocolo</Btn>}</div>}
+    {status === 'ready' && visible.length === 0 && <div className="treatment-empty"><span>▤</span><h4>{query.trim() ? 'Nenhum protocolo encontrado' : 'Nenhum protocolo configurado'}</h4><p>{query.trim() ? 'Revise a busca por nome, procedimento, indicação ou descrição.' : canManage ? 'Crie o primeiro modelo da clínica.' : 'Um administrador clínico ainda não publicou modelos.'}</p>{canManage && !query.trim() && <Btn onClick={startCreate}>Criar protocolo</Btn>}</div>}
     <div className="clinical-protocol-grid">{visible.map(protocol => <ProtocolCard
       key={protocol.id}
       protocol={protocol}
