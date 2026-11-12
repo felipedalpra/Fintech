@@ -94,6 +94,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
       address_city:'Porto Alegre',
       address_state:'RS',
       address_zip:'90000-000',
+      phone:'51999990000',
       active:true,
     }, {
       id:'patient-safe-draft',
@@ -203,6 +204,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   assets.push({
     id:'asset-laudo',
     patient_id:'patient-documents',
+    created_by:'e2e-user-id',
     asset_kind:'document',
     status:'available',
     file_name:'laudo-anexado.pdf',
@@ -230,7 +232,13 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   const examDocument = page.locator('.clinical-documents-center-list > article').filter({ hasText:'Pedido de exames' }).first()
   await expect(examDocument.getByRole('button', { name:'Visualizar' })).toBeVisible()
   await expect(examDocument.getByRole('button', { name:'Assinar' })).toBeVisible()
-  await expect(examDocument.getByRole('button', { name:'WhatsApp' })).toBeDisabled()
+  await expect(examDocument.getByRole('button', { name:'Enviar no WhatsApp' })).toBeEnabled()
+  const attachedDocument = page.locator('.clinical-documents-center-list > article').filter({ hasText:'laudo-anexado.pdf' })
+  await attachedDocument.getByRole('button', { name:'Assinar' }).click()
+  await expect(page.getByRole('dialog', { name:'Assinar com BRy' })).toBeVisible()
+  await expect(page).toHaveURL(/\/app\/clinical-documents$/)
+  await page.getByRole('dialog', { name:'Assinar com BRy' }).getByRole('button', { name:'Cancelar' }).click()
+  await expect(attachedDocument.getByRole('button', { name:'Enviar no WhatsApp' })).toBeEnabled()
   await examDocument.getByRole('button', { name:'Visualizar' }).click()
   await expect(page.getByText('2 no histórico')).toBeVisible()
 })

@@ -3,7 +3,9 @@ import { Btn } from './UI.jsx'
 import { uid } from '../utils.js'
 import { supabase } from '../lib/supabase.js'
 import {
+  fetchClinicalSignatureLink,
   fetchClinicalSignatureQueue,
+  openClinicalSignatureArtifact,
   requestClinicalSignature,
 } from '../lib/clinicalSignatureBryClient.js'
 import { clinicalPendingLabel, clinicalTimelineLabel } from '../lib/clinicalWorkspaceIndex.js'
@@ -470,6 +472,26 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
       setSignatureBusy(false)
     }
   }
+
+  async function openDocumentSignature(document) {
+    if (signatureBusy || !document.signature.attemptId) return
+    setSignatureBusy(true)
+    setNotice('')
+    try {
+      const response = document.signature.status === 'signed'
+        ? await openClinicalSignatureArtifact(document.signature.attemptId, 'signed')
+        : await fetchClinicalSignatureLink(document.signature.attemptId)
+      const url = document.signature.status === 'signed' ? response.url : response.signingUrl
+      if (!url) throw new Error(document.signature.status === 'signed' ? 'O PDF assinado ainda não está disponível.' : 'A BRy não devolveu a página da assinatura.')
+      const popup = window.open(url, '_blank', 'noopener,noreferrer')
+      if (popup) popup.opener = null
+      else throw new Error('O navegador bloqueou a nova aba. Libere pop-ups e tente novamente.')
+    } catch (error) {
+      setNotice(error.message || 'Não foi possível abrir a assinatura deste documento.')
+    } finally {
+      setSignatureBusy(false)
+    }
+  }
   return (
     <section className="clinical-index-page" data-testid="clinical-documents-center">
       <header className="clinical-index-header">
@@ -501,6 +523,17 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             const canWhatsapp = Boolean(normalizeWhatsappPhone(patient?.phone))
             const canStartSignature = Boolean(viewerId && document.created_by === viewerId)
             const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Revisar falha' : 'Assinar'
+            const handleSignature = () => {
+              if (['pending', 'signed'].includes(document.signature.status) && document.signature.attemptId) {
+                openDocumentSignature(document)
+                return
+              }
+              if (canStartSignature && ['manual', 'failed', 'cancelled'].includes(document.signature.status)) {
+                setSigningDocument(document)
+                return
+              }
+              setNotice('Somente o profissional que anexou ou emitiu este documento pode iniciar uma nova assinatura.')
+            }
             return (
             <article key={document.id}>
               <span className={`clinical-document-center-icon is-${document.document_type}`}>{document.document_type === 'simple_prescription' ? 'Rx' : document.document_type === 'attached_pdf' ? 'PDF' : 'Ex'}</span>
@@ -508,11 +541,11 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
               <span className="clinical-document-row__status"><strong>{dateLabel(document.issue_date)}</strong><small className={`is-${document.signature.status}`}>{document.signature.label}</small></span>
               <div className="clinical-document-row__actions">
                 <button type="button" onClick={openDocument}>Visualizar</button>
-                <button type="button" className="is-primary" onClick={() => canStartSignature && ['manual', 'failed', 'cancelled'].includes(document.signature.status) ? setSigningDocument(document) : openDocument()}>{signingLabel}</button>
+                <button type="button" className="is-primary" disabled={signatureBusy} onClick={handleSignature}>{signingLabel}</button>
                 <button type="button" disabled={!canWhatsapp} title={canWhatsapp ? 'Abrir conversa sem expor o arquivo clínico' : 'Paciente sem telefone cadastrado'} onClick={() => {
                   const opened = openWhatsappForDocument({ patient, clinicName, document })
                   setNotice(opened ? 'Conversa aberta no WhatsApp. O arquivo clínico não foi enviado automaticamente; anexe-o manualmente quando autorizado.' : 'Não foi possível abrir o WhatsApp. Confira o telefone do paciente e o bloqueio de pop-ups.')
-                }}>WhatsApp</button>
+                }}>Enviar no WhatsApp</button>
                 <details><summary aria-label="Mais opções">•••</summary><div><button type="button" onClick={() => patient && onOpenPatient(patient, 'overview')}>Abrir ficha do paciente</button><button type="button" onClick={openDocument}>Ver detalhes do documento</button></div></details>
               </div>
             </article>

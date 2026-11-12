@@ -59,7 +59,7 @@ test('considera apenas a tentativa de assinatura mais recente', () => {
     ],
   }), reference)
 
-  expect(index.documents[0].signature).toEqual({ status:'signed', label:'Assinado digitalmente' })
+  expect(index.documents[0].signature).toEqual({ status:'signed', label:'Assinado digitalmente', attemptId:'signature-new' })
   expect(index.pendingItems.filter(item => item.kind === 'signature')).toHaveLength(0)
 })
 
