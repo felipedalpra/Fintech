@@ -1308,8 +1308,8 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
       <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
-      <div style={{ position:'sticky', top:0, zIndex:5, marginBottom:2 }}>
-        <div style={{ background:`linear-gradient(180deg, ${C.bg}FA, ${C.bg}EB)`, border:`1px solid ${C.border}66`, borderRadius:18, padding:16, backdropFilter:'blur(12px)' }}>
+      <div style={{ marginBottom:2 }}>
+        <div style={{ background:C.bg, border:`1px solid ${C.border}66`, borderRadius:18, padding:16 }}>
           <div style={{ marginBottom:12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginBottom:8 }}>
               <div style={{ fontSize:12, fontWeight:700, color:C.textSub }}>
