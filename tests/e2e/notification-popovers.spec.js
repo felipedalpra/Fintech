@@ -38,7 +38,9 @@ async function expectFixedAtTopRight(page, testId) {
   expect(geometry.zIndex).toBeGreaterThan(1000)
 }
 
-test('os dois painéis de notificação abrem sobre a interface no canto superior direito', async ({ page }) => {
+// Antes eram dois sinos (financeiro e CRM) lado a lado, duplicando o mesmo lugar na tela.
+// Agora é um botão só ("Notificações"), com as duas seções dentro do mesmo painel.
+test('o painel único de notificações abre sobre a interface no canto superior direito', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/app/funnel')
 
@@ -47,30 +49,33 @@ test('os dois painéis de notificação abrem sobre a interface no canto superio
   const dockBox = await dock.boundingBox()
   expect(1280 - (dockBox.x + dockBox.width)).toBeLessThanOrEqual(20)
   expect(dockBox.y).toBeLessThanOrEqual(12)
+  // Um único botão de notificações no dock, não mais dois.
+  await expect(dock.getByRole('button', { name: 'Notificações', exact: true })).toHaveCount(1)
 
-  const crmButton = page.getByRole('button', { name: 'Alertas do CRM', exact: true })
-  await crmButton.click()
-  await expectFixedAtTopRight(page, 'crm-alerts-popover')
+  const bellButton = page.getByRole('button', { name: 'Notificações', exact: true })
+  await bellButton.click()
+  await expectFixedAtTopRight(page, 'notification-popover')
   const [buttonBox, panelBox] = await Promise.all([
-    crmButton.boundingBox(),
-    page.getByTestId('crm-alerts-popover').boundingBox(),
+    bellButton.boundingBox(),
+    page.getByTestId('notification-popover').boundingBox(),
   ])
   expect(panelBox.y).toBeGreaterThan(buttonBox.y + buttonBox.height)
   expect(Math.abs((panelBox.x + panelBox.width) - (buttonBox.x + buttonBox.width))).toBeLessThanOrEqual(8)
 
-  await page.keyboard.press('Escape')
-  await expect(page.getByTestId('crm-alerts-popover')).toBeHidden()
+  const panel = page.getByTestId('notification-popover')
+  await expect(panel.getByText('Financeiro', { exact: true })).toBeVisible()
+  await expect(panel.getByText('CRM', { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Alertas', exact: true }).click()
-  await expectFixedAtTopRight(page, 'financial-alerts-popover')
+  await page.keyboard.press('Escape')
+  await expect(panel).toBeHidden()
 })
 
 test('painel de notificações cabe na largura do celular', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 700 })
   await page.goto('/app/funnel')
 
-  await page.getByRole('button', { name: 'Alertas do CRM', exact: true }).click()
-  const panel = page.getByTestId('crm-alerts-popover')
+  await page.getByRole('button', { name: 'Notificações', exact: true }).click()
+  const panel = page.getByTestId('notification-popover')
   await expect(panel).toBeVisible()
 
   const box = await panel.boundingBox()
@@ -78,7 +83,7 @@ test('painel de notificações cabe na largura do celular', async ({ page }) => 
   expect(box.x + box.width).toBeLessThanOrEqual(378)
 })
 
-test('sino do CRM agrupa pendências e permite rolar até a última', async ({ page }) => {
+test('seção CRM do sino agrupa pendências e permite rolar até a última', async ({ page }) => {
   const tasks = Array.from({ length: 40 }, (_, index) => ({
     id: `task-${index + 1}`,
     title: `Pendência ${index + 1}`,
@@ -92,12 +97,12 @@ test('sino do CRM agrupa pendências e permite rolar até a última', async ({ p
   await page.setViewportSize({ width: 1280, height: 620 })
   await page.goto('/app/crm-painel')
 
-  await page.getByRole('button', { name: 'Alertas do CRM', exact: true }).click()
+  await page.getByRole('button', { name: 'Notificações', exact: true }).click()
   await expect(page.getByTestId('crm-alert-item')).toHaveCount(1)
-  await expect(page.getByTestId('crm-alerts-popover')).toContainText('40 não lidas')
-  await expect(page.getByTestId('crm-alerts-popover')).toContainText('Tarefa atrasada · 40')
+  await expect(page.getByTestId('notification-popover')).toContainText('40 não lidas')
+  await expect(page.getByTestId('notification-popover')).toContainText('Tarefa atrasada · 40')
 
-  const list = page.getByTestId('crm-alerts-list')
+  const list = page.getByTestId('notification-list')
   const dimensions = await list.evaluate(element => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }))
   expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight)
   await list.evaluate(element => { element.scrollTop = element.scrollHeight })

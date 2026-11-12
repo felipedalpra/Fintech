@@ -8,8 +8,7 @@ import { CopilotWidget } from '../components/CopilotWidget.jsx'
 import { FAB } from '../components/FAB.jsx'
 import { BrandLogo } from '../components/BrandLogo.jsx'
 import { NavIcon } from '../components/NavIcon.jsx'
-import { AlertsBell } from '../components/AlertsBell.jsx'
-import { CrmBell } from '../components/CrmBell.jsx'
+import { NotificationBell } from '../components/NotificationBell.jsx'
 import { FeatureExportButton } from '../components/FeatureExportButton.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTheme } from '../context/ThemeContext.jsx'
@@ -1224,8 +1223,7 @@ export function FinanceWorkspace() {
         </div>
         <div data-testid="notification-bell-dock" style={{ flex:'0 0 auto', display:'flex', alignItems:'center', gap:8, marginLeft:isMobile ? 8 : 14, paddingLeft:isMobile ? 8 : 14, background:C.surface, borderLeft:`1px solid ${C.border}` }}>
           {isInboxPage && !isMobile && <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact />}
-          {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
-          <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
+          <NotificationBell data={safeData} summary={summary} canFinance={canAccess('finance')} onNavigate={id => navigate(`/app/${id}`)} />
         </div>
       </nav>
 
@@ -1422,8 +1420,7 @@ export function FinanceWorkspace() {
             <strong style={{ color:C.text, fontSize:17 }}>WhatsApp</strong>
             <span style={{ flex:1 }} />
             <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact />
-            {canAccess('finance') && <AlertsBell data={safeData} summary={summary} onNavigate={id => navigate(`/app/${id}`)} />}
-            <CrmBell onNavigate={id => navigate(`/app/${id}`)} />
+            <NotificationBell data={safeData} summary={summary} canFinance={canAccess('finance')} onNavigate={id => navigate(`/app/${id}`)} />
           </div>
         )}
 
