@@ -108,6 +108,19 @@ function settleProductSaleInstallment(record, account) {
   }
 }
 
+function settleClinicalCostComponent(record, item, paidDate) {
+  const componentKey = item.sourceComponent
+  if (!componentKey) return record
+  const existing = record.costSettlements?.[componentKey] || {}
+  return {
+    ...record,
+    costSettlements:{
+      ...(record.costSettlements || {}),
+      [componentKey]:{ ...existing, status:'pago', paymentDate:paidDate },
+    },
+  }
+}
+
 const EXPENSE_CATEGORIES = ['aluguel', 'salarios', 'marketing', 'marketing_vendas', 'hospital', 'anestesia', 'equipamentos', 'softwares', 'impostos', 'juros', 'depreciacao', 'amortizacao', 'fornecedores', 'variaveis', 'outros']
 
 const PERIOD_PILLS = [
@@ -892,6 +905,16 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     if (item.source === 'compra_produto') {
       setData(current => ({ ...current, productPurchases:current.productPurchases.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
       toast('Compra de produto marcada como paga.')
+      return
+    }
+    if (item.source === 'custo_cirurgico') {
+      setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleClinicalCostComponent(record, item, paidDate) : record) }))
+      toast('Custo cirúrgico marcado como pago.')
+      return
+    }
+    if (item.source === 'custo_consulta') {
+      setData(current => ({ ...current, consultations:current.consultations.map(record => record.id === item.sourceId ? settleClinicalCostComponent(record, item, paidDate) : record) }))
+      toast('Custo da consulta marcado como pago.')
       return
     }
     setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
