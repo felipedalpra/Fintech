@@ -529,9 +529,10 @@
 .clinical-document-row__actions > button.is-primary { border-color: color-mix(in srgb, var(--clinical-accent) 55%, var(--clinical-border)); background: color-mix(in srgb, var(--clinical-accent) 14%, var(--clinical-card)); color: var(--clinical-accent); }
 .clinical-document-row__actions > button:disabled { opacity: .4; cursor: not-allowed; }
 .clinical-document-row__actions details { position: relative; }
+.clinical-document-row__actions details[open] { z-index: 8; }
 .clinical-document-row__actions summary { display: grid; place-items: center; min-width: 36px; padding: 0; list-style: none; }
 .clinical-document-row__actions summary::-webkit-details-marker { display: none; }
-.clinical-document-row__actions details > div { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; min-width: 190px; display: grid; gap: 4px; padding: 5px; border: 1px solid var(--clinical-border-bright); border-radius: 10px; background: var(--clinical-card); box-shadow: 0 18px 46px rgba(0, 0, 0, .36); }
+.clinical-document-row__actions details > div { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 6; width: max-content; min-width: 190px; max-width: min(260px, calc(100vw - 32px)); display: grid; gap: 4px; padding: 5px; border: 1px solid var(--clinical-border-bright); border-radius: 10px; background: var(--clinical-card); box-shadow: 0 18px 46px rgba(0, 0, 0, .36); }
 .clinical-document-row__actions details div button { border: 0; text-align: left; }
 .clinical-document-row__actions details div button:hover { background: var(--clinical-hover); color: var(--clinical-text); }
 
@@ -640,6 +641,6 @@
   .clinical-document-metrics,
   .clinical-summary-kpis { grid-template-columns: 1fr; }
   .clinical-document-row__actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .clinical-document-row__actions details { display: contents; }
-  .clinical-document-row__actions details > summary { min-height: 34px; }
+  .clinical-document-row__actions details { display: block; min-width: 0; }
+  .clinical-document-row__actions details > summary { width: 100%; min-height: 34px; }
 }
