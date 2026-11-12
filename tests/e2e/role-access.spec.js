@@ -25,7 +25,9 @@ test('equipe não recebe dados ou ações financeiras na interface', async ({ pa
 
   await page.getByTitle('Lançamento rápido').click()
   await expect(page.getByRole('button', { name:/Nova consulta$/ })).toBeVisible()
-  await expect(page.getByRole('button', { name:/Nova cirurgia$/ })).toHaveCount(0)
+  // Pedido da Dra. Vitória (2026-11-12): toda a equipe agenda cirurgia e lança o valor do
+  // procedimento, não só o concierge — "Nova cirurgia" passa a aparecer para Equipe também.
+  await expect(page.getByRole('button', { name:/Nova cirurgia$/ })).toBeVisible()
   await expect(page.getByRole('button', { name:/Nova despesa$/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name:/Nova receita$/ })).toHaveCount(0)
 })

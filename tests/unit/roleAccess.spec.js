@@ -25,8 +25,17 @@ test('perfis operacionais preservam agenda, pacientes, WhatsApp e tarefas', () =
       expect(canRoleAccess(role, page)).toBe(true)
     }
   }
-  expect(canRoleAccess('concierge', 'sales')).toBe(true)
-  expect(canRoleAccess('equipe', 'sales')).toBe(false)
+})
+
+// Pedido da Dra. Vitória (2026-11-12): toda a equipe agenda cirurgia/consulta e lança o valor do
+// procedimento, não só o concierge — 'equipe' ganha 'sales' (Cirurgias) e 'plans' (Procedimentos,
+// com os valores de cada um), igual ao concierge. O financeiro completo continua fora dos dois.
+test('equipe agenda cirurgias e consultas e vê o catálogo de procedimentos, igual ao concierge', () => {
+  for (const role of ['concierge', 'equipe']) {
+    expect(canRoleAccess(role, 'sales')).toBe(true)
+    expect(canRoleAccess(role, 'plans')).toBe(true)
+    expect(canRoleAccess(role, 'consultations')).toBe(true)
+  }
 })
 
 test('acesso clínico é independente do cargo administrativo', () => {
