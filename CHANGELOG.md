@@ -6,6 +6,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-11-12
+### Changed
+- **Documentos clínicos trocam o botão grande "Enviar no WhatsApp" por ícones compactos de WhatsApp e e-mail**: cada linha da central de documentos ganha um ícone verde do WhatsApp (abre a conversa, como antes) e um ícone de e-mail que abre o cliente de correio do paciente com assunto e mensagem pré-preenchidos — habilitado só quando o paciente tem e-mail cadastrado. Nenhum dos dois canais envia o arquivo clínico automaticamente, mantendo o fluxo manual já existente. (`src/components/ClinicalWorkspaceViews.jsx`, `src/components/ClinicalRevamp.css`, `tests/e2e/clinical-records.spec.js`.)
+
 ### Fixed
 - **"Marcar pago" nas contas a pagar passa a liquidar de fato custos de cirurgia/consulta lançados direto no atendimento**: Hospital, Anestesia, Material e Outros custos cadastrados na própria cirurgia/consulta viviam em `surgeries[].costSettlements`/`consultations[].costSettlements`, mas o botão atualizava apenas `data.expenses` por `sourceId` — nada correspondia, o toast de sucesso aparecia e o lançamento continuava em aberto, sem gerar saída no fluxo de caixa. Agora a baixa grava o `status`/`paymentDate` no componente de custo correto da cirurgia ou consulta, saindo de "a pagar" e entrando como saída paga, com o mesmo registro já usado para "Marcar recebido" em cirurgias/consultas. (`src/components/Finance.jsx`.)
 

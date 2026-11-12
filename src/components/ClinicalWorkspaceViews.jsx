@@ -9,6 +9,18 @@ import {
   requestClinicalSignature,
 } from '../lib/clinicalSignatureBryClient.js'
 import { clinicalPendingLabel, clinicalTimelineLabel } from '../lib/clinicalWorkspaceIndex.js'
+import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
+
+const MAIL_PATH = 'M2 5.5A1.5 1.5 0 0 1 3.5 4h17A1.5 1.5 0 0 1 22 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-17A1.5 1.5 0 0 1 2 18.5v-13Zm2.2.5 7.4 6.1a.6.6 0 0 0 .8 0L19.8 6H4.2ZM4 7.4V18h16V7.4l-7.1 5.85a2.6 2.6 0 0 1-3.4 0L4 7.4Z'
+
+function MailGlyph({ size = 15, title = 'E-mail' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" role="img" aria-label={title}>
+      <title>{title}</title>
+      <path d={MAIL_PATH} />
+    </svg>
+  )
+}
 
 const dateLabel = (value, withTime = false) => {
   if (!value) return 'Não informado'
@@ -42,6 +54,17 @@ function openWhatsappForDocument({ patient, clinicName, document }) {
   return Boolean(popup)
 }
 
+function openEmailForDocument({ patient, clinicName, document }) {
+  const email = String(patient?.email || '').trim()
+  if (!email) return false
+  const firstName = String(patient?.full_name || 'Olá').trim().split(/\s+/)[0]
+  const purpose = document.signature.status === 'pending' ? 'para continuidade da assinatura' : 'para visualização'
+  const subject = `${clinicName || 'Clínica'} - documento de ${patient?.full_name || 'paciente'}`
+  const body = `Olá, ${firstName}. Tudo bem? Aqui é da ${clinicName || 'clínica'}. Estamos entrando em contato sobre seu documento ${purpose}. Qualquer dúvida, estamos à disposição.`
+  window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  return true
+}
+
 function ClinicalDocumentJourney({ signatureStatus = 'manual' }) {
   const signed = signatureStatus === 'signed'
   const signing = signatureStatus === 'pending'
@@ -52,7 +75,7 @@ function ClinicalDocumentJourney({ signatureStatus = 'manual' }) {
       <i aria-hidden="true" />
       <div className={signed ? 'is-complete' : failed ? 'is-error' : signing ? 'is-current' : ''}><b>2</b><span><strong>Assinar</strong><small>{signed ? 'Confirmado pela BRy' : failed ? 'Exige atenção' : signing ? 'Em andamento' : 'Quando necessário'}</small></span></div>
       <i aria-hidden="true" />
-      <div className={signed ? 'is-current' : ''}><b>3</b><span><strong>Compartilhar</strong><small>WhatsApp manual e seguro</small></span></div>
+      <div className={signed ? 'is-current' : ''}><b>3</b><span><strong>Compartilhar</strong><small>WhatsApp ou e-mail, manual e seguro</small></span></div>
       <i aria-hidden="true" />
       <div><b>4</b><span><strong>Acompanhar</strong><small>Sem simular leitura</small></span></div>
     </div>
@@ -521,6 +544,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             const patient = index.patientItems.find(item => item.id === document.patient_id)
             const openDocument = () => patient && onOpenPatient(patient, document.destinationTab || 'prescriptions')
             const canWhatsapp = Boolean(normalizeWhatsappPhone(patient?.phone))
+            const canEmail = Boolean(String(patient?.email || '').trim())
             const canStartSignature = Boolean(viewerId && document.created_by === viewerId)
             const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Revisar falha' : 'Assinar'
             const handleSignature = () => {
@@ -542,10 +566,14 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
               <div className="clinical-document-row__actions">
                 <button type="button" onClick={openDocument}>Visualizar</button>
                 <button type="button" className="is-primary" disabled={signatureBusy} onClick={handleSignature}>{signingLabel}</button>
-                <button type="button" disabled={!canWhatsapp} title={canWhatsapp ? 'Abrir conversa sem expor o arquivo clínico' : 'Paciente sem telefone cadastrado'} onClick={() => {
+                <button type="button" className="is-icon is-whatsapp" aria-label="Enviar no WhatsApp" disabled={!canWhatsapp} title={canWhatsapp ? 'Abrir conversa no WhatsApp sem expor o arquivo clínico' : 'Paciente sem telefone cadastrado'} onClick={() => {
                   const opened = openWhatsappForDocument({ patient, clinicName, document })
                   setNotice(opened ? 'Conversa aberta no WhatsApp. O arquivo clínico não foi enviado automaticamente; anexe-o manualmente quando autorizado.' : 'Não foi possível abrir o WhatsApp. Confira o telefone do paciente e o bloqueio de pop-ups.')
-                }}>Enviar no WhatsApp</button>
+                }}><WhatsAppGlyph size={15} /></button>
+                <button type="button" className="is-icon is-email" aria-label="Enviar por e-mail" disabled={!canEmail} title={canEmail ? 'Abrir e-mail sem expor o arquivo clínico' : 'Paciente sem e-mail cadastrado'} onClick={() => {
+                  const opened = openEmailForDocument({ patient, clinicName, document })
+                  setNotice(opened ? 'E-mail aberto no seu cliente de correio. O arquivo clínico não foi enviado automaticamente; anexe-o manualmente quando autorizado.' : 'Não foi possível abrir o e-mail. Confira o e-mail cadastrado do paciente.')
+                }}><MailGlyph size={15} /></button>
                 <details><summary aria-label="Mais opções">•••</summary><div><button type="button" onClick={() => patient && onOpenPatient(patient, 'overview')}>Abrir ficha do paciente</button><button type="button" onClick={openDocument}>Ver detalhes do documento</button></div></details>
               </div>
             </article>

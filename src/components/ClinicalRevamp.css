@@ -528,6 +528,9 @@
 .clinical-document-row__actions summary:hover { border-color: var(--clinical-accent); color: var(--clinical-text); }
 .clinical-document-row__actions > button.is-primary { border-color: color-mix(in srgb, var(--clinical-accent) 55%, var(--clinical-border)); background: color-mix(in srgb, var(--clinical-accent) 14%, var(--clinical-card)); color: var(--clinical-accent); }
 .clinical-document-row__actions > button:disabled { opacity: .4; cursor: not-allowed; }
+.clinical-document-row__actions > button.is-icon { display: grid; place-items: center; min-width: 36px; padding: 0; }
+.clinical-document-row__actions > button.is-icon.is-whatsapp:not(:disabled) { color: #25D366; border-color: color-mix(in srgb, #25D366 45%, var(--clinical-border)); }
+.clinical-document-row__actions > button.is-icon.is-whatsapp:not(:disabled):hover { border-color: #25D366; background: color-mix(in srgb, #25D366 14%, var(--clinical-card)); }
 .clinical-document-row__actions details { position: relative; }
 .clinical-document-row__actions details[open] { z-index: 8; }
 .clinical-document-row__actions summary { display: grid; place-items: center; min-width: 36px; padding: 0; list-style: none; }

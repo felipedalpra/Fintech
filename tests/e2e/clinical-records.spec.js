@@ -95,6 +95,7 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
       address_state:'RS',
       address_zip:'90000-000',
       phone:'51999990000',
+      email:'ana.documentos@example.com',
       active:true,
     }, {
       id:'patient-safe-draft',
@@ -233,12 +234,14 @@ test('emite pedido de exames e receita simples no histórico clínico', async ({
   await expect(examDocument.getByRole('button', { name:'Visualizar' })).toBeVisible()
   await expect(examDocument.getByRole('button', { name:'Assinar' })).toBeVisible()
   await expect(examDocument.getByRole('button', { name:'Enviar no WhatsApp' })).toBeEnabled()
+  await expect(examDocument.getByRole('button', { name:'Enviar por e-mail' })).toBeEnabled()
   const attachedDocument = page.locator('.clinical-documents-center-list > article').filter({ hasText:'laudo-anexado.pdf' })
   await attachedDocument.getByRole('button', { name:'Assinar' }).click()
   await expect(page.getByRole('dialog', { name:'Assinar com BRy' })).toBeVisible()
   await expect(page).toHaveURL(/\/app\/clinical-documents$/)
   await page.getByRole('dialog', { name:'Assinar com BRy' }).getByRole('button', { name:'Cancelar' }).click()
   await expect(attachedDocument.getByRole('button', { name:'Enviar no WhatsApp' })).toBeEnabled()
+  await expect(attachedDocument.getByRole('button', { name:'Enviar por e-mail' })).toBeEnabled()
   const nextDocument = page.locator('.clinical-documents-center-list > article').nth(1)
   const moreOptions = attachedDocument.locator('summary[aria-label="Mais opções"]')
   await moreOptions.click()
