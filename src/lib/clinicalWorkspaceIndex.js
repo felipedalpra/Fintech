@@ -234,6 +234,7 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
         issue_date:asset.captured_on || asset.completed_at || asset.created_at,
         created_at:asset.completed_at || asset.created_at || asset.captured_on,
         author_name:signatureDocument?.author_name || '',
+        created_by:signatureDocument?.created_by || asset.created_by || '',
         file_name:asset.file_name || 'Documento anexado',
         procedure_name:asset.procedure_name || '',
         signature:signatureDocument

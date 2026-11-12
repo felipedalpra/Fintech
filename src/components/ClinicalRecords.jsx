@@ -36,6 +36,7 @@ import { emptyClinicalWorkspaceSources, loadClinicalWorkspaceSources } from '../
 import { buildProtocolAnamnesisDraft } from '../lib/clinicalProtocols.js'
 import './ClinicalRecords.css'
 import './ClinicalRecordsReadability.css'
+import './ClinicalRevamp.css'
 
 const CLINICAL_MODULE_ROUTES = {
   today:'clinical-records',
@@ -72,6 +73,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [anamnesisDraft, setAnamnesisDraft] = useState(null)
   const [protocolApplication, setProtocolApplication] = useState(null)
   const [documentDraftType, setDocumentDraftType] = useState('')
+  const [assetDraftAction, setAssetDraftAction] = useState('')
   const [clinicalAccessStatus, setClinicalAccessStatus] = useState('idle')
   const [profileStatus, setProfileStatus] = useState('idle')
   const [openAttempt, setOpenAttempt] = useState(0)
@@ -111,6 +113,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setClinicalProfile(null)
     setProtocolApplication(null)
     setDocumentDraftType('')
+    setAssetDraftAction('')
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('overview')
@@ -276,6 +279,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setAnamnesisDraft(options.anamnesisDraft || null)
     setProtocolApplication(options.protocolApplication || null)
     setDocumentDraftType(options.documentType || '')
+    setAssetDraftAction(options.assetAction || '')
     setOpenAttempt(value => value + 1)
     setSelected(patient)
     setTab(initialTab)
@@ -313,6 +317,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     setAnamnesisDraft(null)
     setProtocolApplication(null)
     setDocumentDraftType('')
+    setAssetDraftAction('')
     setClinicalAccessStatus('idle')
     setProfileStatus('idle')
     setTab('overview')
@@ -385,15 +390,15 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
 
       {moduleView === 'protocols' && <ClinicalProtocols ownerId={ownerId} patients={patients} canManage={isOwner || role === 'admin'} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onApplyProtocol={applyProtocolToPatient} onClose={() => navigateModule('today')} />}
       {moduleView === 'today' && <>
-        <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={(patient) => selectPatient(patient, 'overview')} />
         <ClinicalTodayInsights index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onNavigate={navigateModule} onRefresh={loadWorkspaceIndex} />
+        <DayAgenda date={currentDate} schedule={daySchedule} patients={patients} loading={loading} onAppointment={openAppointment} onPatient={(patient) => selectPatient(patient, 'overview')} />
       </>}
       {moduleView === 'patients' && <ClinicalPatientsView index={workspaceIndex} loading={loading || workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={() => { loadPatients(); loadWorkspaceIndex() }} />}
       {moduleView === 'pending' && <ClinicalPendingView index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
-      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
+      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} clinicName={clinicName} viewerId={user?.id} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onAttachDocument={patient => selectPatient(patient, 'files', { assetAction:'upload-document' })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
       {moduleView === 'patient' && selected && (
         <div className="clinical-patient-workspace">
-          <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} />
+          <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} clinicName={clinicName} onOpenTab={setTab} />
           {clinicalAccessStatus === 'auditing' && <div className="clinical-loading">Abrindo ficha com auditoria…</div>}
           {clinicalAccessStatus === 'error' && <ClinicalOpenError onRetry={() => setOpenAttempt(value => value + 1)} />}
           {clinicalAccessStatus === 'ready' && (
@@ -449,7 +454,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     onDocumentCreated={loadWorkspaceIndex}
                   />
                 )}
-                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} viewerId={user?.id} onAssetsChanged={loadWorkspaceIndex} />}
+                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} viewerId={user?.id} initialAction={assetDraftAction} onInitialActionConsumed={() => setAssetDraftAction('')} onAssetsChanged={loadWorkspaceIndex} />}
                 {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} initialProtocolApplication={protocolApplication?.destination === 'treatment' ? protocolApplication : null} onProtocolApplicationConsumed={() => setProtocolApplication(null)} />}
               </div>
             </>
@@ -509,7 +514,13 @@ function PatientAvatar({ patient, small = false }) {
   return <span className={`clinical-avatar${small ? ' is-small' : ''}`} aria-hidden="true">{patientInitials(patient?.full_name)}</span>
 }
 
-function PatientHeader({ patient, profile, profileStatus, appointments }) {
+function normalizeWhatsappPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  return digits.startsWith('55') ? digits : `55${digits}`
+}
+
+function PatientHeader({ patient, profile, profileStatus, appointments, clinicName, onOpenTab }) {
   const age = patientAge(patient.date_of_birth)
   const alertItems = [
     profile?.allergies ? { label:`Alergias: ${profile.allergies}`, tone:'danger' } : null,
@@ -527,6 +538,21 @@ function PatientHeader({ patient, profile, profileStatus, appointments }) {
         {profileStatus === 'error' && <span className="is-warn">Alertas indisponíveis</span>}
         {profileStatus === 'ready' && alertItems.length === 0 && <span className="is-ok">Sem alertas registrados</span>}
         {profileStatus === 'ready' && alertItems.map(item => <span key={item.label} className={`is-${item.tone}`} title={item.label}>{item.label}</span>)}
+      </div>
+      <div className="clinical-patient-header__actions" aria-label="Ações rápidas do paciente">
+        <button type="button" onClick={() => onOpenTab('record')}>+ Evolução</button>
+        <button type="button" onClick={() => onOpenTab('prescriptions')}>+ Documento</button>
+        <button
+          type="button"
+          disabled={!normalizeWhatsappPhone(patient.phone)}
+          title={patient.phone ? 'Abrir conversa no WhatsApp' : 'Paciente sem telefone cadastrado'}
+          onClick={() => {
+            const phone = normalizeWhatsappPhone(patient.phone)
+            if (!phone) return
+            const message = `Olá, ${String(patient.full_name || '').split(' ')[0]}. Tudo bem? Aqui é da ${clinicName || 'clínica'}. Como podemos ajudar?`
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+          }}
+        >WhatsApp</button>
       </div>
       <div className="clinical-patient-header__today"><span>Hoje</span><strong>{appointments[0]?.time || 'Sem horário'}</strong><small>{appointments[0]?.label || 'Ficha avulsa'}</small></div>
     </header>

@@ -88,11 +88,11 @@ test('conta PDFs anexados como documentos sem duplicar o snapshot usado pela ass
       { id:'issued-1', patient_id:'patient-1', document_type:'exam_request', created_at:'2026-10-20T10:00:00Z' },
       { id:'shadow-1', patient_id:'patient-1', document_type:'uploaded_pdf', source_asset_id:'asset-1', created_at:'2026-10-21T10:00:00Z' },
     ],
-    assets:[{ id:'asset-1', patient_id:'patient-1', asset_kind:'document', status:'available', file_name:'laudo.pdf', completed_at:'2026-10-21T09:59:00Z' }],
+    assets:[{ id:'asset-1', patient_id:'patient-1', created_by:'doctor-1', asset_kind:'document', status:'available', file_name:'laudo.pdf', completed_at:'2026-10-21T09:59:00Z' }],
   }), reference)
 
   expect(index.documentTotal).toBe(2)
   expect(index.documents.map(item => item.id)).toEqual(['asset:asset-1', 'issued-1'])
-  expect(index.documents[0]).toMatchObject({ document_type:'attached_pdf', file_name:'laudo.pdf', destinationTab:'files', sourceDocumentId:'shadow-1' })
+  expect(index.documents[0]).toMatchObject({ document_type:'attached_pdf', file_name:'laudo.pdf', destinationTab:'files', sourceDocumentId:'shadow-1', created_by:'doctor-1' })
   expect(index.patientItems[0].documentCount).toBe(2)
 })
