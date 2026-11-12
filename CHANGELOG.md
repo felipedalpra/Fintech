@@ -7,6 +7,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-12
 ### Changed
+- **"Despesas por categoria" no Financeiro (aba Saídas) passa a usar o mesmo padrão visual de "Receita por origem" (Entradas)**: era uma barra por categoria, empilhadas verticalmente; agora é uma única barra segmentada por proporção com legenda (nome, % e valor), igual à de Entradas — mesmo componente visual, só os dados mudam. As 5 maiores categorias ganham cor própria e o resto dobra em "Outros", sem sumir do total. (`src/components/Finance.jsx`.)
+- **Filtros do Financeiro (Entradas, Saídas, A receber, A pagar, etc.) ficam compactos**: os campos Buscar/Categoria/Origem/Tipo/Documento fiscal/Status eram caixas grandes com rótulo em caixa alta acima de cada uma, ocupando a tela toda. Viram pílulas pequenas numa única linha (rótulo e valor juntos, ex. "Categoria Todas ▾"), todas visíveis de uma vez — dá pra trocar vários filtros sem abrir um de cada vez. (`src/components/Finance.jsx`.)
+
+### Fixed
 - **Os dois sininhos de notificação (Financeiro e CRM) viram um só**: existiam dois botões lado a lado no topo, cada um com seu próprio painel — agora é um único botão "Notificações" com a contagem combinada (soma dos dois, vermelho se houver algo crítico em qualquer um) e um painel só, com as seções "Financeiro" e "CRM" dentro. Cada seção mantém sua própria lógica de "marcar lidos" (gravam em chaves separadas, como antes); nada do que cada sino calculava mudou, só a apresentação. (`src/components/NotificationBell.jsx` novo; `src/components/AlertsBell.jsx` e `src/components/CrmBell.jsx` removidos; `src/pages/FinanceWorkspace.jsx`, `tests/e2e/notification-popovers.spec.js`.)
 
 ### Fixed

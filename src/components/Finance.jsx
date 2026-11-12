@@ -1136,16 +1136,24 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     })
   }
 
-  // Expense categories for top-5 chart in saidas tab
-  const topExpenseCategories = useMemo(() => {
-    const cats = Object.entries(m.expensesByCategory)
-      .map(([cat, total]) => ({ cat, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5)
-    return cats
-  }, [m.expensesByCategory])
-
-  const maxExpense = topExpenseCategories.length > 0 ? topExpenseCategories[0].total : 1
+  // Despesas por categoria no mesmo padrão de "Receita por origem" em Entradas: uma barra única
+  // segmentada por proporção, em vez de uma barra por categoria — mesmo componente visual, só
+  // os dados mudam. As 5 maiores ganham cor própria; o resto dobra em "Outros" (nunca some do
+  // total, só sai do nome).
+  const expenseCategoryTotal = useMemo(() => Object.values(m.expensesByCategory).reduce((acc, total) => acc + Number(total || 0), 0), [m.expensesByCategory])
+  const expenseOrigins = useMemo(() => {
+    const raw = Object.entries(m.expensesByCategory)
+      .filter(([, total]) => Number(total || 0) > 0)
+      .map(([cat, total]) => ({
+        label: cat,
+        value: Number(total || 0),
+        total: expenseCategoryTotal,
+        entries: m.drilldowns?.byExpenseCategory?.[cat] || [],
+        pct: expenseCategoryTotal > 0 ? Number(total || 0) / expenseCategoryTotal * 100 : 0,
+      }))
+      .sort((a, b) => b.value - a.value)
+    return foldRevenueOriginTail(raw)
+  }, [m.expensesByCategory, m.drilldowns, expenseCategoryTotal])
   const dueAlerts = useMemo(() => buildDueAlerts(m.accountsPayable, m.accountsReceivable), [m.accountsPayable, m.accountsReceivable])
 
   const filteredEntriesFinancial = useMemo(() => {
@@ -1416,17 +1424,19 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
       </>}
 
       {activeListFilterConfig.show && (
-        <Card style={{ padding:14 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:10, alignItems:'end' }}>
-            <FInput label="Buscar" value={listFilters.search} onChange={value => setListFilters(current => ({ ...current, search:value }))} placeholder="Paciente, descrição, categoria..." />
-            <FInput label="Categoria" value={listFilters.category} onChange={value => setListFilters(current => ({ ...current, category:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.categories.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
-            <FInput label="Origem" value={listFilters.origin} onChange={value => setListFilters(current => ({ ...current, origin:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.origins.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
-            <FInput label="Tipo" value={listFilters.launchType} onChange={value => setListFilters(current => ({ ...current, launchType:value }))} options={[{ v:'all', l:'Todos' }, { v:'fixa', l:'Fixa' }, { v:'variavel', l:'Variável' }]} />
-            <FInput label="Documento fiscal" value={listFilters.fiscalStatus} onChange={value => setListFilters(current => ({ ...current, fiscalStatus:value }))} options={[{ v:'all', l:'Todos' }, { v:'with', l:'Com documento' }, { v:'without', l:'Sem documento' }, { v:'pending', l:'Pendente' }, { v:'canceled', l:'Cancelado' }]} />
-            {activeListFilterConfig.showStatus && <FInput label="Status" value={listFilters.status} onChange={value => setListFilters(current => ({ ...current, status:value }))} options={[{ v:'all', l:'Todos' }, ...activeListFilterConfig.statuses.map(value => ({ v:value, l:value }))]} />}
-            <Btn variant="ghost" onClick={() => setListFilters({ search:'', category:'all', origin:'all', status:'all', launchType:'all', fiscalStatus:'all' })}>Limpar filtros</Btn>
-          </div>
-        </Card>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
+          <FilterSearch value={listFilters.search} onChange={value => setListFilters(current => ({ ...current, search:value }))} placeholder="Paciente, descrição, categoria..." />
+          <FilterChip label="Categoria" value={listFilters.category} onChange={value => setListFilters(current => ({ ...current, category:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.categories.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
+          <FilterChip label="Origem" value={listFilters.origin} onChange={value => setListFilters(current => ({ ...current, origin:value }))} options={[{ v:'all', l:'Todas' }, ...activeListFilterConfig.origins.map(value => ({ v:value, l:value.replaceAll('_', ' ') }))]} />
+          <FilterChip label="Tipo" value={listFilters.launchType} onChange={value => setListFilters(current => ({ ...current, launchType:value }))} options={[{ v:'all', l:'Todos' }, { v:'fixa', l:'Fixa' }, { v:'variavel', l:'Variável' }]} />
+          <FilterChip label="Doc. fiscal" value={listFilters.fiscalStatus} onChange={value => setListFilters(current => ({ ...current, fiscalStatus:value }))} options={[{ v:'all', l:'Todos' }, { v:'with', l:'Com documento' }, { v:'without', l:'Sem documento' }, { v:'pending', l:'Pendente' }, { v:'canceled', l:'Cancelado' }]} />
+          {activeListFilterConfig.showStatus && <FilterChip label="Status" value={listFilters.status} onChange={value => setListFilters(current => ({ ...current, status:value }))} options={[{ v:'all', l:'Todos' }, ...activeListFilterConfig.statuses.map(value => ({ v:value, l:value }))]} />}
+          <button
+            type="button"
+            onClick={() => setListFilters({ search:'', category:'all', origin:'all', status:'all', launchType:'all', fiscalStatus:'all' })}
+            style={{ height:30, padding:'0 12px', borderRadius:999, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}
+          >Limpar filtros</button>
+        </div>
       )}
 
       {tab === 'entradas' && <>
@@ -1527,26 +1537,51 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           <Btn onClick={() => openAdd('expense')}>+ Nova despesa</Btn>
         </div>
 
-        {topExpenseCategories.length > 0 && (
-          <Card style={{ padding:20 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:16 }}>Top categorias de despesa</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-              {topExpenseCategories.map((item, idx) => {
-                const pct = maxExpense > 0 ? item.total / maxExpense * 100 : 0
-                const barColors = [C.red, C.yellow, C.purple, C.cyan, C.accent]
-                const barColor = barColors[idx % barColors.length]
-                return (
-                  <div key={item.cat} role="button" tabIndex={0} onClick={() => openDrilldown(`Despesas — ${item.cat.replaceAll('_', ' ')}`, m.drilldowns?.byExpenseCategory?.[item.cat] || [], item.total)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.currentTarget.click() }} title="Clique para ver os lançamentos" style={{ cursor:'pointer' }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
-                      <span style={{ fontSize:12, color:C.textSub, fontWeight:600, textTransform:'capitalize' }}>{item.cat}</span>
-                      <span style={{ fontSize:12, color:barColor, fontWeight:700 }}>{money(item.total)}</span>
-                    </div>
-                    <div style={{ height:8, borderRadius:999, background:`${C.border}44`, overflow:'hidden' }}>
-                      <div style={{ height:'100%', width:`${pct}%`, borderRadius:999, background:barColor, transition:'width 0.4s ease' }} />
-                    </div>
-                  </div>
-                )
-              })}
+        {expenseOrigins.length > 0 && (
+          <Card style={{ padding:20 }} data-testid="expense-by-category">
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:12, flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Despesas por categoria</div>
+                <div style={{ fontSize:11.5, color:C.textDim, marginTop:3 }}>Participação de cada categoria no total de saídas.</div>
+              </div>
+              <div style={{ fontSize:15, fontWeight:800, color:C.text }}>{money(expenseCategoryTotal)}</div>
+            </div>
+
+            {/* Barra única segmentada: mesmo padrão de "Receita por origem" em Entradas. A folga
+                de 2px entre segmentos é codificação secundária — não depender só da cor. */}
+            <div style={{ display:'flex', gap:2, marginTop:14, height:12, borderRadius:999, overflow:'hidden' }}>
+              {expenseOrigins.map(item => (
+                <div
+                  key={item.label}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openDrilldown(`Despesas — ${item.label.replaceAll('_', ' ')}`, item.entries || [], item.value)}
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openDrilldown(`Despesas — ${item.label.replaceAll('_', ' ')}`, item.entries || [], item.value) }}
+                  title={`${item.label.replaceAll('_', ' ')} · ${item.pct.toFixed(1)}% · ${money(item.value)}`}
+                  data-testid={`expense-category-segment-${item.label}`}
+                  style={{ width:`${Math.max(item.pct, 0.6)}%`, background:item.color, cursor:'pointer', minWidth:3 }}
+                />
+              ))}
+            </div>
+
+            {/* A legenda carrega nome e valor: identidade nunca fica só na cor. */}
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'8px 18px', marginTop:12 }}>
+              {expenseOrigins.map(item => (
+                <div
+                  key={item.label}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openDrilldown(`Despesas — ${item.label.replaceAll('_', ' ')}`, item.entries || [], item.value)}
+                  onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') openDrilldown(`Despesas — ${item.label.replaceAll('_', ' ')}`, item.entries || [], item.value) }}
+                  title={item.isTail ? `Agrupa: ${(item.foldedLabels || []).map(l => l.replaceAll('_', ' ')).join(', ')}` : 'Clique para ver os lançamentos'}
+                  style={{ display:'flex', alignItems:'center', gap:7, cursor:'pointer' }}
+                >
+                  <span aria-hidden="true" style={{ width:9, height:9, borderRadius:3, background:item.color, flexShrink:0 }} />
+                  <span style={{ fontSize:12, color:C.textSub, fontWeight:600, textTransform:'capitalize' }}>{item.label.replaceAll('_', ' ')}</span>
+                  <span style={{ fontSize:12, color:C.textDim }}>{item.pct.toFixed(1)}%</span>
+                  <span style={{ fontSize:12, color:C.text, fontWeight:700 }}>{money(item.value)}</span>
+                </div>
+              ))}
             </div>
           </Card>
         )}
@@ -2648,4 +2683,43 @@ function isSaveDisabled(modalType, form, editing) {
 
 function SectionTitle({ title, subtitle, compact = false }) {
   return <div><div style={{ fontSize:compact ? 13 : 14, color:C.text, fontWeight:700 }}>{title}</div>{subtitle && <div style={{ color:C.textDim, fontSize:12, marginTop:4 }}>{subtitle}</div>}</div>
+}
+
+// Filtro compacto: rótulo + valor na mesma pílula, numa única linha — em vez do antigo grid de
+// campos grandes (rótulo em caixa alta acima, caixa de 180px cada), onde filtrar por 2-3 coisas
+// já tomava a tela toda. Um <select> nativo por trás mantém teclado/acessibilidade de graça.
+function FilterChip({ label, value, onChange, options }) {
+  return (
+    <label style={{
+      display:'inline-flex', alignItems:'center', gap:5, height:30, padding:'0 10px', borderRadius:999,
+      border:`1px solid ${C.border}`, background:C.surface, fontSize:12, flexShrink:0, cursor:'pointer',
+    }}>
+      <span style={{ color:C.textDim, fontWeight:600, whiteSpace:'nowrap' }}>{label}</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{ border:'none', background:'transparent', color:C.text, fontSize:12, fontWeight:700, outline:'none', cursor:'pointer', fontFamily:'inherit', maxWidth:150 }}
+      >
+        {options.map(opt => <option key={opt.v} value={opt.v}>{opt.l}</option>)}
+      </select>
+    </label>
+  )
+}
+
+function FilterSearch({ value, onChange, placeholder }) {
+  return (
+    <label style={{
+      display:'inline-flex', alignItems:'center', gap:6, height:30, padding:'0 10px', borderRadius:999,
+      border:`1px solid ${C.border}`, background:C.surface, flex:'1 1 170px', minWidth:130, maxWidth:260,
+    }}>
+      <span aria-hidden="true" style={{ fontSize:12, color:C.textDim }}>⌕</span>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        style={{ border:'none', background:'transparent', color:C.text, fontSize:12, outline:'none', width:'100%', fontFamily:'inherit' }}
+      />
+    </label>
+  )
 }
