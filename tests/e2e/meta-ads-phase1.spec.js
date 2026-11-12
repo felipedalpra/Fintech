@@ -125,3 +125,44 @@ test('falha de autenticação manda reconectar, em vez de culpar a Meta', async 
   await page.goto('/app/ads')
   await expect(page.getByTestId('sync-status').getByText('Reconecte em Configurações', { exact:false })).toBeVisible()
 })
+
+// Regressão: com período longo (muitos dias — ex. um ano via "Personalizado"), a largura
+// somada das barras não pode ultrapassar a largura do cartão e invadir o cartão vizinho na
+// fileira de 4 gráficos diários. "Trimestre" sempre mostra ~90 dias fixos (não serve pra testar
+// isso); o jeito de ter mais barras na tela é abrir um intervalo bem maior em "Personalizado".
+test('gráficos diários não vazam para o cartão vizinho com período longo', async ({ page }) => {
+  const insightsLongos = []
+  for (let i = 0; i < 365; i += 1) {
+    insightsLongos.push({ level:'campaign', ref_id:'C1', campaign_id:'C1', date:dia(i), spend:100, impressions:2000, clicks:60,
+      leads:i % 7 === 0 ? 2 : 0, actions:[{ action_type:'lead', value:String(i % 7 === 0 ? 2 : 0) }], updated_at:new Date().toISOString() })
+  }
+  await page.addInitScript(() => localStorage.setItem('surgimetrics_onboarded', 'true'))
+  await page.route('**/api/**', route => route.fulfill({ status:200, contentType:'application/json', body:'{"ok":true}' }))
+  await page.route('**/rest/v1/**', route => {
+    const path = new URL(route.request().url()).pathname
+    let body = []
+    if (path.endsWith('/meta_insights')) body = insightsLongos
+    if (path.endsWith('/meta_campaigns')) body = [{ campaign_id:'C1', name:'Rinoplastia — Tráfego', status:'ACTIVE' }]
+    if (path.endsWith('/meta_connections')) body = { status:'conectado', ad_account_id:'act_1', updated_at:new Date().toISOString() }
+    return route.fulfill({ status:200, contentType:'application/json', headers:{ 'content-range':'0-0/1' }, body:JSON.stringify(body) })
+  })
+  // Largura generosa o bastante para a grade virar 4 colunas lado a lado, o caso que vazava.
+  await page.setViewportSize({ width:1900, height:1100 })
+  await page.goto('/app/ads')
+  await page.getByText('Personalizado', { exact:true }).click()
+  await page.locator('input[type="date"]').first().fill(dia(364))
+  await page.locator('input[type="date"]').nth(1).fill(dia(0))
+  await expect(page.getByTestId('chart-cpl')).toBeVisible()
+
+  for (const id of ['chart-spend', 'chart-leads', 'chart-clicks', 'chart-cpl']) {
+    const card = page.getByTestId(id)
+    const track = card.locator('[role="img"][aria-label*="dias"]')
+    const cardBox = await card.boundingBox()
+    // O container flex não cresce para acomodar filhos que não cabem — eles vazam visualmente
+    // pra fora dele e o boundingBox do próprio container não reflete isso. Por isso medimos a
+    // ÚLTIMA barra renderizada (o ponto mais à direita de verdade), não o container.
+    const lastBar = track.locator('> div').last()
+    const lastBarBox = await lastBar.boundingBox()
+    expect(lastBarBox.x + lastBarBox.width, `${id}: a última barra vaza pra fora do cartão`).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1)
+  }
+})
