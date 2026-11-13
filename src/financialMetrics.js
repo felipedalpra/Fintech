@@ -23,7 +23,7 @@ function surgeryCosts(item) {
   const invoiceTax = item.invoiceTaxAmount != null
     ? Number(item.invoiceTaxAmount || 0)
     : invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
-  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + invoiceTax
+  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + invoiceTax
 }
 
 function consultationCosts(item) {
@@ -50,6 +50,8 @@ const LEDGER_COMPONENT_CATEGORY = {
   hospital_cost:'hospital',
   anesthesia_cost:'anestesia',
   material_cost:'material',
+  instrumentation_cost:'instrumentadora',
+  prosthesis_cost:'protese',
   other_cost:'outros',
   invoice_tax:'nota_fiscal',
 }

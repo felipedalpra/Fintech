@@ -105,7 +105,7 @@ function pushCostEntries(parts, item, sourceType, accounts) {
       ? 'deduction_invoice_tax'
       : sourceType === 'consultation'
         ? 'cost_consultation'
-        : ({ hospital_cost:'cost_surgery_hospital', anesthesia_cost:'cost_surgery_anesthesia', material_cost:'cost_surgery_material', other_cost:'cost_surgery_other' }[component.key] || 'cost_surgery_other')
+        : ({ hospital_cost:'cost_surgery_hospital', anesthesia_cost:'cost_surgery_anesthesia', material_cost:'cost_surgery_material', instrumentation_cost:'cost_surgery_instrumentation', prosthesis_cost:'cost_surgery_prosthesis', other_cost:'cost_surgery_other' }[component.key] || 'cost_surgery_other')
     const account = findChartAccount(accounts, { systemKey, direction:'payable' })
     parts.push(singleEntry({
       sourceType, sourceComponent: component.key, direction: 'payable', item, total: component.amount,
@@ -275,7 +275,7 @@ export function reconcileLedger(data = {}) {
     { label: 'Receitas extras', raw: sumBy(notCanceled(data.extraRevenues, 'status'), r => r.value), ledger: ledgerSum('extra_revenue', 'revenue') },
     { label: 'Despesas', raw: sumBy(notCanceled(data.expenses, 'status'), e => e.value), ledger: ledgerSum('expense', 'revenue') },
     { label: 'Compras de produto', raw: sumBy(notCanceled(data.productPurchases, 'status'), p => p.totalValue), ledger: ledgerSum('product_purchase', 'revenue') },
-    { label: 'Custos de cirurgia', raw: rawSurgeryCost, ledger: round2(['hospital_cost', 'anesthesia_cost', 'material_cost', 'other_cost', 'invoice_tax'].reduce((a, c) => a + ledgerSum('surgery', c), 0)) },
+    { label: 'Custos de cirurgia', raw: rawSurgeryCost, ledger: round2(['hospital_cost', 'anesthesia_cost', 'material_cost', 'instrumentation_cost', 'prosthesis_cost', 'other_cost', 'invoice_tax'].reduce((a, c) => a + ledgerSum('surgery', c), 0)) },
     { label: 'Custos de consulta (NF)', raw: rawConsultCost, ledger: ledgerSum('consultation', 'invoice_tax') },
   ].map(r => ({ ...r, diff: round2(r.raw - r.ledger) }))
 

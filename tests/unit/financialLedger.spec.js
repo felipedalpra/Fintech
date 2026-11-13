@@ -147,6 +147,20 @@ test('custos de cirurgia viram títulos a pagar por componente (0 não gera)', (
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
 
+test('custo de instrumentadora e prótese também viram títulos a pagar (pedido do Felipe, 13/11/2026)', () => {
+  const ledger = buildLedger({
+    surgeries: [{
+      id: 'sx2', totalValue: 20000, date: '2026-09-10', paymentStatus: 'pendente',
+      instrumentationCost: 800, prosthesisCost: 5000, patient: 'Bia',
+    }],
+  })
+  const costs = ledger.entries.filter(e => e.source_type === 'surgery' && e.direction === 'payable')
+  const byComp = Object.fromEntries(costs.map(e => [e.source_component, e.total_amount]))
+  expect(byComp.instrumentation_cost).toBe(800)
+  expect(byComp.prosthesis_cost).toBe(5000)
+  expect(checkLedgerInvariants(ledger)).toEqual([])
+})
+
 test('custos clínicos respeitam fornecedor, vencimento e liquidação próprios', () => {
   const ledger = buildLedger({
     surgeries:[{

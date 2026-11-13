@@ -155,7 +155,8 @@ export const DEFAULT_CHART_TREE = [
       account('6.01.02', 'Anestesia', 'direct_cost', 'direct_costs', { systemKey:'cost_surgery_anesthesia' }),
       account('6.01.03', 'Materiais e medicamentos cirúrgicos', 'direct_cost', 'direct_costs', { systemKey:'cost_surgery_material' }),
       account('6.01.04', 'Médico auxiliar e equipe cirúrgica', 'direct_cost', 'direct_costs', { systemKey:'cost_surgery_auxiliary' }),
-      account('6.01.05', 'Instrumentação e apoio', 'direct_cost', 'direct_costs'),
+      account('6.01.05', 'Instrumentação e apoio', 'direct_cost', 'direct_costs', { systemKey:'cost_surgery_instrumentation' }),
+      account('6.01.06', 'Prótese', 'direct_cost', 'direct_costs', { systemKey:'cost_surgery_prosthesis' }),
       account('6.01.99', 'Outros custos de cirurgias', 'direct_cost', 'direct_costs', { systemKey:'cost_surgery_other' }),
     ]),
     group('6.02', 'Custos diretos de consultas', 'direct_cost', 'direct_costs', [
