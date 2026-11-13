@@ -48,6 +48,8 @@ export function normalizeData(data) {
       customProcedureName:item.customProcedureName ? String(item.customProcedureName).trim() || null : null,
       city:['goiania', 'brasilia'].includes(item.city) ? item.city : null,
       locationDetail:item.locationDetail ? String(item.locationDetail).trim() : '',
+      instrumentationCost:Number(item.instrumentationCost) || 0,
+      prosthesisCost:Number(item.prosthesisCost) || 0,
         id:normalizeUuid(item.id, 'surgery'),
         procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
         competenceDate:item.competenceDate || item.date || '',

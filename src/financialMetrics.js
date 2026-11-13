@@ -23,7 +23,7 @@ function surgeryCosts(item) {
   const invoiceTax = item.invoiceTaxAmount != null
     ? Number(item.invoiceTaxAmount || 0)
     : invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
-  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + invoiceTax
+  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + invoiceTax
 }
 
 function consultationCosts(item) {

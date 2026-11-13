@@ -105,7 +105,7 @@ function pushCostEntries(parts, item, sourceType, accounts) {
       ? 'deduction_invoice_tax'
       : sourceType === 'consultation'
         ? 'cost_consultation'
-        : ({ hospital_cost:'cost_surgery_hospital', anesthesia_cost:'cost_surgery_anesthesia', material_cost:'cost_surgery_material', other_cost:'cost_surgery_other' }[component.key] || 'cost_surgery_other')
+        : ({ hospital_cost:'cost_surgery_hospital', anesthesia_cost:'cost_surgery_anesthesia', material_cost:'cost_surgery_material', instrumentation_cost:'cost_surgery_instrumentation', prosthesis_cost:'cost_surgery_prosthesis', other_cost:'cost_surgery_other' }[component.key] || 'cost_surgery_other')
     const account = findChartAccount(accounts, { systemKey, direction:'payable' })
     parts.push(singleEntry({
       sourceType, sourceComponent: component.key, direction: 'payable', item, total: component.amount,

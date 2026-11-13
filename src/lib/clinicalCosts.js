@@ -3,6 +3,8 @@ export const CLINICAL_COST_COMPONENTS = {
     { key:'hospital_cost', label:'Hospital', amountField:'hospitalCost' },
     { key:'anesthesia_cost', label:'Anestesia', amountField:'anesthesiaCost' },
     { key:'material_cost', label:'Material', amountField:'materialCost' },
+    { key:'instrumentation_cost', label:'Instrumentadora', amountField:'instrumentationCost' },
+    { key:'prosthesis_cost', label:'Prótese', amountField:'prosthesisCost' },
     { key:'other_cost', label:'Outros custos', amountField:'otherCosts' },
     { key:'invoice_tax', label:'Imposto / emissão de NF', derived:true },
   ],

@@ -90,6 +90,11 @@ export function CalendarFinancialFields({ open, onToggle, draft, setDraft, editi
                 <FInput label="Custo hospital" type="number" value={draft.hospitalCost} onChange={hospitalCost => update({ hospitalCost })} placeholder="0" />
                 <FInput label="Custo anestesia" type="number" value={draft.anesthesiaCost} onChange={anesthesiaCost => update({ anesthesiaCost })} placeholder="0" />
                 <FInput label="Custo material" type="number" value={draft.materialCost} onChange={materialCost => update({ materialCost })} placeholder="0" />
+                <FInput label="Custo instrumentadora" type="number" value={draft.instrumentationCost} onChange={instrumentationCost => update({ instrumentationCost })} placeholder="0" />
+                <FInput label="Custo prótese" type="number" value={draft.prosthesisCost} onChange={prosthesisCost => update({ prosthesisCost })} placeholder="0" />
+                {(Number(draft.instrumentationCost) > 0 || Number(draft.prosthesisCost) > 0) && (
+                  <div className="cal-finance__notice">Esses valores entram como custo da cirurgia e vão aparecer em Contas a pagar / Saídas do Financeiro.</div>
+                )}
                 <FInput label="Outros custos" type="number" value={draft.otherCosts} onChange={otherCosts => update({ otherCosts })} placeholder="0" />
                 <FInput
                   label="Valor repassado direto a terceiros"

@@ -30,13 +30,13 @@ test('cirurgia limita percentuais e normaliza valores e custos', () => {
   const patch = buildCalendarFinancialPatch('surgery', {
     date:'2026-10-15', totalValue:'18000', dueDate:'', paymentMethod:'pix', paymentStatus:'pendente', paymentDate:'2026-10-16',
     invoiceIssuancePercent:130, hospitalCost:'3000', anesthesiaCost:'2000', materialCost:'500', otherCosts:'250',
-    thirdPartyPassthroughValue:'19000',
+    instrumentationCost:'400', prosthesisCost:'6000', thirdPartyPassthroughValue:'19000',
   })
 
   expect(patch).toMatchObject({
     totalValue:18000, dueDate:'2026-10-15', paymentMethod:'pix', paymentStatus:'pendente', paymentDate:'',
     invoiceIssuancePercent:100, hospitalCost:3000, anesthesiaCost:2000, materialCost:500, otherCosts:250,
-    thirdPartyPassthroughValue:19000,
+    instrumentationCost:400, prosthesisCost:6000, thirdPartyPassthroughValue:19000,
   })
 })
 
@@ -46,4 +46,14 @@ test('valor repassado a terceiros nasce zerado quando não informado', () => {
 
   const patch = buildCalendarFinancialPatch('surgery', { date:'2026-10-15', totalValue:'54000' })
   expect(patch.thirdPartyPassthroughValue).toBe(0)
+})
+
+test('custo de instrumentadora e prótese nascem zerados quando não informados', () => {
+  const draft = createCalendarFinancialDraft('surgery', { totalValue:20000 }, '2026-10-15')
+  expect(draft.instrumentationCost).toBe(0)
+  expect(draft.prosthesisCost).toBe(0)
+
+  const patch = buildCalendarFinancialPatch('surgery', { date:'2026-10-15', totalValue:'20000' })
+  expect(patch.instrumentationCost).toBe(0)
+  expect(patch.prosthesisCost).toBe(0)
 })

@@ -141,6 +141,8 @@ export function Sales({ data, setData, saveDataNow }) {
     hospitalCost:0,
     anesthesiaCost:0,
     materialCost:0,
+    instrumentationCost:0,
+    prosthesisCost:0,
     otherCosts:0,
     thirdPartyPassthroughValue:0,
     invoiceIssuancePercent:0,
@@ -228,7 +230,7 @@ export function Sales({ data, setData, saveDataNow }) {
     const resolvedTotal = form.totalValue || procedureValue
     const invoiceIssuancePercent = Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0)))
     const invoiceIssuanceCost = resolvedTotal * (invoiceIssuancePercent / 100)
-    const totalCosts = (form.hospitalCost || 0) + (form.anesthesiaCost || 0) + (form.materialCost || 0) + (form.otherCosts || 0) + invoiceIssuanceCost
+    const totalCosts = (form.hospitalCost || 0) + (form.anesthesiaCost || 0) + (form.materialCost || 0) + (form.instrumentationCost || 0) + (form.prosthesisCost || 0) + (form.otherCosts || 0) + invoiceIssuanceCost
     const installmentValue = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
       ? resolvedTotal / form.installmentCount
       : 0
@@ -329,7 +331,7 @@ export function Sales({ data, setData, saveDataNow }) {
   const surgeriesWithRevenue = data.surgeries.filter(item => item.totalValue > 0)
   const margemMedia = surgeriesWithRevenue.length > 0
     ? surgeriesWithRevenue.reduce((sum, item) => {
-        const costs = (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100))
+        const costs = (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100))
         const net = (item.totalValue || 0) - costs
         return sum + (net / item.totalValue) * 100
       }, 0) / surgeriesWithRevenue.length
@@ -406,7 +408,7 @@ export function Sales({ data, setData, saveDataNow }) {
               {filtered.length === 0 && <tr><td colSpan={7} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma cirurgia cadastrada.</td></tr>}
               {visible.map(item => {
                 const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
-                const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
+                const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
                 const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
                 const payment = decodePaymentMethod(item.paymentMethod)
                 const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -460,7 +462,7 @@ export function Sales({ data, setData, saveDataNow }) {
           {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma cirurgia cadastrada.</div></Card>}
           {visible.map(item => {
             const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
-            const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
+            const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
             const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
             const payment = decodePaymentMethod(item.paymentMethod)
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -598,7 +600,9 @@ export function Sales({ data, setData, saveDataNow }) {
             </>
           )}
           <FInput label="Status do pagamento" value={form.paymentStatus} onChange={value => setForm(current => ({ ...current, paymentStatus:value }))} options={PAYMENT_STATUS} />
-          <FInput label="Data do recebimento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" />
+          {form.paymentStatus === 'pago' && (
+            <FInput label="Data do recebimento" value={form.paymentDate} onChange={value => setForm(current => ({ ...current, paymentDate:value }))} type="date" required />
+          )}
           {form.paymentStatus === 'parcelado' && (
             <>
               <FInput label="Número de parcelas" value={form.installmentCount} onChange={value => setForm(current => ({ ...current, installmentCount:Math.min(48, Math.max(2, value)) }))} type="number" placeholder="2" />
@@ -616,6 +620,13 @@ export function Sales({ data, setData, saveDataNow }) {
           <FInput label="Custo hospital" value={form.hospitalCost} onChange={value => setForm(current => ({ ...current, hospitalCost:value }))} type="number" placeholder="0" />
           <FInput label="Custo anestesia" value={form.anesthesiaCost} onChange={value => setForm(current => ({ ...current, anesthesiaCost:value }))} type="number" placeholder="0" />
           <FInput label="Custo material" value={form.materialCost} onChange={value => setForm(current => ({ ...current, materialCost:value }))} type="number" placeholder="0" />
+          <FInput label="Custo instrumentadora" value={form.instrumentationCost} onChange={value => setForm(current => ({ ...current, instrumentationCost:value }))} type="number" placeholder="0" />
+          <FInput label="Custo prótese" value={form.prosthesisCost} onChange={value => setForm(current => ({ ...current, prosthesisCost:value }))} type="number" placeholder="0" />
+          {(Number(form.instrumentationCost) > 0 || Number(form.prosthesisCost) > 0) && (
+            <div style={{ gridColumn:'1 / -1', marginTop:-8, fontSize:12, color:C.yellow }}>
+              Esses valores entram como custo da cirurgia e vão aparecer em Contas a pagar / Saídas do Financeiro.
+            </div>
+          )}
           <FInput label="Custo outros" value={form.otherCosts} onChange={value => setForm(current => ({ ...current, otherCosts:value }))} type="number" placeholder="0" />
           <FInput label="Emissão NF (%)" value={form.invoiceIssuancePercent} onChange={value => setForm(current => ({ ...current, invoiceIssuancePercent:value }))} type="number" placeholder="0" />
           <ClinicalCostSettlementFields sourceType="surgery" form={form} setForm={setForm} />
