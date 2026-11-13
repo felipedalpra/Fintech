@@ -28,6 +28,7 @@ import {
 } from '../lib/clinicalCalendar.js'
 import { buildCalendarFinancialPatch, createCalendarFinancialDraft } from '../lib/calendarFinancialDetails.js'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
+import { CUSTOM_PROCEDURE_VALUE, resolveCustomProcedureFields } from '../lib/customProcedure.js'
 import './Calendar.css'
 
 const WEEKDAYS = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB']
@@ -301,13 +302,33 @@ function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurger
           {draft.type === 'consultation' ? (
             <FInput label="Tipo de consulta" value={draft.consultationType} onChange={consultationType => setDraft(current => ({ ...current, consultationType }))} options={CONSULTATION_TYPES} />
           ) : (
-            <FInput label="Procedimento" value={draft.procedureId} onChange={procedureId => setDraft(current => ({ ...current, procedureId }))} options={[{ v:'', l:'Selecione o procedimento' }, ...procedures.map(item => ({ v:item.id, l:item.name }))]} />
+            <>
+              <FInput
+                label="Procedimento"
+                value={draft.procedureId}
+                onChange={procedureId => setDraft(current => ({ ...current, procedureId }))}
+                options={[
+                  { v:'', l:'Selecione o procedimento' },
+                  ...procedures.map(item => ({ v:item.id, l:item.name })),
+                  { v:CUSTOM_PROCEDURE_VALUE, l:'Outro / combinado (digitar)' },
+                ]}
+              />
+              {draft.procedureId === CUSTOM_PROCEDURE_VALUE && (
+                <FInput
+                  label="Nome do procedimento"
+                  value={draft.customProcedureName || ''}
+                  onChange={customProcedureName => setDraft(current => ({ ...current, customProcedureName }))}
+                  placeholder="Ex.: Mamoplastia + Braquioplastia"
+                  required
+                />
+              )}
+            </>
           )}
           {canManageFinance && <CalendarFinancialFields open={financeOpen} onToggle={() => setFinanceOpen(current => !current)} draft={draft} setDraft={setDraft} editing={editing} />}
           <div className="cal-editor__hint">O atendimento será salvo na clínica e, se a integração estiver ativa, sincronizado com o Google Agenda.</div>
           <div className="cal-editor__actions">
             <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-            <Btn disabled={busy || (!draft.patientId && !draft.patient.trim()) || !draft.date || !draft.startTime || (draft.type === 'surgery' && !draft.procedureId)} onClick={onSave}>{busy ? 'Salvando…' : editing ? 'Salvar alterações' : canManageFinance && !financeOpen ? 'Salvar e preencher depois' : 'Criar atendimento'}</Btn>
+            <Btn disabled={busy || (!draft.patientId && !draft.patient.trim()) || !draft.date || !draft.startTime || (draft.type === 'surgery' && !draft.procedureId) || (draft.type === 'surgery' && draft.procedureId === CUSTOM_PROCEDURE_VALUE && !(draft.customProcedureName || '').trim())} onClick={onSave}>{busy ? 'Salvando…' : editing ? 'Salvar alterações' : canManageFinance && !financeOpen ? 'Salvar e preencher depois' : 'Criar atendimento'}</Btn>
           </div>
         </div>
       )}
@@ -446,7 +467,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
       startTime:event.startTime || '09:00',
       durationMinutes:event.durationMinutes,
       consultationType:event.record?.consultationType || 'avaliacao',
-      procedureId:event.record?.procedureId || data.procedures?.[0]?.id || '',
+      procedureId:event.record?.procedureId || (event.record?.customProcedureName ? CUSTOM_PROCEDURE_VALUE : data.procedures?.[0]?.id || ''),
+      customProcedureName:event.record?.customProcedureName || '',
     })
     setEditorOpen(true)
   }
@@ -480,7 +502,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
               dueDate:item.dueDate === item.date || !item.dueDate ? draft.date : item.dueDate,
               startTime:draft.startTime,
               durationMinutes:Math.max(15, Number(draft.durationMinutes) || (selectedEvent.type === 'surgery' ? 180 : 60)),
-              ...(selectedEvent.type === 'surgery' ? { procedureId:draft.procedureId } : { consultationType:draft.consultationType }),
+              ...(selectedEvent.type === 'surgery' ? resolveCustomProcedureFields(draft.procedureId, draft.customProcedureName) : { consultationType:draft.consultationType }),
               ...financialPatch,
             }
             return financeOpen ? withClinicalCostSettlementDefaults(updated, selectedEvent.type) : updated
@@ -495,7 +517,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             id,
             patient:draft.patient.trim(),
             patientId:draft.patientId || null,
-            procedureId:draft.procedureId,
+            ...resolveCustomProcedureFields(draft.procedureId, draft.customProcedureName),
             // O valor só entra quando informado explicitamente; o fluxo "preencher depois" mantém zero.
             ...financialPatch,
             date:draft.date,
