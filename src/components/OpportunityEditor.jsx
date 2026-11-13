@@ -8,6 +8,7 @@ import { OpportunityUpdates } from './OpportunityUpdates.jsx'
 import { createOpportunity, updateOpportunity, setOpportunityOutcome } from '../lib/opportunityActions.js'
 import { opportunityPerson } from '../lib/crmContact.js'
 import { Person360Drawer } from './Person360Drawer.jsx'
+import { BudgetDocuments } from './BudgetDocuments.jsx'
 
 // Modal de criar/editar oportunidade (+ fechar como ganho/perdido).
 // Ao editar, ganha abas: Dados / Atualizações / Tarefas / Timeline.
@@ -85,6 +86,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
           <button type="button" style={tabBtn(tab === 'atualizacoes')} onClick={() => setTab('atualizacoes')} data-testid="opp-tab-updates">Atualizações</button>
           <button type="button" style={tabBtn(tab === 'tarefas')} onClick={() => setTab('tarefas')}>Tarefas</button>
           <button type="button" style={tabBtn(tab === 'timeline')} onClick={() => setTab('timeline')}>Timeline</button>
+          <button type="button" style={tabBtn(tab === 'orcamentos')} onClick={() => setTab('orcamentos')} data-testid="opp-tab-budgets">Orçamentos</button>
           <button type="button" style={{ ...tabBtn(false), marginLeft:'auto', color:C.accent }} onClick={() => setShow360(true)}>Pessoa 360°</button>
         </div>
       )}
@@ -98,6 +100,19 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
       )}
       {isEdit && tab === 'timeline' && (
         <OpportunityTimeline ownerId={ownerId} opp={opp} userId={userId} />
+      )}
+      {isEdit && tab === 'orcamentos' && form.patient_id && (
+        <BudgetDocuments
+          patient={{ id:form.patient_id, full_name:form.patient_name }}
+          ownerId={ownerId}
+          opportunityId={opp.id}
+          patientPhone={opportunityPerson(opp).phone}
+        />
+      )}
+      {isEdit && tab === 'orcamentos' && !form.patient_id && (
+        <div style={{ color:C.textDim, fontSize:13, textAlign:'center', padding:'24px 0' }}>
+          Oportunidade vinculada a um contato, não a um paciente — anexe o orçamento direto na ficha do paciente quando ele for criado.
+        </div>
       )}
 
       <div style={{ display: tab === 'dados' ? 'flex' : 'none', flexDirection: 'column', gap: 14 }}>
