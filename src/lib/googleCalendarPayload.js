@@ -33,13 +33,28 @@ export function normalizeDuration(value, type) {
   return minutes > 0 && minutes <= 1440 ? minutes : DEFAULT_DURATION_MINUTES[type]
 }
 
+// Spec: docs/superpowers/plans/2026-11-13-cidade-local-agenda.md
+// Prefixo que a equipe já usa manualmente no Google Calendar pra distinguir cidade — só
+// substitui a cor (que se perde na sincronização, já que é por calendário, não por evento).
+const CITY_TITLE_PREFIX = { goiania:'Consultório Gyn', brasilia:'Consultório Bsb' }
+
 export function buildEventTitle(type, record, procedures = []) {
   const patient = String(record.patient || '').trim() || 'Paciente'
-  if (type === 'surgery') {
-    const procedureName = procedures.find(item => item.id === record.procedureId)?.name || record.customProcedureName || 'Cirurgia'
-    return `${patient} — ${procedureName}`
-  }
-  return `${patient} — ${CONSULTATION_LABELS[record.consultationType] || 'Consulta'}`
+  const cityPrefix = CITY_TITLE_PREFIX[record.city]
+  const base = type === 'surgery'
+    ? `${patient} — ${procedures.find(item => item.id === record.procedureId)?.name || record.customProcedureName || 'Cirurgia'}`
+    : `${patient} — ${CONSULTATION_LABELS[record.consultationType] || 'Consulta'}`
+  return cityPrefix ? `${cityPrefix} — ${base}` : base
+}
+
+// Preparação para quando a importação de eventos externos existir (ver seção 7 da spec):
+// classifica pelo título um evento criado DIRETO no Google, fora da plataforma. Não é usada
+// em nenhum fluxo ainda — não há importação de evento externo implementada hoje.
+export function parseCityFromEventTitle(title) {
+  const text = String(title || '').toLocaleLowerCase('pt-BR')
+  if (text.includes('consultório gyn') || text.includes('consultorio gyn')) return 'goiania'
+  if (text.includes('consultório bsb') || text.includes('consultorio bsb')) return 'brasilia'
+  return null
 }
 
 export function hashPayload(payload) {

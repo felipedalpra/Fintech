@@ -8,6 +8,7 @@ import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
+import { CITY_OPTIONS } from '../lib/clinicalCalendar.js'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
 import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import {
@@ -91,6 +92,8 @@ export function Consultations({ data, setData, saveDataNow }) {
     startTime:'',
     durationMinutes:60,
     consultationType:'avaliacao',
+    city:'',
+    locationDetail:'',
     value:0,
     invoiceIssuancePercent:0,
     costSettlements:{},
@@ -351,6 +354,8 @@ export function Consultations({ data, setData, saveDataNow }) {
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="60" />
           <FInput label="Tipo de consulta" value={form.consultationType} onChange={value => setForm(current => ({ ...current, consultationType:value }))} options={TYPES} />
+          <FInput label="Cidade" value={form.city} onChange={value => setForm(current => ({ ...current, city:value }))} options={[{ v:'', l:'Cidade a definir' }, ...CITY_OPTIONS.map(item => ({ v:item.value, l:item.label }))]} />
+          <FInput label="Local/hospital (opcional)" value={form.locationDetail} onChange={value => setForm(current => ({ ...current, locationDetail:value }))} placeholder="Ex.: Hospital X, sala 2" />
           {!paymentLocked
             ? <FInput label="Valor" value={form.value} onChange={value => setForm(current => ({ ...current, value:value }))} type="number" placeholder="0" />
             : <div><label style={{ ...base.label }}>Valor</label><div style={{ ...base.input, display:'flex', alignItems:'center', color:C.textSub }}>{fmt(editingRecord.value)}</div></div>}
