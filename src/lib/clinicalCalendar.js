@@ -86,6 +86,22 @@ export function calendarEventLabel(type) {
   return 'Consulta'
 }
 
+// Spec: docs/superpowers/plans/2026-11-13-cidade-local-agenda.md
+// Cidade estruturada da cirurgia/consulta — fonte da verdade da Agenda interna, não depende
+// de cor do Google (que é por calendário, não por evento, no plano atual da clínica).
+export const CITY_OPTIONS = [
+  { value:'goiania', label:'Goiânia', color:'#22C55E' },
+  { value:'brasilia', label:'Brasília', color:'#A855F7' },
+]
+
+export function calendarCityColor(city) {
+  return CITY_OPTIONS.find(item => item.value === city)?.color || null
+}
+
+export function calendarCityLabel(city) {
+  return CITY_OPTIONS.find(item => item.value === city)?.label || 'Cidade a definir'
+}
+
 const CONSULTATION_LABELS = {
   avaliacao:'Avaliação',
   retorno:'Retorno',
@@ -111,11 +127,13 @@ export function buildClinicalCalendarEvents(data, googleEvents = []) {
       startTime:record.startTime || '',
       durationMinutes:Math.max(15, Number(record.durationMinutes) || 180),
       title:record.patient || 'Paciente',
-      subtitle:procedure?.name || 'Cirurgia',
+      subtitle:procedure?.name || record.customProcedureName || 'Cirurgia',
       patient:record.patient || '',
       patientId:record.patientId || '',
       value:Number(record.totalValue) || 0,
       status:record.paymentStatus || 'pendente',
+      city:record.city || null,
+      locationDetail:record.locationDetail || '',
       record,
     })
   }
@@ -137,6 +155,8 @@ export function buildClinicalCalendarEvents(data, googleEvents = []) {
       patientId:record.patientId || '',
       value:Number(record.value) || 0,
       status:record.paymentStatus || 'pendente',
+      city:record.city || null,
+      locationDetail:record.locationDetail || '',
       record,
     })
   }
@@ -169,11 +189,15 @@ export function buildClinicalCalendarEvents(data, googleEvents = []) {
   })
 }
 
-export function filterClinicalCalendarEvents(events, { query = '', visibleTypes = [] } = {}) {
+// visibleCities usa a chave 'sem_cidade' pra representar eventos sem cidade definida (city nulo) —
+// nunca classifica errado por default, só esconde/mostra conforme o filtro escolhido.
+export function filterClinicalCalendarEvents(events, { query = '', visibleTypes = [], visibleCities = [] } = {}) {
   const normalizedQuery = String(query || '').trim().toLocaleLowerCase('pt-BR')
   const typeSet = new Set(visibleTypes)
+  const citySet = new Set(visibleCities)
   return events.filter(event => {
     if (typeSet.size && !typeSet.has(event.type)) return false
+    if (citySet.size && event.type !== 'google' && !citySet.has(event.city || 'sem_cidade')) return false
     if (!normalizedQuery) return true
     return `${event.title} ${event.subtitle} ${event.patient || ''}`.toLocaleLowerCase('pt-BR').includes(normalizedQuery)
   })

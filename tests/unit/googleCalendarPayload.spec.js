@@ -5,6 +5,7 @@ import {
   buildSyncPayload,
   collectSyncChanges,
   normalizeDuration,
+  parseCityFromEventTitle,
 } from '../../src/lib/googleCalendarPayload.js'
 
 const procedures = [{ id:'p1', name:'Rinoplastia' }]
@@ -13,6 +14,21 @@ const TZ = 'America/Sao_Paulo'
 test('titulo usa nome completo e procedimento', () => {
   const title = buildEventTitle('surgery', { patient:'Maria da Silva', procedureId:'p1' }, procedures)
   expect(title).toBe('Maria da Silva — Rinoplastia')
+})
+
+test('titulo ganha prefixo de cidade quando preenchida, sem mudar quando nao ha cidade', () => {
+  expect(buildEventTitle('surgery', { patient:'Maria da Silva', procedureId:'p1', city:'goiania' }, procedures))
+    .toBe('Consultório Gyn — Maria da Silva — Rinoplastia')
+  expect(buildEventTitle('surgery', { patient:'Maria da Silva', procedureId:'p1', city:'brasilia' }, procedures))
+    .toBe('Consultório Bsb — Maria da Silva — Rinoplastia')
+  expect(buildEventTitle('surgery', { patient:'Maria da Silva', procedureId:'p1' }, procedures))
+    .toBe('Maria da Silva — Rinoplastia')
+})
+
+test('parseCityFromEventTitle classifica pelo prefixo ja usado pela equipe no Google', () => {
+  expect(parseCityFromEventTitle('Consultório Gyn — Maria — Rinoplastia')).toBe('goiania')
+  expect(parseCityFromEventTitle('Consultório Bsb — Maria — Rinoplastia')).toBe('brasilia')
+  expect(parseCityFromEventTitle('Maria — Rinoplastia')).toBeNull()
 })
 
 test('titulo de consulta usa o rotulo do tipo', () => {

@@ -45,6 +45,8 @@ export function normalizeData(data) {
       ...item,
       invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
       thirdPartyPassthroughValue:Number(item.thirdPartyPassthroughValue) || 0,
+      city:['goiania', 'brasilia'].includes(item.city) ? item.city : null,
+      locationDetail:item.locationDetail ? String(item.locationDetail).trim() : '',
         id:normalizeUuid(item.id, 'surgery'),
         procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
         competenceDate:item.competenceDate || item.date || '',
@@ -85,6 +87,8 @@ export function normalizeData(data) {
     consultations: Array.isArray(data?.consultations) ? data.consultations.map(item => ({
       ...item,
       invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
+      city:['goiania', 'brasilia'].includes(item.city) ? item.city : null,
+      locationDetail:item.locationDetail ? String(item.locationDetail).trim() : '',
       id:normalizeUuid(item.id, 'consultation'),
       competenceDate:item.competenceDate || item.date || '',
       dueDate:item.dueDate || item.forecastPaymentDate || item.date || '',

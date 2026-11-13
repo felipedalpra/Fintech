@@ -13,6 +13,7 @@ import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 import { hasChangedReceiptFields, hasRecognizedReceipt } from '../lib/receivablePaymentReversal.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { CITY_OPTIONS } from '../lib/clinicalCalendar.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -133,6 +134,8 @@ export function Sales({ data, setData, saveDataNow }) {
     mixAmountB:0,
     paymentStatus:'pendente',
     surgeon:'',
+    city:'',
+    locationDetail:'',
     hospitalCost:0,
     anesthesiaCost:0,
     materialCost:0,
@@ -505,6 +508,8 @@ export function Sales({ data, setData, saveDataNow }) {
           <FInput label="Vencimento (previsão de recebimento)" value={form.dueDate || form.date} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="180" />
+          <FInput label="Cidade" value={form.city} onChange={value => setForm(current => ({ ...current, city:value }))} options={[{ v:'', l:'Cidade a definir' }, ...CITY_OPTIONS.map(item => ({ v:item.value, l:item.label }))]} />
+          <FInput label="Local/hospital (opcional)" value={form.locationDetail} onChange={value => setForm(current => ({ ...current, locationDetail:value }))} placeholder="Ex.: Hospital X, sala 2" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
           <FInput
             label="Valor repassado direto a terceiros (hospital/anestesista/prótese)"

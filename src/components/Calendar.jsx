@@ -12,6 +12,8 @@ import { applyExternalChanges } from '../lib/googleCalendarPayload.js'
 import {
   addCalendarDays,
   buildClinicalCalendarEvents,
+  calendarCityColor,
+  calendarCityLabel,
   calendarDateFromIso,
   calendarDaysBetween,
   calendarEventColor,
@@ -21,6 +23,7 @@ import {
   calendarMonthCells,
   calendarRange,
   calendarTimeFromMinutes,
+  CITY_OPTIONS,
   filterClinicalCalendarEvents,
   groupCalendarEventsByDate,
   moveCalendarFocus,
@@ -112,6 +115,7 @@ function MiniCalendar({ focusDate, onSelect }) {
 
 function CalendarEvent({ event, conflict, compact = false, onClick, draggable = false, onDragStart }) {
   const color = calendarEventColor(event.type)
+  const cityColor = calendarCityColor(event.city)
   return (
     <button
       type="button"
@@ -120,9 +124,10 @@ function CalendarEvent({ event, conflict, compact = false, onClick, draggable = 
       onClick={click => { click.stopPropagation(); onClick(event) }}
       draggable={draggable}
       onDragStart={dragEvent => onDragStart?.(dragEvent, event)}
-      title={`${event.title} · ${event.subtitle} · ${eventTimeLabel(event)}`}
+      title={`${event.title} · ${event.subtitle}${event.city ? ` · ${calendarCityLabel(event.city)}` : ''} · ${eventTimeLabel(event)}`}
     >
       <span className="cal-event__time">{event.startTime || 'dia'}</span>
+      {cityColor && <span className="cal-event__city-dot" style={{ background:cityColor }} aria-hidden="true" />}
       <span className="cal-event__title">{event.title}</span>
       {!compact && <span className="cal-event__subtitle">{event.subtitle}</span>}
       {conflict && <span className="cal-event__conflict" title="Conflito de horário"><Icon name="alert" size={12} /></span>}
@@ -255,7 +260,7 @@ function AgendaView({ events, conflicts, onEvent, onDay }) {
               <button type="button" key={event.id} className="cal-agenda__event" onClick={() => onEvent(event)} style={{ '--event-color':calendarEventColor(event.type) }}>
                 <span className="cal-agenda__bar" />
                 <span className="cal-agenda__time"><Icon name="clock" size={15} />{eventTimeLabel(event)}</span>
-                <span className="cal-agenda__body"><strong>{event.title}</strong><small>{event.subtitle} · {calendarEventLabel(event.type)}</small></span>
+                <span className="cal-agenda__body"><strong>{event.title}</strong><small>{event.subtitle} · {calendarEventLabel(event.type)}{event.city ? ` · ${calendarCityLabel(event.city)}` : ''}</small></span>
                 {event.value > 0 && <span className="cal-agenda__value">{fmt(event.value)}</span>}
                 {conflicts.has(event.id) && <span className="cal-agenda__warning"><Icon name="alert" size={15} /> conflito</span>}
               </button>
@@ -279,6 +284,7 @@ function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurger
           <h3>{event.title}</h3>
           <p><Icon name="calendar" size={17} /> {prettyDate(event.date, { dateStyle:'full' })}</p>
           <p><Icon name="clock" size={17} /> {eventTimeLabel(event)}</p>
+          {event.city && <p><Icon name="calendar" size={17} /> {calendarCityLabel(event.city)}{event.locationDetail ? ` · ${event.locationDetail}` : ''}</p>}
           {!isGoogle && <div className="cal-editor__hint">Seu perfil pode visualizar este atendimento, mas não editar cirurgias.</div>}
           <div className="cal-editor__actions"><Btn variant="ghost" onClick={onClose}>Fechar</Btn></div>
         </div>
@@ -297,6 +303,20 @@ function EventEditor({ open, draft, setDraft, event, procedures, canCreateSurger
             <FInput label="Data" type="date" value={draft.date} onChange={date => setDraft(current => ({ ...current, date }))} required />
             <FInput label="Horário" type="time" value={draft.startTime} onChange={startTime => setDraft(current => ({ ...current, startTime }))} required />
             <FInput label="Duração (min)" type="number" value={draft.durationMinutes} onChange={durationMinutes => setDraft(current => ({ ...current, durationMinutes }))} />
+          </div>
+          <div className="cal-editor__row">
+            <FInput
+              label="Cidade"
+              value={draft.city || ''}
+              onChange={city => setDraft(current => ({ ...current, city }))}
+              options={[{ v:'', l:'Cidade a definir' }, ...CITY_OPTIONS.map(item => ({ v:item.value, l:item.label }))]}
+            />
+            <FInput
+              label="Local/hospital (opcional)"
+              value={draft.locationDetail || ''}
+              onChange={locationDetail => setDraft(current => ({ ...current, locationDetail }))}
+              placeholder="Ex.: Hospital X, sala 2"
+            />
           </div>
           {draft.type === 'consultation' ? (
             <FInput label="Tipo de consulta" value={draft.consultationType} onChange={consultationType => setDraft(current => ({ ...current, consultationType }))} options={CONSULTATION_TYPES} />
@@ -328,12 +348,13 @@ export function Calendar({ data, setData, saveDataNow, google }) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 820)
   const [visibleTypes, setVisibleTypes] = useState(['consultation', 'surgery', 'google'])
+  const [visibleCities, setVisibleCities] = useState(['goiania', 'brasilia', 'sem_cidade'])
   const [googleEvents, setGoogleEvents] = useState([])
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [financeOpen, setFinanceOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [draft, setDraft] = useState({ type:'consultation', patient:'', patientId:'', date:today(), startTime:'09:00', durationMinutes:60, consultationType:'avaliacao', procedureId:'' })
+  const [draft, setDraft] = useState({ type:'consultation', patient:'', patientId:'', date:today(), startTime:'09:00', durationMinutes:60, consultationType:'avaliacao', procedureId:'', city:'', locationDetail:'' })
   const searchRef = useRef(null)
   const dataRef = useRef(data)
   dataRef.current = data
@@ -379,7 +400,7 @@ export function Calendar({ data, setData, saveDataNow, google }) {
   }, [googleConnected, range.start, range.end])
 
   const allEvents = useMemo(() => buildClinicalCalendarEvents(data, googleEvents), [data, googleEvents])
-  const filteredEvents = useMemo(() => filterClinicalCalendarEvents(allEvents, { query, visibleTypes }), [allEvents, query, visibleTypes])
+  const filteredEvents = useMemo(() => filterClinicalCalendarEvents(allEvents, { query, visibleTypes, visibleCities }), [allEvents, query, visibleTypes, visibleCities])
   const visibleEvents = useMemo(() => filteredEvents.filter(event => event.date >= range.start && event.date < range.end), [filteredEvents, range])
   const grouped = useMemo(() => groupCalendarEventsByDate(visibleEvents), [visibleEvents])
   const conflicts = useMemo(() => calendarEventConflicts(allEvents), [allEvents])
@@ -388,6 +409,16 @@ export function Calendar({ data, setData, saveDataNow, google }) {
     surgery:allEvents.filter(event => event.type === 'surgery').length,
     google:allEvents.filter(event => event.type === 'google').length,
   }), [allEvents])
+  // Google não entra na contagem/filtro por cidade: o evento é externo e, enquanto a importação
+  // não existir (ver spec cidade-local-agenda), não tem city próprio pra classificar.
+  const cityCounts = useMemo(() => {
+    const local = allEvents.filter(event => event.type !== 'google')
+    return {
+      goiania:local.filter(event => event.city === 'goiania').length,
+      brasilia:local.filter(event => event.city === 'brasilia').length,
+      sem_cidade:local.filter(event => !event.city).length,
+    }
+  }, [allEvents])
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -413,6 +444,10 @@ export function Calendar({ data, setData, saveDataNow, google }) {
     setVisibleTypes(current => current.includes(type) ? current.filter(item => item !== type) : [...current, type])
   }
 
+  function toggleCity(city) {
+    setVisibleCities(current => current.includes(city) ? current.filter(item => item !== city) : [...current, city])
+  }
+
   function canEditEvent(event) {
     return event.source === 'local' && (event.type !== 'surgery' || canCreateSurgery)
   }
@@ -430,6 +465,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
       durationMinutes:60,
       consultationType:'avaliacao',
       procedureId:data.procedures?.[0]?.id || '',
+      city:'',
+      locationDetail:'',
     })
     setEditorOpen(true)
   }
@@ -447,6 +484,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
       durationMinutes:event.durationMinutes,
       consultationType:event.record?.consultationType || 'avaliacao',
       procedureId:event.record?.procedureId || data.procedures?.[0]?.id || '',
+      city:event.record?.city || '',
+      locationDetail:event.record?.locationDetail || '',
     })
     setEditorOpen(true)
   }
@@ -480,6 +519,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
               dueDate:item.dueDate === item.date || !item.dueDate ? draft.date : item.dueDate,
               startTime:draft.startTime,
               durationMinutes:Math.max(15, Number(draft.durationMinutes) || (selectedEvent.type === 'surgery' ? 180 : 60)),
+              city:draft.city || null,
+              locationDetail:draft.locationDetail || '',
               ...(selectedEvent.type === 'surgery' ? { procedureId:draft.procedureId } : { consultationType:draft.consultationType }),
               ...financialPatch,
             }
@@ -496,6 +537,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             patient:draft.patient.trim(),
             patientId:draft.patientId || null,
             procedureId:draft.procedureId,
+            city:draft.city || null,
+            locationDetail:draft.locationDetail || '',
             // O valor só entra quando informado explicitamente; o fluxo "preencher depois" mantém zero.
             ...financialPatch,
             date:draft.date,
@@ -522,6 +565,8 @@ export function Calendar({ data, setData, saveDataNow, google }) {
             startTime:draft.startTime,
             durationMinutes:Math.max(15, Number(draft.durationMinutes) || 60),
             consultationType:draft.consultationType,
+            city:draft.city || null,
+            locationDetail:draft.locationDetail || '',
             costSettlements:{},
           }
           const financialRecord = withClinicalCostSettlementDefaults(record, 'consultation')
@@ -584,6 +629,21 @@ export function Calendar({ data, setData, saveDataNow, google }) {
                 <span className="cal-filter__check" style={{ '--filter-color':calendarEventColor(type) }}>✓</span>
                 <span>{label}</span>
                 <small title={`${count} item(ns)`}>{countLabel}</small>
+              </label>
+            ))}
+          </div>
+          <div className="cal-filters">
+            <strong>Cidade</strong>
+            {[
+              ['goiania', 'Goiânia', cityCounts.goiania],
+              ['brasilia', 'Brasília', cityCounts.brasilia],
+              ['sem_cidade', 'Cidade a definir', cityCounts.sem_cidade],
+            ].map(([city, label, count]) => (
+              <label key={city} className="cal-filter">
+                <input type="checkbox" checked={visibleCities.includes(city)} onChange={() => toggleCity(city)} />
+                <span className="cal-filter__check" style={{ '--filter-color':calendarCityColor(city) || C.textDim }}>✓</span>
+                <span>{label}</span>
+                <small title={`${count} item(ns)`}>{count}</small>
               </label>
             ))}
           </div>
