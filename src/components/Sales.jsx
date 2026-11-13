@@ -137,6 +137,7 @@ export function Sales({ data, setData, saveDataNow }) {
     anesthesiaCost:0,
     materialCost:0,
     otherCosts:0,
+    thirdPartyPassthroughValue:0,
     invoiceIssuancePercent:0,
     costSettlements:{},
     paymentDate:'',
@@ -416,7 +417,14 @@ export function Sales({ data, setData, saveDataNow }) {
                     </td>
                     <td style={{ padding:'13px 18px' }}><Badge color={procedure?.color || C.textDim} small>{procedure?.name || 'Sem procedimento'}</Badge></td>
                     <td style={{ padding:'13px 18px', color:C.textSub }}>{formatDateBR(item.date)}</td>
-                    <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>{fmt(item.totalValue)}</td>
+                    <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>
+                      {fmt(item.totalValue)}
+                      {Number(item.thirdPartyPassthroughValue || 0) > 0 && (
+                        <div style={{ fontSize:10.5, color:C.textDim, fontWeight:500, marginTop:2 }}>
+                          Total ao paciente: {fmt((item.totalValue || 0) + Number(item.thirdPartyPassthroughValue || 0))}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding:'13px 18px', color:netRevenue >= 0 ? C.accent : C.red, fontWeight:700 }}>{fmt(netRevenue)}</td>
                     <td style={{ padding:'13px 18px' }}>
                       <Badge color={statusColor} small>{item.paymentStatus}</Badge>
@@ -462,6 +470,9 @@ export function Sales({ data, setData, saveDataNow }) {
                   <MetricPill label="Procedimento" value={procedure?.name || 'Sem procedimento'} color={procedure?.color || C.textSub} />
                   <MetricPill label="Data" value={formatDateBR(item.date)} color={C.textSub} />
                   <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
+                  {Number(item.thirdPartyPassthroughValue || 0) > 0 && (
+                    <MetricPill label="Valor total ao paciente" value={fmt((item.totalValue || 0) + Number(item.thirdPartyPassthroughValue || 0))} color={C.textSub} />
+                  )}
                   <MetricPill label="Receita líquida" value={fmt(netRevenue)} color={netRevenue >= 0 ? C.accent : C.red} />
                   <MetricPill label="Pagamento" value={item.paymentStatus} color={statusColor} />
                   <MetricPill label="Forma" value={paymentLabel} color={C.textSub} />
@@ -495,6 +506,14 @@ export function Sales({ data, setData, saveDataNow }) {
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="180" />
           <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
+          <FInput
+            label="Valor repassado direto a terceiros (hospital/anestesista/prótese)"
+            value={form.thirdPartyPassthroughValue}
+            onChange={value => setForm(current => ({ ...current, thirdPartyPassthroughValue:value }))}
+            type="number"
+            placeholder="0"
+            help="Opcional. O que o paciente paga DIRETO ao terceiro — não é receita nem despesa da clínica, só soma no total informado ao paciente."
+          />
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
           {form.paymentScheduleMode === 'duas_datas' && (
             <>

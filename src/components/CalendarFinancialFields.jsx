@@ -91,6 +91,14 @@ export function CalendarFinancialFields({ open, onToggle, draft, setDraft, editi
                 <FInput label="Custo anestesia" type="number" value={draft.anesthesiaCost} onChange={anesthesiaCost => update({ anesthesiaCost })} placeholder="0" />
                 <FInput label="Custo material" type="number" value={draft.materialCost} onChange={materialCost => update({ materialCost })} placeholder="0" />
                 <FInput label="Outros custos" type="number" value={draft.otherCosts} onChange={otherCosts => update({ otherCosts })} placeholder="0" />
+                <FInput
+                  label="Valor repassado direto a terceiros"
+                  type="number"
+                  value={draft.thirdPartyPassthroughValue}
+                  onChange={thirdPartyPassthroughValue => update({ thirdPartyPassthroughValue })}
+                  placeholder="0"
+                  help="Opcional. O que o paciente paga DIRETO a hospital/anestesista/prótese — não é receita nem despesa da clínica."
+                />
               </>
             )}
           </div>

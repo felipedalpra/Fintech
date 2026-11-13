@@ -139,6 +139,9 @@ export function buildLedger(data = {}, options = {}) {
   const parts = []
 
   surgeries.forEach(item => {
+    // `thirdPartyPassthroughValue` é o que o paciente paga DIRETO a hospital/anestesista/prótese,
+    // sem passar pela clínica (ver docs/superpowers/plans/2026-11-13-receita-vs-repasse-terceiros.md).
+    // Não entra aqui de propósito: receita da clínica é só `totalValue`.
     parts.push(scheduledEntry({
       sourceType: 'surgery', item, total: item.totalValue || 0,
       competenceDate: item.competenceDate || item.date, issueDate: item.date, partyName: item.patient,

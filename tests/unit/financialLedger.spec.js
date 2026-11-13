@@ -25,6 +25,18 @@ test('buildLedger: um título por registro, parcelas alinhadas', () => {
   expect(installments).toHaveLength(9)
 })
 
+test('third_party_passthrough_value nunca entra na receita/razão (spec 2026-11-13-receita-vs-repasse-terceiros)', () => {
+  const baseline = buildLedger(data)
+  const withPassthrough = {
+    ...data,
+    surgeries: data.surgeries.map(item => item.id === 's1' ? { ...item, thirdPartyPassthroughValue: 19000 } : item),
+  }
+  const withIt = buildLedger(withPassthrough)
+  // Mesmo total_amount, mesmo status — o campo novo é ignorado de propósito pelo razão canônico.
+  expect(withIt.entries).toEqual(baseline.entries)
+  expect(withIt.installments).toEqual(baseline.installments)
+})
+
 test('título pago (cirurgia) → parcela liquidada na data de pagamento', () => {
   const { entries, installments } = buildLedger(data)
   const i = entries.findIndex(e => e.source_type === 'surgery' && e.source_id === 's1')
