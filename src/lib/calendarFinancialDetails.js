@@ -27,6 +27,7 @@ export function createCalendarFinancialDraft(type, record = {}, date = '') {
     anesthesiaCost:amount(record.anesthesiaCost),
     materialCost:amount(record.materialCost),
     otherCosts:amount(record.otherCosts),
+    thirdPartyPassthroughValue:amount(record.thirdPartyPassthroughValue),
   }
 }
 
@@ -50,6 +51,7 @@ export function buildCalendarFinancialPatch(type, draft) {
       anesthesiaCost:amount(draft.anesthesiaCost),
       materialCost:amount(draft.materialCost),
       otherCosts:amount(draft.otherCosts),
+      thirdPartyPassthroughValue:amount(draft.thirdPartyPassthroughValue),
     }
   }
 
