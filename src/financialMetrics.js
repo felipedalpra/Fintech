@@ -50,6 +50,8 @@ const LEDGER_COMPONENT_CATEGORY = {
   hospital_cost:'hospital',
   anesthesia_cost:'anestesia',
   material_cost:'material',
+  instrumentation_cost:'instrumentadora',
+  prosthesis_cost:'protese',
   other_cost:'outros',
   invoice_tax:'nota_fiscal',
 }

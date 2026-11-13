@@ -275,7 +275,7 @@ export function reconcileLedger(data = {}) {
     { label: 'Receitas extras', raw: sumBy(notCanceled(data.extraRevenues, 'status'), r => r.value), ledger: ledgerSum('extra_revenue', 'revenue') },
     { label: 'Despesas', raw: sumBy(notCanceled(data.expenses, 'status'), e => e.value), ledger: ledgerSum('expense', 'revenue') },
     { label: 'Compras de produto', raw: sumBy(notCanceled(data.productPurchases, 'status'), p => p.totalValue), ledger: ledgerSum('product_purchase', 'revenue') },
-    { label: 'Custos de cirurgia', raw: rawSurgeryCost, ledger: round2(['hospital_cost', 'anesthesia_cost', 'material_cost', 'other_cost', 'invoice_tax'].reduce((a, c) => a + ledgerSum('surgery', c), 0)) },
+    { label: 'Custos de cirurgia', raw: rawSurgeryCost, ledger: round2(['hospital_cost', 'anesthesia_cost', 'material_cost', 'instrumentation_cost', 'prosthesis_cost', 'other_cost', 'invoice_tax'].reduce((a, c) => a + ledgerSum('surgery', c), 0)) },
     { label: 'Custos de consulta (NF)', raw: rawConsultCost, ledger: ledgerSum('consultation', 'invoice_tax') },
   ].map(r => ({ ...r, diff: round2(r.raw - r.ledger) }))
 
