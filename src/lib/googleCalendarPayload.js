@@ -36,7 +36,7 @@ export function normalizeDuration(value, type) {
 export function buildEventTitle(type, record, procedures = []) {
   const patient = String(record.patient || '').trim() || 'Paciente'
   if (type === 'surgery') {
-    const procedureName = procedures.find(item => item.id === record.procedureId)?.name || 'Cirurgia'
+    const procedureName = procedures.find(item => item.id === record.procedureId)?.name || record.customProcedureName || 'Cirurgia'
     return `${patient} — ${procedureName}`
   }
   return `${patient} — ${CONSULTATION_LABELS[record.consultationType] || 'Consulta'}`

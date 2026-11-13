@@ -45,6 +45,7 @@ export function normalizeData(data) {
       ...item,
       invoiceIssuancePercent:item.invoiceIssuancePercent || 0,
       thirdPartyPassthroughValue:Number(item.thirdPartyPassthroughValue) || 0,
+      customProcedureName:item.customProcedureName ? String(item.customProcedureName).trim() || null : null,
         id:normalizeUuid(item.id, 'surgery'),
         procedureId:normalizeRelatedId(item.procedureId, 'procedure', procedureIdMap),
         competenceDate:item.competenceDate || item.date || '',

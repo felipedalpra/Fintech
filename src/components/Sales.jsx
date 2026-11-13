@@ -13,6 +13,7 @@ import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 import { hasChangedReceiptFields, hasRecognizedReceipt } from '../lib/receivablePaymentReversal.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { CUSTOM_PROCEDURE_VALUE, procedureDisplayName, resolveCustomProcedureFields } from '../lib/customProcedure.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -112,6 +113,7 @@ export function Sales({ data, setData, saveDataNow }) {
     patient:'',
     patientId:'',
     procedureId:data.procedures[0]?.id || '',
+    customProcedureName:'',
     totalValue:0,
     date:today(),
     competenceDate:today(),
@@ -197,6 +199,8 @@ export function Sales({ data, setData, saveDataNow }) {
     setForm({
       ...item,
       patientId: item.patientId || '',
+      procedureId: item.procedureId || (item.customProcedureName ? CUSTOM_PROCEDURE_VALUE : ''),
+      customProcedureName: item.customProcedureName || '',
       ...payment,
       paymentScheduleMode: isScheduled ? 'parcelas' : payment.paymentScheduleMode,
       schedulePayments: isScheduled ? scheduledPayments.map(p => ({ date:p.date, amount:p.amount, method:p.method })) : [],
@@ -215,6 +219,8 @@ export function Sales({ data, setData, saveDataNow }) {
 
   const save = () => {
     if ((!form.patient && !form.patientId) || !form.date) return
+    const isCustomProcedure = form.procedureId === CUSTOM_PROCEDURE_VALUE
+    if (isCustomProcedure && !form.customProcedureName.trim()) return
     const procedureValue = data.procedures.find(item => item.id === form.procedureId)?.price || 0
     const resolvedTotal = form.totalValue || procedureValue
     const invoiceIssuancePercent = Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0)))
@@ -270,6 +276,7 @@ export function Sales({ data, setData, saveDataNow }) {
     const nextRecord = withClinicalCostSettlementDefaults({
       ...baseForm,
       patientId: form.patientId || null,
+      ...resolveCustomProcedureFields(form.procedureId, form.customProcedureName),
       totalValue:resolvedTotal,
       invoiceIssuancePercent,
       paymentMethod,
@@ -332,7 +339,7 @@ export function Sales({ data, setData, saveDataNow }) {
     id:item.id,
     date:item.competenceDate || item.date,
     origin:'cirurgia',
-    description:data.procedures.find(procedure => procedure.id === item.procedureId)?.name || 'Cirurgia',
+    description:procedureDisplayName(item, data.procedures, 'Cirurgia'),
     party:item.patient || '',
     category:'cirurgia',
     status:item.paymentStatus,
@@ -415,7 +422,7 @@ export function Sales({ data, setData, saveDataNow }) {
                         <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>via {item.referredBy}</div>
                       )}
                     </td>
-                    <td style={{ padding:'13px 18px' }}><Badge color={procedure?.color || C.textDim} small>{procedure?.name || 'Sem procedimento'}</Badge></td>
+                    <td style={{ padding:'13px 18px' }}><Badge color={procedure?.color || C.textDim} small>{procedureDisplayName(item, data.procedures, 'Sem procedimento')}</Badge></td>
                     <td style={{ padding:'13px 18px', color:C.textSub }}>{formatDateBR(item.date)}</td>
                     <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>
                       {fmt(item.totalValue)}
@@ -467,7 +474,7 @@ export function Sales({ data, setData, saveDataNow }) {
                 <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
                 {item.referredBy && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>via {item.referredBy}</div>}
                 <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
-                  <MetricPill label="Procedimento" value={procedure?.name || 'Sem procedimento'} color={procedure?.color || C.textSub} />
+                  <MetricPill label="Procedimento" value={procedureDisplayName(item, data.procedures, 'Sem procedimento')} color={procedure?.color || C.textSub} />
                   <MetricPill label="Data" value={formatDateBR(item.date)} color={C.textSub} />
                   <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
                   {Number(item.thirdPartyPassthroughValue || 0) > 0 && (
@@ -500,7 +507,24 @@ export function Sales({ data, setData, saveDataNow }) {
           </div>
           <FInput label="Identificador interno (opcional)" value={form.patient} onChange={value => setForm(current => ({ ...current, patient:value }))} placeholder="Apelido, código ou observação" />
           <FInput label="Cirurgião" value={form.surgeon} onChange={value => setForm(current => ({ ...current, surgeon:value }))} placeholder="Nome do cirurgião responsável" />
-          <FInput label="Procedimento" value={form.procedureId} onChange={value => setForm(current => ({ ...current, procedureId:value, totalValue:0 }))} options={data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]} />
+          <FInput
+            label="Procedimento"
+            value={form.procedureId}
+            onChange={value => setForm(current => ({ ...current, procedureId:value, totalValue:0 }))}
+            options={[
+              ...(data.procedures.length > 0 ? data.procedures.map(item => ({ v:item.id, l:item.name })) : [{ v:'', l:'Nenhum procedimento cadastrado' }]),
+              { v:CUSTOM_PROCEDURE_VALUE, l:'Outro / combinado (digitar)' },
+            ]}
+          />
+          {form.procedureId === CUSTOM_PROCEDURE_VALUE && (
+            <FInput
+              label="Nome do procedimento"
+              value={form.customProcedureName}
+              onChange={value => setForm(current => ({ ...current, customProcedureName:value }))}
+              placeholder="Ex.: Mamoplastia + Braquioplastia"
+              required
+            />
+          )}
           <FInput label="Data da cirurgia (competência)" value={form.date} onChange={value => setForm(current => ({ ...current, date:value, competenceDate:value, dueDate:current.dueDate || value }))} type="date" />
           <FInput label="Vencimento (previsão de recebimento)" value={form.dueDate || form.date} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />
           <FInput label="Horário (opcional)" value={form.startTime} onChange={value => setForm(current => ({ ...current, startTime:value }))} type="time" />

@@ -15,6 +15,11 @@ test('titulo usa nome completo e procedimento', () => {
   expect(title).toBe('Maria da Silva — Rinoplastia')
 })
 
+test('titulo usa procedimento personalizado quando nao esta no catalogo', () => {
+  const title = buildEventTitle('surgery', { patient:'Maria da Silva', procedureId:null, customProcedureName:'Mamoplastia + Braquioplastia' }, procedures)
+  expect(title).toBe('Maria da Silva — Mamoplastia + Braquioplastia')
+})
+
 test('titulo de consulta usa o rotulo do tipo', () => {
   const title = buildEventTitle('consultation', { patient:'João Souza', consultationType:'retorno' }, procedures)
   expect(title).toBe('João Souza — Retorno')
