@@ -187,8 +187,8 @@ begin
     raise exception 'Hash do arquivo invalido.' using errcode = '22023';
   end if;
 
-  select coalesce(max(version), 0) + 1 into next_version
-  from public.budget_documents where user_id = owner_id and patient_id = p_patient_id;
+  select coalesce(max(existing.version), 0) + 1 into next_version
+  from public.budget_documents existing where existing.user_id = owner_id and existing.patient_id = p_patient_id;
 
   next_path := owner_id::text || '/' || p_patient_id::text || '/' || next_id::text || '/orcamento.pdf';
 

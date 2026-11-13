@@ -6,6 +6,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-11-13
+### Fixed
+- **Anexar orçamento falhava com `column reference "version" is ambiguous`**: achado testando de verdade no navegador. A RPC `create_budget_document_upload` retorna uma tabela com coluna `version`, e isso virava uma variável implícita dentro da função que colidia com a coluna `budget_documents.version` no `SELECT max(version)` do cálculo da próxima versão. Corrigido dando um apelido (`existing`) à tabela na consulta. (`supabase/budget_documents_schema.sql`.)
+
 ### Added
 - **Biblioteca de orçamento PDF no paciente e na oportunidade do CRM**: pedido do Jonas (treinamento de 12/11/2026) — hoje o orçamento é um PDF que só se acha "puxando o grupo de WhatsApp" dias depois. Nova seção "Orçamentos" na aba Financeiro do paciente e na aba nova "Orçamentos" da oportunidade (mesmo `patient_id`, mesma tabela): anexa PDF (até 10 MB), cada anexo novo vira uma versão numerada e nenhuma versão é sobrescrita ou apagada — nem ao "arquivar" (reservado a Admin/Gestão), que só marca `archived_at` e preserva o arquivo. Abrir usa URL assinada de 5 minutos; "Enviar por WhatsApp" abre a conversa do paciente com o link pronto — **não** envia o arquivo pela API (isso ainda não existe), então o histórico nunca afirma "enviado". RLS sem `has_clinical_access()`, de propósito: Equipe/Concierge (perfil do Jonas) também usa, diferente dos anexos clínicos. Não cria nenhum lançamento financeiro — é só documento. **Aplicar `supabase/budget_documents_schema.sql` em produção.** (`supabase/budget_documents_schema.sql`, `src/lib/budgetDocuments.js`, `src/components/BudgetDocuments.jsx`, `src/components/Patients.jsx`, `src/components/OpportunityEditor.jsx`, `tests/unit/budgetDocuments.spec.js`. Spec: `docs/superpowers/plans/2026-11-13-biblioteca-orcamento-pdf.md`.)
 
