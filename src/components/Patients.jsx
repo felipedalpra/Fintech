@@ -3,6 +3,7 @@ import { C, base } from '../theme.js'
 import { fmt, formatDateBR, today } from '../utils.js'
 import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { WhatsAppChat } from './WhatsAppChat.jsx'
+import { BudgetDocuments } from './BudgetDocuments.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -69,7 +70,7 @@ const emptyForm = {
 
 export function Patients({ data }) {
   const { user } = useAuth()
-  const { ownerId, clinicalAccess } = useUserRole()
+  const { ownerId, clinicalAccess, role } = useUserRole()
   const effectiveUserId = ownerId || user?.id
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
 
@@ -369,6 +370,7 @@ export function Patients({ data }) {
           consultations={patientConsultations}
           totalFinanceiro={totalFinanceiro}
           clinicalAccess={clinicalAccess}
+          canArchiveBudgetDocuments={role === 'admin' || role === 'gestao'}
         />
       )}
 
@@ -458,7 +460,7 @@ function PatientPhoto({ patient, ownerId }) {
   )
 }
 
-function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, totalFinanceiro, clinicalAccess }) {
+function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, totalFinanceiro, clinicalAccess, canArchiveBudgetDocuments }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const drawerTabs = ['resumo', 'pessoal', ...(clinicalAccess ? ['anamnese'] : []), 'financeiro', 'whatsapp']
 
@@ -551,6 +553,9 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
           {tab === 'anamnese' && clinicalAccess && <AnamneseTab patient={patient} />}
           {tab === 'financeiro' && (
             <FinanceiroTab
+              patient={patient}
+              ownerId={userId}
+              canArchiveBudgetDocuments={canArchiveBudgetDocuments}
               surgeries={surgeries}
               consultations={consultations}
               total={totalFinanceiro}
@@ -730,15 +735,7 @@ function AnamneseTab({ patient }) {
   )
 }
 
-function FinanceiroTab({ surgeries, consultations, total }) {
-  if (surgeries.length === 0 && consultations.length === 0) {
-    return (
-      <div style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: '32px 0' }}>
-        Nenhum registro financeiro vinculado a este paciente ainda.
-      </div>
-    )
-  }
-
+function FinanceiroTab({ patient, ownerId, canArchiveBudgetDocuments, surgeries, consultations, total }) {
   const all = [
     ...surgeries.map(s => ({ ...s, tipo: 'Cirurgia', valor: s.totalValue || 0 })),
     ...consultations.map(c => ({ ...c, tipo: 'Consulta', valor: c.value || 0 })),
@@ -749,23 +746,38 @@ function FinanceiroTab({ surgeries, consultations, total }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 13, color: C.textSub }}>
-        Total acumulado: <strong style={{ color: C.green }}>{fmt(total)}</strong>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <BudgetDocuments
+        patient={patient}
+        ownerId={ownerId}
+        canArchive={canArchiveBudgetDocuments}
+        patientPhone={patient?.phone}
+      />
 
-      {all.map(r => (
-        <div key={r.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{r.tipo}</div>
-            <div style={{ fontSize: 12, color: C.textDim }}>{r.date ? formatDateBR(r.date) : '—'}</div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: C.green, fontWeight: 700 }}>{fmt(r.valor)}</span>
-            <Badge color={STATUS_COLOR[r.paymentStatus] || C.textDim} small>{r.paymentStatus || 'pendente'}</Badge>
-          </div>
+      {all.length === 0 ? (
+        <div style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
+          Nenhuma cirurgia ou consulta vinculada a este paciente ainda.
         </div>
-      ))}
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 13, color: C.textSub }}>
+            Total acumulado: <strong style={{ color: C.green }}>{fmt(total)}</strong>
+          </div>
+
+          {all.map(r => (
+            <div key={r.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{r.tipo}</div>
+                <div style={{ fontSize: 12, color: C.textDim }}>{r.date ? formatDateBR(r.date) : '—'}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: C.green, fontWeight: 700 }}>{fmt(r.valor)}</span>
+                <Badge color={STATUS_COLOR[r.paymentStatus] || C.textDim} small>{r.paymentStatus || 'pendente'}</Badge>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
