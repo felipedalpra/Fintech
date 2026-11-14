@@ -201,6 +201,30 @@ export function classifyMetaError(error) {
   return 'error'
 }
 
+// As tabelas de cache do Meta Ads não têm coluna ad_account_id — foram desenhadas pra uma
+// conexão por clínica, não pra rastrear de qual conta de anúncios veio cada linha. Por isso,
+// ao trocar a conta de anúncios conectada (ex.: reconectar com outro login do Facebook que não
+// tem acesso à conta antiga), é PRECISO limpar o cache explicitamente, senão o dashboard
+// continua mostrando os dados antigos pra sempre. Achado real (14/11/2026).
+export function shouldClearMetaCache(previousAdAccountId, nextAdAccountId) {
+  return (previousAdAccountId || null) !== (nextAdAccountId || null)
+}
+
+// Best-effort por tabela: uma falha ao limpar uma tabela não pode travar o fluxo de
+// conexão/seleção/desconexão que chama isso — a tabela que falhar fica com dado velho (visível
+// e investigável depois), mas a troca de conta em si não quebra.
+export async function clearMetaDataCache(supabase, ownerId) {
+  const tables = ['meta_campaigns', 'meta_adsets', 'meta_ads', 'meta_insights', 'meta_reach', 'meta_sync_runs']
+  for (const table of tables) {
+    try {
+      const { error } = await supabase.from(table).delete().eq('user_id', ownerId)
+      if (error) console.error('meta cache clear error:', table, ownerId, error.message)
+    } catch (e) {
+      console.error('meta cache clear error:', table, ownerId, e?.message)
+    }
+  }
+}
+
 // O registro nunca pode derrubar o sync: uma falha ao gravar histórico não vale perder a coleta.
 async function startSyncRun(supabase, userId, trigger) {
   try {
@@ -328,33 +352,37 @@ export async function syncMetaInsights(supabase, opts = {}) {
     { key: 'quarter', since: isoDate(new Date(u.getTime() - 89 * 86400000)) },
   ]
 
+  // SEM .not('ad_account_id','is',null) aqui de propósito: uma conexão sem conta de anúncios
+  // escolhida precisa aparecer no resumo como FALHA (ver abaixo), não sumir da consulta sem
+  // deixar rastro. Achado real (14/11/2026): o filtro excluía essa clínica antes mesmo de
+  // tentar — "Atualizar agora" voltava sucesso sem sincronizar nada e sem explicar por quê.
   let query = supabase
     .from('meta_connections')
     .select('user_id, ad_account_id, access_token_encrypted, token_expires_at')
     .in('status', ['conectado', 'expirando'])
     .not('access_token_encrypted', 'is', null)
-    .not('ad_account_id', 'is', null)
   if (opts.owner) query = query.eq('user_id', opts.owner)
 
   const { data: rawConns, error } = await query
   if (error) throw error
 
-  // act_<id>/campanhas, adsets, ads e insights são endpoints de Conta de Anúncios: exigem o
-  // token de USUÁRIO (ads_read), não o pageToken — pageToken só serve pra ações de Página
-  // (ex.: leads_retrieval dos formulários, em handleMetaWebhook). Usar pageToken aqui derruba
-  // toda consulta com "(#100) Unsupported get request" do Graph API.
-  const conns = (rawConns || [])
-    .map(row => ({
-      user_id: row.user_id,
-      ad_account_id: row.ad_account_id,
-      access_token: decryptPayload(row.access_token_encrypted)?.userToken,
-      token_expires_at: row.token_expires_at,
-    }))
-    .filter(conn => conn.access_token)
-
   const summary = { ok: true, owners: 0, synced: 0, failures: 0, since, until, details: [] }
   const trigger = opts.trigger === 'manual' ? 'manual' : 'cron'
-  for (const conn of conns) {
+  for (const row of rawConns || []) {
+    if (!row.ad_account_id) {
+      summary.owners += 1
+      summary.failures += 1
+      summary.details.push({ owner: row.user_id, error: 'Nenhuma conta de anúncios selecionada para esta conexão.' })
+      continue
+    }
+    // act_<id>/campanhas, adsets, ads e insights são endpoints de Conta de Anúncios: exigem o
+    // token de USUÁRIO (ads_read), não o pageToken — pageToken só serve pra ações de Página
+    // (ex.: leads_retrieval dos formulários, em handleMetaWebhook). Usar pageToken aqui derruba
+    // toda consulta com "(#100) Unsupported get request" do Graph API.
+    const accessToken = decryptPayload(row.access_token_encrypted)?.userToken
+    if (!accessToken) continue // sem token válido: mesmo comportamento de sempre, nem tenta e não conta como owner
+
+    const conn = { user_id: row.user_id, ad_account_id: row.ad_account_id, access_token: accessToken, token_expires_at: row.token_expires_at }
     summary.owners += 1
     // Abre o registro ANTES de chamar o Meta: se a função morrer no meio (timeout, limite de
     // taxa), fica a linha sem `finished_at` — que é a evidência de que rodou e não terminou.

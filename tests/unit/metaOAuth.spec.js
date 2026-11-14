@@ -9,6 +9,7 @@ import {
   fetchMetaGrantedPages,
   getMetaOAuthConfig,
   isMetaOAuthConfigured,
+  resolveMetaConnectionSelection,
   revokeMetaToken,
 } from '../../api/_lib/metaOAuth.js'
 
@@ -95,6 +96,39 @@ test('fetchMetaGrantedAdAccounts devolve a lista de contas de anúncio', async (
 test('revokeMetaToken nunca lança, mesmo se a chamada falhar (best-effort)', async () => {
   globalThis.fetch = async () => { throw new Error('rede fora do ar') }
   await expect(revokeMetaToken(CONFIG, 'qualquer-token')).resolves.toBeUndefined()
+})
+
+test('resolveMetaConnectionSelection: 1 página + 1 conta de anúncio conecta sozinho', () => {
+  const result = resolveMetaConnectionSelection(
+    [{ id:'page-1', name:'Clínica A' }],
+    [{ id:'act_1', name:'Conta Principal' }],
+  )
+  expect(result).toEqual({ autoConnect:true, pageId:'page-1', adAccountId:'act_1' })
+})
+
+test('resolveMetaConnectionSelection: 1 página SEM nenhuma conta de anúncio exige seleção manual', () => {
+  // Achado real (14/11/2026): ao trocar pra um login sem nenhuma conta de anúncio visível
+  // (ex.: permissão ads_read não concedida), o código antigo conectava sozinho com
+  // ad_account_id nulo — sem nunca mostrar a tela de seleção, e o sync seguinte pulava essa
+  // clínica em silêncio (ver syncMetaInsights).
+  const result = resolveMetaConnectionSelection([{ id:'page-1', name:'Clínica A' }], [])
+  expect(result).toEqual({ autoConnect:false })
+})
+
+test('resolveMetaConnectionSelection: mais de uma conta de anúncio exige seleção manual', () => {
+  const result = resolveMetaConnectionSelection(
+    [{ id:'page-1', name:'Clínica A' }],
+    [{ id:'act_1', name:'Conta 1' }, { id:'act_2', name:'Conta 2' }],
+  )
+  expect(result).toEqual({ autoConnect:false })
+})
+
+test('resolveMetaConnectionSelection: mais de uma página exige seleção manual mesmo com 1 conta de anúncio', () => {
+  const result = resolveMetaConnectionSelection(
+    [{ id:'page-1', name:'Clínica A' }, { id:'page-2', name:'Clínica B' }],
+    [{ id:'act_1', name:'Conta 1' }],
+  )
+  expect(result).toEqual({ autoConnect:false })
 })
 
 test('computeMetaTokenExpiresAt calcula a partir de expires_in; rejeita valor inválido', () => {

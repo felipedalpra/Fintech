@@ -86,6 +86,20 @@ export async function revokeMetaToken(config, token) {
   } catch { /* best-effort */ }
 }
 
+// Decide se dá pra conectar sozinho (exatamente 1 Página + exatamente 1 Conta de Anúncios) ou
+// se precisa mostrar a tela de seleção manual. Achado real (14/11/2026): a versão antiga tratava
+// "zero contas de anúncio" IGUAL a "uma conta de anúncio" (`adAccounts.length <= 1`) — conectava
+// sozinho com ad_account_id nulo, sem nunca perguntar nada, e o sync seguinte pulava essa
+// clínica em silêncio. Zero contas de anúncio precisa do MESMO tratamento que duas ou mais: cai
+// na seleção manual (que, sem nenhuma conta listada, pelo menos deixa claro pro usuário que o
+// login usado não tem acesso a nenhuma conta de anúncios no Business Manager).
+export function resolveMetaConnectionSelection(pages, adAccounts) {
+  if (pages.length === 1 && adAccounts.length === 1) {
+    return { autoConnect: true, pageId: pages[0].id, adAccountId: adAccounts[0].id }
+  }
+  return { autoConnect: false }
+}
+
 export function computeMetaTokenExpiresAt(expiresInSeconds, now = Date.now()) {
   const seconds = Number(expiresInSeconds)
   if (!Number.isFinite(seconds) || seconds <= 0) return null
