@@ -49,9 +49,10 @@ import {
   fetchMetaGrantedPages,
   getMetaOAuthConfig,
   isMetaOAuthConfigured,
+  resolveMetaConnectionSelection,
   revokeMetaToken,
 } from './_lib/metaOAuth.js'
-import { syncMetaInsights, validateMetaSyncRange } from './_lib/metaInsights.js'
+import { clearMetaDataCache, shouldClearMetaCache, syncMetaInsights, validateMetaSyncRange } from './_lib/metaInsights.js'
 
 export const config = {
   api: {
@@ -1065,6 +1066,13 @@ async function handleMetaOAuthCallback(req, res) {
     ])
     if (!pages.length) return back('no_page')
 
+    // Lida com reconexão (login diferente do Facebook) trocando de conta de anúncios: sem isso,
+    // o cache de campanhas/insights da conta ANTERIOR ficava pra sempre na tela, porque essas
+    // tabelas não têm coluna ad_account_id (achado real, 14/11/2026).
+    const { data: existingConn } = await supabase.from('meta_connections')
+      .select('ad_account_id').eq('user_id', ownerId).maybeSingle()
+    const previousAdAccountId = existingConn?.ad_account_id || null
+
     const base = {
       user_id: ownerId,
       connected_by: actorUserId,
@@ -1072,16 +1080,18 @@ async function handleMetaOAuthCallback(req, res) {
       updated_at: new Date().toISOString(),
     }
 
-    if (pages.length === 1 && adAccounts.length <= 1) {
-      const page = pages[0]
+    const selection = resolveMetaConnectionSelection(pages, adAccounts)
+    if (selection.autoConnect) {
+      const page = pages.find(p => p.id === selection.pageId)
       const { error } = await supabase.from('meta_connections').upsert({
         ...base,
-        page_id: page.id,
-        ad_account_id: adAccounts[0]?.id || null,
+        page_id: selection.pageId,
+        ad_account_id: selection.adAccountId,
         access_token_encrypted: encryptPayload({ pageToken: page.access_token, userToken: longToken.access_token }),
         status: 'conectado',
       }, { onConflict: 'user_id' })
       if (error) return back('error')
+      if (shouldClearMetaCache(previousAdAccountId, selection.adAccountId)) await clearMetaDataCache(supabase, ownerId)
       // Sync inicial curto (não bloqueia a conexão se falhar/demorar) — o cron diário
       // completa a janela de 90 dias depois; isso só adianta os primeiros dias pro usuário ver algo na hora.
       try { await syncMetaInsights(supabase, { owner: ownerId, days: 7 }) } catch (e) { console.error('meta insights initial sync error:', e?.message) }
@@ -1092,7 +1102,9 @@ async function handleMetaOAuthCallback(req, res) {
       ...base,
       page_id: null,
       ad_account_id: null,
-      access_token_encrypted: encryptPayload({ userToken: longToken.access_token, pendingPages: pages, pendingAdAccounts: adAccounts }),
+      // previousAdAccountId viaja junto pro handleMetaSelect decidir, na seleção final, se
+      // precisa limpar o cache — aqui ainda não sabemos qual conta de anúncios vai ser escolhida.
+      access_token_encrypted: encryptPayload({ userToken: longToken.access_token, pendingPages: pages, pendingAdAccounts: adAccounts, previousAdAccountId }),
       status: 'selecionando',
     }, { onConflict: 'user_id' })
     if (error) return back('error')
@@ -1145,6 +1157,9 @@ async function handleMetaSelect(req, res) {
     updated_at: new Date().toISOString(),
   }).eq('user_id', auth.ownerId)
   if (writeError) return res.status(500).json({ error: 'Não foi possível salvar a seleção.' })
+  if (shouldClearMetaCache(decrypted?.previousAdAccountId || null, adAccountId)) {
+    await clearMetaDataCache(auth.supabase, auth.ownerId)
+  }
   // Mesmo sync inicial curto do fluxo direto — só roda se escolheu uma Conta de Anúncios.
   if (adAccountId) {
     try { await syncMetaInsights(auth.supabase, { owner: auth.ownerId, days: 7 }) } catch (e) { console.error('meta insights initial sync error:', e?.message) }
@@ -1158,11 +1173,15 @@ async function handleMetaDisconnect(req, res) {
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const config = getMetaOAuthConfig()
   const { data: conn } = await auth.supabase.from('meta_connections')
-    .select('access_token_encrypted').eq('user_id', auth.ownerId).maybeSingle()
+    .select('access_token_encrypted, ad_account_id').eq('user_id', auth.ownerId).maybeSingle()
   const decrypted = conn?.access_token_encrypted ? decryptPayload(conn.access_token_encrypted) : null
   if (decrypted?.userToken) await revokeMetaToken(config, decrypted.userToken)
   const { error } = await auth.supabase.from('meta_connections').delete().eq('user_id', auth.ownerId)
   if (error) return res.status(500).json({ error: 'Não foi possível desconectar.' })
+  // Desconectar sem limpar o cache deixaria o dashboard mostrando os últimos dados sincronizados
+  // pra sempre, mesmo sem nenhuma conexão ativa — ou, pior, os dados errados se reconectar com
+  // outra conta de anúncios depois.
+  if (conn?.ad_account_id) await clearMetaDataCache(auth.supabase, auth.ownerId)
   return res.status(200).json({ ok: true })
 }
 
