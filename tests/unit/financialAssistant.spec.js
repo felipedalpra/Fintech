@@ -121,6 +121,40 @@ test('procedimentos retornam margem e aceitam busca sem acento', () => {
   }])
 })
 
+test('mapeamento do banco inclui custo de instrumentadora/prótese e NF congelada da cirurgia', () => {
+  // Achado real (15/11/2026): mapFinancialRows (usado pelo agente de IA) nunca foi atualizado
+  // quando as colunas instrumentation_cost/prosthesis_cost foram adicionadas (commit d097106) —
+  // o agente respondia margem/lucro sem contar esses custos, igual ao bug de financeStoreRows.js
+  // corrigido em 15c34e8 para a tela normal do app.
+  const mapped = mapFinancialRows({
+    surgeries:[{
+      id:'s1', total_value:10_000, date:'2026-10-01',
+      hospital_cost:0, anesthesia_cost:0, material_cost:0, other_costs:0,
+      instrumentation_cost:1_200, prosthesis_cost:3_000,
+      invoice_tax_amount:150, invoice_tax_rate:1.5,
+    }],
+  })
+  expect(mapped.surgeries[0]).toMatchObject({
+    instrumentationCost:1_200, prosthesisCost:3_000, invoiceTaxAmount:150, invoiceTaxRate:1.5,
+  })
+})
+
+test('resumo financeiro do agente de IA conta custo de instrumentadora/prótese na cirurgia', () => {
+  const dataComCustosNovos = {
+    ...data,
+    surgeries:[{
+      ...data.surgeries[0], instrumentationCost:1_200, prosthesisCost:3_000,
+    }],
+  }
+  const result = executeFinancialTool('get_financial_summary', {
+    start_date:'2026-10-01', end_date:'2026-10-10',
+  }, dataComCustosNovos)
+  // Sem o fix, totalExpenses fica 4_050 (ignora os 4_200 de instrumentadora+prótese) e o lucro
+  // sai inflado em exatamente esse valor.
+  expect(result.totalExpenses).toBe(4_050 + 4_200)
+  expect(result.netProfit).toBe(6_450 - 4_200)
+})
+
 test('obrigações não expõem paciente nem descrição', () => {
   const result = executeFinancialTool('get_open_obligations', {
     kind:'payable', start_date:'2026-10-01', end_date:'2026-10-31', overdue_only:false, limit:20,
