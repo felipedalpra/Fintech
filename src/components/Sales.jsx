@@ -491,8 +491,8 @@ export function Sales({ data, setData, saveDataNow }) {
                   {instValue !== null && <MetricPill label="Parcelas" value={`${item.installmentCount}x de ${fmt(instValue)}`} color={C.cyan} />}
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
-                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
-                  <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
+                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, minHeight:40, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
+                  <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, minHeight:40, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
                 </div>
               </Card>
             )
