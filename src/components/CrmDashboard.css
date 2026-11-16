@@ -1,0 +1,38 @@
+/* Painel de CRM no celular: menos espaço fixo pra rótulo/valor, mais espaço pra
+   barra em si, e cartões de KPI sempre em 2 colunas (em vez do auto-fit, que
+   varia o número de colunas conforme a largura e deixa o layout inconsistente). */
+@media (max-width: 480px) {
+  .crm-kpis {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .crm-kpi-value {
+    font-size: 20px !important;
+  }
+
+  .crm-panel {
+    padding: 14px !important;
+  }
+
+  .crm-bar-label,
+  .crm-funnel-label {
+    width: 92px !important;
+    font-size: 11.5px !important;
+  }
+
+  .crm-bar-value {
+    width: 60px !important;
+    font-size: 11px !important;
+  }
+
+  .crm-funnel-value {
+    width: 34px !important;
+    font-size: 11px !important;
+  }
+
+  .crm-period-btn {
+    min-height: 36px !important;
+    padding: 8px 12px !important;
+  }
+}

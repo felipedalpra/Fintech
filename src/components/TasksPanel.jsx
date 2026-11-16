@@ -14,6 +14,7 @@ import { Ico, ICONS, Popover, MenuItem, Avatar } from './CrmCells.jsx'
 import { TaskKanban } from './TaskKanban.jsx'
 import { TaskTable } from './TaskTable.jsx'
 import { TaskDrawer } from './TaskDrawer.jsx'
+import './TasksPanel.css'
 import { TASK_TYPES } from '../lib/taskQueue.js'
 import { useTaskWorkspace } from '../lib/useTaskWorkspace.js'
 import {
@@ -521,12 +522,12 @@ export function NewTaskModal({ ws, onClose, onCreated, initial = {}, opportuniti
           <FInput label="Oportunidade" value={form.opp_id} onChange={v => set('opp_id', v)}
             options={[{ v: '', l: 'Selecione a oportunidade' }, ...(opportunities || []).map(o => ({ v: o.id, l: [o.patients?.full_name || o.crm_contacts?.full_name, o.title && o.title !== 'Oportunidade' ? o.title : ''].filter(Boolean).join(' — ') || 'Oportunidade' }))]} />
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div className="task-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <FInput label={followup ? 'Canal' : 'Categoria'} value={form.type} onChange={v => set('type', v)} options={typeOptions.map(item => ({ v: item.key, l: item.label }))} />
           <FInput label="Responsável" value={form.assigned} onChange={v => set('assigned', v)}
             options={[{ v: '', l: 'Sem responsável' }, ...(ws.members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+        <div className="task-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           <FInput label="Vencimento" type="date" value={form.due} onChange={v => set('due', v)} />
           <FInput label="Hora (opcional)" type="time" value={form.time} onChange={v => set('time', v)} />
           {ws.ready && <FInput label="Prioridade" value={form.priority} onChange={v => set('priority', v)} options={[{ v: '', l: 'Sem prioridade' }, ...PRIORITIES.map(p => ({ v: p.key, l: p.label }))]} />}

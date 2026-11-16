@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { C } from '../theme.js'
+import './OpportunityPipeline.css'
 import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
 import { createManualLead } from '../lib/opportunityActions.js'
 import { slaForLead } from '../lib/slaBusinessTime.js'
@@ -89,7 +90,7 @@ export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, 
         ? <div style={{ color: C.textSub, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>
             Nenhuma oportunidade aberta. Crie uma em <strong>+ Nova oportunidade</strong> ou cadastre pacientes em <strong>Pacientes</strong>.
           </div>
-        : <div style={{ display: 'flex', gap: 16, overflowX: 'auto', padding: '4px 0 16px', alignItems: 'flex-start' }}>
+        : <div className="pipeline-board">
             {ws.stages.map(stage => (
               <PipelineColumn
                 key={stage.key}
@@ -132,7 +133,7 @@ function PipelineColumn({ stage, opps, allStages, memberLabel, members, ownerId,
     empty: { fontSize: 12, color: C.textDim, textAlign: 'center', padding: '24px 0', border: `1.5px dashed ${C.border}`, borderRadius: 11, margin: '0 11px' },
   }
   return (
-    <div style={s.column}
+    <div className="pipeline-column" style={s.column}
       onDragOver={e => { e.preventDefault(); onDragEnterStage?.() }}
       onDrop={e => { e.preventDefault(); onDropStage?.(e.dataTransfer.getData('text/plain')) }}>
       <div style={s.head}>
@@ -313,8 +314,8 @@ function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, me
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {canInline ? (
             <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-              <button type="button" onClick={() => setRespOpen(o => !o)} title="Atribuir responsável"
-                style={{ display: 'inline-flex', alignItems: 'center', border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}>
+              <button type="button" className="pipeline-card-avatar-btn" onClick={() => setRespOpen(o => !o)} title="Atribuir responsável"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}>
                 {respLabel
                   ? <Avatar label={respLabel} size={24} />
                   : <span style={{ width: 24, height: 24, borderRadius: '50%', border: `1.5px dashed ${C.borderBright || C.border}`, display: 'grid', placeItems: 'center', color: C.textDim }}><Ico d={ICON.user} size={13} /></span>}
@@ -332,14 +333,14 @@ function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, me
               </>}
             </div>
           ) : (respLabel && <Avatar label={respLabel} size={24} />)}
-          <button type="button" style={s.wa} disabled={!hasPhone}
+          <button type="button" className="pipeline-card-wa-btn" style={s.wa} disabled={!hasPhone}
             onClick={e => { e.stopPropagation(); if (!hasPhone) return; const digits = String(person.phone).replace(/\D/g, ''); if (digits) window.open(`https://wa.me/${digits}`, '_blank', 'noopener') }}
             title={hasPhone ? 'Abrir conversa no WhatsApp' : 'Sem telefone'}>
             <WhatsAppGlyph size={15} />
           </button>
         </div>
       </div>
-      <select style={{ width: '100%', marginTop: 10, fontSize: 11.5, padding: '6px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, cursor: isMoving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+      <select className="pipeline-card-stage-select" style={{ width: '100%', marginTop: 10, fontSize: 11.5, padding: '6px 8px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, cursor: isMoving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
         value={currentStage.key} onChange={e => { if (e.target.value !== currentStage.key) moveOpp(opp.id, e.target.value) }}
         onClick={e => e.stopPropagation()} disabled={isMoving} aria-label="Mover para estágio">
         {allStages.map(st => <option key={st.key} value={st.key}>{st.label}</option>)}

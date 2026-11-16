@@ -1,0 +1,41 @@
+/* Kanban de oportunidades: no mobile, cada coluna vira um "slide" quase de tela
+   cheia, com rolagem horizontal por toque e encaixe (snap) em cada etapa — em vez
+   de uma faixa estreita e várias colunas cortadas ao mesmo tempo. */
+.pipeline-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 4px 2px 16px;
+  align-items: flex-start;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pipeline-column {
+  scroll-snap-align: start;
+}
+
+/* Botões que hoje têm bom alvo de clique no mouse (24–30px) ficam pequenos
+   demais pra dedo. 40px é o mínimo confortável de toque (Apple HIG/Material). */
+@media (max-width: 720px) {
+  .pipeline-board {
+    gap: 12px;
+    padding: 4px 0 16px;
+  }
+
+  .pipeline-column {
+    min-width: 85vw !important;
+    flex: 0 0 85vw !important;
+  }
+
+  .pipeline-card-avatar-btn,
+  .pipeline-card-wa-btn {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  .pipeline-card-stage-select {
+    min-height: 40px !important;
+    font-size: 13px !important;
+  }
+}

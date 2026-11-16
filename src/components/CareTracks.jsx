@@ -105,7 +105,7 @@ export function CareTracks() {
     card: { padding: 16, borderRadius: 14, border: `1px solid ${C.border}`, background: C.bg, marginBottom: 12 },
     muted: { color: C.textSub, fontSize: 12.5, lineHeight: 1.6 },
     row: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
-    stepRow: { display: 'flex', gap: 10, alignItems: 'center', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, marginTop: 8 },
+    stepRow: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, marginTop: 8 },
     offset: { fontVariantNumeric: 'tabular-nums', fontWeight: 800, fontSize: 12, color: C.accent, minWidth: 58 },
   }
 

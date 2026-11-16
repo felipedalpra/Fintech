@@ -1,0 +1,8 @@
+/* Formulário de nova tarefa: no celular, os grids de 2 e 3 colunas (canal/
+   responsável, vencimento/hora/prioridade) ficam apertados demais dentro do
+   modal — empilha em 1 coluna. */
+@media (max-width: 480px) {
+  .task-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

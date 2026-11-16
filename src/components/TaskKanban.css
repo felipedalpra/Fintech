@@ -1,0 +1,23 @@
+/* Mesmo tratamento do Kanban de oportunidades: no celular, uma coluna quase em
+   tela cheia por vez, com encaixe (snap) ao rolar, em vez de várias colunas
+   estreitas cortadas ao mesmo tempo. Mover tarefa entre colunas por toque já
+   funciona pelo menu "···· → Mover para…"; aqui é só layout/toque. */
+.task-kanban-board {
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+.task-kanban-column {
+  scroll-snap-align: start;
+}
+
+@media (max-width: 720px) {
+  .task-kanban-board {
+    gap: 12px !important;
+  }
+
+  .task-kanban-column {
+    width: 85vw !important;
+    flex: 0 0 85vw !important;
+  }
+}

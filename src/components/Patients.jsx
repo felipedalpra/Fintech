@@ -300,9 +300,45 @@ export function Patients({ data }) {
         </div>
       )}
 
-      {/* Table */}
+      {/* Lista */}
       {loading ? (
         <div style={{ color: C.textDim, fontSize: 13, textAlign: 'center', padding: 32 }}>Carregando…</div>
+      ) : !loadError && isMobile ? (
+        // No celular, tabela de 5-6 colunas vira rolagem horizontal ilegível.
+        // Cada paciente vira um cartão, igual a referência pedida pelo Felipe.
+        filtered.length === 0 ? (
+          <Card style={{ padding: 40, textAlign: 'center', color: C.textDim, fontSize: 13 }}>
+            {search ? 'Nenhum paciente encontrado.' : 'Nenhum paciente cadastrado ainda.'}
+          </Card>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filtered.map(p => (
+              <Card key={p.id} onClick={() => { setSelected(p); setDrawerTab('resumo') }}
+                style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, cursor: 'pointer', background: selected?.id === p.id ? C.accent + '10' : C.card }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ width: 36, height: 36, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, color: '#fff', background: avatarColor(p.full_name || p.id), flexShrink: 0 }}>{initials(p.full_name)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: C.text, fontSize: 14.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.full_name}</div>
+                    <div style={{ fontSize: 12, color: C.textSub, marginTop: 1 }}>{p.phone || 'Sem telefone'}</div>
+                  </div>
+                  {clinicalAccess && (p.consent_signed
+                    ? <Badge color={C.green} small>Assinado</Badge>
+                    : <Badge color={C.yellow} small>Pendente</Badge>)}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: C.textSub, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                  <span>{p.cpf || 'CPF não informado'}</span>
+                  <span>{p.start_date ? formatDateBR(p.start_date) : '—'}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
+                  <Btn variant="ghost" onClick={() => openEdit(p)} style={{ flex: 1, minHeight: 38 }}>Editar</Btn>
+                  {p.active === false
+                    ? <Btn variant="ghost" onClick={() => reactivatePatient(p.id)} style={{ flex: 1, minHeight: 38 }}>Reativar</Btn>
+                    : <Btn variant="danger" onClick={() => setConfirmArchiveId(p.id)} style={{ flex: 1, minHeight: 38 }}>Arquivar</Btn>}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )
       ) : !loadError && (
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>

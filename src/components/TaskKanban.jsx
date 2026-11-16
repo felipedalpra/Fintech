@@ -2,6 +2,7 @@
 // arrastar entre colunas (muda o status pela coluna) e dentro da coluna (ordem manual).
 import { memo, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
+import './TaskKanban.css'
 import { Ico, ICONS, Popover, MenuItem, Avatar } from './CrmCells.jsx'
 import {
   DuePill, PriorityPill, Chip, ChecklistBadge, WhatsAppLink, OutcomeButton, TaskActionsMenu, textOnColor,
@@ -39,7 +40,7 @@ export function TaskKanban({ tasks, ws, today, canManage, actions, onOpen, attem
   }
 
   return (
-    <div data-testid="task-kanban" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 12, minHeight: 280 }}>
+    <div data-testid="task-kanban" className="task-kanban-board" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 12, minHeight: 280 }}>
       {cols.map((col, i) => (
         <Column key={col.stage.id} col={col} index={i} total={cols.length} today={today} ws={ws} drag={drag} setDrag={setDrag}
           onDrop={drop} onOpen={onOpen} actions={actions} canManage={canManage && ws.ready} onMoveStage={moveStage}
@@ -79,6 +80,7 @@ function Column({ col, index, total, today, ws, drag, setDrag, onDrop, onOpen, a
 
   return (
     <section data-testid={`task-column-${stage.seed_key || stage.base_status}`} data-stage-id={stage.id} aria-label={`Coluna ${stage.label}`}
+      className="task-kanban-column"
       onDragOver={e => { if (drag) { e.preventDefault(); setOver(true) } }}
       onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(false) }}
       onDrop={e => { e.preventDefault(); setOver(false); onDrop(stage.id, null) }}
