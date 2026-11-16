@@ -330,8 +330,8 @@ export function Consultations({ data, setData, saveDataNow }) {
                   <MetricPill label="Status" value={item.paymentStatus} color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'glosado' ? C.red : C.yellow} />
                 </div>
                 <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
-                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
-                  <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
+                  <Btn variant="ghost" onClick={() => openEdit(item)} style={{ padding:'5px 12px', fontSize:12, minHeight:40, width:isNarrow ? '100%' : 'auto' }}>Editar</Btn>
+                  <Btn variant="danger" onClick={() => setConfirmId(item.id)} style={{ padding:'5px 12px', fontSize:12, minHeight:40, width:isNarrow ? '100%' : 'auto' }}>Excluir</Btn>
                 </div>
               </Card>
             )
