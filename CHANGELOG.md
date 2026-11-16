@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-16 (6)
+### Changed
+- **Checagem mobile do módulo Configurações (fecha o passe de celular)**: a área inteira (Perfil, Equipe, Exportação, Integrações, Cobranças, WhatsApp, Meta Ads, Automações, Régua de follow-up) já era baseada em formulários e cards com grid que recalcula colunas sozinho (sem tabela nenhuma), então já degradava bem no celular. Único ajuste: a faixa de abas (9 abas, já com rolagem lateral) tinha os textos sem `nowrap`, então um rótulo comprido como "Régua de follow-up" podia quebrar linha dentro do próprio botão da aba — agora cada aba mantém o texto numa linha só e não encolhe dentro da faixa. Com isso termina a primeira leva do passe de mobile pedido pelo Felipe, cobrindo os seis módulos da plataforma (Relacionamento, Atendimentos, Clínico, Financeiro, Configurações — Clínico e boa parte de Atendimentos/Financeiro já estavam prontos de passes anteriores). (`src/components/Settings.jsx`.)
+
 ## [Unreleased] - 2026-11-16 (5)
 ### Changed
 - **Checagem mobile do módulo Financeiro**: continuação do passe de celular. Financeiro, Importar lançamentos, Produtos e Conciliação bancária já tinham um tratamento mobile denso (grids que recalculam colunas, linhas que viram coluna única, fonte menor nos KPIs). O único gap real era Documentos fiscais, que só tinha tabela de 6 colunas — ganhou a mesma conversão pra cartão no celular já usada em Pacientes/Consultas/Cirurgias. Procedimentos (catálogo em cards) e Plano de contas (árvore de configuração) já eram adequados como estão; Recorrências mantém a tabela com rolagem lateral, mesmo padrão aceito em telas de métricas densas (Anúncios). (`src/components/FiscalDocuments.jsx`.)
