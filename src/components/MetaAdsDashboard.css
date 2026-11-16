@@ -1,0 +1,8 @@
+/* No celular, os KPIs ficam em 2 colunas fixas (em vez do auto-fit, que varia
+   o número de colunas conforme a largura exata do aparelho). */
+@media (max-width: 480px) {
+  .meta-ads-kpis {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+}

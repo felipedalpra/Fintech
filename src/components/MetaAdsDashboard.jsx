@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
+import './MetaAdsDashboard.css'
 import { supabase } from '../lib/supabase.js'
 import { conversionBreakdown, engagementFromActions, sumActions } from '../lib/metaActions.js'
 import { buildFindings, compareMetric, previousPeriod } from '../lib/metaComparison.js'
@@ -442,7 +443,7 @@ export function MetaAdsDashboard() {
             </div>
           )}
 
-          <div style={s.kpis}>
+          <div className="meta-ads-kpis" style={s.kpis}>
             <Kpi label="Gasto" value={fmtBRL(totals.spend)} cmp={compareMetric('spend', totals.spend, prevTotals.spend)} />
             <Kpi label="Alcance" value={fmtReach(accountReach?.reach)} hint={accountReach ? `freq. ${fmtFreq(accountReach.frequency)}` : 'pessoas únicas'} />
             <Kpi label="Impressões" value={fmtInt(totals.impressions)} cmp={compareMetric('impressions', totals.impressions, prevTotals.impressions)} />

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { C } from '../theme.js'
+import './CrmDashboard.css'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
@@ -144,7 +145,7 @@ export function CrmDashboard() {
     <div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 11, padding: 4 }}>
-          {PERIODS.map(p => <button key={p.v} type="button" style={seg(period === p.v)} onClick={() => setPeriod(p.v)}>{p.l}</button>)}
+          {PERIODS.map(p => <button key={p.v} type="button" className="crm-period-btn" style={seg(period === p.v)} onClick={() => setPeriod(p.v)}>{p.l}</button>)}
         </div>
       </div>
 
@@ -152,7 +153,7 @@ export function CrmDashboard() {
 
       {!empty && <>
         {/* KPIs */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <div className="crm-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 16 }}>
           <Kpi label="Leads no período" value={kpis.leads} />
           <Kpi label="Taxa de conversão" value={pct(kpis.convRate)} color={C.green || '#10B981'} />
           <Kpi label="Pipeline ponderado" value={fmtBRL(pipeline.total)} color={C.accent} note={`${pipeline.count} oportunidades abertas`} />
@@ -165,24 +166,24 @@ export function CrmDashboard() {
 
         {/* Funil + Origem */}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)', gap: 14, marginBottom: 14 }} className="crm-two">
-          <div style={panel}>
+          <div className="crm-panel" style={panel}>
             <h3 style={h3}>Funil de conversão</h3><div style={sub}>Quantos leads alcançam cada etapa e a taxa de passagem.</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {funnel.map((f, i) => (
                 <div key={f.stage} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ width: 132, flexShrink: 0, fontSize: 12, fontWeight: 600, color: C.textSub, display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="crm-funnel-label" style={{ width: 132, flexShrink: 0, fontSize: 12, fontWeight: 600, color: C.textSub, display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: STAGE_META[i].color, flexShrink: 0 }} />{STAGE_META[i].label}
                   </span>
                   <div style={{ flex: 1, background: C.surface, borderRadius: 8, height: 28, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ height: '100%', width: `${Math.max(6, (f.reached / maxFunnel) * 100)}%`, background: STAGE_META[i].color, borderRadius: 8, display: 'flex', alignItems: 'center', padding: '0 10px', color: '#fff', fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{f.reached}</div>
                   </div>
-                  <span style={{ width: 48, flexShrink: 0, textAlign: 'right', fontSize: 12, fontWeight: 700, color: C.textSub, fontVariantNumeric: 'tabular-nums' }}>{f.conv == null ? '—' : pct(f.conv)}</span>
+                  <span className="crm-funnel-value" style={{ width: 48, flexShrink: 0, textAlign: 'right', fontSize: 12, fontWeight: 700, color: C.textSub, fontVariantNumeric: 'tabular-nums' }}>{f.conv == null ? '—' : pct(f.conv)}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div style={panel}>
+          <div className="crm-panel" style={panel}>
             <h3 style={h3}>Leads por origem</h3><div style={sub}>De onde vêm e quanto cada origem converte.</div>
             {sources.length === 0 ? <Dim>Sem origens registradas.</Dim> : sources.map(s => (
               <BarRow key={s.source} label={s.source} frac={s.total / maxSource} color={C.purple || '#8B5CF6'}
@@ -194,7 +195,7 @@ export function CrmDashboard() {
 
         {/* Responsável + Tempo por etapa */}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 14, marginBottom: 14 }} className="crm-two">
-          <div style={panel}>
+          <div className="crm-panel" style={panel}>
             <h3 style={h3}>Desempenho por responsável</h3><div style={sub}>Oportunidades, ganhos e conversão de cada um.</div>
             {responsibles.length === 0 ? <Dim>Sem responsáveis atribuídos.</Dim> : responsibles.map(r => {
               const label = r.userId === 'none' ? 'Sem responsável' : (memberLabel[r.userId] || r.userId)
@@ -203,7 +204,7 @@ export function CrmDashboard() {
             })}
           </div>
 
-          <div style={panel}>
+          <div className="crm-panel" style={panel}>
             <h3 style={h3}>Tempo médio por etapa</h3><div style={sub}>Onde os leads empacam (dias médios por etapa já encerrada, via histórico).</div>
             {Object.keys(times).length === 0 ? <Dim>Ainda sem histórico suficiente de movimentações.</Dim> : STAGE_ORDER.filter(s => times[s] != null).map(s => {
               const d = times[s]
@@ -215,7 +216,7 @@ export function CrmDashboard() {
         </div>
 
         {/* Motivos de perda */}
-        <div style={panel}>
+        <div className="crm-panel" style={panel}>
           <h3 style={h3}>Motivos de perda</h3><div style={sub}>Por que as oportunidades são perdidas ({kpis.lost} no período).</div>
           {losses.length === 0 ? <Dim>Nenhuma perda registrada no período. 🎉</Dim> : (
             <div>
@@ -237,7 +238,7 @@ function Kpi({ label, value, color, note }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 15, padding: '15px 16px' }}>
       <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontWeight: 800, fontSize: 25, letterSpacing: '-0.02em', marginTop: 9, fontVariantNumeric: 'tabular-nums', color: color || C.text }}>{value}</div>
+      <div className="crm-kpi-value" style={{ fontWeight: 800, fontSize: 25, letterSpacing: '-0.02em', marginTop: 9, fontVariantNumeric: 'tabular-nums', color: color || C.text }}>{value}</div>
       {note && <div style={{ fontSize: 11.5, color: C.textSub, marginTop: 5 }}>{note}</div>}
     </div>
   )
@@ -246,14 +247,14 @@ function Kpi({ label, value, color, note }) {
 function BarRow({ label, avatarLabel, frac, color, value }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
-      <span style={{ width: 128, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: C.text, display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span className="crm-bar-label" style={{ width: 128, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: C.text, display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {avatarLabel && <span style={{ width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 800, color: '#fff', background: avatarColor(avatarLabel), flexShrink: 0 }}>{initials(avatarLabel)}</span>}
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       </span>
       <div style={{ flex: 1, background: C.surface, borderRadius: 7, height: 12, overflow: 'hidden', minWidth: 0 }}>
         <div style={{ height: '100%', width: `${Math.max(3, Math.min(100, frac * 100))}%`, background: color, borderRadius: 7 }} />
       </div>
-      <span style={{ width: 84, flexShrink: 0, textAlign: 'right', fontSize: 12, fontWeight: 700, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      <span className="crm-bar-value" style={{ width: 84, flexShrink: 0, textAlign: 'right', fontSize: 12, fontWeight: 700, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   )
 }
