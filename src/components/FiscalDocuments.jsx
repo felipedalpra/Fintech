@@ -8,6 +8,7 @@ import { loadFiscalDocuments } from '../lib/fiscalDocumentStore.js'
 
 export function FiscalDocuments() {
   const { ownerId } = useUserRole()
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const [documents, setDocuments] = useState([])
   const [loading, setLoading] = useState(true)
   const [schemaMissing, setSchemaMissing] = useState(false)
@@ -48,9 +49,35 @@ export function FiscalDocuments() {
         <FInput label="Fluxo" value={filters.direction} onChange={value => setFilters(current => ({ ...current, direction:value }))} options={[{ v:'all', l:'Todos' }, { v:'issued', l:'Emitidas' }, { v:'received', l:'Recebidas' }]} />
       </div>
     </Card>
-    <Card style={{ padding:0, overflow:'hidden' }}>
-      {loading ? <div style={{ padding:28, color:C.textSub }}>Carregando documentos fiscais...</div> : filtered.length === 0 ? <div style={{ padding:28, color:C.textSub, textAlign:'center' }}>Nenhum documento fiscal encontrado.</div> : <div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}><thead><tr>{['Documento','Emissão','Lançamento','Fluxo','Valor','Status'].map(label => <th key={label} style={{ padding:'12px 14px', textAlign:'left', color:C.textDim, fontSize:10, textTransform:'uppercase', borderBottom:`1px solid ${C.border}` }}>{label}</th>)}</tr></thead><tbody>{filtered.map(document => <tr key={document.id}><td style={{ padding:14, color:C.text, fontWeight:750, borderBottom:`1px solid ${C.border}44` }}>{fiscalDocumentLabel(document)}</td><td style={{ padding:14, color:C.textSub, borderBottom:`1px solid ${C.border}44` }}>{formatDateBR(document.issue_date)}</td><td style={{ padding:14, color:C.textSub, borderBottom:`1px solid ${C.border}44` }}>{document.allocations?.map(allocation => allocation.financialEntry?.description).filter(Boolean).join(', ') || '—'}</td><td style={{ padding:14, color:C.textSub, borderBottom:`1px solid ${C.border}44` }}>{document.direction === 'issued' ? 'Emitida' : 'Recebida'}</td><td style={{ padding:14, color:C.text, fontWeight:700, borderBottom:`1px solid ${C.border}44` }}>{fmt(Number(document.total_amount || 0))}</td><td style={{ padding:14, borderBottom:`1px solid ${C.border}44` }}><Badge color={document.status === 'canceled' ? C.red : document.status === 'pending' ? C.yellow : C.green} small>{document.status}</Badge></td></tr>)}</tbody></table></div>}
-    </Card>
+    {loading ? (
+      <Card style={{ padding:28, color:C.textSub }}>Carregando documentos fiscais...</Card>
+    ) : filtered.length === 0 ? (
+      <Card style={{ padding:28, color:C.textSub, textAlign:'center' }}>Nenhum documento fiscal encontrado.</Card>
+    ) : isMobile ? (
+      // No celular, a tabela de 6 colunas vira cartão: mesma informação, sem rolar de lado.
+      <div style={{ display:'grid', gap:10 }}>
+        {filtered.map(document => (
+          <Card key={document.id} style={{ padding:14, display:'grid', gap:8 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', gap:8, alignItems:'flex-start' }}>
+              <span style={{ color:C.text, fontWeight:750, fontSize:14 }}>{fiscalDocumentLabel(document)}</span>
+              <Badge color={document.status === 'canceled' ? C.red : document.status === 'pending' ? C.yellow : C.green} small>{document.status}</Badge>
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:C.textSub }}>
+              <span>{formatDateBR(document.issue_date)}</span>
+              <span>{document.direction === 'issued' ? 'Emitida' : 'Recebida'}</span>
+            </div>
+            <div style={{ fontSize:12, color:C.textSub }}>
+              {document.allocations?.map(allocation => allocation.financialEntry?.description).filter(Boolean).join(', ') || 'Sem lançamento vinculado'}
+            </div>
+            <div style={{ fontSize:16, fontWeight:800, color:C.text, paddingTop:8, borderTop:`1px solid ${C.border}` }}>{fmt(Number(document.total_amount || 0))}</div>
+          </Card>
+        ))}
+      </div>
+    ) : (
+      <Card style={{ padding:0, overflow:'hidden' }}>
+        <div style={{ overflowX:'auto' }}><table style={{ width:'100%', borderCollapse:'collapse' }}><thead><tr>{['Documento','Emissão','Lançamento','Fluxo','Valor','Status'].map(label => <th key={label} style={{ padding:'12px 14px', textAlign:'left', color:C.textDim, fontSize:10, textTransform:'uppercase', borderBottom:`1px solid ${C.border}` }}>{label}</th>)}</tr></thead><tbody>{filtered.map(document => <tr key={document.id}><td style={{ padding:14, color:C.text, fontWeight:750, borderBottom:`1px solid ${C.border}44` }}>{fiscalDocumentLabel(document)}</td><td style={{ padding:14, color:C.textSub, borderBottom:`1px solid ${C.border}44` }}>{formatDateBR(document.issue_date)}</td><td style={{ padding:14, color:C.textSub, borderBottom:`1px solid ${C.border}44` }}>{document.allocations?.map(allocation => allocation.financialEntry?.description).filter(Boolean).join(', ') || '—'}</td><td style={{ padding:14, color:C.textSub, borderBottom:`1px solid ${C.border}44` }}>{document.direction === 'issued' ? 'Emitida' : 'Recebida'}</td><td style={{ padding:14, color:C.text, fontWeight:700, borderBottom:`1px solid ${C.border}44` }}>{fmt(Number(document.total_amount || 0))}</td><td style={{ padding:14, borderBottom:`1px solid ${C.border}44` }}><Badge color={document.status === 'canceled' ? C.red : document.status === 'pending' ? C.yellow : C.green} small>{document.status}</Badge></td></tr>)}</tbody></table></div>
+      </Card>
+    )}
   </div>
 }
 
