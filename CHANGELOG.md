@@ -5,6 +5,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-16 (5)
+### Changed
+- **Checagem mobile do módulo Financeiro**: continuação do passe de celular. Financeiro, Importar lançamentos, Produtos e Conciliação bancária já tinham um tratamento mobile denso (grids que recalculam colunas, linhas que viram coluna única, fonte menor nos KPIs). O único gap real era Documentos fiscais, que só tinha tabela de 6 colunas — ganhou a mesma conversão pra cartão no celular já usada em Pacientes/Consultas/Cirurgias. Procedimentos (catálogo em cards) e Plano de contas (árvore de configuração) já eram adequados como estão; Recorrências mantém a tabela com rolagem lateral, mesmo padrão aceito em telas de métricas densas (Anúncios). (`src/components/FiscalDocuments.jsx`.)
+
 ## [Unreleased] - 2026-11-16 (4)
 ### Changed
 - **Checagem mobile do módulo Atendimentos (Agenda, Consultas, Cirurgias)**: continuação do passe de celular pedido pelo Felipe. Diferente de Relacionamento, Atendimentos já tinha sido construído com celular em mente — Agenda já colapsa a barra lateral, reorganiza a barra de ferramentas e troca pra lista por dia; Consultas e Cirurgias já viram cartões no celular em vez de tabela. O único ajuste real: os botões "Editar"/"Excluir" desses cartões foram pro tamanho mínimo confortável de toque (40px) — antes dependiam só do padding do texto. (`src/components/Consultations.jsx`, `src/components/Sales.jsx`.)
