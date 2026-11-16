@@ -1195,22 +1195,26 @@ export function FinanceWorkspace() {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', height:isInboxPage || !isMobile ? '100dvh' : 'auto', background:C.bg }}>
+    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', height:isInboxPage || !isMobile ? (isMobile ? 'calc(100dvh - 58px - env(safe-area-inset-bottom))' : '100dvh') : 'auto', background:C.bg }}>
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
-      {/* Barra de áreas (topo, full-width) */}
+      {/* Barra de áreas (topo, full-width). No mobile vira uma faixa fina: só nome da área ativa + sino; a navegação entre áreas desce para a barra inferior, estilo iPhone. */}
       <nav data-testid="area-bar" style={{ display:'flex', alignItems:'center', minWidth:0, padding:isMobile ? '8px 12px' : '8px 16px', borderBottom:`1px solid ${C.border}`, background:C.surface, overflow:'hidden', flexShrink:0, zIndex:isMobile ? 20 : 11 }}>
-        <div style={{ minWidth:0, flex:1, display:'flex', alignItems:'center', gap:4, overflowX:'auto', scrollbarWidth:'none' }}>
-          {accessibleAreas.map(area => {
+        <div style={{ minWidth:0, flex:1, display:'flex', alignItems:'center', gap:4, overflowX:isMobile ? 'visible' : 'auto', scrollbarWidth:'none' }}>
+          {isMobile ? (
+            <div style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 2px', color:C.text, fontWeight:700, fontSize:14 }}>
+              <NavIcon name={activeArea?.icon} size={16} />
+              <span>{activeArea?.label}</span>
+            </div>
+          ) : accessibleAreas.map(area => {
             const active = area.id === activeAreaId
             return (
               <button
                 key={area.id}
                 onClick={() => {
-                  if (area.comingSoon) { navigate(`/app/${area.id}`); if (isMobile) setMobileNavOpen(false); return }
+                  if (area.comingSoon) { navigate(`/app/${area.id}`); return }
                   const first = area.sections.flatMap(s => s.items).find(i => canAccess(i.id))
                   if (first) navigate(`/app/${first.id}`)
-                  if (isMobile) setMobileNavOpen(false)
                 }}
                 style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 12px', borderRadius:10, border:active ? `1px solid ${C.accent}44` : '1px solid transparent', background:active ? C.accent+'16' : 'transparent', color:active ? C.text : C.textSub, fontWeight:active ? 700 : 600, fontSize:13, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap', flexShrink:0 }}
               >
@@ -1226,6 +1230,30 @@ export function FinanceWorkspace() {
           <NotificationBell data={safeData} summary={summary} canFinance={canAccess('finance')} onNavigate={id => navigate(`/app/${id}`)} />
         </div>
       </nav>
+
+      {/* Barra inferior de áreas (mobile, estilo iPhone: ícone + rótulo, fixa, acima da home indicator) */}
+      {isMobile && (
+        <nav data-testid="bottom-area-bar" style={{ position:'fixed', left:0, right:0, bottom:0, zIndex:25, display:'flex', background:C.surface, borderTop:`1px solid ${C.border}`, paddingBottom:'env(safe-area-inset-bottom)', boxShadow:'0 -2px 10px rgba(0,0,0,0.08)' }}>
+          {accessibleAreas.map(area => {
+            const active = area.id === activeAreaId
+            return (
+              <button
+                key={area.id}
+                onClick={() => {
+                  if (area.comingSoon) { navigate(`/app/${area.id}`); setMobileNavOpen(false); return }
+                  const first = area.sections.flatMap(s => s.items).find(i => canAccess(i.id))
+                  if (first) navigate(`/app/${first.id}`)
+                  setMobileNavOpen(false)
+                }}
+                style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, padding:'7px 2px 6px', border:'none', background:'none', color:active ? C.accent : C.textDim, cursor:'pointer', fontFamily:'inherit' }}
+              >
+                <NavIcon name={area.icon} size={20} />
+                <span style={{ fontSize:10, fontWeight:active ? 700 : 600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'100%' }}>{area.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+      )}
 
       {/* Linha: sidebar (sub-nav da área ativa) + conteúdo */}
       <div style={{ display:'flex', flex:1, minHeight:0 }}>
@@ -1316,7 +1344,7 @@ export function FinanceWorkspace() {
         </div>
       </aside>
 
-      <main data-page={page} style={{ flex:1, minWidth:0, minHeight:0, display:isInboxPage ? 'flex' : 'block', flexDirection:isInboxPage ? 'column' : undefined, overflow:isInboxPage || (isMobile && mobileNavOpen) ? 'hidden' : 'auto', pointerEvents:isMobile && mobileNavOpen ? 'none' : 'auto', padding:isInboxPage ? (isMobile ? '8px' : '12px') : (isMobile ? '20px 16px 56px' : '20px 22px 34px') }}>
+      <main data-page={page} style={{ flex:1, minWidth:0, minHeight:0, display:isInboxPage ? 'flex' : 'block', flexDirection:isInboxPage ? 'column' : undefined, overflow:isInboxPage || (isMobile && mobileNavOpen) ? 'hidden' : 'auto', pointerEvents:isMobile && mobileNavOpen ? 'none' : 'auto', padding:isInboxPage ? (isMobile ? '8px' : '12px') : (isMobile ? '20px 16px 84px' : '20px 22px 34px') }}>
         {(saveStatus === 'blocked' || saveStatus === 'error') && (
           <div role="alert" style={{ marginBottom:16, borderRadius:12, padding:'12px 16px', background:`${C.red}1a`, border:`1px solid ${C.red}`, color:C.red, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
             <span style={{ fontSize:18 }}>⚠️</span>

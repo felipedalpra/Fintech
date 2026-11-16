@@ -6,6 +6,7 @@ import { C } from '../theme.js'
 import { Popover, MenuItem, Ico, ICONS, Avatar } from './CrmCells.jsx'
 
 export function CrmBulkBar({ selected, stages, members, memberLabel, tagSuggestions, onClear, actions }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   const [open, setOpen] = useState(null)        // 'stage' | 'member' | 'due' | 'tags' | 'archive' | null
   const [pending, setPending] = useState(null)  // { label, run } aguardando confirmação
   const [busy, setBusy] = useState(null)        // texto de progresso
@@ -42,7 +43,7 @@ export function CrmBulkBar({ selected, stages, members, memberLabel, tagSuggesti
   return (
     <div role="toolbar" aria-label={`${n} ${plural} selecionadas`} data-testid="crm-bulk-bar"
       style={{
-        position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 1100,
+        position: 'fixed', left: '50%', bottom: isMobile ? 'calc(70px + env(safe-area-inset-bottom))' : 20, transform: 'translateX(-50%)', zIndex: 1100,
         display: 'flex', alignItems: 'stretch', maxWidth: 'calc(100vw - 32px)', boxSizing: 'border-box',
         background: C.card, border: `1px solid ${C.borderBright}`, borderRadius: 12, overflow: 'hidden',
         boxShadow: '0 18px 48px -12px rgba(0,0,0,.45)', animation: 'crmBulkIn .16s ease-out',

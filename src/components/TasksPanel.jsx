@@ -386,6 +386,7 @@ function StatStrip({ stats }) {
 // Edição em massa (Tabela)
 // ---------------------------------------------------------------------------
 function BulkBar({ ids, ws, onClear, toast }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   const refs = { stage: useRef(null), resp: useRef(null), prio: useRef(null), due: useRef(null) }
   const [open, setOpen] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -403,7 +404,7 @@ function BulkBar({ ids, ws, onClear, toast }) {
   const btn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }
   return (
     <div role="toolbar" aria-label="Ações em massa" data-testid="task-bulk-bar"
-      style={{ position: 'fixed', left: '50%', bottom: 18, transform: 'translateX(-50%)', zIndex: 900, display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderRadius: 12, background: C.card, border: `1px solid ${C.borderBright || C.border}`, boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)', maxWidth: 'calc(100vw - 24px)', flexWrap: 'wrap' }}>
+      style={{ position: 'fixed', left: '50%', bottom: isMobile ? 'calc(68px + env(safe-area-inset-bottom))' : 18, transform: 'translateX(-50%)', zIndex: 900, display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderRadius: 12, background: C.card, border: `1px solid ${C.borderBright || C.border}`, boxShadow: '0 18px 44px -14px rgba(0,0,0,.6)', maxWidth: 'calc(100vw - 24px)', flexWrap: 'wrap' }}>
       <span style={{ padding: '0 8px', fontSize: 12.5, fontWeight: 800, color: C.accent }}>{n} selecionada{n > 1 ? 's' : ''}</span>
       <button ref={refs.stage} type="button" style={btn} disabled={busy} data-testid="task-bulk-stage" onClick={() => setOpen('stage')}>Status</button>
       <button ref={refs.resp} type="button" style={btn} disabled={busy} data-testid="task-bulk-responsible" onClick={() => setOpen('resp')}>Responsável</button>
