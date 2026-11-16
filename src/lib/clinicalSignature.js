@@ -6,9 +6,9 @@ export const CLINICAL_SIGNATURE_STATUS = {
 }
 
 const STATUS_PRESENTATION = {
-  pending:{ label:'Assinatura em processamento', tone:'pending' },
-  signed:{ label:'Assinado digitalmente', tone:'signed' },
-  failed:{ label:'Falha na assinatura', tone:'failed' },
+  pending:{ label:'Assinatura em andamento', tone:'pending' },
+  signed:{ label:'Assinado', tone:'signed' },
+  failed:{ label:'A assinatura não deu certo', tone:'failed' },
   cancelled:{ label:'Assinatura cancelada', tone:'muted' },
 }
 
@@ -51,7 +51,7 @@ export function clinicalSignaturePresentation(signature, { evidenceAvailable = t
   if (!evidenceAvailable) return { label:'Status digital indisponível', tone:'muted' }
   if (!signature) return { label:'Assinatura digital não configurada', tone:'muted' }
   if (signature.status === 'signed' && !hasCompleteClinicalSignatureEvidence(signature)) {
-    return { label:'Evidência digital inconsistente', tone:'failed' }
+    return { label:'Precisa de revisão antes de usar', tone:'failed' }
   }
   return STATUS_PRESENTATION[signature.status] || { label:'Status de assinatura desconhecido', tone:'muted' }
 }
@@ -102,18 +102,18 @@ export const CLINICAL_SIGNATURE_ELIGIBLE_TYPES = ['exam_request', 'simple_prescr
 // Explicacao, para o profissional, de cada motivo auditavel de uma assinatura
 // concluida no provedor ainda nao poder ser declarada. Ver api/_lib/bryVerify.js.
 const EVIDENCE_GAP_NOTES = {
-  verify_service_not_configured:'A verificação da assinatura ainda não está configurada nesta instalação.',
-  verify_service_unavailable:'O serviço de verificação da BRy não respondeu. Tente atualizar o status mais tarde.',
-  verify_signature_invalid:'A verificação da BRy não considerou a assinatura válida. Não use este documento como assinado.',
-  verify_signature_not_pades:'O arquivo devolvido não tem assinatura no padrão PAdES.',
-  verify_certificate_not_icp_brasil:'A verificação não confirmou que o certificado e a assinatura pertencem à ICP-Brasil.',
-  verify_certificate_evidence_incomplete:'A verificação não devolveu os dados completos do certificado.',
-  verify_timestamp_not_verified:'Foi pedido carimbo do tempo, mas a verificação não o confirmou.',
-  verify_report_unavailable:'O relatório qualificado da verificação não pôde ser arquivado. Atualize o status para tentar novamente.',
+  verify_service_not_configured:'A confirmação automática da assinatura ainda não está configurada aqui.',
+  verify_service_unavailable:'Não conseguimos confirmar agora. Tente atualizar o status mais tarde.',
+  verify_signature_invalid:'Essa assinatura não foi confirmada como válida. Não use este documento como assinado.',
+  verify_signature_not_pades:'O arquivo devolvido não está no formato de assinatura esperado.',
+  verify_certificate_not_icp_brasil:'Não conseguimos confirmar que foi usado um certificado digital ICP-Brasil.',
+  verify_certificate_evidence_incomplete:'Faltam informações do certificado para confirmar esta assinatura.',
+  verify_timestamp_not_verified:'Pedimos a confirmação da data e hora da assinatura, mas ela ainda não veio.',
+  verify_report_unavailable:'Não conseguimos guardar o comprovante desta assinatura. Atualize o status para tentar de novo.',
 }
 
 export function clinicalSignatureEvidenceGapNote(code) {
-  return EVIDENCE_GAP_NOTES[code] || 'A evidência da assinatura ainda não pôde ser confirmada.'
+  return EVIDENCE_GAP_NOTES[code] || 'Ainda não conseguimos confirmar esta assinatura.'
 }
 
 // Documento elegivel: tipo suportado e autoria rastreavel. Documentos legados
@@ -160,7 +160,7 @@ export function clinicalSignatureActionState({
       return {
         ...base,
         label:'Assinatura digital não configurada',
-        note:'Enquanto a integração não estiver disponível, imprima e assine manualmente.',
+        note:'Por enquanto, imprima e assine à mão.',
       }
     }
     if (!isAuthor) {
@@ -179,45 +179,45 @@ export function clinicalSignatureActionState({
         ...base,
         canReconcile:isAuthor,
         canAbandon:isAuthor,
-        label:'Resultado desconhecido na BRy',
+        label:'Não conseguimos confirmar o que aconteceu',
         tone:'failed',
-        note:'Não reenviamos automaticamente para não cobrar duas vezes. Atualize o status ou encerre a tentativa.',
+        note:'Para não cobrar duas vezes sem querer, não tentamos de novo automaticamente. Atualize o status ou encerre esta tentativa.',
       }
     }
     if (attempt.evidenceGapCode) {
-      // Assinada no provedor, mas sem evidência verificável do certificado:
-      // o arquivo é preservado e a tela diz exatamente o que falta.
+      // Assinada no provedor, mas ainda sem confirmação completa do
+      // certificado: o arquivo é preservado e a tela diz exatamente o que falta.
       const invalid = attempt.evidenceGapCode === 'verify_signature_invalid'
       return {
         ...base,
         canReconcile:isAuthor,
         canOpenArtifact:Boolean(attempt.hasStoredArtifact),
-        label:invalid ? 'Assinatura não validada pela BRy' : 'Assinada na BRy · evidência pendente',
+        label:invalid ? 'A assinatura não foi aceita' : 'Assinado, confirmando os detalhes',
         tone:invalid ? 'failed' : 'pending',
         note:clinicalSignatureEvidenceGapNote(attempt.evidenceGapCode),
       }
     }
     return {
       ...base,
-      // O link não fica guardado: reabrir a página é uma consulta ao provedor,
-      // sem criar envelope novo nem consumir crédito.
+      // O link não fica guardado: reabrir a página é só consultar o estado
+      // atual, sem criar um novo pedido nem gerar custo de novo.
       canOpenSigningPage:isAuthor,
       canReconcile:isAuthor,
-      label:'Assinatura em processamento',
+      label:'Assinatura em andamento',
       tone:'pending',
-      note:'Conclua a assinatura na página da BRy e atualize o status.',
+      note:'Termine na página que abriu e depois atualize o status aqui.',
     }
   }
 
   if (attempt.status === 'signed') {
     // `evidenceComplete` e calculado no backend sobre a linha do banco.
     if (!attempt.evidenceComplete) {
-      return { ...base, label:'Evidência digital inconsistente', tone:'failed', note:'Use a via manual até a revisão.' }
+      return { ...base, label:'Precisa de revisão antes de usar', tone:'failed', note:'Por enquanto, use a versão impressa.' }
     }
-    return { ...base, canOpenSigned:true, label:'Assinado digitalmente', tone:'signed' }
+    return { ...base, canOpenSigned:true, label:'Assinado', tone:'signed' }
   }
 
-  const terminalLabel = attempt.status === 'cancelled' ? 'Assinatura cancelada' : 'Falha na assinatura'
+  const terminalLabel = attempt.status === 'cancelled' ? 'Assinatura cancelada' : 'A assinatura não deu certo'
   return {
     ...base,
     canRetry:isAuthor && available,
@@ -226,6 +226,18 @@ export function clinicalSignatureActionState({
     tone:attempt.status === 'cancelled' ? 'muted' : 'failed',
     note:attempt.failureMessage || '',
   }
+}
+
+// Reduz os varios "can*" de clinicalSignatureActionState a um unico botao.
+// Usado pela ficha do paciente, que so mostra selo + 1 acao e leva para a
+// central de assinatura (Clinico -> Documentos) para o resto do fluxo.
+export function clinicalSignaturePrimaryActionLabel(state = {}) {
+  if (state.canRequest) return 'Assinar'
+  if (state.canRetry) return 'Tentar de novo'
+  if (state.canOpenSigningPage || state.canReconcile) return 'Acompanhar assinatura'
+  if (state.canOpenSigned) return 'Ver documento assinado'
+  if (state.canOpenArtifact) return 'Ver arquivo'
+  return ''
 }
 
 // Agrupa as tentativas devolvidas pelo backend (camelCase) por documento,

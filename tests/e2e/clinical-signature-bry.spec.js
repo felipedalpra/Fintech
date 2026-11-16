@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test'
 
 // Mocks existem SOMENTE aqui: nenhum teste chama a BRy de verdade.
+//
+// A partir de 16/11/2026 (pedido do Felipe: unificar os dois lugares de
+// assinar e tirar frase técnica da tela), a assinatura inteira acontece só
+// na central Clínico -> Documentos: não existe mais botão de assinar dentro
+// da ficha do paciente. A ficha só mostra o selo de status e um botão que
+// leva para aqui (ver tests/e2e/clinical-records.spec.js para a navegação
+// ficha -> central).
 
 const AUTHOR = 'e2e-user-id'
 const DOCUMENT = '30000000-0000-4000-8000-000000000001'
@@ -30,29 +37,16 @@ function documentRow(overrides = {}) {
   }
 }
 
-function attempt(overrides = {}) {
-  return {
-    id:ATTEMPT,
-    documentId:DOCUMENT,
-    status:'pending',
-    createdAt:'2026-10-28T10:00:00Z',
-    envelopeStatus:'ONGOING',
-    environment:'homologation',
-    dispatchState:'sent',
-    evidenceGapCode:null,
-    hasStoredArtifact:false,
-    evidenceComplete:false,
-    failureMessage:null,
-    ...overrides,
-  }
+// Linha da tabela clinical_document_signatures: é só o que alimenta o selo
+// grosso da lista (status), nunca o motivo detalhado — esse vem da resposta
+// das ações (request/reconcile), capturada pelo diálogo em tempo real.
+function signatureRow(overrides = {}) {
+  return { id:ATTEMPT, document_id:DOCUMENT, status:'pending', created_at:'2026-10-28T10:00:00Z', ...overrides }
 }
 
-// Monta o cenario completo da ficha clinica com o estado de assinatura servido
-// pelo backend. `signatureState` e mutavel para simular reconciliacao.
-async function openDocuments(page, {
+async function openDocumentsCenter(page, {
   documents = [documentRow()],
-  integration = { available:true, environment:'homologation', requestedMode:'QUALIFIED' },
-  attempts = [],
+  signatures:initialSignatures = [],
   calls = {},
   requestHandler,
   reconcileHandler,
@@ -60,13 +54,15 @@ async function openDocuments(page, {
   artifactHandler,
   abandonHandler,
 } = {}) {
-  const state = { integration, attempts, evidenceAvailable:true }
-
+  // Mutavel de verdade: as acoes padrao (request/abandon) escrevem aqui pra
+  // que o proximo refetch de clinical_document_signatures reflita o que
+  // "persistiu", igual o backend real faria.
+  const signatures = [...initialSignatures]
   await page.setViewportSize({ width:1280, height:900 })
   await page.addInitScript(() => {
     window.localStorage.setItem('surgimetrics_onboarded', 'true')
-    // Impede que a aba da BRy realmente abra durante o teste e registra a URL
-    // e as flags de seguranca usadas.
+    // Impede que a aba da assinatura realmente abra durante o teste e
+    // registra a URL e as flags de segurança usadas.
     window.__openedWindows = []
     window.open = (url, target, features) => {
       window.__openedWindows.push({ url, target, features })
@@ -84,45 +80,41 @@ async function openDocuments(page, {
   }))
   await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
 
-  await page.route('**/api/secure-profile?action=clinical-signature-state', async route => {
-    calls.state = (calls.state || 0) + 1
-    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(state) })
-  })
-
   await page.route('**/api/secure-profile?action=clinical-signature-request', async route => {
     calls.request = (calls.request || 0) + 1
-    if (requestHandler) return requestHandler(route, state, calls)
-    state.attempts = [attempt()]
+    if (requestHandler) return requestHandler(route, calls, signatures)
+    signatures.length = 0
+    signatures.push(signatureRow())
     await route.fulfill({
       status:200,
       contentType:'application/json',
-      // O backend responde com `attempts` (lote), nao `attempt`.
-      body:JSON.stringify({ attempts:state.attempts, signingUrl:SIGNING_URL }),
+      body:JSON.stringify({ attempts:[{ id:ATTEMPT, documentId:DOCUMENT, status:'pending' }], signingUrl:SIGNING_URL }),
     })
   })
 
   await page.route('**/api/secure-profile?action=clinical-signature-link', async route => {
     calls.link = (calls.link || 0) + 1
-    if (linkHandler) return linkHandler(route, state, calls)
+    if (linkHandler) return linkHandler(route, calls, signatures)
     await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ signingUrl:SIGNING_URL }) })
   })
 
   await page.route('**/api/secure-profile?action=clinical-signature-reconcile', async route => {
     calls.reconcile = (calls.reconcile || 0) + 1
-    if (reconcileHandler) return reconcileHandler(route, state, calls)
-    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ attempt:state.attempts[0] }) })
+    if (reconcileHandler) return reconcileHandler(route, calls, signatures)
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ attempt:{ id:ATTEMPT, status:'pending' } }) })
   })
 
   await page.route('**/api/secure-profile?action=clinical-signature-abandon', async route => {
     calls.abandon = (calls.abandon || 0) + 1
-    if (abandonHandler) return abandonHandler(route, state, calls)
-    state.attempts = [attempt({ status:'failed', failureMessage:'Tentativa encerrada pelo profissional.' })]
-    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ attempt:state.attempts[0] }) })
+    if (abandonHandler) return abandonHandler(route, calls, signatures)
+    signatures.length = 0
+    signatures.push(signatureRow({ status:'failed' }))
+    await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ attempt:{ id:ATTEMPT, status:'failed', failureMessage:'Tentativa encerrada pelo profissional.' } }) })
   })
 
   await page.route('**/api/secure-profile?action=clinical-signature-artifact', async route => {
     calls.artifact = (calls.artifact || 0) + 1
-    if (artifactHandler) return artifactHandler(route, state, calls)
+    if (artifactHandler) return artifactHandler(route, calls)
     await route.fulfill({
       status:200,
       contentType:'application/json',
@@ -135,47 +127,41 @@ async function openDocuments(page, {
     contentType:'application/json',
     body:JSON.stringify([{ id:'patient-signature', full_name:'Ana Assinatura', date_of_birth:'1990-04-10', active:true }]),
   }))
-  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'null' }))
-  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
   await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(documents) }))
+  await page.route('**/rest/v1/clinical_document_signatures*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(signatures) }))
   for (const table of [
     'medical_records', 'medical_record_addenda', 'clinical_anamneses', 'clinical_intake_requests',
-    'clinical_intake_submissions', 'clinical_document_signatures', 'clinical_assets',
-    'clinical_treatment_plans', 'clinical_treatment_plan_versions', 'clinical_treatment_plan_status_events',
+    'clinical_intake_submissions', 'clinical_assets', 'clinical_treatment_plans',
+    'clinical_treatment_plan_versions', 'clinical_treatment_plan_status_events',
     'clinical_treatment_sessions', 'clinical_treatment_session_events', 'clinical_protocols',
-    'clinical_protocol_versions', 'clinical_protocol_status_events',
+    'clinical_protocol_versions', 'clinical_protocol_status_events', 'clinical_patient_pending_overrides',
   ]) {
     await page.route(`**/rest/v1/${table}*`, route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
   }
 
-  await page.goto('/app/clinical-records')
-  await page.getByRole('button', { name:/Ana Assinatura/ }).click()
-  await page.getByRole('navigation', { name:'Ficha clínica do paciente' })
-    .getByRole('button', { name:'Exames e receitas', exact:true }).click()
-  await expect(page.getByTestId(`clinical-document-${DOCUMENT}`)).toBeVisible()
-  return state
+  await page.goto('/app/clinical-documents')
+  await expect(page.getByTestId('clinical-documents-center')).toBeVisible()
+  return page.locator('.clinical-documents-center-list > article').first()
 }
 
-test('oferece assinar com BRy, confirma antes de consumir crédito e abre a página da BRy protegida', async ({ page }) => {
+test('oferece assinar, confirma antes de gerar custo e abre a página de assinatura', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, { calls })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+  const row = await openDocumentsCenter(page, { calls })
 
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Pronta para assinar')
-  await expect(card.getByRole('button', { name:'Assinar com BRy' })).toBeVisible()
-  // A via manual continua disponível, separada da digital.
-  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
+  await expect(row).toContainText('Ainda não assinado')
+  await expect(row.getByRole('button', { name:'Assinar' })).toBeVisible()
 
-  // Nada é enviado antes da confirmação explícita.
-  await card.getByRole('button', { name:'Assinar com BRy' }).click()
+  await row.getByRole('button', { name:'Assinar' }).click()
+  const dialog = page.locator('.clinical-sign-document-dialog')
+  await expect(dialog).toContainText('Isso tem um custo, mesmo que a assinatura não seja concluída')
   expect(calls.request).toBeUndefined()
-  await expect(card.getByText(/consome créditos da BRy/)).toBeVisible()
 
-  await card.getByRole('button', { name:'Confirmar e assinar' }).click()
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura em processamento')
+  await dialog.getByRole('button', { name:'Confirmar e assinar' }).click()
+  await expect(dialog).toHaveCount(0)
   expect(calls.request).toBe(1)
+  await expect(row).toContainText('Assinatura em andamento')
 
-  // A aba da BRy abre com proteção contra window.opener e sem expor o link no DOM.
+  // A aba de assinatura abre com proteção contra window.opener e sem expor o link no DOM.
   await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
   const opened = await page.evaluate(() => window.__openedWindows)
   expect(opened[0].url).toBe(SIGNING_URL)
@@ -187,119 +173,56 @@ test('oferece assinar com BRy, confirma antes de consumir crédito e abre a pág
 
 test('cancelar a confirmação não solicita assinatura', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, { calls })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+  const row = await openDocumentsCenter(page, { calls })
 
-  await card.getByRole('button', { name:'Assinar com BRy' }).click()
-  await card.getByRole('button', { name:'Cancelar' }).click()
-  await expect(card.getByRole('button', { name:'Assinar com BRy' })).toBeVisible()
+  await row.getByRole('button', { name:'Assinar' }).click()
+  const dialog = page.locator('.clinical-sign-document-dialog')
+  await dialog.getByRole('button', { name:'Cancelar' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(row.getByRole('button', { name:'Assinar' })).toBeVisible()
   expect(calls.request).toBeUndefined()
 })
 
-test('duplo clique na confirmação não cria duas solicitações', async ({ page }) => {
+test('recarregar durante o processamento preserva o estado pendente', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, {
+  const row = await openDocumentsCenter(page, { calls, signatures:[signatureRow()] })
+  await expect(row).toContainText('Assinatura em andamento')
+
+  await page.reload()
+  await expect(page.getByTestId('clinical-documents-center')).toBeVisible()
+  const reloaded = page.locator('.clinical-documents-center-list > article').first()
+  await expect(reloaded).toContainText('Assinatura em andamento')
+  await expect(reloaded.getByRole('button', { name:'Acompanhar assinatura' })).toBeVisible()
+})
+
+test('atualizar status mostra o que ainda falta, sem prometer assinatura concluída', async ({ page }) => {
+  const calls = {}
+  const row = await openDocumentsCenter(page, {
     calls,
-    requestHandler:async (route, state) => {
-      state.attempts = [attempt()]
-      // Resposta lenta: o segundo clique precisa encontrar o botão desabilitado.
-      await new Promise(resolve => setTimeout(resolve, 600))
+    signatures:[signatureRow()],
+    reconcileHandler:async (route, calls2) => {
+      void calls2
       await route.fulfill({
         status:200,
         contentType:'application/json',
-        // O backend responde com `attempts` (lote), nao `attempt`.
-      body:JSON.stringify({ attempts:state.attempts, signingUrl:SIGNING_URL }),
+        body:JSON.stringify({ attempt:{ id:ATTEMPT, status:'pending', evidenceGapCode:'verify_service_unavailable' } }),
       })
     },
   })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
 
-  await card.getByRole('button', { name:'Assinar com BRy' }).click()
-  const confirm = card.getByRole('button', { name:/Confirmar e assinar|Solicitando/ })
-  await confirm.click()
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura em processamento')
-  expect(calls.request).toBe(1)
-})
-
-test('recarregar durante o processamento preserva o estado pendente e a via manual', async ({ page }) => {
-  const calls = {}
-  await openDocuments(page, { calls, attempts:[attempt()] })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura em processamento')
-
-  await page.reload()
-  await page.getByRole('button', { name:/Ana Assinatura/ }).click()
-  await page.getByRole('navigation', { name:'Ficha clínica do paciente' })
-    .getByRole('button', { name:'Exames e receitas', exact:true }).click()
-
-  const reloaded = page.getByTestId(`clinical-document-${DOCUMENT}`)
-  await expect(reloaded.getByTestId('clinical-signature-status')).toHaveText('Assinatura em processamento')
-  await expect(reloaded.getByRole('button', { name:'Atualizar status' })).toBeVisible()
-  await expect(reloaded.getByRole('button', { name:'Assinar com BRy' })).toHaveCount(0)
-  await expect(reloaded.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
-})
-
-test('atualizar status mostra evidência pendente e nunca promete assinatura qualificada', async ({ page }) => {
-  const calls = {}
-  await openDocuments(page, {
-    calls,
-    attempts:[attempt()],
-    reconcileHandler:async (route, state) => {
-      state.attempts = [attempt({
-        envelopeStatus:'FINISHED',
-        evidenceGapCode:'verify_service_unavailable',
-        hasStoredArtifact:true,
-      })]
-      await route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ attempt:state.attempts[0], outcome:'evidencia_pendente' }) })
-    },
-  })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
-
-  await card.getByRole('button', { name:'Atualizar status' }).click()
-  await expect(card.getByTestId('clinical-signature-status')).toContainText('evidência pendente')
-  // O motivo auditável é explicado ao profissional, não escondido.
-  await expect(card).toContainText('serviço de verificação da BRy não respondeu')
+  await row.getByRole('button', { name:'Acompanhar assinatura' }).click()
+  const dialog = page.locator('.clinical-sign-document-dialog')
+  await dialog.getByRole('button', { name:'Atualizar status' }).click()
+  await expect(dialog).toContainText('Não conseguimos confirmar agora')
   expect(calls.reconcile).toBe(1)
-
-  // O artefato devolvido pode ser aberto, mas sem ser chamado de assinatura concluída.
-  await expect(card.getByRole('button', { name:'Abrir arquivo devolvido pela BRy' })).toBeVisible()
-  await expect(card.getByRole('button', { name:'Abrir PDF assinado' })).toHaveCount(0)
-  await expect(card).not.toContainText('Assinado digitalmente')
 })
 
-test('assinatura reprovada pela verificação é sinalizada, não tratada como válida', async ({ page }) => {
+test('assinatura concluída abre o documento assinado', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, {
-    calls,
-    attempts:[attempt({
-      envelopeStatus:'FINISHED',
-      evidenceGapCode:'verify_signature_invalid',
-      hasStoredArtifact:true,
-    })],
-  })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+  const row = await openDocumentsCenter(page, { calls, signatures:[signatureRow({ status:'signed' })] })
 
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura não validada pela BRy')
-  await expect(card).toContainText('Não use este documento como assinado')
-  await expect(card.getByRole('button', { name:'Abrir PDF assinado' })).toHaveCount(0)
-  await expect(card).not.toContainText('Assinado digitalmente')
-  // A via manual continua sendo a saída.
-  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
-})
-
-test('assinatura com evidência completa abre o PDF assinado e mantém a via manual', async ({ page }) => {
-  const calls = {}
-  await openDocuments(page, {
-    calls,
-    attempts:[attempt({ status:'signed', evidenceComplete:true, hasStoredArtifact:true, signedAt:'2026-10-28T12:00:00Z' })],
-  })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
-
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinado digitalmente')
-  await expect(card.getByRole('button', { name:'Imprimir via manual' })).toBeVisible()
-
-  await card.getByRole('button', { name:'Abrir PDF assinado' }).click()
-  // A URL assinada só é aberta depois da resposta autenticada do backend.
+  await expect(row).toContainText('Assinado')
+  await row.getByRole('button', { name:'Ver assinado' }).click()
   await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
   expect(calls.artifact).toBe(1)
   const opened = await page.evaluate(() => window.__openedWindows)
@@ -307,140 +230,59 @@ test('assinatura com evidência completa abre o PDF assinado e mantém a via man
   expect(opened.at(-1).features).toContain('noopener')
 })
 
-test('falha terminal permite nova tentativa e exibe a causa', async ({ page }) => {
+test('falha terminal permite nova tentativa e explica o motivo', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, {
-    calls,
-    attempts:[attempt({ status:'failed', failureMessage:'O prazo do envelope expirou antes da assinatura.' })],
-  })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+  const row = await openDocumentsCenter(page, { calls, signatures:[signatureRow({ status:'failed' })] })
+  await expect(row).toContainText('A assinatura não deu certo')
 
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Falha na assinatura')
-  await expect(card).toContainText('O prazo do envelope expirou')
-  await expect(card.getByRole('button', { name:'Atualizar status' })).toHaveCount(0)
-
-  await card.getByRole('button', { name:'Tentar assinar novamente' }).click()
-  await card.getByRole('button', { name:'Confirmar e assinar' }).click()
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura em processamento')
+  await row.getByRole('button', { name:'Revisar falha' }).click()
+  const dialog = page.locator('.clinical-sign-document-dialog')
+  await dialog.getByRole('button', { name:'Confirmar e assinar' }).click()
+  await expect(dialog).toHaveCount(0)
   expect(calls.request).toBe(1)
+  await expect(row).toContainText('Assinatura em andamento')
 })
 
-test('resultado desconhecido não reenvia e exige encerramento explícito', async ({ page }) => {
+test('resultado desconhecido pode ser encerrado para liberar nova tentativa', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, { calls, attempts:[attempt({ dispatchState:'unknown' })] })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+  const row = await openDocumentsCenter(page, { calls, signatures:[signatureRow()] })
 
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Resultado desconhecido na BRy')
-  await expect(card).toContainText('Não reenviamos automaticamente')
-  await expect(card.getByRole('button', { name:'Assinar com BRy' })).toHaveCount(0)
-  await expect(card.getByRole('button', { name:'Tentar assinar novamente' })).toHaveCount(0)
-
-  await card.getByRole('button', { name:'Encerrar tentativa' }).click()
-  await expect(card.getByText(/crédito pode já ter sido consumido/)).toBeVisible()
-  expect(calls.abandon).toBeUndefined()
-
-  await card.getByRole('button', { name:'Encerrar tentativa', exact:true }).last().click()
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Falha na assinatura')
+  await row.getByRole('button', { name:'Acompanhar assinatura' }).click()
+  const dialog = page.locator('.clinical-sign-document-dialog')
+  await dialog.getByRole('button', { name:'Encerrar tentativa' }).click()
+  await expect(dialog).toHaveCount(0)
   expect(calls.abandon).toBe(1)
-  // Encerrada, uma nova tentativa volta a ser possível.
-  await expect(card.getByRole('button', { name:'Tentar assinar novamente' })).toBeVisible()
+  await expect(row).toContainText('A assinatura não deu certo')
 })
 
-test('integração indisponível esconde a assinatura digital e preserva a impressão', async ({ page }) => {
+test('quem não emitiu o documento não recebe a ação de assinar', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, { calls, integration:{ available:false, reason:'desabilitada' } })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
-
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura digital não configurada')
-  await expect(card.getByRole('button', { name:'Assinar com BRy' })).toHaveCount(0)
-  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
-  await expect(page.getByTestId('clinical-signature-readiness')).toContainText('Integração com a BRy indisponível')
-  // Sem integração habilitada, nada na tela promete assinatura qualificada.
-  await expect(page.locator('body')).not.toContainText('qualificada')
-})
-
-test('usuário que não emitiu o documento não recebe a ação de assinar', async ({ page }) => {
-  const calls = {}
-  await openDocuments(page, {
+  const row = await openDocumentsCenter(page, {
     calls,
     documents:[documentRow({ created_by:'outro-profissional', author_name:'Dr. Outro', author_registration:'CRM-RS 9999' })],
   })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
 
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura digital pendente')
-  await expect(card).toContainText('Somente o profissional que emitiu o documento')
-  await expect(card.getByRole('button', { name:'Assinar com BRy' })).toHaveCount(0)
-  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
+  await expect(row).toContainText('Ainda não assinado')
+  await expect(row.getByRole('button', { name:'Ver assinatura' })).toBeVisible()
+  await expect(row.getByRole('button', { name:'Assinar' })).toHaveCount(0)
 })
 
-test('pop-up bloqueado avisa sem expor o link e falha de rede não quebra a tela', async ({ page }) => {
+test('pop-up bloqueado avisa sem expor o link, e reabrir a página não cria outro pedido', async ({ page }) => {
   const calls = {}
-  await openDocuments(page, { calls })
-  await page.evaluate(() => { window.__popupBlocked = true })
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
+  const row = await openDocumentsCenter(page, { calls })
 
-  await card.getByRole('button', { name:'Assinar com BRy' }).click()
-  await card.getByRole('button', { name:'Confirmar e assinar' }).click()
-  await expect(page.getByText(/bloqueou a janela da BRy/)).toBeVisible()
+  await row.getByRole('button', { name:'Assinar' }).click()
+  const dialog = page.locator('.clinical-sign-document-dialog')
+  await page.evaluate(() => { window.__popupBlocked = true })
+  await dialog.getByRole('button', { name:'Confirmar e assinar' }).click()
+  await expect(page.getByText(/bloqueou a página de assinatura/)).toBeVisible()
   expect(await page.content()).not.toContain(SIGNING_URL)
 
-  // A saída prometida na mensagem existe de verdade: reabrir a página sem
-  // criar outro envelope.
-  await page.evaluate(() => { window.__popupBlocked = false })
-  await card.getByRole('button', { name:'Abrir página de assinatura' }).click()
+  // A saída prometida na mensagem existe de verdade: reabrir a página sem criar outro pedido.
+  await page.evaluate(() => { window.__popupBlocked = false; window.__openedWindows = [] })
+  await row.getByRole('button', { name:'Acompanhar assinatura' }).click()
+  await page.locator('.clinical-sign-document-dialog').getByRole('button', { name:'Abrir página de assinatura' }).click()
   await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
   expect(calls.link).toBe(1)
   expect(calls.request).toBe(1)
-
-  // Falha de rede na reconciliação mostra mensagem sanitizada e mantém o card.
-  await page.route('**/api/secure-profile?action=clinical-signature-reconcile', route => route.fulfill({
-    status:502, contentType:'application/json', body:JSON.stringify({ error:'A BRy está indisponível no momento.' }),
-  }))
-  await card.getByRole('button', { name:'Atualizar status' }).click()
-  await expect(page.getByText('A BRy está indisponível no momento.')).toBeVisible()
-  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
-})
-
-test('backend de assinatura indisponível não bloqueia o histórico nem a via manual', async ({ page }) => {
-  await page.setViewportSize({ width:1280, height:900 })
-  await page.addInitScript(() => { window.localStorage.setItem('surgimetrics_onboarded', 'true') })
-
-  await page.route('**/api/secure-profile?action=get', route => route.fulfill({
-    status:200,
-    contentType:'application/json',
-    body:JSON.stringify({ profile:{ doctor:{ fullName:'Dra. Clínica E2E', registrationId:'CRM-RS 0001' } } }),
-  }))
-  await page.route('**/rest/v1/rpc/sync_clinical_professional_identity*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
-  // O endpoint de estado cai: a tela precisa degradar, não quebrar.
-  await page.route('**/api/secure-profile?action=clinical-signature-state', route => route.fulfill({
-    status:500, contentType:'application/json', body:JSON.stringify({ error:'indisponível' }),
-  }))
-  await page.route('**/rest/v1/patients*', route => route.fulfill({
-    status:200,
-    contentType:'application/json',
-    body:JSON.stringify([{ id:'patient-signature', full_name:'Ana Assinatura', date_of_birth:'1990-04-10', active:true }]),
-  }))
-  await page.route('**/rest/v1/patient_clinical_profiles*', route => route.fulfill({ status:200, contentType:'application/json', body:'null' }))
-  await page.route('**/rest/v1/rpc/log_clinical_record_access*', route => route.fulfill({ status:200, contentType:'application/json', body:'true' }))
-  await page.route('**/rest/v1/clinical_documents*', route => route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify([documentRow()]) }))
-  for (const table of [
-    'medical_records', 'medical_record_addenda', 'clinical_anamneses', 'clinical_intake_requests',
-    'clinical_intake_submissions', 'clinical_document_signatures', 'clinical_assets',
-    'clinical_treatment_plans', 'clinical_treatment_plan_versions', 'clinical_treatment_plan_status_events',
-    'clinical_treatment_sessions', 'clinical_treatment_session_events', 'clinical_protocols',
-    'clinical_protocol_versions', 'clinical_protocol_status_events',
-  ]) {
-    await page.route(`**/rest/v1/${table}*`, route => route.fulfill({ status:200, contentType:'application/json', body:'[]' }))
-  }
-
-  await page.goto('/app/clinical-records')
-  await page.getByRole('button', { name:/Ana Assinatura/ }).click()
-  await page.getByRole('navigation', { name:'Ficha clínica do paciente' })
-    .getByRole('button', { name:'Exames e receitas', exact:true }).click()
-
-  const card = page.getByTestId(`clinical-document-${DOCUMENT}`)
-  await expect(card).toBeVisible()
-  await expect(card.getByRole('button', { name:'Imprimir / salvar PDF' })).toBeVisible()
-  await expect(card.getByRole('button', { name:'Assinar com BRy' })).toHaveCount(0)
-  await expect(card.getByTestId('clinical-signature-status')).toHaveText('Assinatura digital não configurada')
 })

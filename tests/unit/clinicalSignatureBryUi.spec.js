@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   clinicalSignatureActionState,
+  clinicalSignaturePrimaryActionLabel,
   clinicalSignerReadiness,
   isClinicalSignatureEligible,
   latestAttemptByDocument,
@@ -36,7 +37,7 @@ test('integracao desabilitada nao oferece acao nem promete assinatura qualificad
   expect(off.canRequest).toBe(false)
   expect(off.canReconcile).toBe(false)
   expect(off.label).toBe('Assinatura digital não configurada')
-  expect(off.note).toContain('manualmente')
+  expect(off.note).toContain('à mão')
   expect(JSON.stringify(off)).not.toContain('qualificada')
 })
 
@@ -64,7 +65,7 @@ test('resultado desconhecido pede acao humana e nao reenvio automatico', () => {
   expect(unknown.canReconcile).toBe(true)
   expect(unknown.canRequest).toBe(false)
   expect(unknown.canRetry).toBe(false)
-  expect(unknown.label).toContain('Resultado desconhecido')
+  expect(unknown.label).toContain('Não conseguimos confirmar')
   expect(unknown.note).toContain('duas vezes')
 })
 
@@ -78,9 +79,9 @@ test('evidencia pendente de homologacao nao vira assinatura concluida', () => {
   })
   expect(gap.canOpenSigned).toBe(false)
   expect(gap.canOpenArtifact).toBe(true)
-  expect(gap.label).toContain('evidência pendente')
-  expect(gap.note).toContain('não respondeu')
-  expect(gap.label).not.toContain('Assinado digitalmente')
+  expect(gap.label).toContain('confirmando os detalhes')
+  expect(gap.note).toContain('Não conseguimos confirmar agora')
+  expect(gap.label).not.toBe('Assinado')
 })
 
 test('certificado fora da ICP-Brasil e relatorio ausente ficam visiveis', () => {
@@ -92,7 +93,7 @@ test('certificado fora da ICP-Brasil e relatorio ausente ficam visiveis', () => 
   const noReport = state({
     attempt:{ id:'a1', documentId:DOCUMENT, status:'pending', evidenceGapCode:'verify_report_unavailable' },
   })
-  expect(noReport.note).toContain('relatório qualificado')
+  expect(noReport.note).toContain('comprovante desta assinatura')
   expect(noReport.canReconcile).toBe(true)
 })
 
@@ -101,14 +102,14 @@ test('assinatura concluida com evidencia completa libera o PDF assinado', () => 
   expect(signed.canOpenSigned).toBe(true)
   expect(signed.canRequest).toBe(false)
   expect(signed.canRetry).toBe(false)
-  expect(signed.label).toBe('Assinado digitalmente')
+  expect(signed.label).toBe('Assinado')
   expect(signed.tone).toBe('signed')
 })
 
 test('status signed sem evidencia completa e sinalizado como inconsistente', () => {
   const broken = state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'signed', evidenceComplete:false } })
   expect(broken.canOpenSigned).toBe(false)
-  expect(broken.label).toBe('Evidência digital inconsistente')
+  expect(broken.label).toBe('Precisa de revisão antes de usar')
   expect(broken.tone).toBe('failed')
 })
 
@@ -212,6 +213,19 @@ test('tentativa pendente permite reabrir a pagina de assinatura sem novo envelop
   for (const status of ['signed', 'failed', 'cancelled']) {
     expect(state({ attempt:{ ...pendingAttempt, status, evidenceComplete:status === 'signed' } }).canOpenSigningPage, status).toBe(false)
   }
+})
+
+test('a ficha do paciente mostra um unico botao, nunca os varios can* de uma vez', () => {
+  // Achado real (16/11/2026): a ficha tinha 6 botoes que apareciam/desapareciam
+  // por estado, o que o Felipe relatou como confuso. clinicalSignaturePrimaryActionLabel
+  // reduz os can* a um unico rotulo; a acao de fato acontece na central de assinatura.
+  expect(clinicalSignaturePrimaryActionLabel(state())).toBe('Assinar')
+  expect(clinicalSignaturePrimaryActionLabel(state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'failed' } }))).toBe('Tentar de novo')
+  expect(clinicalSignaturePrimaryActionLabel(state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'pending' } }))).toBe('Acompanhar assinatura')
+  expect(clinicalSignaturePrimaryActionLabel(state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'pending', dispatchState:'unknown' } }))).toBe('Acompanhar assinatura')
+  expect(clinicalSignaturePrimaryActionLabel(state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'signed', evidenceComplete:true } }))).toBe('Ver documento assinado')
+  expect(clinicalSignaturePrimaryActionLabel(state({ attempt:{ id:'a1', documentId:DOCUMENT, status:'failed', hasStoredArtifact:true }, integration:unavailable }))).toBe('Ver arquivo')
+  expect(clinicalSignaturePrimaryActionLabel(state({ integration:unavailable }))).toBe('')
 })
 
 test('a prontidao do signatario cobra a UF, como o servidor cobra', () => {
