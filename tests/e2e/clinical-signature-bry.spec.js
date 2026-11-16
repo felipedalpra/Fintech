@@ -279,7 +279,7 @@ test('pop-up bloqueado avisa sem expor o link, e reabrir a página não cria out
   expect(await page.content()).not.toContain(SIGNING_URL)
 
   // A saída prometida na mensagem existe de verdade: reabrir a página sem criar outro pedido.
-  await page.evaluate(() => { window.__popupBlocked = false })
+  await page.evaluate(() => { window.__popupBlocked = false; window.__openedWindows = [] })
   await row.getByRole('button', { name:'Acompanhar assinatura' }).click()
   await page.locator('.clinical-sign-document-dialog').getByRole('button', { name:'Abrir página de assinatura' }).click()
   await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)

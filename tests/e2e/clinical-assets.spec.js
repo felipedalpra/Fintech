@@ -174,7 +174,7 @@ test('separa fotos de antes e depois e abre a comparação em tela cheia', async
   await expect(page.getByRole('dialog', { name:'Comparação antes e depois' })).toBeHidden()
 })
 
-test('PDF anexado oferece assinatura BRy e abre o fluxo seguro após confirmação', async ({ page, context }) => {
+test('PDF anexado aponta para a assinatura em Clínico → Documentos (16/11/2026: unificado, sem flow próprio aqui)', async ({ page }) => {
   const asset = {
     id:'asset-document', user_id:'e2e-user-id', patient_id:'patient-assets', created_by:'e2e-user-id',
     asset_kind:'document', stage:'neutral', captured_on:'2026-11-10', region:null, procedure_name:null,
@@ -184,7 +184,6 @@ test('PDF anexado oferece assinatura BRy e abre o fluxo seguro após confirmaç�
     consent_acceptance_id:null, status:'available', created_at:'2026-11-10T10:00:00Z',
     completed_at:'2026-11-10T10:00:01Z', failed_at:null, archived_at:null,
   }
-  let requestedIds = []
 
   await page.addInitScript(() => window.localStorage.setItem('surgimetrics_onboarded', 'true'))
   await page.route('**/rest/v1/**', route => route.fulfill(json([])))
@@ -192,25 +191,18 @@ test('PDF anexado oferece assinatura BRy e abre o fluxo seguro após confirmaç�
   await page.route('**/rest/v1/clinical_assets*', route => route.fulfill(json([asset])))
   await page.route('**/rest/v1/clinical_documents*', route => route.fulfill(json([])))
   await page.route('**/rest/v1/clinical_consent_acceptances*', route => route.fulfill(json([])))
-  await page.route('**/rest/v1/rpc/prepare_clinical_asset_signature*', route => route.fulfill(json('30000000-0000-4000-8000-000000000001')))
   await page.route('**/api/secure-profile?action=get', route => route.fulfill(json({ profile:{ doctor:{ fullName:'Dra. E2E', registrationId:'CRM-RS 1' } } })))
-  await page.route('**/api/secure-profile?action=clinical-signature-state', route => route.fulfill(json({ integration:{ available:true }, attempts:[], evidenceAvailable:true })))
-  await page.route('**/api/secure-profile?action=clinical-signature-request', async route => {
-    requestedIds = (await route.request().postDataJSON()).documentIds
-    await route.fulfill(json({ signingUrl:'https://bry.test/assinar', attempts:[] }))
-  })
-  await page.route('https://bry.test/**', route => route.fulfill({ status:200, contentType:'text/html', body:'<title>BRy</title><h1>Assinatura segura</h1>' }))
 
   await page.goto('/app/clinical-records')
   await page.getByRole('button', { name:/Ana Documento/ }).click()
   await page.getByRole('navigation', { name:'Ficha clínica do paciente' }).getByRole('button', { name:'Fotos e documentos', exact:true }).click()
   await page.getByRole('navigation', { name:'Seções de fotos e documentos' }).getByRole('button', { name:/Documentos/ }).click()
   await expect(page.getByText('laudo.pdf')).toBeVisible()
-  await page.getByRole('button', { name:'Assinar com BRy' }).click()
-  await expect(page.getByText(/poderá consumir um crédito/)).toBeVisible()
-  const popupPromise = context.waitForEvent('page')
-  await page.getByRole('button', { name:'Confirmar e assinar' }).click()
-  const popup = await popupPromise
-  expect(popup).toBeTruthy()
-  expect(requestedIds).toEqual(['30000000-0000-4000-8000-000000000001'])
+  // Nao ha mais botao de assinar, confirmar credito nem pop-up aqui: so um
+  // link que leva pra central, que e quem de fato assina.
+  await expect(page.getByText('A assinatura é feita em Clínico → Documentos')).toBeVisible()
+  await page.getByRole('button', { name:'Assinar' }).click()
+  await expect(page).toHaveURL(/\/app\/clinical-documents$/)
+  await expect(page.getByTestId('clinical-documents-center')).toBeVisible()
+  await expect(page.getByRole('dialog', { name:'Assinar documento' })).toBeVisible()
 })

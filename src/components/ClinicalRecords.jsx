@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { C } from '../theme.js'
 import { Btn } from './UI.jsx'
 import { ClinicalAnamnesis } from './ClinicalAnamnesis.jsx'
@@ -61,6 +61,7 @@ const CLINICAL_TABS = [
 
 export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const { ownerId, clinicId, clinicName, isOwner, role, clinicalAccess, professionalName, professionalRegistration, professionalCouncil } = useUserRole()
   const [patients, setPatients] = useState([])
@@ -87,8 +88,11 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [workspaceStatus, setWorkspaceStatus] = useState('loading')
   // A ficha do paciente nao assina mais documento nenhum sozinha: ela so leva
   // para a central de assinatura (Clinico -> Documentos), que ja sabe abrir o
-  // documento certo.
-  const [autoOpenSignatureId, setAutoOpenSignatureId] = useState('')
+  // documento certo. Cada rota do modulo clinico monta um ClinicalRecords
+  // novo (ver FinanceWorkspace.jsx) — estado local nao sobrevive a navegacao
+  // entre "today"/"documents"/etc, por isso o id vem da URL (?sign=...), nao
+  // de um setState chamado antes de navegar.
+  const [autoOpenSignatureId, setAutoOpenSignatureId] = useState(() => new URLSearchParams(location.search).get('sign') || '')
   // Identificação profissional do documento.
   //
   // Era estado disputado por dois efeitos, e isso quebrava a emissão de duas
@@ -112,6 +116,12 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     patients,
     data,
   }), [workspaceSources, patients, data])
+  // Status de assinatura por PDF anexado, pronto do mesmo index que a central
+  // (Clinico -> Documentos) usa. A ficha de Fotos e documentos so le daqui —
+  // ela nao assina mais nada sozinha, so mostra o selo e leva pra central.
+  const assetSignatureByAssetId = useMemo(() => Object.fromEntries(
+    workspaceIndex.documents.filter(item => item.document_type === 'attached_pdf').map(item => [item.assetId, item]),
+  ), [workspaceIndex])
 
   useEffect(() => {
     setModuleView(initialView)
@@ -304,8 +314,11 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   }
 
   function goToSignatureCenter(documentId) {
-    navigateModule('documents')
-    setAutoOpenSignatureId(documentId)
+    // navigateModule('documents') remontaria este componente do zero (rota
+    // diferente -> elemento ClinicalRecords diferente), então um setState
+    // chamado antes da navegação nunca chegaria ao lado de lá. O id viaja na
+    // própria URL para sobreviver à troca de instância.
+    navigate(`/app/${CLINICAL_MODULE_ROUTES.documents}?sign=${encodeURIComponent(documentId)}`)
   }
 
   function openAppointment(item) {
@@ -406,7 +419,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
       </>}
       {moduleView === 'patients' && <ClinicalPatientsView index={workspaceIndex} loading={loading || workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={() => { loadPatients(); loadWorkspaceIndex() }} />}
       {moduleView === 'pending' && <ClinicalPendingView index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
-      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} clinicName={clinicName} viewerId={user?.id} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onAttachDocument={patient => selectPatient(patient, 'files', { assetAction:'upload-document' })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} autoOpenDocumentId={autoOpenSignatureId} onAutoOpenDocumentConsumed={() => setAutoOpenSignatureId('')} />}
+      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} clinicName={clinicName} viewerId={user?.id} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onAttachDocument={patient => selectPatient(patient, 'files', { assetAction:'upload-document' })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} autoOpenDocumentId={autoOpenSignatureId} onAutoOpenDocumentConsumed={() => { setAutoOpenSignatureId(''); if (location.search) navigate(location.pathname, { replace:true }) }} />}
       {moduleView === 'patient' && selected && (
         <div className="clinical-patient-workspace">
           <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} clinicName={clinicName} onOpenTab={setTab} />
@@ -466,7 +479,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     onOpenSignatureCenter={goToSignatureCenter}
                   />
                 )}
-                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} viewerId={user?.id} initialAction={assetDraftAction} onInitialActionConsumed={() => setAssetDraftAction('')} onAssetsChanged={loadWorkspaceIndex} />}
+                {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} viewerId={user?.id} initialAction={assetDraftAction} onInitialActionConsumed={() => setAssetDraftAction('')} onAssetsChanged={loadWorkspaceIndex} assetSignatures={assetSignatureByAssetId} onOpenSignatureCenter={goToSignatureCenter} />}
                 {tab === 'treatment' && <ClinicalTreatmentPlan patient={selected} ownerId={ownerId} data={data} setData={setData} initialProtocolApplication={protocolApplication?.destination === 'treatment' ? protocolApplication : null} onProtocolApplicationConsumed={() => setProtocolApplication(null)} />}
               </div>
             </>
