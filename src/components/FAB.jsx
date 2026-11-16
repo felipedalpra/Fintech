@@ -5,6 +5,7 @@ import { useUserRole } from '../context/UserRoleContext.jsx'
 
 export function FAB({ currentPage }) {
   const { canAccess } = useUserRole()
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   const actions = [
     { label: 'Nova cirurgia',     icon: '◈', page: 'sales',         event: 'new-surgery',       color: C.accent },
     { label: 'Nova consulta',     icon: '◎', page: 'consultations',  event: 'new-consultation',  color: C.cyan },
@@ -38,7 +39,7 @@ export function FAB({ currentPage }) {
   }
 
   return (
-    <div ref={ref} style={{ position: 'fixed', bottom: 28, left: 28, zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
+    <div ref={ref} style={{ position: 'fixed', bottom: isMobile ? 'calc(74px + env(safe-area-inset-bottom))' : 28, left: 28, zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
 
       {/* Action items */}
       {open && actions.map((action, i) => (

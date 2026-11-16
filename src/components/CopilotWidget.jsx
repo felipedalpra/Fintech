@@ -17,6 +17,7 @@ const INITIAL_MESSAGE = {
 }
 
 export function CopilotWidget({ data }) {
+  const isMobile = typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   const brain = useMemo(() => buildFinancialBrain(data), [data])
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -63,7 +64,7 @@ export function CopilotWidget({ data }) {
         style={{
           position:'fixed',
           right:24,
-          bottom:24,
+          bottom:isMobile ? 'calc(74px + env(safe-area-inset-bottom))' : 24,
           width:62,
           height:62,
           borderRadius:20,
@@ -86,7 +87,7 @@ export function CopilotWidget({ data }) {
       </button>
 
       {open && (
-        <div style={{ position:'fixed', right:24, bottom:98, width:'min(420px, calc(100vw - 32px))', height:'min(640px, calc(100vh - 140px))', borderRadius:24, border:`1px solid ${C.borderBright}`, background:C.card, boxShadow:'0 26px 80px rgba(15, 23, 42, 0.45)', zIndex:60, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ position:'fixed', right:24, bottom:isMobile ? 'calc(148px + env(safe-area-inset-bottom))' : 98, width:'min(420px, calc(100vw - 32px))', height:isMobile ? 'min(640px, calc(100vh - 220px))' : 'min(640px, calc(100vh - 140px))', borderRadius:24, border:`1px solid ${C.borderBright}`, background:C.card, boxShadow:'0 26px 80px rgba(15, 23, 42, 0.45)', zIndex:60, display:'flex', flexDirection:'column', overflow:'hidden' }}>
           <div style={{ padding:'18px 18px 16px', borderBottom:`1px solid ${C.border}`, background:`radial-gradient(circle at top right, ${C.cyan}22, transparent 40%), linear-gradient(180deg, ${C.surface}, ${C.card})` }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:14 }}>
               <div>
