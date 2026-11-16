@@ -117,7 +117,7 @@ test('deriva status e prontidão sem declarar assinatura inexistente', () => {
   expect(clinicalSignerReadiness({ doctor:{ fullName:'Dra. Vitória', registrationId:'CRM-RS 123', cpf:'529.982.247-25' } }).ready).toBe(true)
   expect(clinicalSignerReadiness({ doctor:{ fullName:'Dra. Vitória' } }).missing).toEqual(['CRM', 'CPF válido'])
   expect(clinicalSignaturePresentation(null).label).toBe('Assinatura digital não configurada')
-  expect(clinicalSignaturePresentation({ status:'signed' }).label).toBe('Evidência digital inconsistente')
+  expect(clinicalSignaturePresentation({ status:'signed' }).label).toBe('Precisa de revisão antes de usar')
 
   const signed = {
     document_id:'document-1',
@@ -139,7 +139,7 @@ test('deriva status e prontidão sem declarar assinatura inexistente', () => {
     { document_id:'document-1', status:'failed', created_at:'2026-10-21T12:00:00Z' },
   ])
   expect(latest['document-1'].status).toBe('signed')
-  expect(clinicalSignaturePresentation(latest['document-1']).label).toBe('Assinado digitalmente')
+  expect(clinicalSignaturePresentation(latest['document-1']).label).toBe('Assinado')
 })
 
 test('PDF anexado preparado pelo backend é elegível para o mesmo fluxo BRy', () => {

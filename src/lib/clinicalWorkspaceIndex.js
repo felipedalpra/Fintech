@@ -42,12 +42,12 @@ const operationalAppointments = data => [
 
 function documentSignatureState(document, latestSignatureByDocument) {
   const signature = latestSignatureByDocument.get(document.id)
-  if (!signature) return { status:'manual', label:'Via manual' }
+  if (!signature) return { status:'manual', label:'Ainda não assinado' }
   const attemptId = signature.id || ''
-  if (signature.status === 'signed') return { status:'signed', label:'Assinado digitalmente', attemptId }
-  if (signature.status === 'failed') return { status:'failed', label:'Falha na assinatura', attemptId }
+  if (signature.status === 'signed') return { status:'signed', label:'Assinado', attemptId }
+  if (signature.status === 'failed') return { status:'failed', label:'A assinatura não deu certo', attemptId }
   if (signature.status === 'cancelled') return { status:'cancelled', label:'Assinatura cancelada', attemptId }
-  return { status:'pending', label:'Assinatura pendente', attemptId }
+  return { status:'pending', label:'Assinatura em andamento', attemptId }
 }
 
 export function buildClinicalTimeline(bundle, patientId) {
@@ -136,7 +136,7 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
     if (!document) continue
     pendingItems.push({
       id:`signature:${signature.id}`, patientId:document.patient_id, kind:'signature', tone:signature.status === 'failed' ? 'danger' : 'warn',
-      title:signature.status === 'failed' ? 'Falha na assinatura digital' : 'Assinatura digital pendente',
+      title:signature.status === 'failed' ? 'A assinatura não deu certo' : 'Assinatura em andamento',
       detail:document.document_type === 'simple_prescription' ? 'Receita simples' : 'Pedido de exames', dueAt:signature.updated_at || signature.created_at,
     })
   }
@@ -240,7 +240,7 @@ export function buildClinicalWorkspaceIndex(bundle, referenceDate = new Date()) 
         procedure_name:asset.procedure_name || '',
         signature:signatureDocument
           ? documentSignatureState(signatureDocument, latestSignatureByDocument)
-          : { status:'manual', label:'Não assinado' },
+          : { status:'manual', label:'Ainda não assinado' },
         destinationTab:'files',
       }
     })

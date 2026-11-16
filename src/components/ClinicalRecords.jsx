@@ -85,6 +85,10 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
   const [secureProfileStatus, setSecureProfileStatus] = useState('loading')
   const [workspaceSources, setWorkspaceSources] = useState(emptyClinicalWorkspaceSources)
   const [workspaceStatus, setWorkspaceStatus] = useState('loading')
+  // A ficha do paciente nao assina mais documento nenhum sozinha: ela so leva
+  // para a central de assinatura (Clinico -> Documentos), que ja sabe abrir o
+  // documento certo.
+  const [autoOpenSignatureId, setAutoOpenSignatureId] = useState('')
   // Identificação profissional do documento.
   //
   // Era estado disputado por dois efeitos, e isso quebrava a emissão de duas
@@ -299,6 +303,11 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
     selectPatient(patient, destination === 'treatment' ? 'treatment' : 'prescriptions', { protocolApplication:application })
   }
 
+  function goToSignatureCenter(documentId) {
+    navigateModule('documents')
+    setAutoOpenSignatureId(documentId)
+  }
+
   function openAppointment(item) {
     const patient = resolveSchedulePatient(item, patients)
     if (!patient) {
@@ -397,7 +406,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
       </>}
       {moduleView === 'patients' && <ClinicalPatientsView index={workspaceIndex} loading={loading || workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={() => { loadPatients(); loadWorkspaceIndex() }} />}
       {moduleView === 'pending' && <ClinicalPendingView index={workspaceIndex} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
-      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} clinicName={clinicName} viewerId={user?.id} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onAttachDocument={patient => selectPatient(patient, 'files', { assetAction:'upload-document' })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} />}
+      {moduleView === 'documents' && <ClinicalDocumentsCenter index={workspaceIndex} patients={patients} clinicName={clinicName} viewerId={user?.id} loading={workspaceStatus === 'loading'} unavailableSources={workspaceSources.unavailableSources} canPrescribe={canIssueClinicalPrescription(role, { clinicalAccess })} onCreateDocument={(patient, documentType) => selectPatient(patient, 'prescriptions', { documentType })} onAttachDocument={patient => selectPatient(patient, 'files', { assetAction:'upload-document' })} onOpenPatient={selectPatient} onRefresh={loadWorkspaceIndex} autoOpenDocumentId={autoOpenSignatureId} onAutoOpenDocumentConsumed={() => setAutoOpenSignatureId('')} />}
       {moduleView === 'patient' && selected && (
         <div className="clinical-patient-workspace">
           <PatientHeader patient={selected} profile={clinicalProfile} profileStatus={profileStatus} appointments={selectedAppointments} clinicName={clinicName} onOpenTab={setTab} />
@@ -454,6 +463,7 @@ export function ClinicalRecords({ data, setData, initialView = 'today' }) {
                     initialProtocolApplication={protocolApplication?.destination === 'exams' || protocolApplication?.destination === 'prescription' ? protocolApplication : null}
                     onProtocolApplicationConsumed={() => setProtocolApplication(null)}
                     onDocumentCreated={loadWorkspaceIndex}
+                    onOpenSignatureCenter={goToSignatureCenter}
                   />
                 )}
                 {tab === 'files' && <ClinicalAssets patient={selected} ownerId={ownerId} viewerId={user?.id} initialAction={assetDraftAction} onInitialActionConsumed={() => setAssetDraftAction('')} onAssetsChanged={loadWorkspaceIndex} />}

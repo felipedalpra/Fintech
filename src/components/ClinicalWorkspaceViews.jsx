@@ -3,12 +3,40 @@ import { Btn } from './UI.jsx'
 import { uid } from '../utils.js'
 import { supabase } from '../lib/supabase.js'
 import {
+  abandonClinicalSignature,
   fetchClinicalSignatureLink,
   fetchClinicalSignatureQueue,
   openClinicalSignatureArtifact,
+  reconcileClinicalSignature,
   requestClinicalSignature,
 } from '../lib/clinicalSignatureBryClient.js'
 import { clinicalPendingLabel, clinicalTimelineLabel } from '../lib/clinicalWorkspaceIndex.js'
+import { clinicalSignatureEvidenceGapNote } from '../lib/clinicalSignature.js'
+
+// Traduz a resposta de uma acao de assinatura (request/reconcile) numa frase
+// so, sem termo tecnico: por que falhou, ou o que falta pra confirmar.
+function signatureOutcomeNotice(attempt) {
+  if (!attempt) return ''
+  if (attempt.evidenceGapCode) return clinicalSignatureEvidenceGapNote(attempt.evidenceGapCode)
+  if (['failed', 'cancelled'].includes(attempt.status)) return attempt.failureMessage || ''
+  return ''
+}
+
+const SIGNATURE_STATUS_LABEL = {
+  manual:'Ainda não assinado', pending:'Assinatura em andamento', signed:'Assinado',
+  failed:'A assinatura não deu certo', cancelled:'Assinatura cancelada',
+}
+
+// Atualiza so a bolha de assinatura dentro do dialogo aberto, sem esperar o
+// proximo carregamento completo do index (que pode nao refletir ainda a
+// resposta que acabamos de receber do servidor).
+function withUpdatedSignature(document, attempt) {
+  if (!document || !attempt) return document
+  return {
+    ...document,
+    signature:{ status:attempt.status, label:SIGNATURE_STATUS_LABEL[attempt.status] || document.signature.label, attemptId:attempt.id || document.signature.attemptId },
+  }
+}
 import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
 import { ClinicalIcon } from './ClinicalIcons.jsx'
 
@@ -74,11 +102,11 @@ function ClinicalDocumentJourney({ signatureStatus = 'manual' }) {
     <div className="clinical-document-journey" aria-label="Etapas do documento">
       <div className="is-complete"><b>1</b><span><strong>Anexar ou emitir</strong><small>Arquivo no prontuário</small></span></div>
       <i aria-hidden="true" />
-      <div className={signed ? 'is-complete' : failed ? 'is-error' : signing ? 'is-current' : ''}><b>2</b><span><strong>Assinar</strong><small>{signed ? 'Confirmado pela BRy' : failed ? 'Exige atenção' : signing ? 'Em andamento' : 'Quando necessário'}</small></span></div>
+      <div className={signed ? 'is-complete' : failed ? 'is-error' : signing ? 'is-current' : ''}><b>2</b><span><strong>Assinar</strong><small>{signed ? 'Assinado' : failed ? 'Exige atenção' : signing ? 'Em andamento' : 'Quando necessário'}</small></span></div>
       <i aria-hidden="true" />
       <div className={signed ? 'is-current' : ''}><b>3</b><span><strong>Compartilhar</strong><small>WhatsApp ou e-mail, manual e seguro</small></span></div>
       <i aria-hidden="true" />
-      <div><b>4</b><span><strong>Acompanhar</strong><small>Sem simular leitura</small></span></div>
+      <div><b>4</b><span><strong>Acompanhar</strong><small>Sem confirmação automática de leitura</small></span></div>
     </div>
   )
 }
@@ -362,9 +390,9 @@ function ClinicalSignatureQueue() {
       if (response.signingUrl) {
         const popup = window.open(response.signingUrl, '_blank', 'noopener,noreferrer')
         if (popup) popup.opener = null
-        else setNotice('O navegador bloqueou a janela da BRy. Libere pop-ups e use "Atualizar status" na ficha do paciente.')
+        else setNotice('O navegador bloqueou a página de assinatura. Libere pop-ups e abra o documento de novo para continuar.')
       } else {
-        setNotice('A solicitação foi registrada, mas a BRy não devolveu a página de assinatura.')
+        setNotice('O pedido foi registrado, mas não recebemos a página de assinatura.')
       }
     } catch (nextError) {
       setError(nextError.message || 'Não foi possível solicitar a assinatura.')
@@ -381,10 +409,10 @@ function ClinicalSignatureQueue() {
     <section className="clinical-sign-queue" data-testid="clinical-sign-queue">
       <header>
         <div>
-          <strong>Assinar em lote</strong>
+          <strong>Assinar vários de uma vez</strong>
           <span>
-            A BRy cobra por envelope, e cada envelope leva até {max} documentos.
-            Assinar vários de uma vez custa o mesmo que assinar um.
+            Você pode juntar até {max} documentos num pedido só de assinatura.
+            Isso custa bem menos do que assinar um por um.
           </span>
         </div>
         <b data-testid="clinical-sign-queue-count">{selected.length} de {max} selecionados</b>
@@ -421,9 +449,9 @@ function ClinicalSignatureQueue() {
       {confirming ? (
         <div className="clinical-signature-confirm" role="group" aria-label="Confirmar assinatura em lote">
           <span>
-            Isto cria <strong>um envelope</strong> na BRy com {selected.length} documento(s) e
-            consome crédito, mesmo que você não conclua a assinatura. A página segura da BRy
-            abrirá em outra aba. Confirmar?
+            Isso junta {selected.length} documento(s) num pedido só de assinatura. Tem um custo,
+            mesmo que a assinatura não seja concluída. Uma página externa vai abrir em outra aba.
+            Confirmar?
           </span>
           <div>
             <Btn variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>Cancelar</Btn>
@@ -436,7 +464,7 @@ function ClinicalSignatureQueue() {
             Selecionar {Math.min(max, state.documents.length)}
           </Btn>
           <Btn disabled={busy || selected.length === 0} onClick={() => setConfirming(true)}>
-            Assinar {selected.length > 0 ? `${selected.length} ` : ''}com BRy
+            Assinar {selected.length > 0 ? `${selected.length} documento(s)` : 'documentos'}
           </Btn>
         </footer>
       )}
@@ -444,7 +472,7 @@ function ClinicalSignatureQueue() {
   )
 }
 
-export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '', viewerId = '', loading, unavailableSources, canPrescribe = false, onCreateDocument, onAttachDocument, onOpenPatient, onRefresh }) {
+export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '', viewerId = '', loading, unavailableSources, canPrescribe = false, onCreateDocument, onAttachDocument, onOpenPatient, onRefresh, autoOpenDocumentId = '', onAutoOpenDocumentConsumed }) {
   const incomplete = Boolean(unavailableSources?.length)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
@@ -454,6 +482,15 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
   const [signatureBusy, setSignatureBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const createButtonRef = useRef(null)
+
+  // A ficha do paciente nao assina mais nada sozinha: ela so pede pra abrir
+  // este documento aqui, direto na mesma janela que o resto da clinica usa.
+  useEffect(() => {
+    if (!autoOpenDocumentId || loading) return
+    const match = index.documents.find(item => item.id === autoOpenDocumentId)
+    if (match) setSigningDocument(match)
+    onAutoOpenDocumentConsumed?.()
+  }, [autoOpenDocumentId, loading])
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = index.documents.filter(document => {
     if (filter === 'attention' && !['failed', 'cancelled'].includes(document.signature.status)) return false
@@ -476,19 +513,19 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
       let documentId = signingDocument.sourceDocumentId || (signingDocument.document_type === 'attached_pdf' ? '' : signingDocument.id)
       if (!documentId && signingDocument.assetId) {
         const { data:preparedId, error:prepareError } = await supabase.rpc('prepare_clinical_asset_signature', { p_asset_id:signingDocument.assetId })
-        if (prepareError || !preparedId) throw prepareError || new Error('Não foi possível preparar o PDF para assinatura.')
+        if (prepareError || !preparedId) throw prepareError || new Error('Não foi possível preparar este arquivo para assinatura.')
         documentId = preparedId
       }
-      if (!documentId) throw new Error('Este documento ainda não possui um registro assinável.')
+      if (!documentId) throw new Error('Este documento ainda não tem um registro pronto para assinatura.')
       const response = await requestClinicalSignature([documentId], uid())
       setSigningDocument(null)
       await onRefresh?.()
       if (response.signingUrl) {
         const popup = window.open(response.signingUrl, '_blank', 'noopener,noreferrer')
         if (popup) popup.opener = null
-        else setNotice('A solicitação foi criada, mas o navegador bloqueou a página da BRy. Use “Acompanhar assinatura” para continuar.')
+        else setNotice('O pedido foi criado, mas o navegador bloqueou a página de assinatura. Libere pop-ups e use "Acompanhar assinatura" para continuar.')
       } else {
-        setNotice('A solicitação foi criada. Use “Acompanhar assinatura” para abrir a página segura ou atualizar o estado.')
+        setNotice('O pedido foi criado. Use "Acompanhar assinatura" para abrir a página de assinatura ou atualizar o estado.')
       }
     } catch (error) {
       setNotice(error.message || 'Não foi possível iniciar a assinatura deste documento.')
@@ -506,12 +543,44 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
         ? await openClinicalSignatureArtifact(document.signature.attemptId, 'signed')
         : await fetchClinicalSignatureLink(document.signature.attemptId)
       const url = document.signature.status === 'signed' ? response.url : response.signingUrl
-      if (!url) throw new Error(document.signature.status === 'signed' ? 'O PDF assinado ainda não está disponível.' : 'A BRy não devolveu a página da assinatura.')
+      if (!url) throw new Error(document.signature.status === 'signed' ? 'O documento assinado ainda não está disponível.' : 'Não conseguimos abrir a página de assinatura agora. Tente "Atualizar status".')
       const popup = window.open(url, '_blank', 'noopener,noreferrer')
       if (popup) popup.opener = null
       else throw new Error('O navegador bloqueou a nova aba. Libere pop-ups e tente novamente.')
     } catch (error) {
       setNotice(error.message || 'Não foi possível abrir a assinatura deste documento.')
+    } finally {
+      setSignatureBusy(false)
+    }
+  }
+
+  async function reconcileDocumentSignature() {
+    if (!signingDocument?.signature?.attemptId || signatureBusy) return
+    setSignatureBusy(true)
+    setNotice('')
+    try {
+      const { attempt } = await reconcileClinicalSignature(signingDocument.signature.attemptId)
+      setNotice(signatureOutcomeNotice(attempt))
+      setSigningDocument(current => withUpdatedSignature(current, attempt))
+      await onRefresh?.()
+    } catch (error) {
+      setNotice(error.message || 'Não foi possível atualizar o status desta assinatura.')
+    } finally {
+      setSignatureBusy(false)
+    }
+  }
+
+  async function abandonDocumentSignature() {
+    if (!signingDocument?.signature?.attemptId || signatureBusy) return
+    setSignatureBusy(true)
+    setNotice('')
+    try {
+      await abandonClinicalSignature(signingDocument.signature.attemptId)
+      setSigningDocument(null)
+      await onRefresh?.()
+      setNotice('Essa tentativa foi encerrada. Você já pode pedir para assinar de novo.')
+    } catch (error) {
+      setNotice(error.message || 'Não foi possível encerrar esta tentativa.')
     } finally {
       setSignatureBusy(false)
     }
@@ -549,15 +618,21 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             const canStartSignature = Boolean(viewerId && document.created_by === viewerId)
             const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Revisar falha' : 'Assinar'
             const handleSignature = () => {
-              if (['pending', 'signed'].includes(document.signature.status) && document.signature.attemptId) {
+              if (document.signature.status === 'signed' && document.signature.attemptId) {
                 openDocumentSignature(document)
+                return
+              }
+              if (document.signature.status === 'pending' && document.signature.attemptId) {
+                // Fica tudo numa janela so: abrir a pagina, atualizar o status
+                // ou encerrar a tentativa, sem espalhar botao por lugares diferentes.
+                setSigningDocument(document)
                 return
               }
               if (canStartSignature && ['manual', 'failed', 'cancelled'].includes(document.signature.status)) {
                 setSigningDocument(document)
                 return
               }
-              setNotice('Somente o profissional que anexou ou emitiu este documento pode iniciar uma nova assinatura.')
+              setNotice('Somente quem anexou ou emitiu este documento pode cuidar da assinatura.')
             }
             return (
             <article key={document.id}>
@@ -594,13 +669,46 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
         />
       )}
       {attaching && <ClinicalDocumentAttachDialog patients={patients} onCancel={() => setAttaching(false)} onContinue={patient => { setAttaching(false); onAttachDocument?.(patient) }} />}
-      {signingDocument && <div className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-sign-document-title">
-        <div className="clinical-sign-document-dialog">
-          <header><div><span>Assinatura eletrônica</span><h3 id="clinical-sign-document-title">Assinar com BRy</h3><p>A página segura da BRy será aberta para o certificado do profissional.</p></div><button type="button" onClick={() => setSigningDocument(null)} aria-label="Fechar">×</button></header>
-          <div className="clinical-sign-document-dialog__body"><ClinicalDocumentJourney signatureStatus={signingDocument.signature.status} /><div><span>Documento</span><strong>{signingDocument.file_name || documentTypeLabel(signingDocument.document_type)}</strong><small>{signingDocument.patientName} · {dateLabel(signingDocument.issue_date)}</small></div><p>A criação do envelope pode consumir crédito. O status só muda para assinado depois da confirmação real do provedor.</p></div>
-          <footer><Btn variant="ghost" disabled={signatureBusy} onClick={() => setSigningDocument(null)}>Cancelar</Btn><Btn disabled={signatureBusy} onClick={startDocumentSignature}>{signatureBusy ? 'Abrindo BRy…' : 'Confirmar e assinar'}</Btn></footer>
+      {signingDocument && (() => {
+        const pending = signingDocument.signature.status === 'pending'
+        const signed = signingDocument.signature.status === 'signed'
+        return (
+        <div className="clinical-document-create-modal" role="dialog" aria-modal="true" aria-labelledby="clinical-sign-document-title">
+          <div className="clinical-sign-document-dialog">
+            <header>
+              <div>
+                <span>Assinatura digital</span>
+                <h3 id="clinical-sign-document-title">{pending ? 'Acompanhar assinatura' : signed ? 'Documento assinado' : 'Assinar documento'}</h3>
+                <p>{signed ? 'O documento já foi assinado.' : 'Uma página externa segura vai abrir para você assinar com o seu certificado digital.'}</p>
+              </div>
+              <button type="button" onClick={() => setSigningDocument(null)} aria-label="Fechar">×</button>
+            </header>
+            <div className="clinical-sign-document-dialog__body">
+              <ClinicalDocumentJourney signatureStatus={signingDocument.signature.status} />
+              <div><span>Documento</span><strong>{signingDocument.file_name || documentTypeLabel(signingDocument.document_type)}</strong><small>{signingDocument.patientName} · {dateLabel(signingDocument.issue_date)}</small></div>
+              {!signed && <p>{pending ? 'Se você já concluiu na página que abriu, atualize o status aqui.' : 'Isso tem um custo, mesmo que a assinatura não seja concluída. O status só muda para "assinado" depois da confirmação real.'}</p>}
+              {notice && <div className="clinical-document-access-note" role="status">{notice}</div>}
+            </div>
+            <footer>
+              {pending ? (
+                <>
+                  <Btn variant="ghost" disabled={signatureBusy} onClick={abandonDocumentSignature}>Encerrar tentativa</Btn>
+                  <Btn variant="ghost" disabled={signatureBusy} onClick={reconcileDocumentSignature}>{signatureBusy ? 'Atualizando…' : 'Atualizar status'}</Btn>
+                  <Btn disabled={signatureBusy} onClick={() => openDocumentSignature(signingDocument)}>{signatureBusy ? 'Abrindo…' : 'Abrir página de assinatura'}</Btn>
+                </>
+              ) : signed ? (
+                <Btn disabled={signatureBusy} onClick={() => openDocumentSignature(signingDocument)}>{signatureBusy ? 'Abrindo…' : 'Ver documento assinado'}</Btn>
+              ) : (
+                <>
+                  <Btn variant="ghost" disabled={signatureBusy} onClick={() => setSigningDocument(null)}>Cancelar</Btn>
+                  <Btn disabled={signatureBusy} onClick={startDocumentSignature}>{signatureBusy ? 'Abrindo…' : 'Confirmar e assinar'}</Btn>
+                </>
+              )}
+            </footer>
+          </div>
         </div>
-      </div>}
+        )
+      })()}
     </section>
   )
 }
