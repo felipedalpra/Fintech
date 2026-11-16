@@ -198,6 +198,8 @@ export function Settings({ google, data }) {
                 cursor:'pointer',
                 fontFamily:'inherit',
                 marginBottom:-1,
+                flexShrink:0,
+                whiteSpace:'nowrap',
               }}
             >{t.label}</button>
           ))}
