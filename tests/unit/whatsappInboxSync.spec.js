@@ -19,8 +19,9 @@ test('remoção em tempo real afeta somente a linha informada', () => {
   expect(removeWhatsAppMessageRow([{ id:'one' }, { id:'two' }], 'one')).toEqual([{ id:'two' }])
 })
 
-test('revalidação completa usa intervalo lento', () => {
-  expect(WHATSAPP_REALTIME_FALLBACK_POLL_MS).toBeGreaterThanOrEqual(60_000)
+test('revalidação completa cobre uma queda do realtime em até 30 segundos', () => {
+  expect(WHATSAPP_REALTIME_FALLBACK_POLL_MS).toBeLessThanOrEqual(30_000)
+  expect(WHATSAPP_REALTIME_FALLBACK_POLL_MS).toBeGreaterThanOrEqual(15_000)
 })
 
 test('lotes de ids têm tamanho limitado e removem duplicatas', () => {

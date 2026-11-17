@@ -328,6 +328,62 @@ async function persistInboundMedia(supabase, number, parsed) {
   return { mediaUrl: `${INBOUND_MEDIA_PREFIX}${path}`, mediaMime: mimetype }
 }
 
+// Processa mídias fora do webhook. O provider recebe o ACK assim que a mensagem
+// textual/metadada estiver persistida; o payload bruto continua disponível para
+// recuperar a mídia sem depender de uma nova entrega da Evolution.
+export async function processWhatsAppMediaQueue({ limit = 20 } = {}) {
+  const supabase = adminSupabase()
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50)
+  const result = await supabase.from('whatsapp_webhook_events')
+    .select('id, whatsapp_number_id, payload, attempts')
+    .eq('processing_status', 'media_pending')
+    .order('received_at', { ascending: true })
+    .limit(safeLimit)
+  if (result.error) throw result.error
+
+  const summary = { claimed:0, processed:0, failed:0, skipped:0 }
+  for (const event of result.data || []) {
+    const claimed = await supabase.from('whatsapp_webhook_events').update({
+      processing_status:'media_processing', error_message:null, processed_at:null,
+    }).eq('id', event.id).eq('processing_status', 'media_pending').select('id').maybeSingle()
+    if (claimed.error || !claimed.data) continue
+    summary.claimed += 1
+
+    try {
+      const { data:number } = await getWhatsAppNumber(supabase, event.whatsapp_number_id)
+      if (!number) throw new Error('Número do evento de mídia não encontrado.')
+      const parsed = parseProviderIncomingMessage(number.provider, event.payload || {})
+      if (!parsed || parsed.msgType === 'text' || !parsed.providerMessageId) {
+        await finishWebhookEvent(supabase, event.id, 'processed', 'Mídia não encontrada no payload; mensagem preservada.')
+        summary.skipped += 1
+        continue
+      }
+      const persistedMedia = await persistInboundMedia(supabase, number, parsed)
+      const messageUpdate = await supabase.from('whatsapp_messages').update({
+        media_url: persistedMedia?.mediaUrl || null,
+        media_mime: persistedMedia?.mediaMime || parsed.mediaMime || null,
+      }).eq('user_id', number.user_id)
+        .eq('whatsapp_number_id', number.id)
+        .eq('provider', number.provider)
+        .eq('provider_message_id', parsed.providerMessageId)
+        .select('id').maybeSingle()
+      if (messageUpdate.error) throw messageUpdate.error
+      if (!messageUpdate.data) throw new Error('Mensagem de mídia ainda não foi persistida.')
+      await finishWebhookEvent(supabase, event.id, 'processed')
+      summary.processed += 1
+    } catch (error) {
+      if (error?.code === 'WHATSAPP_MEDIA_TOO_LARGE') {
+        await finishWebhookEvent(supabase, event.id, 'processed', error.message)
+        summary.skipped += 1
+      } else {
+        await finishWebhookEvent(supabase, event.id, 'failed', error.message)
+        summary.failed += 1
+      }
+    }
+  }
+  return summary
+}
+
 async function ensureWhatsAppContact(supabase, {
   ownerId, whatsappNumberId, identityKey, phone = null, chatLid = null,
   name = null, photo = null, patientId = null,
@@ -441,6 +497,7 @@ export default async function handler(req, res) {
   if (action === 'set-number-archived') return handleSetNumberArchived(req, res)
   if (action === 'list-numbers') return handleListNumbers(req, res)
   if (action === 'replay-webhook') return handleReplayWebhook(req, res)
+  if (action === 'process-media-queue') return handleProcessMediaQueue(req, res)
   if (action === 'media-url') return handleMediaUrl(req, res)
   if (action === 'sync-chat-identities') return handleSyncChatIdentities(req, res)
   if (action === 'dispatch') return handleDispatch(req, res)
@@ -1285,6 +1342,23 @@ async function handleMetaWebhook(req, res) {
   return res.status(200).json({ ok: true })
 }
 
+async function handleProcessMediaQueue(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error:'Method not allowed' })
+  const secret = process.env.CRON_SECRET || process.env.VERCEL_CRON_SECRET
+  const headerSecret = req.headers['x-cron-secret'] || req.headers['X-Cron-Secret'] || ''
+  const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7) : ''
+  if (!secret || (headerSecret !== secret && bearer !== secret)) {
+    return res.status(401).json({ error:'Invalid cron secret' })
+  }
+  try {
+    const summary = await processWhatsAppMediaQueue({ limit:req.query?.limit })
+    return res.status(200).json({ ok:true, ...summary })
+  } catch (error) {
+    console.error('whatsapp media queue error:', error?.message)
+    return res.status(500).json({ error:'WhatsApp media queue failed' })
+  }
+}
+
 // ---- Disparo das automações de saída (gatilho manual/QA; o cron diário chama o motor direto) ----
 // Autorizado por CRON_SECRET (header x-cron-secret ou Authorization: Bearer). O cron de alertas
 // (api/alerts/process.js) roda o mesmo motor automaticamente às 08:00 BRT.
@@ -1723,23 +1797,11 @@ async function handleWebhook(req, res) {
     return res.status(200).json({ ok: true })
   }
 
-  // URLs dos providers são temporárias (a Z-API documenta expiração em 30 dias)
-  // ou criptografadas. A mídia é copiada para o Storage privado antes do ACK.
-  let mediaHydrationError = null
-  if (parsed.msgType !== 'text') {
-    try {
-      const persistedMedia = await persistInboundMedia(supabase, num, parsed)
-      if (persistedMedia) {
-        parsed.mediaUrl = persistedMedia.mediaUrl
-        parsed.mediaMime = persistedMedia.mediaMime
-      }
-    } catch (error) {
-      mediaHydrationError = error
-      // Nunca exponha ao navegador a URL temporária/pública do provider.
-      parsed.mediaUrl = null
-      console.error('whatsapp media persistence error:', error.message)
-    }
-  }
+  // URLs dos providers são temporárias ou criptografadas. A mensagem é salva
+  // primeiro e a cópia para o Storage privado fica na fila durável; assim um
+  // download lento não impede a Evolution de confirmar o recebimento.
+  const mediaPending = parsed.msgType !== 'text'
+  if (mediaPending) parsed.mediaUrl = null
 
   const ownerUserId = num.user_id
 
@@ -1833,45 +1895,25 @@ async function handleWebhook(req, res) {
     return res.status(500).json({ error: 'Message persistence failed' })
   }
   if (error?.code === '23505') {
-    if (!mediaHydrationError && parsed.mediaUrl && parsed.providerMessageId) {
-      const { error: mediaUpdateError } = await supabase.from('whatsapp_messages').update({
-        media_url: parsed.mediaUrl,
-        media_mime: parsed.mediaMime || null,
-      })
-        .eq('user_id', ownerUserId)
-        .eq('whatsapp_number_id', num.id)
-        .eq('provider', provider)
-        .eq('provider_message_id', parsed.providerMessageId)
-      if (mediaUpdateError) {
-        await finishWebhookEvent(supabase, audit.id, 'failed', mediaUpdateError.message)
-        return res.status(500).json({ error: 'Stored media could not be linked to the message' })
-      }
-    }
-    if (mediaHydrationError?.code === 'WHATSAPP_MEDIA_TOO_LARGE') {
-      await finishWebhookEvent(supabase, audit.id, 'processed', mediaHydrationError.message)
-      return res.status(200).json({ ok:true, duplicate:true, mediaUnavailable:true })
-    }
-    if (mediaHydrationError) {
-      await finishWebhookEvent(supabase, audit.id, 'failed', mediaHydrationError.message)
-      return res.status(500).json({ error: 'Media persistence failed' })
-    }
     await finishWebhookEvent(supabase, audit.id, 'ignored')
     return res.status(200).json({ ok: true, duplicate: true })
   }
 
-  if (mediaHydrationError?.code === 'WHATSAPP_MEDIA_TOO_LARGE') {
-    await finishWebhookEvent(supabase, audit.id, 'processed', mediaHydrationError.message)
-    return res.status(200).json({ ok:true, mediaUnavailable:true })
-  }
-  if (mediaHydrationError) {
-    await finishWebhookEvent(supabase, audit.id, 'failed', mediaHydrationError.message)
-    return res.status(500).json({ error: 'Message saved, but media persistence failed' })
+  if (mediaPending) {
+    await finishWebhookEvent(supabase, audit.id, 'media_pending')
+    return res.status(200).json({ ok:true, mediaQueued:true })
   }
 
   // IA sugere avanço de estágio (sugere e confirma). Nunca derruba o recebimento.
   if (!parsed.isGroup && (patientId || contactId) && parsed.direction === 'inbound') {
     try {
-      await maybeSuggestStage(supabase, ownerUserId, { patientId, contactId }, parsed)
+      // A sugestão de estágio é opcional. O recebimento da mensagem não pode
+      // ficar aguardando banco/IA por vários segundos, especialmente quando a
+      // Evolution está entregando uma sequência de eventos.
+      await Promise.race([
+        maybeSuggestStage(supabase, ownerUserId, { patientId, contactId }, parsed),
+        new Promise(resolve => setTimeout(resolve, 1200)),
+      ])
     } catch (e) {
       console.error('stage suggestion error:', e?.message)
     }
