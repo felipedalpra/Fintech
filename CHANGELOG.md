@@ -8,6 +8,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
 - **Mídia recebida não bloqueia mais o webhook**: a mensagem é persistida imediatamente e o download para o Storage privado passa por fila durável, com retry e cron dedicado. (`api/whatsapp.js`, `api/whatsapp-media-queue.js`, `supabase/whatsapp_media_queue_schema.sql`, `vercel.json`.)
+- **Deploy compatível com o plano Hobby da Vercel**: o cron de um minuto foi retirado da configuração, pois esse plano aceita somente agendamentos diários; o endpoint protegido da fila continua disponível para scheduler externo ou ativação do cron ao migrar para Pro. (`vercel.json`.)
 - **Recebimento do WhatsApp mais resiliente**: reações, figurinhas, contatos compartilhados e álbuns agora aparecem como mensagens de texto informativas, inclusive em grupos; a sugestão opcional de estágio deixou de bloquear o webhook por vários segundos; o painel avisa números ativos desconectados, sinaliza queda do realtime e revalida a caixa de entrada em até 30 segundos. (`api/_lib/whatsapp.js`, `api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/lib/whatsappInboxSync.js`.)
 
 ### Added
