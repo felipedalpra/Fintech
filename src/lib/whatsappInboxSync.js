@@ -1,5 +1,5 @@
 export const WHATSAPP_REALTIME_BATCH_MS = 300
-export const WHATSAPP_REALTIME_FALLBACK_POLL_MS = 90_000
+export const WHATSAPP_REALTIME_FALLBACK_POLL_MS = 30_000
 export const WHATSAPP_REALTIME_ID_BATCH_SIZE = 80
 
 const byNewestFirst = (left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)

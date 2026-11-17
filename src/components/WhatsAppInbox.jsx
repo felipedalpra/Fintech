@@ -144,6 +144,7 @@ export function WhatsAppInbox() {
   const isAdmin = isOwner || role === 'admin'
   const [messages, setMessages] = useState([]), [numbers, setNumbers] = useState([]), [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState(null)
+  const [realtimeState, setRealtimeState] = useState('connecting')
   const [selectedPhone, setSelectedPhone] = useState(null), [search, setSearch] = useState('')
   const [mobileListOpen, setMobileListOpen] = useState(false)
   const [filterNumber, setFilterNumber] = useState('all'), [filterResponsible, setFilterResponsible] = useState('all')
@@ -178,36 +179,41 @@ export function WhatsAppInbox() {
     const messageWindowRequest = ++messageWindowRequestRef.current
     const versionAtLoadStart = messageChangeCounterRef.current
     silent ? setRefreshing(true) : setLoading(true)
-    const [numRes, memRes, stateRes, replyRes] = await Promise.all([
-      supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id, active, provider, connection_state, archived_at').order('created_at', { ascending:true }),
-      supabase.rpc('clinic_team'),
-      loadConversationStates(ownerId),
-      loadSavedReplies(ownerId),
-    ])
-    const availableNumbers = numRes.data ?? []
-    const messageWindow = await selectMessageWindow(availableNumbers)
-    if (!whatsappLoadIsCurrent(
-      { ownerId:loadOwnerId, scopeGeneration, requestId:fullLoadRequest },
-      { ownerId:activeOwnerIdRef.current, scopeGeneration:scopeGenerationRef.current, requestId:fullLoadRequestRef.current },
-    )) return
-    if (messageWindow.error) setError(messageWindow.error.message)
-    else {
-      numbersRef.current = availableNumbers
-      if (messageWindowRequest === messageWindowRequestRef.current) {
-        setMessages(currentRows => reconcileWhatsAppMessageWindow(
-          currentRows,
-          messageWindow.rows,
-          messageChangedVersionRef.current,
-          versionAtLoadStart,
-        ))
+    try {
+      const [numRes, memRes, stateRes, replyRes] = await Promise.all([
+        supabase.from('whatsapp_numbers').select('id, label, phone, assigned_user_id, active, provider, connection_state, archived_at').order('created_at', { ascending:true }),
+        supabase.rpc('clinic_team'),
+        loadConversationStates(ownerId),
+        loadSavedReplies(ownerId),
+      ])
+      const availableNumbers = numRes.data ?? []
+      const messageWindow = await selectMessageWindow(availableNumbers)
+      if (!whatsappLoadIsCurrent(
+        { ownerId:loadOwnerId, scopeGeneration, requestId:fullLoadRequest },
+        { ownerId:activeOwnerIdRef.current, scopeGeneration:scopeGenerationRef.current, requestId:fullLoadRequestRef.current },
+      )) return
+      if (messageWindow.error) setError(messageWindow.error.message)
+      else {
+        numbersRef.current = availableNumbers
+        if (messageWindowRequest === messageWindowRequestRef.current) {
+          setMessages(currentRows => reconcileWhatsAppMessageWindow(
+            currentRows,
+            messageWindow.rows,
+            messageChangedVersionRef.current,
+            versionAtLoadStart,
+          ))
+        }
+        setNumbers(availableNumbers)
+        setMembers((memRes.data ?? []).filter(member => member.user_id))
+        setConversationStates(stateRes.data || [])
+        setSavedReplies(replyRes.data || [])
+        setError(numRes.error?.message || stateRes.error?.message || replyRes.error?.message || null)
       }
-      setNumbers(availableNumbers)
-      setMembers((memRes.data ?? []).filter(member => member.user_id))
-      setConversationStates(stateRes.data || [])
-      setSavedReplies(replyRes.data || [])
-      setError(stateRes.error?.message || replyRes.error?.message || null)
+    } catch (nextError) {
+      setError(nextError?.message || 'Não foi possível atualizar as conversas do WhatsApp.')
+    } finally {
+      setLoading(false); setRefreshing(false)
     }
-    setLoading(false); setRefreshing(false)
   }, [ownerId])
   useEffect(() => {
     activeOwnerIdRef.current = ownerId
@@ -348,7 +354,10 @@ export function WhatsAppInbox() {
       .on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_messages', filter:`user_id=eq.${ownerId}` }, queueRealtimeMessage)
       .on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_conversation_states', filter:`user_id=eq.${ownerId}` }, applyRealtimeConversationState)
       .on('postgres_changes', { event:'*', schema:'public', table:'whatsapp_numbers', filter:`user_id=eq.${ownerId}` }, applyRealtimeNumber)
-      .subscribe()
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') setRealtimeState('subscribed')
+        else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) setRealtimeState('offline')
+      })
     const authorizationPoll = window.setInterval(() => {
       if (!document.hidden) load({ silent:true })
     }, WHATSAPP_REALTIME_FALLBACK_POLL_MS)
@@ -357,6 +366,7 @@ export function WhatsAppInbox() {
       if (realtimeBatchTimerRef.current) window.clearTimeout(realtimeBatchTimerRef.current)
       realtimeBatchTimerRef.current = null
       pendingRealtimeIdsRef.current.clear()
+      setRealtimeState('connecting')
       supabase.removeChannel(channel)
     }
   }, [applyRealtimeConversationState, applyRealtimeNumber, load, ownerId, queueRealtimeMessage])
@@ -364,6 +374,7 @@ export function WhatsAppInbox() {
   const numberLabel = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.label])), [numbers])
   const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
   const selectableNumbers = useMemo(() => numbers.filter(isWhatsAppNumberAvailable), [numbers])
+  const unavailableActiveNumbers = useMemo(() => numbers.filter(number => number.active && !number.archived_at && !isWhatsAppNumberAvailable(number)), [numbers])
   const memberLabel = useMemo(() => Object.fromEntries(members.map(member => [member.user_id, (member.member_email || '').split('@')[0] || member.member_email])), [members])
   const stateMap = useMemo(() => new Map(conversationStates.map(state => [state.conversation_key, state])), [conversationStates])
   const ownerName = useCallback((numberId, assignedUserId) => { const id = assignedUserId || (numberId ? numberOwner[numberId] : null); return id ? (memberLabel[id] || 'Responsável') : null }, [numberOwner, memberLabel])
@@ -692,7 +703,10 @@ export function WhatsAppInbox() {
         return <button type="button" key={conversation.key} className={`wa-conversation ${active ? 'is-active' : ''} ${conversation.unreadCount ? 'is-unread' : ''}`} onClick={() => openConversation(conversation.key)}><Avatar name={title} phone={conversation.contactPhone || conversation.phone} photo={conversation.photo}/><span className="wa-conversation-content"><span className="wa-conversation-line"><strong>{title}</strong><time>{fmtConversationTime(conversation.last.created_at)}</time>{conversation.unreadCount > 0 && <b className="wa-unread-badge">{conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}</b>}</span><span className="wa-preview"><span className={`wa-direction-dot ${conversation.last.direction}`}/>{preview}</span><span className="wa-chips">{conversation.isGroup && <span className="wa-chip-group">grupo</span>}{!conversation.isGroup && <span className={`wa-chip-kind is-${conversation.kind}`}>{CONVERSATION_KIND_LABEL[conversation.kind]}</span>}{conversation.numberId && numberLabel[conversation.numberId] && <span>{numberLabel[conversation.numberId]}</span>}{responsible && <span className="wa-chip-owner">{responsible}</span>}{isAdmin && !conversation.assignedUserId && !numberOwner[conversation.numberId] && <span className="wa-chip-warning">sem responsável</span>}</span></span></button>
       })}</div>
     </aside>
-    <section className="wa-chat">{!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><WhatsAppLogo size={48}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
+    <section className="wa-chat">
+      {unavailableActiveNumbers.length > 0 && <div className="wa-error" role="alert"><span>!</span><p>Há número(s) desconectado(s): {unavailableActiveNumbers.map(number => `${number.label} (${number.connection_state || 'sem estado'})`).join(', ')}. Reconecte em Configurações → WhatsApp.</p></div>}
+      {realtimeState === 'offline' && <div className="wa-error" role="status"><span>!</span><p>A atualização ao vivo do WhatsApp caiu. O painel está tentando atualizar automaticamente a cada 30 segundos.</p></div>}
+      {!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><WhatsAppLogo size={48}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
       <header className="wa-chat-header">
         <button type="button" className="wa-icon-button wa-back" onClick={returnToConversationList} aria-label="Voltar para conversas"><Icon name="back"/></button>
         <Avatar className="wa-avatar-header" name={current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')} phone={current.contactPhone || current.phone} photo={current.photo}/>

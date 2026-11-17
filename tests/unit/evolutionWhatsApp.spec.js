@@ -48,6 +48,14 @@ test('converte destinatários canônicos para o formato da Evolution', () => {
   expect(evolutionRecipient('22093462769770@lid')).toBe('22093462769770@lid')
 })
 
+test('preserva eventos de grupo que antes eram descartados pelo parser', () => {
+  const base = { event:'messages.upsert', data:{ key:{ id:'GROUP-1', remoteJid:'120363001234@g.us', participant:'5511999999999@s.whatsapp.net' }, pushName:'Ana', messageTimestamp: 1730000000 } }
+  expect(parseEvolutionIncomingMessage({ ...base, data:{ ...base.data, message:{ reactionMessage:{ text:'👍' } } } })).toMatchObject({ isGroup:true, msgType:'text', text:'Reação: 👍', senderPhone:'5511999999999' })
+  expect(parseEvolutionIncomingMessage({ ...base, data:{ ...base.data, message:{ stickerMessage:{} } } })).toMatchObject({ isGroup:true, text:'[Figurinha recebida]' })
+  expect(parseEvolutionIncomingMessage({ ...base, data:{ ...base.data, message:{ contactMessage:{ displayName:'Dra. Ana' } } } })).toMatchObject({ isGroup:true, text:'Contato compartilhado: Dra. Ana' })
+  expect(parseEvolutionIncomingMessage({ ...base, data:{ ...base.data, message:{ albumMessage:{} } } })).toMatchObject({ isGroup:true, text:'[Álbum recebido]' })
+})
+
 test('envia texto com apikey somente no backend e confirma key.id', async () => {
   let request
   globalThis.fetch = async (url, options) => {

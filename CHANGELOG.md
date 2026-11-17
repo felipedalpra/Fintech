@@ -6,6 +6,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-11-16 (7)
+### Fixed
+- **Mídia recebida não bloqueia mais o webhook**: a mensagem é persistida imediatamente e o download para o Storage privado passa por fila durável, com retry e cron dedicado. (`api/whatsapp.js`, `api/whatsapp-media-queue.js`, `supabase/whatsapp_media_queue_schema.sql`, `vercel.json`.)
+- **Recebimento do WhatsApp mais resiliente**: reações, figurinhas, contatos compartilhados e álbuns agora aparecem como mensagens de texto informativas, inclusive em grupos; a sugestão opcional de estágio deixou de bloquear o webhook por vários segundos; o painel avisa números ativos desconectados, sinaliza queda do realtime e revalida a caixa de entrada em até 30 segundos. (`api/_lib/whatsapp.js`, `api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/lib/whatsappInboxSync.js`.)
+
 ### Added
 - **Modelos reutilizáveis para receitas e pedidos de exames**: o editor clínico agora permite selecionar um modelo salvo, revisar o conteúdo antes da emissão e salvar o documento atual como um novo modelo por padrão, com nome editável e opção de usar uma única vez sem duplicar a biblioteca. A persistência reaproveita os protocolos versionados existentes e mantém cada documento emitido como snapshot independente. (`src/components/ClinicalDocuments.jsx`, `src/lib/clinicalDocumentTemplates.js`, `tests/unit/clinicalDocumentTemplates.spec.js`.)
 

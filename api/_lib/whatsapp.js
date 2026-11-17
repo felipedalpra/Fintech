@@ -229,6 +229,21 @@ function evolutionMedia(message) {
       caption: String(caption),
     }
   }
+  const reaction = message?.reactionMessage
+  if (reaction && typeof reaction === 'object') {
+    const emoji = String(reaction.text || reaction.emoji || '').trim()
+    return { msgType:'text', mediaUrl:null, mediaMime:null, caption: emoji ? `Reação: ${emoji}` : '[Reação]' }
+  }
+  if (message?.stickerMessage && typeof message.stickerMessage === 'object') {
+    return { msgType:'text', mediaUrl:null, mediaMime:null, caption:'[Figurinha recebida]' }
+  }
+  if (message?.contactMessage && typeof message.contactMessage === 'object') {
+    const name = String(message.contactMessage.displayName || '').trim()
+    return { msgType:'text', mediaUrl:null, mediaMime:null, caption: name ? `Contato compartilhado: ${name}` : '[Contato compartilhado]' }
+  }
+  if (message?.albumMessage && typeof message.albumMessage === 'object') {
+    return { msgType:'text', mediaUrl:null, mediaMime:null, caption:'[Álbum recebido]' }
+  }
   return null
 }
 
