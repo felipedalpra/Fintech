@@ -358,7 +358,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
         {error && <div className="clinical-form-error" role="alert">{error}</div>}
 
         <div className="clinical-document-legal-note">
-          Esta etapa prepara o documento para impressão e assinatura manual. Ela ainda não realiza assinatura eletrônica qualificada.
+          Revise os dados antes de emitir. Depois, você poderá imprimir o documento ou iniciar a assinatura eletrônica pela Central de Documentos.
         </div>
 
         <section className="clinical-document-template-controls">
