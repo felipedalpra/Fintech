@@ -6,6 +6,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Fixed`: correções de bugs
 
 ## [Unreleased] - 2026-11-16 (7)
+### Added
+- **Modelos reutilizáveis para receitas e pedidos de exames**: o editor clínico agora permite selecionar um modelo salvo, revisar o conteúdo antes da emissão e salvar o documento atual como um novo modelo por padrão, com nome editável e opção de usar uma única vez sem duplicar a biblioteca. A persistência reaproveita os protocolos versionados existentes e mantém cada documento emitido como snapshot independente. (`src/components/ClinicalDocuments.jsx`, `src/lib/clinicalDocumentTemplates.js`, `tests/unit/clinicalDocumentTemplates.spec.js`.)
+
 ### Changed
 - **Navegação entre áreas no celular vira barra inferior fixa, estilo iPhone**: a navegação entre as 6 áreas (Hoje, Relacionamento, Atendimentos, Clínico, Financeiro, Configurações) saiu da faixa de rolagem lateral no topo e passou para uma barra fixa embaixo da tela, com ícone + rótulo por aba, igual ao padrão de apps nativos. A faixa do topo no celular agora só mostra o nome da área ativa e o sino de notificações; a sub-navegação da área (acessada pelo ☰) continua igual. Botões flutuantes que ficavam colados no rodapé (atalho de lançamento rápido, copiloto de IA, barras de ação em massa do CRM e de Tarefas) subiram para não ficar atrás da nova barra. (`src/pages/FinanceWorkspace.jsx`, `src/components/FAB.jsx`, `src/components/CopilotWidget.jsx`, `src/components/CrmBulkBar.jsx`, `src/components/TasksPanel.jsx`.)
 

@@ -22,7 +22,8 @@ import {
 import { fetchClinicalSignatureState } from '../lib/clinicalSignatureBryClient.js'
 import { Btn } from './UI.jsx'
 import { loadClinicalProtocols } from '../lib/clinicalProtocolClient.js'
-import { applyProtocolToDocumentDraft } from '../lib/clinicalProtocols.js'
+import { applyProtocolToDocumentDraft, buildClinicalProtocolRpcArgs } from '../lib/clinicalProtocols.js'
+import { buildClinicalDocumentTemplate, defaultClinicalDocumentTemplateName } from '../lib/clinicalDocumentTemplates.js'
 import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
 
 const { EXAM_REQUEST, SIMPLE_PRESCRIPTION } = CLINICAL_DOCUMENT_TYPES
@@ -135,6 +136,9 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
   const [reloadToken, setReloadToken] = useState(0)
   const [protocols, setProtocols] = useState([])
   const [editorExpanded, setEditorExpanded] = useState(false)
+  const [selectedProtocolId, setSelectedProtocolId] = useState('')
+  const [saveAsModel, setSaveAsModel] = useState(true)
+  const [modelName, setModelName] = useState('')
 
   useEffect(() => {
     if (!editorExpanded) return undefined
@@ -194,6 +198,9 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     setEditingType(type)
     setRequestId(uid())
     setForm(applyProtocolToDocumentDraft(initialProtocolApplication.version, type, defaults))
+    setSelectedProtocolId(initialProtocolApplication.version.id || '')
+    setSaveAsModel(false)
+    setModelName(initialProtocolApplication.version.name || '')
     setError('')
     onProtocolApplicationConsumed?.()
   }, [initialProtocolApplication?.id, profileLoading, patient.id])
@@ -215,6 +222,9 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     setEditingType(type)
     setRequestId(uid())
     setForm(clinicalDocumentDefaults({ type, issueDate:today(), profile, clinicName }))
+    setSelectedProtocolId('')
+    setSaveAsModel(true)
+    setModelName(defaultClinicalDocumentTemplateName(type))
     setError('')
     setEditorExpanded(false)
   }
@@ -235,9 +245,18 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
   }
 
   function applyProtocol(versionId) {
+    setSelectedProtocolId(versionId)
+    if (!versionId) {
+      setForm(clinicalDocumentDefaults({ type:editingType, issueDate:today(), profile, clinicName }))
+      setSaveAsModel(true)
+      setModelName(defaultClinicalDocumentTemplateName(editingType))
+      return
+    }
     const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
     if (!version) return
     setForm(current => applyProtocolToDocumentDraft(version, editingType, current))
+    setSaveAsModel(false)
+    setModelName(version.name || '')
   }
 
   function removeMedication(index) {
@@ -261,6 +280,19 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
       const { error:saveError } = await supabase.rpc('create_clinical_document', args)
       if (saveError) throw saveError
       issued = true
+      let templateWarning = ''
+      if (saveAsModel) {
+        try {
+          const template = buildClinicalDocumentTemplate({ type:editingType, form, name:modelName })
+          const templateArgs = buildClinicalProtocolRpcArgs({ protocolId:null, requestId:uid(), form:template })
+          const { error:templateError } = await supabase.rpc('save_clinical_protocol', templateArgs)
+          if (templateError) throw templateError
+          const freshProtocols = await loadClinicalProtocols(ownerId, { activeOnly:true })
+          setProtocols(freshProtocols)
+        } catch (templateError) {
+          templateWarning = ` O documento foi emitido, mas o modelo não foi salvo: ${templateError.message || 'tente novamente.'}`
+        }
+      }
       setEditingType('')
       setForm(null)
       setEditorExpanded(false)
@@ -270,6 +302,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
       setSignatureIntegration(fresh.signatures.integration)
       setSignatureEvidenceAvailable(fresh.signatures.available)
       setStatus('ready')
+      if (templateWarning) setError(templateWarning.trim())
       Promise.resolve(onDocumentCreated?.()).catch(() => {})
     } catch (nextError) {
       if (issued) {
@@ -328,7 +361,18 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
           Esta etapa prepara o documento para impressão e assinatura manual. Ela ainda não realiza assinatura eletrônica qualificada.
         </div>
 
-        {protocols.some(item => editingType === EXAM_REQUEST ? item.currentVersion.exam_kit?.length : item.currentVersion.medication_favorites?.length) && <section className="clinical-protocol-apply"><div><strong>Usar modelo da clínica</strong><span>Revise todos os itens antes de emitir.</span></div><select aria-label="Modelo de protocolo para o documento" defaultValue="" onChange={event => applyProtocol(event.target.value)}><option value="">Selecionar protocolo</option>{protocols.filter(item => editingType === EXAM_REQUEST ? item.currentVersion.exam_kit?.length : item.currentVersion.medication_favorites?.length).map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name}</option>)}</select></section>}
+        <section className="clinical-protocol-apply">
+          <div><strong>Modelo da clínica</strong><span>Selecione um modelo salvo ou preencha do zero. Revise tudo antes de emitir.</span></div>
+          <select aria-label="Modelo de protocolo para o documento" value={selectedProtocolId} onChange={event => applyProtocol(event.target.value)}>
+            <option value="">Preencher sem modelo</option>
+            {protocols.filter(item => editingType === EXAM_REQUEST ? item.currentVersion.exam_kit?.length : item.currentVersion.medication_favorites?.length).map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name}</option>)}
+          </select>
+        </section>
+        <section className="clinical-document-template-save">
+          <label><input type="checkbox" checked={saveAsModel} onChange={event => setSaveAsModel(event.target.checked)} /> <span>Salvar este conteúdo como modelo para usar novamente</span></label>
+          {saveAsModel && <label><span>Nome do modelo</span><input aria-label="Nome do modelo" value={modelName} onChange={event => setModelName(event.target.value)} placeholder={defaultClinicalDocumentTemplateName(editingType)} /></label>}
+          {!saveAsModel && selectedProtocolId && <small>Este documento será emitido sem criar outro modelo.</small>}
+        </section>
 
         {editingType === EXAM_REQUEST ? (
           <div className="clinical-document-fields">
