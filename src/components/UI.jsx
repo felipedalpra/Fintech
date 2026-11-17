@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { C, base } from '../theme.js'
+import { validationMessage } from '../lib/formValidation.js'
 
 function isLightHexColor(hex) {
   if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return false
@@ -117,7 +118,7 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
     e.currentTarget.style.borderColor = C.border
   }
 
-  const validationMessage = touched && validator ? validator(value) : ''
+  const fieldValidationMessage = touched && validator ? validationMessage(validator(value)) : ''
 
   return (
     <div style={{ display:'flex', flexDirection:'column' }}>
@@ -139,8 +140,8 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
               inputMode={isNum ? 'decimal' : inputMode}
               autoComplete={autoComplete}
               required={required}
-              aria-invalid={Boolean(validationMessage)}
-              style={{ ...base.input, borderColor:validationMessage ? C.red : C.border }}
+              aria-invalid={Boolean(fieldValidationMessage)}
+              style={{ ...base.input, borderColor:fieldValidationMessage ? C.red : C.border }}
               onFocus={handleFocus}
               onBlur={handleBlur} />
             {options && creatable && (
@@ -150,7 +151,7 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
             )}
           </>
       }
-      {validationMessage ? <span role="alert" style={{ color:C.red, fontSize:11, marginTop:5 }}>{validationMessage}</span> : help ? <span style={{ color:C.textDim, fontSize:11, marginTop:5, lineHeight:1.45 }}>{help}</span> : null}
+      {fieldValidationMessage ? <span role="alert" style={{ color:C.red, fontSize:11, marginTop:5 }}>{fieldValidationMessage}</span> : help ? <span style={{ color:C.textDim, fontSize:11, marginTop:5, lineHeight:1.45 }}>{help}</span> : null}
     </div>
   )
 }
