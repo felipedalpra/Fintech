@@ -12,10 +12,6 @@
     {
       "path": "/api/alerts/process",
       "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/whatsapp-media-queue",
-      "schedule": "* * * * *"
     }
   ],
   "rewrites": [
