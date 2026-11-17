@@ -36,6 +36,7 @@ import {
 import { buildClinicalWorkspaceIndex } from '../lib/clinicalWorkspaceIndex.js'
 import { emptyClinicalWorkspaceSources, loadClinicalWorkspaceSources } from '../lib/clinicalWorkspaceIndexClient.js'
 import { buildProtocolAnamnesisDraft } from '../lib/clinicalProtocols.js'
+import { buildClinicalPatientIdentity } from '../lib/clinicalPatientIdentity.js'
 import './ClinicalRecords.css'
 import './ClinicalRecordsReadability.css'
 import './ClinicalRevamp.css'
@@ -556,7 +557,7 @@ function PatientHeader({ patient, profile, profileStatus, appointments, clinicNa
       <PatientAvatar patient={patient} />
       <div className="clinical-patient-header__identity">
         <div><h2>{patient.full_name}</h2><span>Paciente ativo</span></div>
-        <p>{patient.date_of_birth ? `${formatDateBR(patient.date_of_birth)}${age !== null ? ` · ${age} anos` : ''}` : 'Nascimento não informado'}{patient.phone ? ` · ${patient.phone}` : ''}{patient.email ? ` · ${patient.email}` : ''}</p>
+        <p>{buildClinicalPatientIdentity({ ...patient, date_of_birth:patient.date_of_birth ? `${formatDateBR(patient.date_of_birth)}${age !== null ? ` · ${age} anos` : ''}` : '' }).map(item => <span key={item}>{item}</span>)}</p>
       </div>
       <div className="clinical-patient-header__alerts">
         {profileStatus === 'loading' && <span className="is-muted">Verificando alertas…</span>}
