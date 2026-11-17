@@ -224,7 +224,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     setForm(clinicalDocumentDefaults({ type, issueDate:today(), profile, clinicName }))
     setSelectedProtocolId('')
     setSaveAsModel(true)
-    setModelName(defaultClinicalDocumentTemplateName(type))
+    setModelName('')
     setError('')
     setEditorExpanded(false)
   }
@@ -249,7 +249,7 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
     if (!versionId) {
       setForm(clinicalDocumentDefaults({ type:editingType, issueDate:today(), profile, clinicName }))
       setSaveAsModel(true)
-      setModelName(defaultClinicalDocumentTemplateName(editingType))
+      setModelName('')
       return
     }
     const version = protocols.map(item => item.currentVersion).find(item => item?.id === versionId)
@@ -366,8 +366,8 @@ export function ClinicalDocuments({ patient, ownerId, viewerId = '', author, pro
             <option value="">Preencher sem modelo</option>
             {protocols.filter(item => editingType === EXAM_REQUEST ? item.currentVersion.exam_kit?.length : item.currentVersion.medication_favorites?.length).map(item => <option key={item.currentVersion.id} value={item.currentVersion.id}>{item.currentVersion.name}</option>)}
           </select></label>
-          <label className="clinical-document-template-checkbox"><input className="clinical-document-template-checkbox__input" type="checkbox" checked={saveAsModel} onChange={event => setSaveAsModel(event.target.checked)} /> <span>Salvar para usar novamente</span></label>
-          {saveAsModel && <label className="clinical-document-template-name"><span>Nome do modelo</span><input aria-label="Nome do modelo" value={modelName} onChange={event => setModelName(event.target.value)} placeholder={defaultClinicalDocumentTemplateName(editingType)} /></label>}
+          <label className="clinical-document-template-checkbox"><input className="clinical-document-template-checkbox__input" type="checkbox" checked={saveAsModel} onChange={event => setSaveAsModel(event.target.checked)} /> <span>Salvar como modelo</span></label>
+          <label className="clinical-document-template-name"><span>Nome do modelo</span><input aria-label="Nome do modelo" value={modelName} disabled={!saveAsModel} onChange={event => setModelName(event.target.value)} placeholder={defaultClinicalDocumentTemplateName(editingType)} /></label>
           {!saveAsModel && selectedProtocolId && <small>Este documento será emitido sem criar outro modelo.</small>}
         </section>
 
