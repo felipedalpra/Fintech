@@ -936,12 +936,26 @@ async function handleSyncToday(req, res) {
       continue
     }
     summary.chatsScanned += new Set((rows || []).map(row => row?.key?.remoteJid).filter(Boolean)).size
+    const providerIds = [...new Set((rows || []).map(row => row?.key?.id).filter(Boolean).map(String))]
+    const existingProviderIds = new Set()
+    for (let offset = 0; offset < providerIds.length; offset += 100) {
+      const { data: existingRows } = await supabase.from('whatsapp_messages')
+        .select('provider_message_id')
+        .eq('whatsapp_number_id', number.id)
+        .eq('provider', 'evolution')
+        .in('provider_message_id', providerIds.slice(offset, offset + 100))
+      for (const row of existingRows || []) existingProviderIds.add(String(row.provider_message_id))
+    }
     for (const raw of rows || []) {
       const body = { event:'messages.upsert', instance:number.provider_instance_name, data:raw }
       const parsed = parseProviderIncomingMessage('evolution', body)
       const created = parsed?.createdAt ? Date.parse(parsed.createdAt) : NaN
       if (!parsed || !Number.isFinite(created) || created < window.start || created >= window.end) continue
       summary.providerMessages += 1
+      if (parsed.providerMessageId && existingProviderIds.has(parsed.providerMessageId)) {
+        summary.duplicates += 1
+        continue
+      }
       const response = replayResponse()
       await handleWebhook({
         method:'POST',
