@@ -1,0 +1,2 @@
+-- O fluxo de alertas por Gmail foi removido.
+-- Este arquivo foi mantido como marcador histórico para instalações que já o conheciam.

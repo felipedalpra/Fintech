@@ -57,7 +57,7 @@ end $$;
 -- 4. Função helper: retorna o user_id do owner dos dados para o usuário logado.
 --    Owner → próprio user_id. Membro → user_id do owner da clínica.
 create or replace function public.data_owner_id()
-returns uuid language sql stable security definer as $$
+returns uuid language sql stable security definer set search_path = '' as $$
   select coalesce(
     (select owner_id from public.clinics where owner_id = auth.uid() limit 1),
     (select c.owner_id
@@ -68,13 +68,19 @@ returns uuid language sql stable security definer as $$
   )
 $$;
 
+revoke all on function public.data_owner_id() from public, anon;
+grant execute on function public.data_owner_id() to authenticated, service_role;
+
 -- 5. RPC para buscar user_id por e-mail (usada na aba Equipe de Settings).
 create or replace function public.get_user_id_by_email(lookup_email text)
-returns uuid language sql security definer as $$
+returns uuid language sql security definer set search_path = '' as $$
   select id from auth.users
   where lower(email) = lower(lookup_email)
   limit 1
 $$;
+
+revoke all on function public.get_user_id_by_email(text) from public, anon;
+grant execute on function public.get_user_id_by_email(text) to authenticated, service_role;
 
 -- 6. Atualizar RLS de patients para aceitar membros da mesma clínica.
 drop policy if exists "Patients own rows" on public.patients;

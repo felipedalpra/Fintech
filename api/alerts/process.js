@@ -1,15 +1,12 @@
 import {
   appendSheetsRow,
-  buildAlertHtml,
   createAdminClient,
   ensureSubscribers,
   fetchUserFinancialData,
   getConfig,
   getTodayISO,
   listAuthUsers,
-  persistDispatchLog,
   persistRiskSnapshot,
-  sendGmailHtml,
 } from '../_lib/alerts.js'
 import { runWhatsAppAutomations } from '../_lib/whatsappAutomations.js'
 import { syncMetaInsights } from '../_lib/metaInsights.js'
@@ -32,8 +29,6 @@ export default async function handler(req, res) {
   if (!authorized) return res.status(401).json({ error:'Invalid cron secret' })
 
   const today = String(req.query?.referenceDate || getTodayISO())
-  const dashboardUrl = String(req.query?.dashboardUrl || '')
-
   const admin = createAdminClient(config)
 
   try {
@@ -53,7 +48,7 @@ export default async function handler(req, res) {
 
     if (subErr) throw subErr
 
-    const summary = { processed:0, sent:0, skipped:0, failures:0 }
+    const summary = { processed:0, recorded:0, skipped:0, failures:0 }
 
     for (const sub of subs || []) {
       summary.processed += 1
@@ -73,36 +68,10 @@ export default async function handler(req, res) {
           Number(analysis.payload.overduePayablesTotal || 0),
         ], 'risk_daily_snapshot', config)
 
-        if (!analysis.triggerKeys.length || analysis.alreadySentToday) {
+        if (!analysis.triggerKeys.length) {
           summary.skipped += 1
           continue
         }
-
-        const html = buildAlertHtml({
-          email:sub.email,
-          referenceDate:today,
-          triggerKeys:analysis.triggerKeys,
-          payload:analysis.payload,
-          dashboardUrl,
-        })
-
-        await sendGmailHtml({
-          to:sub.email,
-          subject:config.subject,
-          html,
-          admin,
-          config,
-        })
-
-        await persistDispatchLog(admin, {
-          user_id:sub.user_id,
-          email:sub.email,
-          reference_date:today,
-          risk_level:analysis.riskLevel,
-          trigger_keys:analysis.triggerKeys,
-          payload:analysis.payload,
-          status:'sent',
-        })
 
         await appendSheetsRow([
           new Date().toISOString(),
@@ -111,30 +80,12 @@ export default async function handler(req, res) {
           sub.email,
           analysis.riskLevel,
           analysis.triggerKeys.join(','),
-          'sent',
+          'recorded',
           '',
         ], 'alerts_log', config)
-
-        await appendSheetsRow([
-          new Date().toISOString(),
-          sub.user_id,
-          sub.email,
-          true,
-        ], 'subscribers', config)
-
-        summary.sent += 1
+        summary.recorded += 1
       } catch (error) {
         summary.failures += 1
-        await persistDispatchLog(admin, {
-          user_id:sub.user_id,
-          email:sub.email,
-          reference_date:today,
-          risk_level:'error',
-          trigger_keys:[],
-          payload:{},
-          status:'failed',
-          error_message:error?.message || 'Erro ao enviar alerta',
-        })
         await appendSheetsRow([
           new Date().toISOString(),
           today,
@@ -143,7 +94,7 @@ export default async function handler(req, res) {
           'error',
           '',
           'failed',
-          error?.message || 'Erro ao enviar alerta',
+          error?.message || 'Erro ao registrar alerta',
         ], 'alerts_log', config).catch(() => {})
       }
     }
