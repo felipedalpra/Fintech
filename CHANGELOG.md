@@ -7,6 +7,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
+- **Evolution API não perde o recebimento após `stream errored out` de status**: adicionada imagem derivada da `evoapicloud/evolution-api:v2.3.7` com o ack explícito das stanzas `status` da Baileys `7.0.0-rc.9`; o build valida a versão e os anchors antes de modificar o arquivo, evitando patch silenciosamente incompatível. Incluído teste de idempotência e rejeição de versão desconhecida. (`infra/evolution-api/Dockerfile`, `infra/evolution-api/patch-status.cjs`, `tests/unit/evolutionStatusPatch.spec.js`.)
+
+### Fixed
 - **Sincronização manual não reprocessa milhares de mensagens já salvas**: antes de reaproveitar o webhook, o histórico agora compara os IDs da Evolution com o número selecionado e ignora duplicatas diretamente no banco, evitando chamadas desnecessárias e novos timeouts. (`api/whatsapp.js`.)
 - **Configurações de WhatsApp por usuário**: todos os perfis agora têm acesso à aba de WhatsApp, limitada ao número atribuído à própria conta para conectar, reconectar, testar, ativar, desativar ou remover a conexão. O proprietário, administradores e gestão continuam com a visão e o controle de todos os números. (`Settings.jsx`, `WhatsAppNumbers.jsx`, `api/whatsapp.js`.)
 - **Cabeçalho da conversa mais objetivo**: a área de ações agora destaca apenas “Registrar oportunidade” e “Registrar como paciente”, com nomes explícitos, cores distintas e proporções melhores para leitura. (`WhatsAppInbox.jsx`, `WhatsAppInbox.css`.)
