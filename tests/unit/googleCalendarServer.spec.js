@@ -66,7 +66,7 @@ test('state assinado valida, rejeita adulterado e expirado', () => {
 
 test('state assinado não pode ser reaproveitado em outro fluxo OAuth', () => {
   const now = 1_000_000
-  const state = signState('user-1', 'segredo', now, 'gmail')
-  expect(verifyState(state, 'segredo', now + 1000, 'gmail')).toBe('user-1')
+  const state = signState('user-1', 'segredo', now, 'alerts')
+  expect(verifyState(state, 'segredo', now + 1000, 'alerts')).toBe('user-1')
   expect(verifyState(state, 'segredo', now + 1000, 'calendar')).toBeNull()
 })

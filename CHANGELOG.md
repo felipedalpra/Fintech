@@ -7,6 +7,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
+- Removido completamente o fluxo de alertas por Gmail: OAuth, envio automático, configuração e armazenamento de refresh token deixaram de fazer parte da rotina de alertas. O processamento continua registrando riscos e executando as automações internas (`api/alerts/process.js`, `api/_lib/alerts.js`, `supabase/remove_gmail_alerts.sql`).
 - Reforçado o OAuth do Gmail: o início da autorização agora exige sessão autenticada, usa `state` HMAC assinado com finalidade e expiração, o callback valida o estado e restringe a conexão ao proprietário da clínica, além de não devolver detalhes crus do provedor. O token registra quem autorizou (`api/google/oauth/*.js`, `api/_lib/alerts.js`, `api/_lib/oauthState.js`, `supabase/gmail_oauth_security.sql`).
 - Corrigidas funções `SECURITY DEFINER` centrais do controle de acesso: `data_owner_id()` e `get_user_id_by_email()` passaram a fixar `search_path` e tiveram execução pública/anônima revogada (`supabase/access_control_schema.sql`).
 - O build de produção agora falha explicitamente se `VITE_E2E_BYPASS_AUTH=true`, evitando publicar a sessão simulada dos testes (`vite.config.js`).
