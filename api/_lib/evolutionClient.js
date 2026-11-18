@@ -216,6 +216,19 @@ export async function listEvolutionChats(instanceName) {
   return Array.isArray(data) ? data : (Array.isArray(data?.chats) ? data.chats : [])
 }
 
+export async function listEvolutionMessages(instanceName, remoteJid) {
+  const name = safeInstanceName(instanceName)
+  const jid = String(remoteJid || '').trim()
+  if (!jid) return []
+  const data = await evolutionRequest(`/chat/findMessages/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    body: { where: { key: { remoteJid: jid } } },
+    timeoutMs: 15_000,
+  })
+  if (Array.isArray(data)) return data
+  return Array.isArray(data?.messages) ? data.messages : (Array.isArray(data?.data) ? data.data : [])
+}
+
 export async function downloadEvolutionMedia(instanceName, message) {
   const name = safeInstanceName(instanceName)
   if (!message?.key || !message?.message) throw new Error('Evento de mídia Evolution incompleto.')

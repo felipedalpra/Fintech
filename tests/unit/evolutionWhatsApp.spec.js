@@ -7,6 +7,7 @@ import {
   evolutionInstanceMissing,
   evolutionRecipient,
   logoutEvolutionInstance,
+  listEvolutionMessages,
   normalizeEvolutionBaseUrl,
   sendEvolutionText,
 } from '../../api/_lib/evolutionClient.js'
@@ -40,6 +41,17 @@ test('normaliza a URL da Evolution e bloqueia HTTP externo', () => {
   expect(normalizeEvolutionBaseUrl('https://evolution.surgimetrics.com.br///')).toBe('https://evolution.surgimetrics.com.br')
   expect(() => normalizeEvolutionBaseUrl('http://evolution.example.com')).toThrow(/HTTPS/i)
   expect(normalizeEvolutionBaseUrl('http://127.0.0.1:8080/')).toBe('http://127.0.0.1:8080')
+})
+
+test('consulta mensagens de uma conversa na Evolution', async () => {
+  let request
+  globalThis.fetch = async (url, options) => {
+    request = { url:String(url), options }
+    return new Response(JSON.stringify([{ key:{ id:'H1' }, message:{ conversation:'Hoje' } }]), { status:200 })
+  }
+  await expect(listEvolutionMessages('surgimetrics_teste', '5511999@s.whatsapp.net')).resolves.toHaveLength(1)
+  expect(request.url).toBe('https://evolution.surgimetrics.com.br/chat/findMessages/surgimetrics_teste')
+  expect(JSON.parse(request.options.body)).toEqual({ where:{ key:{ remoteJid:'5511999@s.whatsapp.net' } } })
 })
 
 test('converte destinatários canônicos para o formato da Evolution', () => {
