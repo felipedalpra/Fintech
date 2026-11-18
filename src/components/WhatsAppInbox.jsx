@@ -144,6 +144,7 @@ export function WhatsAppInbox() {
   const isAdmin = isOwner || role === 'admin'
   const [messages, setMessages] = useState([]), [numbers, setNumbers] = useState([]), [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState(null)
+  const [dismissedUnavailableAlertKey, setDismissedUnavailableAlertKey] = useState('')
   const [syncNotice, setSyncNotice] = useState(null)
   const [realtimeState, setRealtimeState] = useState('connecting')
   const [selectedPhone, setSelectedPhone] = useState(null), [search, setSearch] = useState('')
@@ -401,6 +402,14 @@ export function WhatsAppInbox() {
   const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
   const selectableNumbers = useMemo(() => numbers.filter(isWhatsAppNumberAvailable), [numbers])
   const unavailableActiveNumbers = useMemo(() => numbers.filter(number => number.active && !number.archived_at && !isWhatsAppNumberAvailable(number)), [numbers])
+  const unavailableAlertKey = unavailableActiveNumbers.map(number => `${number.id}:${number.connection_state || 'sem-estado'}`).join('|')
+  useEffect(() => {
+    if (!unavailableAlertKey) {
+      setDismissedUnavailableAlertKey('')
+      return
+    }
+    if (dismissedUnavailableAlertKey && dismissedUnavailableAlertKey !== unavailableAlertKey) setDismissedUnavailableAlertKey('')
+  }, [unavailableAlertKey, dismissedUnavailableAlertKey])
   const memberLabel = useMemo(() => Object.fromEntries(members.map(member => [member.user_id, (member.member_email || '').split('@')[0] || member.member_email])), [members])
   const stateMap = useMemo(() => new Map(conversationStates.map(state => [state.conversation_key, state])), [conversationStates])
   const ownerName = useCallback((numberId, assignedUserId) => { const id = assignedUserId || (numberId ? numberOwner[numberId] : null); return id ? (memberLabel[id] || 'Responsável') : null }, [numberOwner, memberLabel])
@@ -717,7 +726,7 @@ export function WhatsAppInbox() {
       })}</div>
     </aside>
     <section className="wa-chat">
-      {unavailableActiveNumbers.length > 0 && <div className="wa-error" role="alert"><span>!</span><p>Há número(s) desconectado(s): {unavailableActiveNumbers.map(number => `${number.label} (${number.connection_state || 'sem estado'})`).join(', ')}. Reconecte em Configurações → WhatsApp.</p></div>}
+      {unavailableActiveNumbers.length > 0 && dismissedUnavailableAlertKey !== unavailableAlertKey && <div className="wa-error wa-connection-alert" role="alert"><span>!</span><p>Há número(s) desconectado(s): {unavailableActiveNumbers.map(number => `${number.label} (${number.connection_state || 'sem estado'})`).join(', ')}. Reconecte em Configurações → WhatsApp.</p><div className="wa-alert-actions"><button type="button" onClick={() => setDismissedUnavailableAlertKey(unavailableAlertKey)}>Entendi</button><button type="button" onClick={() => setDismissedUnavailableAlertKey(unavailableAlertKey)} aria-label="Fechar aviso de números desconectados">×</button></div></div>}
       {realtimeState === 'offline' && <div className="wa-error" role="status"><span>!</span><p>A atualização ao vivo do WhatsApp caiu. O painel está tentando atualizar automaticamente a cada 30 segundos.</p></div>}
       {syncNotice && <div className="wa-success" role="status"><span>✓</span><p>{syncNotice}</p><button type="button" onClick={() => setSyncNotice(null)} aria-label="Fechar aviso">×</button></div>}
       {!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><WhatsAppLogo size={48}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
