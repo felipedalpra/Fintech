@@ -13,6 +13,7 @@ import { WhatsAppMedia } from './WhatsAppMedia.jsx'
 import { applyConversationFilters, createSavedReply, loadConversationStates, loadSavedReplies, operationalConversationKey, saveConversationState, unreadCountForConversation } from '../lib/operationalWorkspace.js'
 import { isWhatsAppNumberAvailable } from '../lib/whatsappNumberAvailability.js'
 import { buildWhatsAppNumberHealth, healthAgeLabel } from '../lib/whatsappHealth.js'
+import { normalizeWhatsAppPresence, whatsappPresenceLabel } from '../lib/whatsappPresence.js'
 import { chunkWhatsAppMessageIds, reconcileWhatsAppMessageRows, reconcileWhatsAppMessageWindow, removeWhatsAppMessageRow, whatsappLoadIsCurrent, whatsappNumberScopeChanged, WHATSAPP_REALTIME_BATCH_MS, WHATSAPP_REALTIME_FALLBACK_POLL_MS } from '../lib/whatsappInboxSync.js'
 import './WhatsAppInbox.css'
 
@@ -148,6 +149,7 @@ export function WhatsAppInbox() {
   const [dismissedUnavailableAlertKey, setDismissedUnavailableAlertKey] = useState('')
   const [syncNotice, setSyncNotice] = useState(null)
   const [realtimeState, setRealtimeState] = useState('connecting')
+  const [conversationViewers, setConversationViewers] = useState([])
   const [selectedPhone, setSelectedPhone] = useState(null), [search, setSearch] = useState('')
   const [mobileListOpen, setMobileListOpen] = useState(false)
   const [filterNumber, setFilterNumber] = useState('all'), [filterResponsible, setFilterResponsible] = useState('all')
@@ -165,6 +167,8 @@ export function WhatsAppInbox() {
   const [olderMessages, setOlderMessages] = useState([]), [olderConversationKey, setOlderConversationKey] = useState(null)
   const [loadingOlder, setLoadingOlder] = useState(false), [hasOlder, setHasOlder] = useState(true)
   const messagesRef = useRef(null), fileRef = useRef(null), textRef = useRef(null), recRef = useRef(null), chunksRef = useRef([])
+  const presenceChannelRef = useRef(null)
+  const currentConversationRef = useRef(null)
   const pendingScrollRestoreRef = useRef(null)
   const textSendRequestRef = useRef(null)
   const numbersRef = useRef([])
@@ -476,7 +480,45 @@ export function WhatsAppInbox() {
     return list
   }, [allConversations, filterMode, filterNumber, filterResponsible, numberOwner, search])
   const current = allConversations.find(conversation => conversation.key === selectedPhone) || null
+  currentConversationRef.current = current?.key || null
   const currentReplyNumber = current ? selectableNumbers.find(number => number.id === current.numberId) || null : null
+  const currentViewers = useMemo(
+    () => conversationViewers.filter(viewer => viewer.conversationKey === current?.key),
+    [conversationViewers, current?.key],
+  )
+  useEffect(() => {
+    if (!ownerId || !user?.id) return undefined
+    const channel = supabase.channel(`whatsapp-presence-${ownerId}`, { config:{ presence:{ key:user.id } } })
+    const refreshPresence = () => setConversationViewers(normalizeWhatsAppPresence(channel.presenceState(), user.id))
+    channel
+      .on('presence', { event:'sync' }, refreshPresence)
+      .on('presence', { event:'join' }, refreshPresence)
+      .on('presence', { event:'leave' }, refreshPresence)
+      .subscribe(async status => {
+        if (status !== 'SUBSCRIBED') return
+        await channel.track({
+          user_id:user.id,
+          display_name:user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Atendente',
+          conversation_key:currentConversationRef.current,
+        })
+        refreshPresence()
+      })
+    presenceChannelRef.current = channel
+    return () => {
+      presenceChannelRef.current = null
+      setConversationViewers([])
+      supabase.removeChannel(channel)
+    }
+  }, [ownerId, user?.id])
+  useEffect(() => {
+    const channel = presenceChannelRef.current
+    if (!channel || !user?.id) return
+    channel.track({
+      user_id:user.id,
+      display_name:user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Atendente',
+      conversation_key:current?.key || null,
+    })
+  }, [current?.key, user?.id])
   const thread = useMemo(() => {
     if (!current) return []
     const history = olderConversationKey === current.key ? olderMessages : []
@@ -748,6 +790,7 @@ export function WhatsAppInbox() {
         <Avatar className="wa-avatar-header" name={current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')} phone={current.contactPhone || current.phone} photo={current.photo}/>
         <div className="wa-chat-person"><strong>{current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')}</strong><span>{current.isGroup ? 'Conversa em grupo' : (current.contactPhone ? formatPhone(current.contactPhone) : 'Identificador privado do WhatsApp')}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div>
         <div className="wa-chat-tags">{current.isGroup && <span className="is-group">grupo</span>}{!current.isGroup && <span className={`is-${current.kind}`}>{CONVERSATION_KIND_LABEL[current.kind]}</span>}{ownerName(current.numberId, current.assignedUserId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId, current.assignedUserId)}</span>}</div>
+        {currentViewers.length > 0 && <div className="wa-collision-notice" role="status" title="Outro membro da equipe está com esta conversa aberta"><span className="wa-presence-dot"/><span>{whatsappPresenceLabel(currentViewers)}</span></div>}
         {!current.isGroup && current.contactId && <div className="wa-contact-actions">
           {current.kind === 'contact' && <button type="button" className="is-opportunity" onClick={() => openContactModal('lead')} title="Registrar oportunidade" aria-label="Registrar oportunidade"><span className="wa-action-icon">＋</span><span className="wa-action-label">Registrar oportunidade</span></button>}
           {['contact','lead'].includes(current.kind) && <button type="button" className="is-patient" onClick={() => openContactModal('patient')} title="Registrar como paciente" aria-label="Registrar como paciente"><Icon name="user" size={15}/><span className="wa-action-label">Registrar como paciente</span></button>}

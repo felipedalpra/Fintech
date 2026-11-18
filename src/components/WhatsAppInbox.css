@@ -166,6 +166,9 @@
 .wa-health-main small { overflow: hidden; color: var(--wa-muted); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
 .wa-health-action { width: 22px; height: 22px; display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--wa-muted); border-radius: 50%; font-size: 15px; line-height: 1; }
 .wa-health-action:hover { color: var(--wa-green-bright); background: rgba(37, 211, 102, .12); }
+.wa-collision-notice { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 4px 7px; color: #f6c453; background: rgba(246, 196, 83, .1); border: 1px solid rgba(246, 196, 83, .22); border-radius: 999px; font-size: 10px; }
+.wa-collision-notice span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-presence-dot { width: 6px; height: 6px; flex: 0 0 auto; background: #f6c453; border-radius: 50%; box-shadow: 0 0 0 3px rgba(246, 196, 83, .12); }
 .wa-conversation-list { flex: 1 1 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 
 .wa-conversation {
