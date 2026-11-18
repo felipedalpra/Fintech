@@ -267,6 +267,13 @@
 .wa-error > span { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(239, 68, 68, .25); font-weight: 800; }
 .wa-error p { flex: 1; margin: 0; }
 .wa-error button { border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 20px; }
+.wa-connection-alert { gap: 8px; margin: 6px 10px 0; padding: 7px 9px; border-radius: 8px; font-size: 11px; }
+.wa-connection-alert > span { width: 17px; height: 17px; flex: 0 0 auto; font-size: 10px; }
+.wa-connection-alert p { line-height: 1.35; }
+.wa-alert-actions { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.wa-alert-actions button { min-height: 25px; padding: 3px 7px; border: 1px solid rgba(255, 213, 213, .28); border-radius: 6px; color: #ffe6e6; background: rgba(255, 255, 255, .06); font-size: 10px; font-weight: 700; line-height: 1; }
+.wa-alert-actions button:hover { background: rgba(255, 255, 255, .14); }
+.wa-alert-actions button:last-child { width: 25px; padding: 0; border-color: transparent; background: transparent; font-size: 17px; }
 .wa-success { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; margin: 10px 14px 0; padding: 9px 11px; color: #c9ffe7; background: rgba(16, 185, 129, .14); border: 1px solid rgba(16, 185, 129, .3); border-radius: 10px; font-size: 12px; }
 .wa-success > span { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(16, 185, 129, .25); font-weight: 800; }
 .wa-success p { flex: 1; margin: 0; }
