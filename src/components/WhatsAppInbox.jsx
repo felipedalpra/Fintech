@@ -6,10 +6,9 @@ import { SuggestionBox } from './OpportunityPipeline.jsx'
 import { confirmSuggestion, dismissSuggestion } from '../lib/opportunitySuggestion.js'
 import { uploadWhatsAppMedia, mediaTypeFromMime } from '../lib/whatsappUpload.js'
 import { conversationKind, CONVERSATION_KIND_LABEL } from '../lib/crmContact.js'
-import { convertContactToPatient, createWhatsAppContactLead, setContactIgnored } from '../lib/crmContactActions.js'
+import { convertContactToPatient, createWhatsAppContactLead } from '../lib/crmContactActions.js'
 import { Modal, Btn, FInput } from './UI.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
-import { Person360Drawer } from './Person360Drawer.jsx'
 import { WhatsAppMedia } from './WhatsAppMedia.jsx'
 import { applyConversationFilters, createSavedReply, loadConversationStates, loadSavedReplies, operationalConversationKey, saveConversationState, unreadCountForConversation } from '../lib/operationalWorkspace.js'
 import { isWhatsAppNumberAvailable } from '../lib/whatsappNumberAvailability.js'
@@ -151,7 +150,7 @@ export function WhatsAppInbox() {
   const [mobileListOpen, setMobileListOpen] = useState(false)
   const [filterNumber, setFilterNumber] = useState('all'), [filterResponsible, setFilterResponsible] = useState('all')
   const [filterMode, setFilterMode] = useState('service'), [conversationStates, setConversationStates] = useState([])
-  const [savedReplies, setSavedReplies] = useState([]), [show360, setShow360] = useState(false)
+  const [savedReplies, setSavedReplies] = useState([])
   const [replyText, setReplyText] = useState(''), [showEmoji, setShowEmoji] = useState(false), [emojiGroup, setEmojiGroup] = useState('recent')
   const [replyNumberId, setReplyNumberId] = useState(''), [sending, setSending] = useState(false), [uploading, setUploading] = useState(false), [recording, setRecording] = useState(false)
   const [pendingSend, setPendingSend] = useState(null)
@@ -572,11 +571,6 @@ export function WhatsAppInbox() {
     const confirmed = { ...(stateMap.get(current.key) || {}), conversation_key:current.key, ...patch }
     setConversationStates(states => states.some(state => state.conversation_key === current.key) ? states.map(state => state.conversation_key === current.key ? confirmed : state) : [...states, confirmed])
   }
-  function markCurrentUnread() {
-    const latestInbound = [...(current?.items || [])].find(message => message.direction === 'inbound')
-    const boundary = latestInbound ? new Date(new Date(latestInbound.created_at).getTime() - 1).toISOString() : new Date(0).toISOString()
-    patchCurrentState({ marked_unread_at:boundary, last_read_at:null })
-  }
   async function saveReplyFromComposer() {
     const body = replyText.trim()
     if (!body) { setError('Digite a mensagem que deseja salvar como resposta rápida.'); return }
@@ -690,14 +684,6 @@ export function WhatsAppInbox() {
     setContactModal(null)
     await reloadMessageWindow()
   }
-  async function toggleIgnored(ignored) {
-    if (!current?.contactId || contactBusy) return
-    setContactBusy(true); setError(null)
-    const result = await setContactIgnored(current.contactId, ignored)
-    setContactBusy(false)
-    if (result.error) { setError(result.error); return }
-    await reloadMessageWindow()
-  }
   function openConversation(key) { textSendRequestRef.current = null; setSelectedPhone(key); setMobileListOpen(false) }
   function returnToConversationList() { setMobileListOpen(true); setShowEmoji(false) }
   function renderBody(message) {
@@ -740,12 +726,9 @@ export function WhatsAppInbox() {
         <Avatar className="wa-avatar-header" name={current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')} phone={current.contactPhone || current.phone} photo={current.photo}/>
         <div className="wa-chat-person"><strong>{current.name || (current.isGroup ? 'Grupo do WhatsApp' : 'Contato do WhatsApp')}</strong><span>{current.isGroup ? 'Conversa em grupo' : (current.contactPhone ? formatPhone(current.contactPhone) : 'Identificador privado do WhatsApp')}{numberLabel[current.numberId] ? ` • ${numberLabel[current.numberId]}` : ''}</span></div>
         <div className="wa-chat-tags">{current.isGroup && <span className="is-group">grupo</span>}{!current.isGroup && <span className={`is-${current.kind}`}>{CONVERSATION_KIND_LABEL[current.kind]}</span>}{ownerName(current.numberId, current.assignedUserId) && <span><Icon name="user" size={13}/>{ownerName(current.numberId, current.assignedUserId)}</span>}</div>
-        <div className="wa-thread-actions"><select aria-label="Responsável pela conversa" value={current.assignedUserId || ''} onChange={event => patchCurrentState({ assigned_user_id:event.target.value || null })}><option value="">Sem responsável</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}</select>{!current.isGroup && <button type="button" onClick={() => setShow360(true)}>360°</button>}<button type="button" onClick={markCurrentUnread}>Não lida</button><button type="button" onClick={() => patchCurrentState({ archived_at:current.archived ? null : new Date().toISOString() })}>{current.archived ? 'Desarquivar' : 'Arquivar'}</button></div>
         {!current.isGroup && current.contactId && <div className="wa-contact-actions">
-          {current.kind === 'contact' && <button type="button" onClick={() => openContactModal('lead')} title="Adicionar ao funil" aria-label="Adicionar ao funil"><span className="wa-action-icon">＋</span><span className="wa-action-label">Funil</span></button>}
-          {['contact','lead'].includes(current.kind) && <button type="button" onClick={() => openContactModal('patient')} title="Cadastrar ou vincular paciente" aria-label="Cadastrar ou vincular paciente"><Icon name="user" size={14}/><span className="wa-action-label">Paciente</span></button>}
-          {current.kind === 'contact' && <button type="button" className="is-muted" onClick={() => toggleIgnored(true)} disabled={contactBusy} title="Ignorar contato" aria-label="Ignorar contato"><span className="wa-action-icon">×</span><span className="wa-action-label">Ignorar</span></button>}
-          {current.kind === 'ignored' && <button type="button" onClick={() => toggleIgnored(false)} disabled={contactBusy} title="Reativar contato" aria-label="Reativar contato"><span className="wa-action-icon">↺</span><span className="wa-action-label">Reativar</span></button>}
+          {current.kind === 'contact' && <button type="button" className="is-opportunity" onClick={() => openContactModal('lead')} title="Registrar oportunidade" aria-label="Registrar oportunidade"><span className="wa-action-icon">＋</span><span className="wa-action-label">Registrar oportunidade</span></button>}
+          {['contact','lead'].includes(current.kind) && <button type="button" className="is-patient" onClick={() => openContactModal('patient')} title="Registrar como paciente" aria-label="Registrar como paciente"><Icon name="user" size={15}/><span className="wa-action-label">Registrar como paciente</span></button>}
         </div>}
       </header>
       {suggestOpp && <div className="wa-suggestion"><SuggestionBox opp={suggestOpp} disabled={suggestBusy} onAccept={acceptSuggestion} onReject={rejectSuggestion}/></div>}
@@ -766,15 +749,15 @@ export function WhatsAppInbox() {
         {!replyText.trim() && <button type="button" className={`wa-icon-button wa-composer-button ${recording ? 'is-recording' : ''}`} onClick={toggleRecord} disabled={!currentReplyNumber || uploading} title={recording ? 'Parar e enviar' : 'Gravar áudio'} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'}><Icon name={recording ? 'stop' : 'mic'}/></button>}{replyText.trim() && <button type="submit" className="wa-send-button" disabled={!currentReplyNumber || sending || uploading || recording} aria-label="Enviar mensagem"><Icon name="send" size={19}/>{sending && <span className="wa-send-spinner"/>}</button>}
       </div></form>
     </>}</section>
-    <Modal open={contactModal === 'lead'} onClose={() => !contactBusy && setContactModal(null)} title="Adicionar contato ao funil" width={440}>
+    <Modal open={contactModal === 'lead'} onClose={() => !contactBusy && setContactModal(null)} title="Registrar oportunidade" width={440}>
       <div className="wa-contact-modal">
         <p>Será criada uma oportunidade em <strong>Primeiro contato</strong>. Isso não cadastra a pessoa como paciente.</p>
         {contactError && <div className="wa-contact-modal-error" role="alert">{contactError}</div>}
         <FInput label="Interesse / oportunidade" value={leadTitle} onChange={setLeadTitle} placeholder="Ex.: Rinoplastia" />
-        <div className="wa-contact-modal-actions"><Btn variant="ghost" onClick={() => setContactModal(null)} disabled={contactBusy}>Cancelar</Btn><Btn onClick={addContactToFunnel} disabled={contactBusy}>{contactBusy ? 'Adicionando…' : 'Adicionar ao funil'}</Btn></div>
+        <div className="wa-contact-modal-actions"><Btn variant="ghost" onClick={() => setContactModal(null)} disabled={contactBusy}>Cancelar</Btn><Btn onClick={addContactToFunnel} disabled={contactBusy}>{contactBusy ? 'Registrando…' : 'Registrar oportunidade'}</Btn></div>
       </div>
     </Modal>
-    <Modal open={contactModal === 'patient'} onClose={() => !contactBusy && setContactModal(null)} title="Cadastrar ou vincular paciente" width={480}>
+    <Modal open={contactModal === 'patient'} onClose={() => !contactBusy && setContactModal(null)} title="Registrar como paciente" width={480}>
       <div className="wa-contact-modal">
         <p>Crie um paciente somente após confirmar a identidade, ou vincule esta conversa a um cadastro existente.</p>
         {contactError && <div className="wa-contact-modal-error" role="alert">{contactError}</div>}
@@ -785,6 +768,5 @@ export function WhatsAppInbox() {
         <div className="wa-contact-modal-actions"><Btn variant="ghost" onClick={() => setContactModal(null)} disabled={contactBusy}>Cancelar</Btn><Btn onClick={() => convertCurrentContact(selectedPatientId)} disabled={contactBusy || !selectedPatientId}>Vincular selecionado</Btn></div>
       </div>
     </Modal>
-    <Person360Drawer open={show360} onClose={() => setShow360(false)} contactId={current?.contactId} patientId={current?.patientId} name={current?.name} phone={formatPhone(current?.contactPhone || current?.phone)} />
   </div>
 }

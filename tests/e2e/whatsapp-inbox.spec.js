@@ -165,8 +165,8 @@ test('inbox separa contatos de pacientes e abre os threads', async ({ page }) =>
   await sidebar.getByText('+55 (11) 97777-6666').click()
   await expect(page.getByText('Quero fazer rino').first()).toBeVisible()
   await expect(page.getByPlaceholder('Responder...')).toBeVisible()
-  await expect(page.getByRole('button', { name:'Adicionar ao funil' })).toBeVisible()
-  await expect(page.getByRole('button', { name:'Cadastrar ou vincular paciente' })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Registrar oportunidade' })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Registrar como paciente' })).toBeVisible()
 })
 
 test('fila separa atendimentos, grupos e não lidas', async ({ page }) => {
@@ -195,10 +195,10 @@ test('adiciona contato ao funil sem inserir paciente', async ({ page }) => {
 
   await page.goto('/app/inbox')
   await page.locator('.wa-sidebar').getByText('+55 (11) 97777-6666').click()
-  await page.getByRole('button', { name:'Adicionar ao funil' }).click()
+  await page.getByRole('button', { name:'Registrar oportunidade' }).click()
   await expect(page.getByText('Isso não cadastra a pessoa como paciente.')).toBeVisible()
   await page.getByPlaceholder('Ex.: Rinoplastia').fill('Rinoplastia')
-  await page.getByRole('button', { name:'Adicionar ao funil', exact:true }).last().click()
+  await page.getByRole('button', { name:'Registrar oportunidade', exact:true }).last().click()
 
   await expect.poll(() => rpcPayload).toEqual({ p_contact:'c1', p_title:'Rinoplastia' })
   expect(patientWrites).toBe(0)
@@ -214,7 +214,7 @@ test('converte contato em paciente somente após confirmação explícita', asyn
 
   await page.goto('/app/inbox')
   await page.locator('.wa-sidebar').getByText('+55 (11) 97777-6666').click()
-  await page.getByRole('button', { name:'Cadastrar ou vincular paciente' }).click()
+  await page.getByRole('button', { name:'Registrar como paciente' }).click()
   await page.getByPlaceholder('Nome completo').fill('Maria Confirmada')
   await page.getByRole('button', { name:'Criar novo paciente' }).click()
 
