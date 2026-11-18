@@ -41,6 +41,7 @@ create or replace function public.auto_funnel_set_stage(p_opp uuid, p_patient uu
 returns void
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   v_opp uuid;
@@ -89,7 +90,7 @@ end $$;
 
 -- 3. Consulta criada → Consulta Agendada. (fail-safe)
 create or replace function public.trg_consultation_funnel()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   begin
     perform public.auto_funnel_set_stage(NEW.opportunity_id, NEW.patient_id, 'consulta_agendada');
@@ -103,7 +104,7 @@ create trigger trg_consultation_funnel
 
 -- 4. Cirurgia criada → Cirurgia Marcada. (fail-safe)
 create or replace function public.trg_surgery_funnel()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   begin
     perform public.auto_funnel_set_stage(NEW.opportunity_id, NEW.patient_id, 'cirurgia_marcada');
@@ -117,7 +118,7 @@ create trigger trg_surgery_funnel
 
 -- 5. Pagamento da cirurgia vira pago/parcelado → Reserva Paga (só avança se ainda estava antes). (fail-safe)
 create or replace function public.trg_surgery_payment_funnel()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   begin
     if NEW.payment_status in ('pago','parcelado')
@@ -138,6 +139,7 @@ create or replace function public.process_funnel_daily()
 returns int
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   rec record;

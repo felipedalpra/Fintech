@@ -12,6 +12,7 @@ create or replace function public.move_opportunity(
 returns public.opportunities
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   old_stage text;

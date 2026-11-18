@@ -81,6 +81,7 @@ create or replace function public.export_patient_data(target_patient_id uuid)
 returns jsonb
 language sql
 security definer
+set search_path = public, pg_temp
 as $$
   select jsonb_build_object(
     'identity', (select to_jsonb(pi) - 'email_ciphertext' - 'phone_ciphertext' - 'cpf_ciphertext' from public.patients_identity pi where pi.id = target_patient_id and pi.user_id = auth.uid()),
@@ -94,6 +95,7 @@ create or replace function public.anonymize_patient_data(target_patient_id uuid)
 returns void
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 begin
   update public.patients_identity
@@ -120,6 +122,7 @@ create or replace function public.delete_patient_data(target_patient_id uuid)
 returns void
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 begin
   delete from public.consent_records where patient_id = target_patient_id and user_id = auth.uid();

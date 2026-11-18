@@ -14,6 +14,7 @@ create or replace function public.ensure_whatsapp_lead(p_owner uuid, p_phone tex
 returns uuid
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   pid uuid;

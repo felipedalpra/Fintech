@@ -37,6 +37,7 @@ create or replace function public.apply_followup_rules()
 returns trigger
 language plpgsql
 security definer
+set search_path = public, pg_temp
 as $$
 declare
   r record;

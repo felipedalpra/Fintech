@@ -1,5 +1,6 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { enforceRateLimit, rateLimitResponse } from '../_lib/securityControls.js'
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
@@ -76,4 +77,17 @@ export async function readRawBody(req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   return Buffer.concat(chunks)
+}
+
+export async function enforceStripeWebhookRateLimit(req, res) {
+  let admin = null
+  try { admin = getAdminSupabase() } catch { /* ambiente de teste/configuração inicial */ }
+  const result = await enforceRateLimit({
+    admin,
+    req,
+    scope:'stripe-webhook',
+    limit:120,
+    windowSeconds:60,
+  })
+  return rateLimitResponse(res, result)
 }

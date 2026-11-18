@@ -1,4 +1,4 @@
-import { getStripe, readRawBody, findBillingAccountByStripeCustomer, findBillingAccountByUser, upsertBillingAccount } from './_lib.js'
+import { getStripe, readRawBody, findBillingAccountByStripeCustomer, findBillingAccountByUser, upsertBillingAccount, enforceStripeWebhookRateLimit } from './_lib.js'
 
 export const config = {
   api: {
@@ -13,6 +13,7 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST')
     return res.status(405).json({ error:'Method not allowed' })
   }
+  if (await enforceStripeWebhookRateLimit(req, res)) return
 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
   if (!webhookSecret) {

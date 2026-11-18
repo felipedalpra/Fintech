@@ -7,6 +7,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
+- Controles de segurança server-side passaram a ter rate limiting persistente para WhatsApp/Meta/Stripe, recorrências e conclusão de uploads clínicos, além de uma trilha exclusiva de eventos de segurança (`api/_lib/securityControls.js`, `supabase/security_hardening_schema.sql`).
+- Funções legadas `SECURITY DEFINER` passaram a fixar `search_path` e tiveram execução pública revogada quando não necessária (`supabase/security_rls_hardening.sql` e schemas canônicos de funil, LGPD, auditoria e WhatsApp).
+- CSP foi adicionada inicialmente em modo `Report-Only`, com allowlist baseada nas integrações realmente encontradas, para medir incompatibilidades antes do bloqueio efetivo (`vercel.json`).
+- Runbook operacional documenta rotação separada de Supabase, Meta, WhatsApp, Stripe e Vercel, validação de RLS, backup/restauração, perda de volume, revogação de sessão e promoção da CSP (`docs/SECURITY_OPERATIONS.md`).
+- Uploads clínicos agora são validados no servidor antes de ficarem disponíveis: o backend recalcula SHA-256, identifica MIME pelos bytes, confere extensão e tamanho, remove o objeto quando há divergência e revoga a conclusão direta pela sessão do navegador (`api/clinical-assets/complete.js`, `api/_lib/clinicalUploadValidation.js`, `src/components/ClinicalAssets.jsx`, `supabase/clinical_assets_server_validation.sql`).
 - Atualizadas as dependências `react-router-dom` para `7.18.6` e `@supabase/supabase-js` para `2.101.0` (compatível com Node 20), removendo as vulnerabilidades transitivas do React Router e `ws`; `xlsx` permanece pendente por não ter correção oficial (`package.json`, `package-lock.json`).
 - Adicionados headers HTTP globais de segurança no Vercel contra MIME sniffing, clickjacking, vazamento excessivo de referer, permissões desnecessárias do navegador e acesso sem HTTPS (`vercel.json`).
 - Removidos os endpoints manuais de dispatch e sync geral do WhatsApp/Meta que aceitavam `owner` e datas usando apenas o segredo do cron; o cron interno e os fluxos autenticados da plataforma continuam disponíveis (`api/whatsapp.js`).

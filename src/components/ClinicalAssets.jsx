@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase.js'
 import { today } from '../utils.js'
 import {
   buildClinicalAssetRpcArgs,
+  completeClinicalAssetUpload,
   clinicalAssetDateLabel,
   clinicalAssetSha256,
   clinicalAssetStageLabel,
@@ -304,9 +305,9 @@ export function ClinicalAssets({ patient, ownerId, viewerId = '', initialAction 
           throw uploadError
         }
         setProgress({ current:index + 1, total:fileEntries.length, label:`Confirmando ${file.name}` })
-        const { data:confirmed, error:confirmError } = await supabase.rpc('complete_clinical_asset_upload', { p_asset_id:reservedAsset.asset_id })
-        if (confirmError) throw confirmError
-        if (!confirmed) throw new Error('O arquivo recebido não corresponde ao arquivo selecionado.')
+        const { data:{ session } = {} } = await supabase.auth.getSession()
+        if (!session?.access_token) throw new Error('Sessão expirada. Entre novamente para concluir o upload.')
+        await completeClinicalAssetUpload(reservedAsset.asset_id, session.access_token)
         completed += 1
       } catch (nextError) {
         failures.push(`${file.name}: ${nextError.message || 'falha no envio'}`)
@@ -328,10 +329,15 @@ export function ClinicalAssets({ patient, ownerId, viewerId = '', initialAction 
   async function completePending(asset) {
     setStatus('saving')
     setError('')
-    const { data:confirmed, error:confirmError } = await supabase.rpc('complete_clinical_asset_upload', { p_asset_id:asset.id })
-    if (confirmError || !confirmed) {
+    const { data:{ session } = {} } = await supabase.auth.getSession()
+    if (!session?.access_token) {
       setStatus('ready')
-      setError(confirmError?.message || 'O arquivo não corresponde à reserva e foi bloqueado.')
+      setError('Sessão expirada. Entre novamente para concluir o upload.')
+      return
+    }
+    try { await completeClinicalAssetUpload(asset.id, session.access_token) } catch (error) {
+      setStatus('ready')
+      setError(error.message || 'O arquivo não corresponde à reserva e foi bloqueado.')
       return
     }
     await load()

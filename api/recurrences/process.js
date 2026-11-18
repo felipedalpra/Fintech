@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { enforceRateLimit, rateLimitResponse } from '../_lib/securityControls.js'
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
@@ -46,6 +47,18 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET, POST')
     return res.status(405).json({ error:'Method not allowed' })
   }
+
+  let securityAdmin = null
+  try { securityAdmin = getAdminSupabase() } catch { /* ambiente de teste/configuração inicial */ }
+  const limiter = await enforceRateLimit({
+    admin:securityAdmin,
+    req,
+    scope:'recurrences-process',
+    identity:extractBearer(req.headers) || undefined,
+    limit:30,
+    windowSeconds:60,
+  })
+  if (rateLimitResponse(res, limiter)) return
 
   try {
     const bearer = extractBearer(req.headers)

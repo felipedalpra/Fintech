@@ -28,6 +28,17 @@ export async function clinicalAssetSha256(file) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+export async function completeClinicalAssetUpload(assetId, accessToken) {
+  const response = await fetch('/api/clinical-assets/complete', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${accessToken}` },
+    body:JSON.stringify({ assetId }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || 'Não foi possível validar o upload clínico.')
+  return payload
+}
+
 export function buildClinicalAssetRpcArgs({ patientId, file, form, sha256 }) {
   const kind = clinicalAssetKind(file)
   return {

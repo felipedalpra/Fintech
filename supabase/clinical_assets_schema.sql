@@ -405,13 +405,13 @@ alter table public.clinical_record_access_logs add constraint clinical_record_ac
 ));
 
 revoke all on function public.create_clinical_asset_upload(uuid, text, text, date, text, text, text, text, text, bigint, text, uuid) from public, anon;
-revoke all on function public.complete_clinical_asset_upload(uuid) from public, anon;
+revoke all on function public.complete_clinical_asset_upload(uuid) from public, anon, authenticated;
 revoke all on function public.fail_clinical_asset_upload(uuid) from public, anon;
 revoke all on function public.set_clinical_asset_archived(uuid, boolean) from public, anon;
 revoke all on function public.log_clinical_asset_access(uuid) from public, anon;
 revoke all on function public.log_clinical_asset_accesses(uuid[]) from public, anon;
 grant execute on function public.create_clinical_asset_upload(uuid, text, text, date, text, text, text, text, text, bigint, text, uuid) to authenticated;
-grant execute on function public.complete_clinical_asset_upload(uuid) to authenticated;
+grant execute on function public.complete_clinical_asset_upload(uuid) to service_role;
 grant execute on function public.fail_clinical_asset_upload(uuid) to authenticated;
 grant execute on function public.set_clinical_asset_archived(uuid, boolean) to authenticated;
 grant execute on function public.log_clinical_asset_access(uuid) to authenticated;

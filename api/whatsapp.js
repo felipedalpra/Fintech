@@ -53,6 +53,7 @@ import {
   revokeMetaToken,
 } from './_lib/metaOAuth.js'
 import { clearMetaDataCache, shouldClearMetaCache, syncMetaInsights, validateMetaSyncRange } from './_lib/metaInsights.js'
+import { enforceRateLimit, rateLimitResponse, recordSecurityEvent } from './_lib/securityControls.js'
 
 export const config = {
   api: {
@@ -477,14 +478,24 @@ async function resolveOwnerId(supabase, userId) {
 
 async function authenticatedAdmin(req) {
   const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return { error: { status: 401, message: 'Missing auth' } }
+  if (!authHeader?.startsWith('Bearer ')) {
+    let admin = null
+    try { admin = adminSupabase() } catch {}
+    await recordSecurityEvent(admin, { eventType:'admin_access_denied', route:`/api/whatsapp?action=${String(req.query.action || '')}`, requestIp:req.headers['x-forwarded-for'], metadata:{ reason:'missing_auth' } })
+    return { error: { status: 401, message: 'Missing auth' } }
+  }
   const supabase = adminSupabase()
   const { data: { user } = {}, error: authError } = await supabase.auth.getUser(authHeader.slice(7))
-  if (authError || !user) return { error: { status: 401, message: 'Unauthorized' } }
+  if (authError || !user) {
+    await recordSecurityEvent(supabase, { eventType:'admin_access_denied', route:`/api/whatsapp?action=${String(req.query.action || '')}`, requestIp:req.headers['x-forwarded-for'], metadata:{ reason:'invalid_auth' } })
+    return { error: { status: 401, message: 'Unauthorized' } }
+  }
   const ownerId = await resolveOwnerId(supabase, user.id)
   if (!await resolveClinicAdmin(supabase, user, ownerId)) {
+    await recordSecurityEvent(supabase, { eventType:'admin_access_denied', actorId:user.id, ownerId, route:`/api/whatsapp?action=${String(req.query.action || '')}`, requestIp:req.headers['x-forwarded-for'], metadata:{ reason:'insufficient_role' } })
     return { error: { status: 403, message: 'Somente administradores podem gerenciar a conexão.' } }
   }
+  await recordSecurityEvent(supabase, { eventType:'admin_endpoint_access', actorId:user.id, ownerId, route:`/api/whatsapp?action=${String(req.query.action || '')}`, requestIp:req.headers['x-forwarded-for'] })
   return { supabase, user, ownerId }
 }
 
@@ -506,6 +517,29 @@ export default async function handler(req, res) {
   }
 
   const action = req.query.action
+  if (action === 'webhook' || action === 'meta-webhook' || action === 'message') {
+    let securityAdmin = null
+    try { securityAdmin = adminSupabase() } catch { /* ambiente de teste/configuração inicial */ }
+    const limiter = await enforceRateLimit({
+      admin:securityAdmin,
+      req,
+      scope:action === 'message' ? 'whatsapp-message' : action,
+      identity:action === 'webhook'
+        ? `number:${String(req.query.number || 'unknown')}`
+        : String(req.headers.authorization || ''),
+      limit:action === 'message' ? 60 : 120,
+      windowSeconds:60,
+    })
+    if (rateLimitResponse(res, limiter)) {
+      await recordSecurityEvent(securityAdmin, {
+        eventType:'rate_limit_denied',
+        severity:'warning',
+        route:`/api/whatsapp?action=${action}`,
+        metadata:{ scope:action === 'message' ? 'whatsapp-message' : action },
+      })
+      return
+    }
+  }
   if (action === 'webhook') return handleWebhook(req, res)
   if (action === 'message') return handleSend(req, res)
   if (action === 'resolve-send-request') return handleResolveSendRequest(req, res)
@@ -1762,9 +1796,11 @@ async function handleWebhook(req, res) {
   // Fail-closed: um registro legado/manual sem segredo nunca aceita callbacks.
   // A reconexão administrativa gera e confirma um segredo antes de reativá-lo.
   if (!num.webhook_secret) {
+    await recordSecurityEvent(supabase, { eventType:'webhook_denied', ownerId:num.user_id, route:'/api/whatsapp?action=webhook', requestIp:req.headers['x-forwarded-for'], metadata:{ reason:'missing_secret', number_id:numberId } })
     return res.status(503).json({ error: 'Webhook secret is not configured' })
   }
   if (token !== num.webhook_secret) {
+    await recordSecurityEvent(supabase, { eventType:'webhook_denied', ownerId:num.user_id, route:'/api/whatsapp?action=webhook', requestIp:req.headers['x-forwarded-for'], metadata:{ reason:'invalid_token', number_id:numberId } })
     return res.status(401).json({ error: 'Invalid webhook token' })
   }
   const provider = whatsappProvider(num)
