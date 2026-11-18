@@ -216,13 +216,20 @@ export async function listEvolutionChats(instanceName) {
   return Array.isArray(data) ? data : (Array.isArray(data?.chats) ? data.chats : [])
 }
 
-export async function listEvolutionMessages(instanceName, remoteJid) {
+export async function listEvolutionMessages(instanceName, remoteJid = null, options = {}) {
   const name = safeInstanceName(instanceName)
   const jid = String(remoteJid || '').trim()
-  if (!jid) return []
+  const where = {}
+  if (jid) where.key = { remoteJid: jid }
+  if (options.start || options.end) {
+    where.messageTimestamp = {
+      ...(options.start ? { gte: new Date(options.start).toISOString() } : {}),
+      ...(options.end ? { lte: new Date(options.end).toISOString() } : {}),
+    }
+  }
   const data = await evolutionRequest(`/chat/findMessages/${encodeURIComponent(name)}`, {
     method: 'POST',
-    body: { where: { key: { remoteJid: jid } } },
+    body: { where, ...(options.page ? { page: options.page } : {}), ...(options.offset ? { offset: options.offset } : {}) },
     timeoutMs: 15_000,
   })
   if (Array.isArray(data)) return data

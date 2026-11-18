@@ -87,9 +87,9 @@ export async function listProviderChats(number) {
     : listZApiChats(number.instance_url, number.api_token)
 }
 
-export async function listProviderMessages(number, remoteJid) {
+export async function listProviderMessages(number, remoteJid, options) {
   if (whatsappProvider(number) !== 'evolution') return []
-  return listEvolutionMessages(number.provider_instance_name, remoteJid)
+  return listEvolutionMessages(number.provider_instance_name, remoteJid, options)
 }
 
 export async function resolveProviderPhoneLids(number, phones, options) {

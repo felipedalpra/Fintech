@@ -54,6 +54,16 @@ test('consulta mensagens de uma conversa na Evolution', async () => {
   expect(JSON.parse(request.options.body)).toEqual({ where:{ key:{ remoteJid:'5511999@s.whatsapp.net' } } })
 })
 
+test('consulta o histórico da instância com filtro de data', async () => {
+  let request
+  globalThis.fetch = async (url, options) => {
+    request = { url:String(url), options }
+    return new Response(JSON.stringify({ messages:{ records:[] } }), { status:200 })
+  }
+  await expect(listEvolutionMessages('surgimetrics_teste', null, { start:Date.parse('2026-11-18T00:00:00-03:00'), end:Date.parse('2026-11-19T00:00:00-03:00'), page:1, offset:100 })).resolves.toEqual([])
+  expect(JSON.parse(request.options.body)).toEqual({ where:{ messageTimestamp:{ gte:'2026-11-18T03:00:00.000Z', lte:'2026-11-19T03:00:00.000Z' } }, page:1, offset:100 })
+})
+
 test('converte destinatários canônicos para o formato da Evolution', () => {
   expect(evolutionRecipient('+55 (51) 99999-0000')).toBe('5551999990000')
   expect(evolutionRecipient('120363001234-group')).toBe('120363001234@g.us')

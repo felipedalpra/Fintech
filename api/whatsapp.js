@@ -921,42 +921,32 @@ async function handleSyncToday(req, res) {
   const summary = { date:window.date, numbers:0, chatsScanned:0, providerMessages:0, imported:0, duplicates:0, failed:0 }
   for (const number of numbers) {
     summary.numbers += 1
-    let chats
-    try { chats = await listProviderChats(number) } catch (syncError) {
+    let rows
+    try {
+      rows = await listProviderMessages(number, null, { start:window.start, end:window.end, page:1, offset:100 })
+    } catch (syncError) {
       summary.failed += 1
       continue
     }
-    const targets = (chats || [])
-      .map(chat => String(chat?.remoteJid || chat?.id || '').trim())
-      .filter(Boolean)
-      .slice(0, 80)
-    summary.chatsScanned += targets.length
-    for (let offset = 0; offset < targets.length; offset += 8) {
-      const batch = targets.slice(offset, offset + 8)
-      const results = await Promise.all(batch.map(async remoteJid => {
-        try { return await listProviderMessages(number, remoteJid) } catch { return [] }
-      }))
-      for (const rows of results) {
-        for (const raw of rows || []) {
-          const body = { event:'messages.upsert', instance:number.provider_instance_name, data:raw }
-          const parsed = parseProviderIncomingMessage('evolution', body)
-          const created = parsed?.createdAt ? Date.parse(parsed.createdAt) : NaN
-          if (!parsed || !Number.isFinite(created) || created < window.start || created >= window.end) continue
-          summary.providerMessages += 1
-          const response = replayResponse()
-          await handleWebhook({
-            method:'POST',
-            query:{ action:'webhook', number:number.id },
-            headers:{ 'x-webhook-token':number.webhook_secret },
-            body,
-            rawBody:Buffer.from(JSON.stringify(body)),
-          }, response)
-          if (response.statusCode >= 200 && response.statusCode < 300) {
-            if (response.payload?.duplicate) summary.duplicates += 1
-            else summary.imported += 1
-          } else summary.failed += 1
-        }
-      }
+    summary.chatsScanned += new Set((rows || []).map(row => row?.key?.remoteJid).filter(Boolean)).size
+    for (const raw of rows || []) {
+      const body = { event:'messages.upsert', instance:number.provider_instance_name, data:raw }
+      const parsed = parseProviderIncomingMessage('evolution', body)
+      const created = parsed?.createdAt ? Date.parse(parsed.createdAt) : NaN
+      if (!parsed || !Number.isFinite(created) || created < window.start || created >= window.end) continue
+      summary.providerMessages += 1
+      const response = replayResponse()
+      await handleWebhook({
+        method:'POST',
+        query:{ action:'webhook', number:number.id },
+        headers:{ 'x-webhook-token':number.webhook_secret },
+        body,
+        rawBody:Buffer.from(JSON.stringify(body)),
+      }, response)
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (response.payload?.duplicate) summary.duplicates += 1
+        else summary.imported += 1
+      } else summary.failed += 1
     }
   }
   return res.status(200).json({ ok:true, ...summary })
