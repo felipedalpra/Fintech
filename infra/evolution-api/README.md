@@ -7,9 +7,10 @@ de um `stream errored out`.
 
 ## Railway
 
-1. Faça backup do PostgreSQL e confirme que PostgreSQL e Redis são persistentes.
-2. No serviço da Evolution, use o repositório desta aplicação como origem e
-   configure o caminho do Dockerfile como `infra/evolution-api/Dockerfile`.
+1. O workflow `.github/workflows/evolution-api-image.yml` publica a imagem em:
+   `ghcr.io/felipedalpra/fintech/evolution-api:latest`.
+2. No serviço da Evolution, abra `Settings`, encontre `Source Image`, clique no
+   lápis e troque somente a imagem para esse endereço.
 3. Mantenha as variáveis atuais do serviço, principalmente conexão do banco,
    Redis, chave global e configurações de autenticação.
 4. Faça o deploy primeiro com um número de homologação.
@@ -17,6 +18,10 @@ de um `stream errored out`.
    logs por pelo menos uma hora e confirme que não surgem novos `stream errored
    out` relacionados a `ack`/`status`.
 6. Depois do teste, promova o mesmo build para produção.
+
+Na primeira publicação, o pacote do GHCR precisa estar público ou o Railway
+precisa receber credenciais de um registry privado. A imagem não contém
+segredos; ela contém apenas a Evolution base e o patch da Baileys.
 
 O script aborta se a imagem base não contiver exatamente a Baileys
 `7.0.0-rc.9` ou se o arquivo alvo tiver mudado. Isso evita aplicar um patch

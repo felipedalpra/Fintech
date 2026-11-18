@@ -8,6 +8,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
 - **Evolution API não perde o recebimento após `stream errored out` de status**: adicionada imagem derivada da `evoapicloud/evolution-api:v2.3.7` com o ack explícito das stanzas `status` da Baileys `7.0.0-rc.9`; o build valida a versão e os anchors antes de modificar o arquivo, evitando patch silenciosamente incompatível. Incluído teste de idempotência e rejeição de versão desconhecida. (`infra/evolution-api/Dockerfile`, `infra/evolution-api/patch-status.cjs`, `tests/unit/evolutionStatusPatch.spec.js`.)
+- **Publicação da imagem corrigida da Evolution**: workflow do GitHub Actions passa a construir e publicar a imagem derivada no GHCR, permitindo que o Railway use uma imagem Docker corrigida pelo campo `Source Image` sem recriar o serviço ou perder o volume. (`.github/workflows/evolution-api-image.yml`.)
 
 ### Fixed
 - **Sincronização manual não reprocessa milhares de mensagens já salvas**: antes de reaproveitar o webhook, o histórico agora compara os IDs da Evolution com o número selecionado e ignora duplicatas diretamente no banco, evitando chamadas desnecessárias e novos timeouts. (`api/whatsapp.js`.)
