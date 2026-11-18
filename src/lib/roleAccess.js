@@ -5,17 +5,17 @@ export const ROLE_ACCESS = {
   ],
   gestao: [
     'dashboard', 'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'crm-painel', 'inbox', 'ads', 'tarefas', 'esteiras',
-    'finance', 'financial-import', 'fiscal-documents', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai',
+    'finance', 'financial-import', 'fiscal-documents', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai', 'settings',
   ],
   concierge: [
-    'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras',
+    'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras', 'settings',
   ],
   // 'equipe' tinha ficado sem 'sales' (Cirurgias) e 'plans' (Procedimentos, com os valores de
   // cada um) — só o concierge tinha. Pedido da Dra. Vitória (2026-11-12): toda a equipe agenda
   // cirurgia e consulta e lança o valor do procedimento, então 'equipe' ganha a mesma lista do
   // concierge. O financeiro completo ('finance' etc.) continua fora dos dois.
   equipe: [
-    'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras',
+    'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras', 'settings',
   ],
 }
 

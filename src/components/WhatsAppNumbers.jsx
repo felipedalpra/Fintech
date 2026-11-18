@@ -10,7 +10,7 @@ import { FIELD_STANDARDS } from '../lib/formFieldStandards.js'
 const WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
 const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 
-export function WhatsAppNumbers() {
+export function WhatsAppNumbers({ canManageAll = true }) {
   const { ownerId } = useUserRole()
   const [numbers, setNumbers] = useState([])
   const [members, setMembers] = useState([])
@@ -38,7 +38,7 @@ export function WhatsAppNumbers() {
     setLoading(true)
     const [numResult, memRes] = await Promise.allSettled([
       whatsappApi('list-numbers', {}),
-      supabase.rpc('clinic_team'), // roster via RPC: admin-membro (não-owner) também enxerga o time
+      canManageAll ? supabase.rpc('clinic_team') : Promise.resolve({ data:[], error:null }), // somente gestores precisam do roster para atribuir números
     ])
     if (numResult.status === 'fulfilled') {
       setNumbers(numResult.value.numbers || [])
@@ -49,7 +49,7 @@ export function WhatsAppNumbers() {
     else setMsg(current => current || ({ type:'error', text:'Não foi possível carregar a equipe.' }))
     setLoading(false)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [canManageAll])
 
   async function whatsappApi(action, payload) {
     const accessToken = E2E_BYPASS_AUTH
@@ -338,7 +338,9 @@ export function WhatsAppNumbers() {
       <div style={{ fontSize: 11, color: C.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Integração</div>
       <h3 style={{ margin: '0 0 6px', fontSize: 22, color: C.text, letterSpacing: '-0.03em' }}>Números de WhatsApp</h3>
       <p style={{ fontSize: 13, color: C.textSub, marginTop: 0, marginBottom: 18, lineHeight: 1.5 }}>
-        Conecte até 3 números do WhatsApp Business. Na Evolution, a clínica apenas escaneia o QR Code em Dispositivos conectados; a chave da infraestrutura nunca aparece no navegador. Números antigos da Z-API continuam disponíveis durante a migração.
+        {canManageAll
+          ? 'Conecte e gerencie os números do WhatsApp Business da clínica. Na Evolution, a clínica apenas escaneia o QR Code em Dispositivos conectados; a chave da infraestrutura nunca aparece no navegador.'
+          : 'Gerencie somente o número de WhatsApp atribuído à sua conta. Para conectar, reconectar ou remover este número, use os controles abaixo.'}
       </p>
 
       {msg && <p style={{ fontSize: 12, color: msg.type === 'error' ? (C.red || '#ef4444') : '#10b981', margin: '0 0 12px' }}>{msg.text}</p>}
@@ -395,19 +397,19 @@ export function WhatsAppNumbers() {
                 </div>
               )}
 
-              <div style={s.row}>
+              {canManageAll && <div style={s.row}>
                 <code style={s.hook}>{webhookUrl(n)}</code>
                 <button style={s.linkBtn} onClick={() => copy(webhookUrl(n))}>Copiar URL de webhook</button>
-              </div>
+              </div>}
 
-              <div style={s.row}>
+              {canManageAll && <div style={s.row}>
                 <span style={{ fontSize: 12, color: C.textSub }}>Responsável:</span>
                 <select style={s.assign} value={n.assigned_user_id || ''} onChange={e => assign(n.id, e.target.value)}>
                   <option value="">— sem responsável (só admin vê)</option>
                   {members.map(m => <option key={m.user_id} value={m.user_id}>{m.member_email} · {m.role}</option>)}
                 </select>
                 {!n.assigned_user_id && <span style={s.unassignedTag}>só admin</span>}
-              </div>
+              </div>}
 
               {n.provider === 'evolution' && (n.last_health_at || n.last_webhook_at) && (
                 <div style={{ fontSize: 11, color: C.textDim, lineHeight: 1.5 }}>
@@ -460,7 +462,7 @@ export function WhatsAppNumbers() {
         busy={archiveBusy === confirmArchive?.id}
       />
 
-      <form onSubmit={add} style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 520 }}>
+      {canManageAll && <form onSubmit={add} style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 520 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Adicionar número</div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: C.textSub }}>
           Provedor
@@ -478,7 +480,7 @@ export function WhatsAppNumbers() {
           <FInput label="Client-Token Z-API" value={apiToken} onChange={setApiToken} type="password" placeholder="token de segurança da conta" />
         </>}
         <Btn disabled={saving}>{saving ? (provider === 'evolution' ? 'Criando instância...' : 'Testando e salvando...') : (provider === 'evolution' ? 'Criar e mostrar QR Code' : 'Adicionar número Z-API')}</Btn>
-      </form>
+      </form>}
     </div>
   )
 }
