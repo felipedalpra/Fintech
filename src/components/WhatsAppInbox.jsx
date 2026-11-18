@@ -64,6 +64,7 @@ function Icon({ name, size=20, strokeWidth=1.8 }) {
     send:<><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></>,
     document:<><path d="M6 2h8l4 4v16H6Z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></>,
     refresh:<><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 0-2 5"/></>,
+    download:<><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></>,
     back:<><path d="m15 18-6-6 6-6"/><path d="M9 12h11"/></>,
     user:<><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
   }
@@ -144,6 +145,7 @@ export function WhatsAppInbox() {
   const isAdmin = isOwner || role === 'admin'
   const [messages, setMessages] = useState([]), [numbers, setNumbers] = useState([]), [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState(null)
+  const [syncNotice, setSyncNotice] = useState(null)
   const [realtimeState, setRealtimeState] = useState('connecting')
   const [selectedPhone, setSelectedPhone] = useState(null), [search, setSearch] = useState('')
   const [mobileListOpen, setMobileListOpen] = useState(false)
@@ -347,6 +349,31 @@ export function WhatsAppInbox() {
       setError(nextError.message)
     }
     await load({ silent:true })
+  }
+  async function syncToday() {
+    if (filterNumber === 'all') {
+      setError('Selecione um número específico no filtro para recuperar as mensagens de hoje.')
+      return
+    }
+    setRefreshing(true); setError(null); setSyncNotice(null)
+    try {
+      const { data:sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      if (!token) throw new Error('Sua sessão expirou. Entre novamente para recuperar as mensagens.')
+      const response = await fetch('/api/whatsapp?action=sync-today', {
+        method:'POST',
+        headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+        body:JSON.stringify({ whatsappNumberId:filterNumber }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.error || 'Não foi possível recuperar as mensagens de hoje.')
+      await load({ silent:true })
+      setSyncNotice(`${result.imported || 0} mensagem(ns) recuperada(s) de hoje${result.duplicates ? `; ${result.duplicates} já estava(m) no painel` : ''}.`)
+    } catch (nextError) {
+      setError(nextError.message)
+    } finally {
+      setRefreshing(false)
+    }
   }
   useEffect(() => {
     if (!ownerId) return undefined
@@ -688,7 +715,7 @@ export function WhatsAppInbox() {
   return <div className={`wa-inbox ${current && !mobileListOpen ? 'wa-has-chat' : 'wa-show-list'}`}>
     <aside className="wa-sidebar">
       <div className="wa-sidebar-top">
-        <div className="wa-sidebar-title"><span className="wa-brand-icon" aria-label="WhatsApp"><WhatsAppLogo size={23}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'conversa' : 'conversas'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={refreshConversations} title="Atualizar mensagens, nomes e fotos" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button></div>
+        <div className="wa-sidebar-title"><span className="wa-brand-icon" aria-label="WhatsApp"><WhatsAppLogo size={23}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'conversa' : 'conversas'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={refreshConversations} title="Atualizar mensagens, nomes e fotos" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={syncToday} disabled={refreshing || filterNumber === 'all'} title={filterNumber === 'all' ? 'Selecione um número para recuperar as mensagens de hoje' : 'Recuperar mensagens de hoje da Evolution'} aria-label="Recuperar mensagens de hoje"><Icon name="download" size={18}/></button></div>
         <label className="wa-search"><Icon name="search" size={17}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar conversa ou mensagem"/>{search && <button type="button" onClick={() => setSearch('')} aria-label="Limpar busca">×</button>}</label>
         <div className="wa-queue-tabs">{[['service','Atendimentos'],['unread','Não lidas'],['leads','Leads'],['patients','Pacientes'],['groups','Grupos'],['archived','Arquivadas']].map(([id,label]) => <button type="button" key={id} className={filterMode === id ? 'is-active' : ''} onClick={() => setFilterMode(id)}>{label}</button>)}</div>
         <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{selectableNumbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
@@ -706,6 +733,7 @@ export function WhatsAppInbox() {
     <section className="wa-chat">
       {unavailableActiveNumbers.length > 0 && <div className="wa-error" role="alert"><span>!</span><p>Há número(s) desconectado(s): {unavailableActiveNumbers.map(number => `${number.label} (${number.connection_state || 'sem estado'})`).join(', ')}. Reconecte em Configurações → WhatsApp.</p></div>}
       {realtimeState === 'offline' && <div className="wa-error" role="status"><span>!</span><p>A atualização ao vivo do WhatsApp caiu. O painel está tentando atualizar automaticamente a cada 30 segundos.</p></div>}
+      {syncNotice && <div className="wa-success" role="status"><span>✓</span><p>{syncNotice}</p><button type="button" onClick={() => setSyncNotice(null)} aria-label="Fechar aviso">×</button></div>}
       {!current ? <div className="wa-chat-empty"><span className="wa-empty-logo"><WhatsAppLogo size={48}/></span><h3>Seu atendimento em um só lugar</h3><p>Selecione uma conversa para visualizar o histórico e responder.</p></div> : <>
       <header className="wa-chat-header">
         <button type="button" className="wa-icon-button wa-back" onClick={returnToConversationList} aria-label="Voltar para conversas"><Icon name="back"/></button>

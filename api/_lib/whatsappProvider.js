@@ -15,6 +15,7 @@ import {
   downloadEvolutionMedia,
   getEvolutionConnection,
   listEvolutionChats,
+  listEvolutionMessages,
   logoutEvolutionInstance,
   resolveEvolutionPhoneLids,
   sendEvolutionMedia,
@@ -84,6 +85,11 @@ export async function listProviderChats(number) {
   return whatsappProvider(number) === 'evolution'
     ? listEvolutionChats(number.provider_instance_name)
     : listZApiChats(number.instance_url, number.api_token)
+}
+
+export async function listProviderMessages(number, remoteJid) {
+  if (whatsappProvider(number) !== 'evolution') return []
+  return listEvolutionMessages(number.provider_instance_name, remoteJid)
 }
 
 export async function resolveProviderPhoneLids(number, phones, options) {

@@ -10,6 +10,7 @@ import {
   createEvolutionInstance,
   downloadProviderMedia,
   listProviderChats,
+  listProviderMessages,
   logoutProviderInstance,
   providerAvailable,
   providerReady,
@@ -500,6 +501,7 @@ export default async function handler(req, res) {
   if (action === 'process-media-queue') return handleProcessMediaQueue(req, res)
   if (action === 'media-url') return handleMediaUrl(req, res)
   if (action === 'sync-chat-identities') return handleSyncChatIdentities(req, res)
+  if (action === 'sync-today') return handleSyncToday(req, res)
   if (action === 'dispatch') return handleDispatch(req, res)
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
   if (action === 'meta-sync') return handleMetaSync(req, res)
@@ -881,6 +883,85 @@ async function handleMediaUrl(req, res) {
 }
 
 // ---- Atualizar nomes/fotos de conversas existentes (sem nova função serverless) ----
+function currentBrazilDayWindow(now = new Date()) {
+  const shifted = new Date(now.getTime() - (3 * 60 * 60 * 1000))
+  const date = shifted.toISOString().slice(0, 10)
+  const start = new Date(`${date}T00:00:00-03:00`)
+  return { start: start.getTime(), end: start.getTime() + 24 * 60 * 60 * 1000, date }
+}
+
+function replayResponse() {
+  return {
+    statusCode: 200,
+    payload: null,
+    status(code) { this.statusCode = code; return this },
+    json(payload) { this.payload = payload; return payload },
+    setHeader() {},
+  }
+}
+
+async function handleSyncToday(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const auth = await authenticatedAdmin(req)
+  if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+  const { supabase, ownerId } = auth
+  const requestedNumberId = String(req.body?.whatsappNumberId || '').trim()
+  let query = supabase.from('whatsapp_numbers')
+    .select(NUMBER_PROVIDER_FIELDS)
+    .eq('user_id', ownerId)
+    .eq('active', true)
+    .eq('provider', 'evolution')
+    .is('archived_at', null)
+  if (requestedNumberId) query = query.eq('id', requestedNumberId)
+  const { data: numbers, error } = await query.order('created_at', { ascending: true })
+  if (error) return res.status(500).json({ error: 'Não foi possível carregar os números para sincronização.' })
+  if (!numbers?.length) return res.status(404).json({ error: 'Nenhum número Evolution ativo foi selecionado.' })
+
+  const window = currentBrazilDayWindow()
+  const summary = { date:window.date, numbers:0, chatsScanned:0, providerMessages:0, imported:0, duplicates:0, failed:0 }
+  for (const number of numbers) {
+    summary.numbers += 1
+    let chats
+    try { chats = await listProviderChats(number) } catch (syncError) {
+      summary.failed += 1
+      continue
+    }
+    const targets = (chats || [])
+      .map(chat => String(chat?.remoteJid || chat?.id || '').trim())
+      .filter(Boolean)
+      .slice(0, 80)
+    summary.chatsScanned += targets.length
+    for (let offset = 0; offset < targets.length; offset += 8) {
+      const batch = targets.slice(offset, offset + 8)
+      const results = await Promise.all(batch.map(async remoteJid => {
+        try { return await listProviderMessages(number, remoteJid) } catch { return [] }
+      }))
+      for (const rows of results) {
+        for (const raw of rows || []) {
+          const body = { event:'messages.upsert', instance:number.provider_instance_name, data:raw }
+          const parsed = parseProviderIncomingMessage('evolution', body)
+          const created = parsed?.createdAt ? Date.parse(parsed.createdAt) : NaN
+          if (!parsed || !Number.isFinite(created) || created < window.start || created >= window.end) continue
+          summary.providerMessages += 1
+          const response = replayResponse()
+          await handleWebhook({
+            method:'POST',
+            query:{ action:'webhook', number:number.id },
+            headers:{ 'x-webhook-token':number.webhook_secret },
+            body,
+            rawBody:Buffer.from(JSON.stringify(body)),
+          }, response)
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            if (response.payload?.duplicate) summary.duplicates += 1
+            else summary.imported += 1
+          } else summary.failed += 1
+        }
+      }
+    }
+  }
+  return res.status(200).json({ ok:true, ...summary })
+}
+
 async function handleSyncChatIdentities(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
   const authHeader = req.headers.authorization

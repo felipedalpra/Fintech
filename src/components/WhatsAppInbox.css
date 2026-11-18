@@ -267,6 +267,10 @@
 .wa-error > span { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(239, 68, 68, .25); font-weight: 800; }
 .wa-error p { flex: 1; margin: 0; }
 .wa-error button { border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 20px; }
+.wa-success { flex: 0 0 auto; display: flex; align-items: center; gap: 9px; margin: 10px 14px 0; padding: 9px 11px; color: #c9ffe7; background: rgba(16, 185, 129, .14); border: 1px solid rgba(16, 185, 129, .3); border-radius: 10px; font-size: 12px; }
+.wa-success > span { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(16, 185, 129, .25); font-weight: 800; }
+.wa-success p { flex: 1; margin: 0; }
+.wa-success button { border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 20px; }
 
 .wa-messages {
   position: relative;
