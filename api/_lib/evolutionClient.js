@@ -226,7 +226,11 @@ export async function listEvolutionMessages(instanceName, remoteJid) {
     timeoutMs: 15_000,
   })
   if (Array.isArray(data)) return data
-  return Array.isArray(data?.messages) ? data.messages : (Array.isArray(data?.data) ? data.data : [])
+  if (Array.isArray(data?.messages)) return data.messages
+  if (Array.isArray(data?.messages?.records)) return data.messages.records
+  if (Array.isArray(data?.data)) return data.data
+  if (Array.isArray(data?.data?.records)) return data.data.records
+  return []
 }
 
 export async function downloadEvolutionMedia(instanceName, message) {
