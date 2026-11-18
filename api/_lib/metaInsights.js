@@ -3,7 +3,7 @@
 // Orquestração: syncMetaInsights(supabase, opts) — lê estrutura + insights do Meta e faz upsert
 // idempotente nas tabelas de cache. NÃO toca o financeiro.
 //
-// O sync é chamado pelo cron de alertas (api/alerts/process.js) e por api/whatsapp.js?action=meta-sync.
+// O sync é chamado pelo cron de alertas (api/alerts/process.js) e pelo fluxo autenticado de sincronização por período.
 import { decryptPayload } from './secureProfile.js'
 
 // Tipos de ação que representam leads, em ordem de PREFERÊNCIA. Nas Insights API esses tipos

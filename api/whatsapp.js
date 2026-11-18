@@ -36,7 +36,6 @@ import {
 } from './_lib/whatsapp.js'
 import { shouldRunAI, buildSuggestionInput, parseSuggestionResult } from './_lib/stageSuggest.js'
 import { classifyStageWithAI } from './_lib/stageSuggestClient.js'
-import { runWhatsAppAutomations } from './_lib/whatsappAutomations.js'
 import { conversationReferenceMatches, existingSendRequestAction, normalizeWhatsAppRequestId, payloadCollisionAction, providerFailureIsDefinitive, whatsappSendRequestFingerprint } from './_lib/whatsappSendRequest.js'
 import { parseLeadgenWebhook, verifyWebhookSignature, mapLeadFields, fetchLeadData } from './_lib/meta.js'
 import { decryptPayload, encryptPayload } from './_lib/secureProfile.js'
@@ -521,9 +520,7 @@ export default async function handler(req, res) {
   if (action === 'media-url') return handleMediaUrl(req, res)
   if (action === 'sync-chat-identities') return handleSyncChatIdentities(req, res)
   if (action === 'sync-today') return handleSyncToday(req, res)
-  if (action === 'dispatch') return handleDispatch(req, res)
   if (action === 'meta-webhook') return handleMetaWebhook(req, res)
-  if (action === 'meta-sync') return handleMetaSync(req, res)
   if (action === 'meta-connect') return handleMetaConnect(req, res)
   if (action === 'meta-callback') return handleMetaOAuthCallback(req, res)
   if (action === 'meta-pending') return handleMetaPending(req, res)
@@ -1475,52 +1472,6 @@ async function handleProcessMediaQueue(req, res) {
     console.error('whatsapp media queue error:', error?.message)
     return res.status(500).json({ error:'WhatsApp media queue failed' })
   }
-}
-
-// ---- Disparo das automações de saída (gatilho manual/QA; o cron diário chama o motor direto) ----
-// Autorizado por CRON_SECRET (header x-cron-secret ou Authorization: Bearer). O cron de alertas
-// (api/alerts/process.js) roda o mesmo motor automaticamente às 08:00 BRT.
-async function handleDispatch(req, res) {
-  const secret = process.env.CRON_SECRET
-  const headerSecret = req.headers['x-cron-secret'] || ''
-  const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7) : ''
-  if (!secret || (headerSecret !== secret && bearer !== secret)) {
-    return res.status(401).json({ error: 'Invalid cron secret' })
-  }
-
-  const supabase = adminSupabase()
-  const todayISO = typeof req.query.date === 'string' && req.query.date ? req.query.date : undefined
-  const ownerId = typeof req.query.owner === 'string' && req.query.owner ? req.query.owner : null
-  const summary = await runWhatsAppAutomations(supabase, { todayISO, ownerId })
-  return res.status(200).json({ ok: true, ...summary })
-}
-
-// ---- Meta Ads: sync manual de insights (gatilho QA; o cron diário roda o mesmo motor) ----
-// Autorizado por CRON_SECRET. O cron de alertas (api/alerts/process.js) chama syncMetaInsights às 08:00 BRT.
-// ?owner=<id> limita a uma clínica; ?since=YYYY-MM-DD / ?days=N ajustam a janela.
-async function handleMetaSync(req, res) {
-  const secret = process.env.CRON_SECRET
-  const headerSecret = req.headers['x-cron-secret'] || ''
-  const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7) : ''
-  if (!secret || (headerSecret !== secret && bearer !== secret)) {
-    return res.status(401).json({ error: 'Invalid cron secret' })
-  }
-
-  const supabase = adminSupabase()
-  const owner = typeof req.query.owner === 'string' && req.query.owner ? req.query.owner : null
-  let since
-  if (typeof req.query.since === 'string' && req.query.since) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(req.query.since)) return res.status(400).json({ error: 'since inválido (use YYYY-MM-DD)' })
-    since = req.query.since
-  }
-  let days
-  if (typeof req.query.days === 'string' && req.query.days) {
-    const n = Number(req.query.days)
-    if (!Number.isInteger(n) || n < 1 || n > 90) return res.status(400).json({ error: 'days inválido (1 a 90)' })
-    days = n
-  }
-  const summary = await syncMetaInsights(supabase, { owner, since, days })
-  return res.status(200).json(summary)
 }
 
 // ---- Enviar (autenticado pelo app, por número escolhido) ----

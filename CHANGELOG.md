@@ -7,6 +7,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
+- Removidos os endpoints manuais de dispatch e sync geral do WhatsApp/Meta que aceitavam `owner` e datas usando apenas o segredo do cron; o cron interno e os fluxos autenticados da plataforma continuam disponíveis (`api/whatsapp.js`).
 - Removido completamente o fluxo de alertas por Gmail: OAuth, envio automático, configuração e armazenamento de refresh token deixaram de fazer parte da rotina de alertas. O processamento continua registrando riscos e executando as automações internas (`api/alerts/process.js`, `api/_lib/alerts.js`, `supabase/remove_gmail_alerts.sql`).
 - Reforçado o OAuth do Gmail: o início da autorização agora exige sessão autenticada, usa `state` HMAC assinado com finalidade e expiração, o callback valida o estado e restringe a conexão ao proprietário da clínica, além de não devolver detalhes crus do provedor. O token registra quem autorizou (`api/google/oauth/*.js`, `api/_lib/alerts.js`, `api/_lib/oauthState.js`, `supabase/gmail_oauth_security.sql`).
 - Corrigidas funções `SECURITY DEFINER` centrais do controle de acesso: `data_owner_id()` e `get_user_id_by_email()` passaram a fixar `search_path` e tiveram execução pública/anônima revogada (`supabase/access_control_schema.sql`).
