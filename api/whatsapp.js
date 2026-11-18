@@ -923,7 +923,14 @@ async function handleSyncToday(req, res) {
     summary.numbers += 1
     let rows
     try {
-      rows = await listProviderMessages(number, null, { start:window.start, end:window.end, page:1, offset:100 })
+      rows = []
+      const pageSize = 100
+      const maxPages = 10
+      for (let page = 1; page <= maxPages; page += 1) {
+        const pageRows = await listProviderMessages(number, null, { start:window.start, end:window.end, page, offset:pageSize })
+        rows.push(...(pageRows || []))
+        if (!pageRows || pageRows.length < pageSize) break
+      }
     } catch (syncError) {
       summary.failed += 1
       continue
