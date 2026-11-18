@@ -151,6 +151,10 @@
 .wa-health { margin-top: 10px; padding: 9px 9px 7px; background: rgba(11, 20, 26, .5); border: 1px solid rgba(134, 150, 160, .14); border-radius: 10px; }
 .wa-health-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 2px 5px; color: #c9d5da; font-size: 10px; font-weight: 750; }
 .wa-health-heading small { color: #7f929b; font-size: 9px; font-weight: 500; }
+.wa-health-heading-actions { display: inline-flex; align-items: center; gap: 6px; }
+.wa-health-toggle { width: 19px; height: 19px; display: inline-grid; place-items: center; color: #9eabb0; background: transparent; border: 1px solid rgba(134, 150, 160, .2); border-radius: 5px; font-size: 15px; line-height: 1; }
+.wa-health-toggle:hover { color: var(--wa-green-bright); border-color: rgba(37, 211, 102, .42); background: rgba(37, 211, 102, .1); }
+.wa-health.is-minimized { padding-bottom: 8px; }
 .wa-health-row { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 35px; padding: 5px 5px; color: var(--wa-text); background: transparent; border: 0; border-radius: 7px; text-align: left; cursor: pointer; }
 .wa-health-row:hover, .wa-health-row.is-selected { background: rgba(134, 150, 160, .12); }
 .wa-health-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #ef5350; box-shadow: 0 0 0 3px rgba(239, 83, 80, .1); }
