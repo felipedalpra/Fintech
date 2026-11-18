@@ -12,6 +12,7 @@ import { PatientSelector } from './PatientSelector.jsx'
 import { WhatsAppMedia } from './WhatsAppMedia.jsx'
 import { applyConversationFilters, createSavedReply, loadConversationStates, loadSavedReplies, operationalConversationKey, saveConversationState, unreadCountForConversation } from '../lib/operationalWorkspace.js'
 import { isWhatsAppNumberAvailable } from '../lib/whatsappNumberAvailability.js'
+import { buildWhatsAppNumberHealth, healthAgeLabel } from '../lib/whatsappHealth.js'
 import { chunkWhatsAppMessageIds, reconcileWhatsAppMessageRows, reconcileWhatsAppMessageWindow, removeWhatsAppMessageRow, whatsappLoadIsCurrent, whatsappNumberScopeChanged, WHATSAPP_REALTIME_BATCH_MS, WHATSAPP_REALTIME_FALLBACK_POLL_MS } from '../lib/whatsappInboxSync.js'
 import './WhatsAppInbox.css'
 
@@ -350,8 +351,8 @@ export function WhatsAppInbox() {
     }
     await load({ silent:true })
   }
-  async function syncToday() {
-    if (filterNumber === 'all') {
+  async function syncToday(requestedNumberId = filterNumber) {
+    if (requestedNumberId === 'all') {
       setError('Selecione um número específico no filtro para recuperar as mensagens de hoje.')
       return
     }
@@ -363,7 +364,7 @@ export function WhatsAppInbox() {
       const response = await fetch('/api/whatsapp?action=sync-today', {
         method:'POST',
         headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-        body:JSON.stringify({ whatsappNumberId:filterNumber }),
+        body:JSON.stringify({ whatsappNumberId:requestedNumberId }),
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Não foi possível recuperar as mensagens de hoje.')
@@ -402,6 +403,7 @@ export function WhatsAppInbox() {
   const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
   const selectableNumbers = useMemo(() => numbers.filter(isWhatsAppNumberAvailable), [numbers])
   const unavailableActiveNumbers = useMemo(() => numbers.filter(number => number.active && !number.archived_at && !isWhatsAppNumberAvailable(number)), [numbers])
+  const numberHealth = useMemo(() => buildWhatsAppNumberHealth(numbers, messages), [numbers, messages])
   const unavailableAlertKey = unavailableActiveNumbers.map(number => `${number.id}:${number.connection_state || 'sem-estado'}`).join('|')
   useEffect(() => {
     if (!unavailableAlertKey) {
@@ -714,6 +716,7 @@ export function WhatsAppInbox() {
         <label className="wa-search"><Icon name="search" size={17}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar conversa ou mensagem"/>{search && <button type="button" onClick={() => setSearch('')} aria-label="Limpar busca">×</button>}</label>
         <div className="wa-queue-tabs">{[['service','Atendimentos'],['unread','Não lidas'],['leads','Leads'],['patients','Pacientes'],['groups','Grupos'],['archived','Arquivadas']].map(([id,label]) => <button type="button" key={id} className={filterMode === id ? 'is-active' : ''} onClick={() => setFilterMode(id)}>{label}</button>)}</div>
         <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{selectableNumbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
+        {numberHealth.length > 0 && <div className="wa-health" aria-label="Saúde dos números WhatsApp"><div className="wa-health-heading"><span>Saúde dos números</span><small>{realtimeState === 'subscribed' ? 'Ao vivo' : 'Atualização automática'}</small></div>{numberHealth.map(item => <div role="button" tabIndex={0} key={item.number.id} className={`wa-health-row is-${item.status}${item.freshness === 'stale' ? ' is-stale' : ''} ${filterNumber === item.number.id ? 'is-selected' : ''}`} onClick={() => setFilterNumber(item.number.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setFilterNumber(item.number.id) } }} title={`Filtrar conversas de ${item.number.label}`}><span className="wa-health-dot"/><span className="wa-health-main"><strong>{item.number.label}</strong><small>{item.status === 'connected' ? `${item.freshness === 'stale' ? 'Atrasada · ' : ''}Última recebida: ${healthAgeLabel(item.ageMinutes)}` : item.status === 'connecting' ? 'Conectando…' : `Desconectado${item.number.connection_state ? ` · ${item.number.connection_state}` : ''}`}</small></span><button type="button" className="wa-health-action" onClick={event => { event.stopPropagation(); setFilterNumber(item.number.id); syncToday(item.number.id) }} title="Recuperar mensagens de hoje" aria-label={`Recuperar mensagens de hoje de ${item.number.label}`}>↻</button></div>)}</div>}
       </div>
       <div className="wa-conversation-list" aria-label="Lista de conversas">{conversations.length === 0 ? <div className="wa-list-empty"><Icon name="search" size={26}/><strong>Nenhuma conversa encontrada</strong><span>Ajuste a busca ou os filtros.</span></div> : conversations.map(conversation => {
         const responsible = ownerName(conversation.numberId, conversation.assignedUserId), active = conversation.key === selectedPhone

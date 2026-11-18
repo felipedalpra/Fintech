@@ -1327,6 +1327,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ### Fixed
 - Não se aplica nesta versão inicial.
 
+### Changed
+- WhatsApp: adicionada uma visão compacta de saúde por número, com estado da conexão, idade da última mensagem recebida, filtro por número e atalho seguro para recuperar as mensagens do dia; a leitura usa apenas os dados já carregados e não cria persistência paralela.
+
 ---
 
 ## Template para próximas versões
