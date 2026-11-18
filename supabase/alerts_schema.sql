@@ -34,6 +34,7 @@ create table if not exists public.google_oauth_tokens (
   account_email text,
   refresh_token text not null,
   scope text,
+  connected_by uuid references auth.users(id),
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );

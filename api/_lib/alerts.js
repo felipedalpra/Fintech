@@ -22,6 +22,7 @@ export function getConfig() {
     googleClientId:env('GOOGLE_CLIENT_ID'),
     googleClientSecret:env('GOOGLE_CLIENT_SECRET'),
     googleRedirectUri:env('GOOGLE_REDIRECT_URI'),
+    googleStateSecret:env('GOOGLE_OAUTH_STATE_SECRET', env('APP_DATA_ENCRYPTION_KEY')),
     googleSheetsSpreadsheetId:env('GOOGLE_SHEETS_SPREADSHEET_ID'),
     serviceAccountEmail:env('GOOGLE_SERVICE_ACCOUNT_EMAIL'),
     serviceAccountPrivateKey:env('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY').replace(/\\n/g, '\n'),

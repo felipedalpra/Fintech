@@ -9,12 +9,12 @@ function sign(body, secret) {
   return crypto.createHmac('sha256', secret).update(body).digest('base64url')
 }
 
-export function signState(userId, secret, now = Date.now()) {
-  const body = Buffer.from(JSON.stringify({ uid:userId, exp:now + STATE_TTL_MS })).toString('base64url')
+export function signState(userId, secret, now = Date.now(), purpose = 'default') {
+  const body = Buffer.from(JSON.stringify({ uid:userId, exp:now + STATE_TTL_MS, purpose })).toString('base64url')
   return `${body}.${sign(body, secret)}`
 }
 
-export function verifyState(state, secret, now = Date.now()) {
+export function verifyState(state, secret, now = Date.now(), purpose = 'default') {
   const [body, signature] = String(state || '').split('.')
   if (!body || !signature) return null
   const expected = Buffer.from(sign(body, secret))
@@ -22,7 +22,7 @@ export function verifyState(state, secret, now = Date.now()) {
   if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) return null
   try {
     const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
-    return parsed.exp > now ? parsed.uid : null
+    return parsed.exp > now && parsed.purpose === purpose ? parsed.uid : null
   } catch {
     return null
   }

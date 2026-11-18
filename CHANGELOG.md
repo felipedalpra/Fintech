@@ -7,6 +7,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
+- Reforçado o OAuth do Gmail: o início da autorização agora exige sessão autenticada, usa `state` HMAC assinado com finalidade e expiração, o callback valida o estado e restringe a conexão ao proprietário da clínica, além de não devolver detalhes crus do provedor. O token registra quem autorizou (`api/google/oauth/*.js`, `api/_lib/alerts.js`, `api/_lib/oauthState.js`, `supabase/gmail_oauth_security.sql`).
+- Corrigidas funções `SECURITY DEFINER` centrais do controle de acesso: `data_owner_id()` e `get_user_id_by_email()` passaram a fixar `search_path` e tiveram execução pública/anônima revogada (`supabase/access_control_schema.sql`).
+- O build de produção agora falha explicitamente se `VITE_E2E_BYPASS_AUTH=true`, evitando publicar a sessão simulada dos testes (`vite.config.js`).
+- O estado assinado de OAuth passou a carregar uma finalidade, impedindo que um estado emitido para uma integração seja reaproveitado em outra (`api/_lib/oauthState.js`, `tests/unit/googleCalendarServer.spec.js`).
 - **Evolution API não perde o recebimento após `stream errored out` de status**: adicionada imagem derivada da `evoapicloud/evolution-api:v2.3.7` com o ack explícito das stanzas `status` da Baileys `7.0.0-rc.9`; o build valida a versão e os anchors antes de modificar o arquivo, evitando patch silenciosamente incompatível. Incluído teste de idempotência e rejeição de versão desconhecida. (`infra/evolution-api/Dockerfile`, `infra/evolution-api/patch-status.cjs`, `tests/unit/evolutionStatusPatch.spec.js`.)
 - **Publicação da imagem corrigida da Evolution**: workflow do GitHub Actions passa a construir e publicar a imagem derivada no GHCR, permitindo que o Railway use uma imagem Docker corrigida pelo campo `Source Image` sem recriar o serviço ou perder o volume. (`.github/workflows/evolution-api-image.yml`.)
 
