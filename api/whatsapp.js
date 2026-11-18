@@ -181,6 +181,25 @@ async function resolveClinicAdmin(supabase, user, ownerId) {
   return Boolean(adminMember)
 }
 
+async function resolveWhatsAppManager(supabase, user, ownerId) {
+  if (user.id === ownerId) return true
+  const { data: clinic } = await supabase.from('clinics').select('id').eq('owner_id', ownerId).maybeSingle()
+  if (!clinic) return false
+  const { data: manager } = await supabase.from('clinic_members')
+    .select('id').eq('user_id', user.id).eq('clinic_id', clinic.id).in('role', ['admin', 'gestao']).maybeSingle()
+  return Boolean(manager)
+}
+
+async function authenticatedWhatsAppUser(req) {
+  const auth = await authenticatedUser(req)
+  if (auth.error) return auth
+  return { ...auth, canManageAll: await resolveWhatsAppManager(auth.supabase, auth.user, auth.ownerId) }
+}
+
+function numberAccessDenied(number, auth) {
+  return !number || number.user_id !== auth.ownerId || (!auth.canManageAll && number.assigned_user_id !== auth.user.id)
+}
+
 function evolutionInstanceName(ownerId) {
   const ownerPrefix = String(ownerId || '').replace(/-/g, '').slice(0, 10)
   const suffix = randomUUID().replace(/-/g, '').slice(0, 12)
@@ -635,11 +654,11 @@ async function handleProvisionNumber(req, res) {
 
 async function handleConnectInstance(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const auth = await authenticatedAdmin(req)
+  const auth = await authenticatedWhatsAppUser(req)
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const { supabase, ownerId } = auth
   const { data: number, error } = await getWhatsAppNumber(supabase, req.body?.whatsappNumberId)
-  if (error || !number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+  if (error || numberAccessDenied(number, auth)) return res.status(404).json({ error: 'Número não encontrado ou não atribuído à sua conta.' })
   if (whatsappProvider(number) !== 'evolution') return res.status(400).json({ error: 'Este número não usa Evolution API.' })
 
   try {
@@ -702,11 +721,11 @@ async function handleConnectInstance(req, res) {
 
 async function handleSetNumberActive(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const auth = await authenticatedAdmin(req)
+  const auth = await authenticatedWhatsAppUser(req)
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const { supabase, ownerId } = auth
   const { data: number, error } = await getWhatsAppNumber(supabase, req.body?.whatsappNumberId)
-  if (error || !number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+  if (error || numberAccessDenied(number, auth)) return res.status(404).json({ error: 'Número não encontrado ou não atribuído à sua conta.' })
   const active = req.body?.active === true
   if (active) {
     const { count, error: countError } = await supabase.from('whatsapp_numbers')
@@ -741,11 +760,11 @@ async function handleSetNumberActive(req, res) {
 // aparecer inativo e precisa do fluxo normal de "Conectar / novo QR" pra reconectar.
 async function handleSetNumberArchived(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const auth = await authenticatedAdmin(req)
+  const auth = await authenticatedWhatsAppUser(req)
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const { supabase, ownerId } = auth
   const { data: number, error } = await getWhatsAppNumber(supabase, req.body?.whatsappNumberId)
-  if (error || !number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+  if (error || numberAccessDenied(number, auth)) return res.status(404).json({ error: 'Número não encontrado ou não atribuído à sua conta.' })
   const archived = req.body?.archived === true
 
   if (!archived) {
@@ -772,7 +791,7 @@ async function handleSetNumberArchived(req, res) {
 
 async function handleListNumbers(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const auth = await authenticatedAdmin(req)
+  const auth = await authenticatedWhatsAppUser(req)
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const { supabase, ownerId } = auth
   const result = await listWhatsAppNumbers(supabase, ownerId)
@@ -793,16 +812,19 @@ async function handleListNumbers(req, res) {
     .filter(event => isReplayableWebhookEvent(event))
     .sort((a, b) => Date.parse(b.received_at) - Date.parse(a.received_at))
     .slice(0, 100)
-  const numbers = (result.data || []).map(serializeWhatsAppNumberForClient)
+  const visibleRows = auth.canManageAll ? (result.data || []) : (result.data || []).filter(number => number.assigned_user_id === auth.user.id)
+  const visibleIds = new Set(visibleRows.map(number => number.id))
+  const numbers = visibleRows.map(serializeWhatsAppNumberForClient)
+  const visiblePendingEvents = pendingEvents.filter(event => visibleIds.has(event.whatsapp_number_id))
   res.setHeader('Cache-Control', 'private, no-store')
-  return res.status(200).json({ numbers, pendingEvents })
+  return res.status(200).json({ numbers, pendingEvents:visiblePendingEvents })
 }
 
 // Reprocessamento explícito do inbox durável: recupera falhas de parser/provider
 // sem depender de uma nova entrega externa e sem criar outro evento de auditoria.
 async function handleReplayWebhook(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const auth = await authenticatedAdmin(req)
+  const auth = await authenticatedWhatsAppUser(req)
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const { supabase, ownerId } = auth
   const eventId = String(req.body?.eventId || '').trim()
@@ -812,6 +834,8 @@ async function handleReplayWebhook(req, res) {
     .eq('id', eventId)
     .maybeSingle()
   if (error || !event || event.user_id !== ownerId) return res.status(404).json({ error: 'Evento não encontrado.' })
+  const { data: eventNumber } = await getWhatsAppNumber(supabase, event.whatsapp_number_id)
+  if (numberAccessDenied(eventNumber, auth)) return res.status(404).json({ error: 'Evento não atribuído à sua conta.' })
   if (!['failed', 'ignored', 'received'].includes(event.processing_status)) {
     return res.status(409).json({ error: 'Somente eventos falhos, ignorados ou interrompidos podem ser reprocessados.' })
   }
@@ -1078,7 +1102,7 @@ async function handleSyncChatIdentities(req, res) {
 // instância server-side já criada, sem expor a chave global.
 async function handleTestConnection(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const auth = await authenticatedAdmin(req)
+  const auth = await authenticatedWhatsAppUser(req)
   if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
   const { supabase, ownerId } = auth
 
@@ -1090,7 +1114,7 @@ async function handleTestConnection(req, res) {
     const stored = await getWhatsAppNumber(supabase, whatsappNumberId)
     storedNumber = stored.data
     number = storedNumber
-    if (!number || number.user_id !== ownerId) return res.status(404).json({ error: 'Número não encontrado.' })
+    if (numberAccessDenied(number, auth)) return res.status(404).json({ error: 'Número não encontrado ou não atribuído à sua conta.' })
     if (whatsappProvider(number) === 'zapi' && (suppliedUrl || suppliedToken)) {
       testingCandidate = true
       number = {
@@ -1102,8 +1126,10 @@ async function handleTestConnection(req, res) {
         webhook_secret: secureWebhookSecret(),
       }
     }
-  } else {
+  } else if (auth.canManageAll) {
     number = withLegacyProvider({ instance_url: suppliedUrl, api_token: suppliedToken, webhook_secret:secureWebhookSecret() })
+  } else {
+    return res.status(403).json({ error: 'Selecione o número de WhatsApp atribuído à sua conta.' })
   }
   if (number?.id && !number.webhook_secret) number = { ...number, webhook_secret:secureWebhookSecret() }
 

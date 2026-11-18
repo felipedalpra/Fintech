@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
 import { canIssueClinicalPrescription, canRoleAccess } from '../../src/lib/roleAccess.js'
 
-test('admin e gestão acessam finanças, mas somente admin acessa configurações', () => {
+test('admin e gestão acessam finanças e configurações', () => {
   expect(canRoleAccess('admin', 'finance')).toBe(true)
   expect(canRoleAccess('gestao', 'finance')).toBe(true)
   expect(canRoleAccess('admin', 'fiscal-documents')).toBe(true)
   expect(canRoleAccess('gestao', 'fiscal-documents')).toBe(true)
   expect(canRoleAccess('admin', 'settings')).toBe(true)
-  expect(canRoleAccess('gestao', 'settings')).toBe(false)
+  expect(canRoleAccess('gestao', 'settings')).toBe(true)
 })
 
 test('concierge e equipe não acessam dados financeiros ou IA financeira', () => {
@@ -24,6 +24,7 @@ test('perfis operacionais preservam agenda, pacientes, WhatsApp e tarefas', () =
     for (const page of ['meu-dia', 'calendar', 'patients', 'inbox', 'tarefas']) {
       expect(canRoleAccess(role, page)).toBe(true)
     }
+    expect(canRoleAccess(role, 'settings')).toBe(true)
   }
 })
 

@@ -54,7 +54,8 @@ const EMPTY_PROFILE = {
 export function Settings({ google, data }) {
   const whatsappSupportLink = `https://wa.me/5551991897471?text=${encodeURIComponent('quero falar com o suporte da SurgiMetrics')}`
   const { role, clinicId, clinicName, isOwner } = useUserRole()
-  const [tab, setTab] = useState('perfil')
+  const canManageAllWhatsApp = isOwner || role === 'admin' || role === 'gestao'
+  const [tab, setTab] = useState(canManageAllWhatsApp ? 'perfil' : 'whatsapp')
   const location = useLocation()
   useEffect(() => {
     if (new URLSearchParams(location.search).get('meta')) setTab('meta')
@@ -174,10 +175,14 @@ export function Settings({ google, data }) {
     updateField('clinic', 'logoDataUrl', dataUrl)
   }
 
-  const tabs = [
-    { id:'perfil', label:'Perfil' },
-    ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'exportacao', label:'Exportação' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }, { id:'whatsapp', label:'WhatsApp' }, { id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
-  ]
+  const tabs = canManageAllWhatsApp
+    ? [
+      { id:'perfil', label:'Perfil' },
+      ...(role === 'admin' ? [{ id:'equipe', label:'Equipe' }, { id:'exportacao', label:'Exportação' }, { id:'integracoes', label:'Integrações' }, { id:'cobrancas', label:'Cobranças' }] : []),
+      { id:'whatsapp', label:'WhatsApp' },
+      ...(role === 'admin' ? [{ id:'meta', label:'Meta Ads' }, { id:'automacoes', label:'Automações' }, { id:'followup', label:'Régua de follow-up' }] : []),
+    ]
+    : [{ id:'whatsapp', label:'WhatsApp' }]
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
@@ -319,8 +324,8 @@ export function Settings({ google, data }) {
           <BillingConnection />
         )}
 
-        {tab === 'whatsapp' && role === 'admin' && (
-          <WhatsAppNumbers />
+        {tab === 'whatsapp' && (
+          <WhatsAppNumbers canManageAll={canManageAllWhatsApp} />
         )}
         {tab === 'meta' && role === 'admin' && (
           <MetaConnection />

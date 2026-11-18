@@ -19,7 +19,7 @@ test('abrir as Esteiras não abriu o financeiro para quem não tinha', () => {
   // Regressão: mexer na lista de um perfil já vazou permissão em outro projeto.
   expect(canRoleAccess('equipe', 'finance')).toBe(false)
   expect(canRoleAccess('concierge', 'finance')).toBe(false)
-  expect(canRoleAccess('equipe', 'settings')).toBe(false)
-  expect(canRoleAccess('gestao', 'settings')).toBe(false)
+  expect(canRoleAccess('equipe', 'settings')).toBe(true)
+  expect(canRoleAccess('gestao', 'settings')).toBe(true)
   expect(ROLE_ACCESS.equipe).not.toContain('crm-painel')
 })

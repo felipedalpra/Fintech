@@ -132,7 +132,7 @@ const AREAS = [
     ],
   },
   {
-    id:'config', label:'Configurações', icon:'settings', roles:['admin'],
+    id:'config', label:'Configurações', icon:'settings', roles:ALL_ROLES,
     sections:[
       { title:null, items:[
         { id:'settings', label:'Configurações', icon:'settings', hint:'Perfil e preferências' },
