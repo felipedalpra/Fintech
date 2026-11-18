@@ -47,7 +47,7 @@ test('consulta mensagens de uma conversa na Evolution', async () => {
   let request
   globalThis.fetch = async (url, options) => {
     request = { url:String(url), options }
-    return new Response(JSON.stringify([{ key:{ id:'H1' }, message:{ conversation:'Hoje' } }]), { status:200 })
+    return new Response(JSON.stringify({ messages:{ total:1, pages:1, currentPage:1, records:[{ key:{ id:'H1' }, message:{ conversation:'Hoje' } }] } }), { status:200 })
   }
   await expect(listEvolutionMessages('surgimetrics_teste', '5511999@s.whatsapp.net')).resolves.toHaveLength(1)
   expect(request.url).toBe('https://evolution.surgimetrics.com.br/chat/findMessages/surgimetrics_teste')
