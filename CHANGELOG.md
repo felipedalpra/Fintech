@@ -7,6 +7,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Fixed
+- Atualizadas as dependências `react-router-dom` para `7.18.6` e `@supabase/supabase-js` para `2.101.0` (compatível com Node 20), removendo as vulnerabilidades transitivas do React Router e `ws`; `xlsx` permanece pendente por não ter correção oficial (`package.json`, `package-lock.json`).
 - Adicionados headers HTTP globais de segurança no Vercel contra MIME sniffing, clickjacking, vazamento excessivo de referer, permissões desnecessárias do navegador e acesso sem HTTPS (`vercel.json`).
 - Removidos os endpoints manuais de dispatch e sync geral do WhatsApp/Meta que aceitavam `owner` e datas usando apenas o segredo do cron; o cron interno e os fluxos autenticados da plataforma continuam disponíveis (`api/whatsapp.js`).
 - Removido completamente o fluxo de alertas por Gmail: OAuth, envio automático, configuração e armazenamento de refresh token deixaram de fazer parte da rotina de alertas. O processamento continua registrando riscos e executando as automações internas (`api/alerts/process.js`, `api/_lib/alerts.js`, `supabase/remove_gmail_alerts.sql`).
