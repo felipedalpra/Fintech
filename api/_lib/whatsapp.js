@@ -139,7 +139,7 @@ export function parseIncomingMessage(body) {
   const direction = body.fromMe === true ? 'outbound' : 'inbound'
   const rawStatus = String(body.status || '').toUpperCase()
   const status = direction === 'inbound'
-    ? 'read'
+    ? rawStatus === 'READ' || rawStatus === 'PLAYED' ? 'read' : 'delivered'
     : rawStatus === 'READ' || rawStatus === 'PLAYED'
       ? 'read'
       : rawStatus === 'RECEIVED' || rawStatus === 'DELIVERED'
@@ -194,13 +194,13 @@ function evolutionStatus(raw, direction = 'outbound') {
     if (numeric >= 4) return 'read'
     if (numeric === 3) return 'delivered'
     if (numeric === 0) return 'failed'
-    return direction === 'inbound' ? 'read' : 'sent'
+    return direction === 'inbound' ? 'delivered' : 'sent'
   }
   const value = String(raw || '').toUpperCase()
   if (['READ', 'READ_BY_ME', 'PLAYED'].includes(value)) return 'read'
   if (['DELIVERY_ACK', 'DELIVERED', 'RECEIVED'].includes(value)) return 'delivered'
   if (['ERROR', 'FAILED'].includes(value)) return 'failed'
-  return direction === 'inbound' ? 'read' : 'sent'
+  return direction === 'inbound' ? 'delivered' : 'sent'
 }
 
 function evolutionMedia(message) {

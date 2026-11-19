@@ -5,7 +5,8 @@ const PROFILE_PHOTO = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/s
 const MESSAGES = [
   { id: 'm5', phone: '120363019502650977-group', direction: 'inbound', body: 'Confirmado para amanhã', status: 'read', created_at: '2026-10-10T14:05:00Z', patient_id: null, whatsapp_number_id: 'n1', is_group: true, chat_name: 'Equipe Cirúrgica', chat_photo: PROFILE_PHOTO, sender_name: 'João Instrumentador', sender_phone: '5511966665555', sender_photo: PROFILE_PHOTO, patients: null },
   { id: 'm4', phone: '120363019502650977-group', direction: 'inbound', body: 'Materiais separados', status: 'read', created_at: '2026-10-10T14:00:00Z', patient_id: null, whatsapp_number_id: 'n1', is_group: true, chat_name: 'Equipe Cirúrgica', chat_photo: PROFILE_PHOTO, sender_name: 'Maria Enfermeira', sender_phone: '5511955554444', sender_photo: PROFILE_PHOTO, patients: null },
-  { id: 'm3', phone: '5511977776666', direction: 'inbound', body: 'Quero fazer rino', status: 'read', created_at: '2026-10-10T13:00:00Z', patient_id: null, contact_id: 'c1', whatsapp_number_id: 'n1', patients: null, crm_contacts: { id:'c1', full_name:null, phone:'5511977776666', status:'contact', patient_id:null } },
+  { id: 'm3', phone: '5511977776666', direction: 'inbound', body: 'Quero fazer rino', status: 'delivered', created_at: '2026-10-10T13:00:00Z', patient_id: null, contact_id: 'c1', whatsapp_number_id: 'n1', patients: null, crm_contacts: { id:'c1', full_name:null, phone:'5511977776666', status:'contact', patient_id:null } },
+  { id: 'm6', phone: '5511966665555', direction: 'inbound', body: 'Ainda tenho uma dúvida', status: 'delivered', created_at: '2026-10-10T12:30:00Z', patient_id: null, whatsapp_number_id: 'n1', patients: null },
   { id: 'm2', phone: '5511988887777', direction: 'outbound', body: 'Oi! Como ajudo?\nPode me contar o que procura?', status: 'read', created_at: '2026-10-10T12:05:00Z', patient_id: 'p1', whatsapp_number_id: 'n1', patients: { full_name: 'Ana Silva' } },
   { id: 'm1', phone: '5511988887777', direction: 'inbound', body: 'Oi, doutora', status: 'read', created_at: '2026-10-10T12:00:00Z', patient_id: 'p1', whatsapp_number_id: 'n1', patients: { full_name: 'Ana Silva' } },
 ]
@@ -177,6 +178,8 @@ test('fila separa atendimentos, grupos e não lidas', async ({ page }) => {
   await page.getByRole('button', { name:'Grupos', exact:true }).click()
   await expect(sidebar.getByText('Equipe Cirúrgica')).toBeVisible()
   await expect(sidebar.getByText('Ana Silva')).toBeHidden()
+  await page.locator('main').getByRole('button', { name:'Atendimentos', exact:true }).click()
+  await sidebar.getByText('Ana Silva').click()
   await page.getByRole('button', { name:'Não lidas', exact:true }).click()
   await expect(sidebar.locator('.wa-unread-badge').first()).toBeVisible()
 })

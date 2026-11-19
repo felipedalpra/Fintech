@@ -1883,7 +1883,6 @@ async function handleWebhook(req, res) {
         .eq('user_id', num.user_id)
         .eq('whatsapp_number_id', num.id)
         .eq('provider', provider)
-        .eq('direction', 'outbound')
         .in('provider_message_id', statusEvent.providerMessageIds)
         .in('status', priorStatuses)
       if (error) {

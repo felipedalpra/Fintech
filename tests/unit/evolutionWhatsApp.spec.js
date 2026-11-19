@@ -241,6 +241,19 @@ test('normaliza confirmação numérica de entrega da Evolution', () => {
     .toEqual({ eventType: 'messages.upsert', instanceName: 'inst-1' })
 })
 
+test('mensagem recebida nasce pendente e só fica lida com confirmação do WhatsApp', () => {
+  const received = parseEvolutionIncomingMessage({
+    event:'messages.upsert',
+    data:{ key:{ id:'EV-IN', fromMe:false, remoteJid:'5551999@s.whatsapp.net' }, message:{ conversation:'oi' } },
+  })
+  const read = parseEvolutionIncomingMessage({
+    event:'messages.upsert',
+    data:{ key:{ id:'EV-IN-READ', fromMe:false, remoteJid:'5551999@s.whatsapp.net' }, status:'READ', message:{ conversation:'oi' } },
+  })
+  expect(received.status).toBe('delivered')
+  expect(read.status).toBe('read')
+})
+
 test('preserva todos os grupos de status em um callback Evolution misto', () => {
   expect(parseEvolutionMessageStatuses({ event:'messages.update', data:[
     { keyId:'READ-1', status:4 },
