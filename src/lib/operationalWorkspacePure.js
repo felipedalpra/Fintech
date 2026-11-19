@@ -1,6 +1,22 @@
 export function unreadCountForConversation(messages, state) {
   const sorted = [...(messages || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-  const boundary = state?.marked_unread_at || state?.last_read_at
+  const manualBoundary = state?.marked_unread_at
+  if (manualBoundary) {
+    return sorted.filter(message => (
+      message.direction === 'inbound'
+      && message.status !== 'read'
+      && new Date(message.created_at) > new Date(manualBoundary)
+    )).length
+  }
+  const latestOutboundAt = sorted.reduce((latestAt, message) => {
+    if (message.direction !== 'outbound') return latestAt
+    if (!latestAt || new Date(message.created_at) > new Date(latestAt)) return message.created_at
+    return latestAt
+  }, null)
+  const boundary = [state?.last_read_at, latestOutboundAt]
+    .filter(Boolean)
+    .sort((left, right) => new Date(left) - new Date(right))
+    .at(-1)
   return sorted.filter(message => (
     message.direction === 'inbound'
     && message.status !== 'read'

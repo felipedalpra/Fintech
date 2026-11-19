@@ -25,11 +25,19 @@ test('leitura sincronizada pelo WhatsApp remove a pendência', () => {
   expect(unreadCountForConversation(messages, { last_read_at:'2026-10-15T10:00:00Z' })).toBe(0)
 })
 
-test('resposta enviada não substitui o estado real de leitura', () => {
+test('resposta enviada encerra as mensagens recebidas anteriores', () => {
   const messages = [
-    { direction:'inbound', status:'delivered', created_at:'2026-10-15T10:12:00Z' },
+    { direction:'inbound', status:'delivered', created_at:'2026-10-15T10:10:00Z' },
     { direction:'outbound', created_at:'2026-10-15T10:11:00Z' },
-    { direction:'inbound', status:'read', created_at:'2026-10-15T10:10:00Z' },
+  ]
+  expect(unreadCountForConversation(messages, { last_read_at:'2026-10-15T10:00:00Z' })).toBe(0)
+})
+
+test('mensagem recebida depois da resposta continua pendente', () => {
+  const messages = [
+    { direction:'inbound', status:'delivered', created_at:'2026-10-15T10:10:00Z' },
+    { direction:'outbound', created_at:'2026-10-15T10:11:00Z' },
+    { direction:'inbound', status:'delivered', created_at:'2026-10-15T10:12:00Z' },
   ]
   expect(unreadCountForConversation(messages, { last_read_at:'2026-10-15T10:00:00Z' })).toBe(1)
 })

@@ -9,6 +9,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ### Added
 - Inbox do WhatsApp passa a recuperar em segundo plano todas as páginas históricas por número, mantendo a abertura rápida com a janela recente e ampliando a lista até incluir conversas antigas registradas. O contador visual informa quando o histórico ainda está sendo carregado (`src/components/WhatsAppInbox.jsx`).
 
+### Changed
+- A fila de não lidas da inbox volta a reconhecer uma resposta enviada pela equipe ou pela Summary como encerramento das mensagens recebidas anteriormente, sem esconder novas mensagens recebidas depois da resposta; confirmações explícitas de leitura do WhatsApp continuam sendo respeitadas (`src/lib/operationalWorkspacePure.js`).
+
 ### Fixed
 - Controles de segurança server-side passaram a ter rate limiting persistente para WhatsApp/Meta/Stripe, recorrências e conclusão de uploads clínicos, além de uma trilha exclusiva de eventos de segurança (`api/_lib/securityControls.js`, `supabase/security_hardening_schema.sql`).
 - Funções legadas `SECURITY DEFINER` passaram a fixar `search_path` e tiveram execução pública revogada quando não necessária (`supabase/security_rls_hardening.sql` e schemas canônicos de funil, LGPD, auditoria e WhatsApp).
