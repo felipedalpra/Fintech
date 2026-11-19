@@ -14,7 +14,7 @@ import { applyConversationFilters, createSavedReply, loadConversationStates, loa
 import { isWhatsAppNumberAvailable } from '../lib/whatsappNumberAvailability.js'
 import { buildWhatsAppNumberHealth, healthAgeLabel } from '../lib/whatsappHealth.js'
 import { normalizeWhatsAppPresence, whatsappPresenceLabel } from '../lib/whatsappPresence.js'
-import { chunkWhatsAppMessageIds, reconcileWhatsAppMessageRows, reconcileWhatsAppMessageWindow, removeWhatsAppMessageRow, whatsappLoadIsCurrent, whatsappNumberScopeChanged, WHATSAPP_REALTIME_BATCH_MS, WHATSAPP_REALTIME_FALLBACK_POLL_MS } from '../lib/whatsappInboxSync.js'
+import { chunkWhatsAppMessageIds, mergeWhatsAppMessageRows, reconcileWhatsAppMessageRows, reconcileWhatsAppMessageWindow, removeWhatsAppMessageRow, whatsappLoadIsCurrent, whatsappNumberScopeChanged, WHATSAPP_REALTIME_BATCH_MS, WHATSAPP_REALTIME_FALLBACK_POLL_MS } from '../lib/whatsappInboxSync.js'
 import './WhatsAppInbox.css'
 
 const EMOJI_GROUPS = [
@@ -26,6 +26,8 @@ const EMOJI_GROUPS = [
 ]
 
 const THREAD_PAGE_SIZE = 100
+const CONVERSATION_PAGE_SIZE = 500
+const UNNUMBERED_CONVERSATION_PAGE_SIZE = 100
 const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 const CONTACT_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, contact_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name), crm_contacts(id, full_name, phone, status, patient_id)'
 const FULL_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name)'
@@ -53,6 +55,41 @@ async function selectMessageWindow(availableNumbers) {
   const error = results.find(result => result.error)?.error || null
   const rows = error ? [] : Array.from(new Map(results.flatMap(result => result.data || []).map(message => [message.id, message])).values())
   return { rows:rows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)), error }
+}
+
+function messageScopeRows(rows, numberId) {
+  return (rows || []).filter(message => numberId ? message.whatsapp_number_id === numberId : !message.whatsapp_number_id)
+}
+
+function oldestMessageTimestamp(rows) {
+  return (rows || []).reduce((oldest, message) => {
+    if (!oldest || Date.parse(message.created_at) < Date.parse(oldest)) return message.created_at
+    return oldest
+  }, null)
+}
+
+async function loadOlderConversationPages(availableNumbers, initialRows, onPage) {
+  const scopes = availableNumbers.length ? [...availableNumbers.map(number => number.id), null] : [null]
+  for (const numberId of scopes) {
+    const pageSize = numberId ? CONVERSATION_PAGE_SIZE : UNNUMBERED_CONVERSATION_PAGE_SIZE
+    const initialScopeRows = messageScopeRows(initialRows, numberId)
+    if (initialScopeRows.length < pageSize) continue
+    let cursor = oldestMessageTimestamp(initialScopeRows)
+    while (cursor) {
+      const result = await selectWhatsAppMessages(query => {
+        const scoped = numberId ? query.eq('whatsapp_number_id', numberId) : query.is('whatsapp_number_id', null)
+        return scoped.lt('created_at', cursor).order('created_at', { ascending:false }).limit(pageSize)
+      })
+      if (result.error) throw result.error
+      const rows = result.data || []
+      if (!rows.length) break
+      onPage(rows)
+      if (rows.length < pageSize) break
+      const nextCursor = oldestMessageTimestamp(rows)
+      if (!nextCursor || nextCursor === cursor) break
+      cursor = nextCursor
+    }
+  }
 }
 
 function Icon({ name, size=20, strokeWidth=1.8 }) {
@@ -145,7 +182,7 @@ export function WhatsAppInbox() {
   const { ownerId, role, isOwner } = useUserRole()
   const isAdmin = isOwner || role === 'admin'
   const [messages, setMessages] = useState([]), [numbers, setNumbers] = useState([]), [members, setMembers] = useState([])
-  const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [historicalLoading, setHistoricalLoading] = useState(false), [error, setError] = useState(null)
   const [dismissedUnavailableAlertKey, setDismissedUnavailableAlertKey] = useState('')
   const [syncNotice, setSyncNotice] = useState(null)
   const [realtimeState, setRealtimeState] = useState('connecting')
@@ -180,7 +217,23 @@ export function WhatsAppInbox() {
   const scopeGenerationRef = useRef(0)
   const fullLoadRequestRef = useRef(0)
   const messageWindowRequestRef = useRef(0)
+  const historicalLoadRequestRef = useRef(0)
   activeOwnerIdRef.current = ownerId
+
+  const startHistoricalLoad = useCallback((availableNumbers, initialRows, scopeGeneration) => {
+    const historicalRequest = ++historicalLoadRequestRef.current
+    setHistoricalLoading(true)
+    return loadOlderConversationPages(availableNumbers, initialRows, rows => {
+      if (historicalRequest !== historicalLoadRequestRef.current || scopeGeneration !== scopeGenerationRef.current) return
+      setMessages(currentRows => mergeWhatsAppMessageRows(currentRows, rows))
+    }).catch(nextError => {
+      if (historicalRequest === historicalLoadRequestRef.current && scopeGeneration === scopeGenerationRef.current) {
+        setError(`Não foi possível carregar todo o histórico de conversas: ${nextError.message}`)
+      }
+    }).finally(() => {
+      if (historicalRequest === historicalLoadRequestRef.current && scopeGeneration === scopeGenerationRef.current) setHistoricalLoading(false)
+    })
+  }, [])
 
   const load = useCallback(async ({ silent=false }={}) => {
     const loadOwnerId = ownerId
@@ -218,18 +271,20 @@ export function WhatsAppInbox() {
         setConversationStates(stateRes.data || [])
         setSavedReplies(replyRes.data || [])
         setError(numRes.error?.message || stateRes.error?.message || replyRes.error?.message || null)
+        startHistoricalLoad(availableNumbers, messageWindow.rows, scopeGeneration)
       }
     } catch (nextError) {
       setError(nextError?.message || 'Não foi possível atualizar as conversas do WhatsApp.')
     } finally {
       setLoading(false); setRefreshing(false)
     }
-  }, [ownerId])
+  }, [ownerId, startHistoricalLoad])
   useEffect(() => {
     activeOwnerIdRef.current = ownerId
     scopeGenerationRef.current += 1
     fullLoadRequestRef.current += 1
     messageWindowRequestRef.current += 1
+    historicalLoadRequestRef.current += 1
     numbersRef.current = []
     messageChangeCounterRef.current = 0
     messageChangedVersionRef.current.clear()
@@ -248,15 +303,18 @@ export function WhatsAppInbox() {
       { ownerId:activeOwnerIdRef.current, scopeGeneration:scopeGenerationRef.current, requestId:messageWindowRequestRef.current },
     )) return true
     if (result.error) setError(result.error.message)
-    else setMessages(currentRows => reconcileWhatsAppMessageWindow(
-      currentRows,
-      result.rows,
-      messageChangedVersionRef.current,
-      versionAtLoadStart,
-    ))
+    else {
+      setMessages(currentRows => reconcileWhatsAppMessageWindow(
+        currentRows,
+        result.rows,
+        messageChangedVersionRef.current,
+        versionAtLoadStart,
+      ))
+      startHistoricalLoad(numbersRef.current, result.rows, scopeGeneration)
+    }
     if (silent) setRefreshing(false)
     return !result.error
-  }, [])
+  }, [startHistoricalLoad])
 
   const refreshMessagesByIds = useCallback(async messageIds => {
     const loadOwnerId = activeOwnerIdRef.current
@@ -765,7 +823,7 @@ export function WhatsAppInbox() {
   return <div className={`wa-inbox ${current && !mobileListOpen ? 'wa-has-chat' : 'wa-show-list'}`}>
     <aside className="wa-sidebar">
       <div className="wa-sidebar-top">
-        <div className="wa-sidebar-title"><span className="wa-brand-icon" aria-label="WhatsApp"><WhatsAppLogo size={23}/></span><div><strong>Conversas</strong><small>{allConversations.length} {allConversations.length === 1 ? 'conversa' : 'conversas'}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={refreshConversations} title="Atualizar mensagens, nomes e fotos" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={syncToday} disabled={refreshing || filterNumber === 'all'} title={filterNumber === 'all' ? 'Selecione um número para recuperar as mensagens de hoje' : 'Recuperar mensagens de hoje da Evolution'} aria-label="Recuperar mensagens de hoje"><Icon name="download" size={18}/></button></div>
+        <div className="wa-sidebar-title"><span className="wa-brand-icon" aria-label="WhatsApp"><WhatsAppLogo size={23}/></span><div><strong>Conversas</strong><small>{historicalLoading ? 'Carregando histórico…' : `${allConversations.length} ${allConversations.length === 1 ? 'conversa' : 'conversas'}`}</small></div><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={refreshConversations} title="Atualizar mensagens, nomes e fotos" aria-label="Atualizar conversas"><Icon name="refresh" size={18}/></button><button type="button" className={`wa-icon-button wa-refresh ${refreshing ? 'is-spinning' : ''}`} onClick={syncToday} disabled={refreshing || filterNumber === 'all'} title={filterNumber === 'all' ? 'Selecione um número para recuperar as mensagens de hoje' : 'Recuperar mensagens de hoje da Evolution'} aria-label="Recuperar mensagens de hoje"><Icon name="download" size={18}/></button></div>
         <label className="wa-search"><Icon name="search" size={17}/><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar conversa ou mensagem"/>{search && <button type="button" onClick={() => setSearch('')} aria-label="Limpar busca">×</button>}</label>
         <div className="wa-queue-tabs">{[['service','Atendimentos'],['unread','Não lidas'],['leads','Leads'],['patients','Pacientes'],['groups','Grupos'],['archived','Arquivadas']].map(([id,label]) => <button type="button" key={id} className={filterMode === id ? 'is-active' : ''} onClick={() => setFilterMode(id)}>{label}</button>)}</div>
         <div className="wa-filters"><select value={filterNumber} onChange={event => setFilterNumber(event.target.value)} title="Filtrar por número"><option value="all">Todos os números</option>{selectableNumbers.map(number => <option key={number.id} value={number.id}>{number.label}</option>)}</select>{isAdmin && <select value={filterResponsible} onChange={event => setFilterResponsible(event.target.value)} title="Monitorar por responsável"><option value="all">Toda a equipe</option>{members.map(member => <option key={member.user_id} value={member.user_id}>{memberLabel[member.user_id]}</option>)}<option value="unassigned">Sem responsável</option></select>}</div>
