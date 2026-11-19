@@ -1,6 +1,25 @@
 export function unreadCountForConversation(messages, state) {
-  const boundary = state?.marked_unread_at || state?.last_read_at
-  return (messages || []).filter(message => message.direction === 'inbound' && (!boundary || new Date(message.created_at) > new Date(boundary))).length
+  const sorted = [...(messages || [])].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  const latest = sorted.at(-1)
+  const manualBoundary = state?.marked_unread_at
+
+  // A manual mark is intentional and must remain visible until the user reads it.
+  if (manualBoundary) {
+    return sorted.filter(message => message.direction === 'inbound' && new Date(message.created_at) > new Date(manualBoundary)).length
+  }
+
+  // An outbound reply closes the pending inbound messages before it. This avoids
+  // showing a conversation as unread after Summary or a team member has replied.
+  if (latest?.direction === 'outbound') return 0
+
+  const latestOutboundAt = sorted.reduce((latestAt, message) => {
+    if (message.direction !== 'outbound') return latestAt
+    if (!latestAt || new Date(message.created_at) > new Date(latestAt)) return message.created_at
+    return latestAt
+  }, null)
+  const boundaries = [state?.last_read_at, latestOutboundAt].filter(Boolean)
+  const boundary = boundaries.sort((a, b) => new Date(a) - new Date(b)).at(-1)
+  return sorted.filter(message => message.direction === 'inbound' && (!boundary || new Date(message.created_at) > new Date(boundary))).length
 }
 
 export function operationalConversationKey(message) {

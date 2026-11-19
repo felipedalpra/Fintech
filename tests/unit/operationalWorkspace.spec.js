@@ -17,6 +17,32 @@ test('não lidas respeitam leitura e marcação manual', () => {
   expect(unreadCountForConversation(messages, { marked_unread_at:'2026-10-15T09:00:00Z', last_read_at:'2026-10-15T11:00:00Z' })).toBe(2)
 })
 
+test('resposta enviada encerra as recebidas pendentes', () => {
+  const messages = [
+    { direction:'inbound', created_at:'2026-10-15T10:10:00Z' },
+    { direction:'outbound', created_at:'2026-10-15T10:11:00Z' },
+  ]
+  expect(unreadCountForConversation(messages, { last_read_at:'2026-10-15T10:00:00Z' })).toBe(0)
+})
+
+test('só mantém não lidas recebidas depois da última resposta', () => {
+  const messages = [
+    { direction:'inbound', created_at:'2026-10-15T10:12:00Z' },
+    { direction:'outbound', created_at:'2026-10-15T10:11:00Z' },
+    { direction:'inbound', created_at:'2026-10-15T10:10:00Z' },
+  ]
+  expect(unreadCountForConversation(messages, { last_read_at:'2026-10-15T10:00:00Z' })).toBe(1)
+})
+
+test('não depende da ordem em que as mensagens chegaram do servidor', () => {
+  const messages = [
+    { direction:'inbound', created_at:'2026-10-15T10:12:00Z' },
+    { direction:'outbound', created_at:'2026-10-15T10:13:00Z' },
+    { direction:'inbound', created_at:'2026-10-15T10:10:00Z' },
+  ]
+  expect(unreadCountForConversation(messages)).toBe(0)
+})
+
 test('fila padrão exclui grupos e arquivadas sem apagar conversas', () => {
   const conversations = [
     { key:'a', kind:'contact', isGroup:false, archived:false, unreadCount:1 },

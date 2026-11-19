@@ -1316,6 +1316,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - Regra obrigatória de preencher o `CHANGELOG.md` em toda alteração (`SYSTEM_RULES.md`, `PROMPT_GUIDE.md`, `CLAUDE.md` e `AGENTS.md`).
 
 ### Fixed
+- Contadores de mensagens não lidas do WhatsApp agora consideram a última mensagem cronológica e encerram a pendência quando a Summary ou a equipe responde; a causa era contar todas as mensagens recebidas após a última leitura sem considerar respostas enviadas, além de depender da ordem de carregamento para identificar a última mensagem. Marcações manuais de não lida continuam preservadas (`src/lib/operationalWorkspacePure.js`, `src/components/WhatsAppInbox.jsx`).
 - Plataforma recarregava tudo (skeleton, nova busca de dados e regravação) ao voltar para a aba do navegador, atrasando o uso e desmontando telas e modais abertos. Causa: o Supabase emite um novo objeto `user` ao retomar a aba e os efeitos de `FinanceWorkspace` e `BillingContext` dependiam da referência do objeto. Agora dependem apenas de `user.id`, e `AuthContext` mantém a mesma referência quando o usuário não mudou.
 - Modais perdiam o que estava preenchido ao clicar fora deles (inclusive ao soltar o mouse fora ao selecionar texto de um campo). O fundo do modal agora só fecha quando não há dados digitados; com dados, pede confirmação de descarte.
 

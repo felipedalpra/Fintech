@@ -451,6 +451,7 @@ export function WhatsAppInbox() {
         items:[],
       })
       const conversation = grouped.get(key)
+      if (new Date(message.created_at) > new Date(conversation.last.created_at)) conversation.last = message
       if (!conversation.chatLid && message.chat_lid) { conversation.chatLid = message.chat_lid; conversation.phone = message.chat_lid }
       if (!conversation.contactPhone && message.contact_phone) conversation.contactPhone = message.contact_phone
       if (!conversation.name) conversation.name = isGroup ? message.chat_name : (message.patients?.full_name || contact?.full_name || message.chat_name)
