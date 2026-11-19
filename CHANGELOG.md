@@ -5,6 +5,14 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-19
+
+### Changed
+- Vendas de produtos agora seguem o mesmo cronograma financeiro de consultas e cirurgias: permitem parcelamento mensal, quinzenal ou semanal, exibem e persistem o vencimento de cada parcela, ajustam a última parcela para fechar o total a centavo e só aceitam salvar quando o cronograma estiver completo. (`src/components/Products.jsx`, `src/lib/productSalePayments.js`.)
+
+### Fixed
+- Corrigida a validação de vendas de produtos com pagamentos em datas diferentes, que aceitava parcelas cuja soma não correspondia ao valor total e não enviava o primeiro vencimento ao razão financeiro. (`src/components/Products.jsx`, `src/lib/productSalePayments.js`, `tests/unit/productSalePayments.spec.js`.)
+
 ## [Unreleased] - 2026-11-16 (7)
 ### Added
 - Inbox do WhatsApp passa a recuperar em segundo plano todas as páginas históricas por número, mantendo a abertura rápida com a janela recente e ampliando a lista até incluir conversas antigas registradas. O contador visual informa quando o histórico ainda está sendo carregado (`src/components/WhatsAppInbox.jsx`).
