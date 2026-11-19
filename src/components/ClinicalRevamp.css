@@ -397,7 +397,7 @@
 /* Central de documentos */
 .clinical-document-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -416,6 +416,23 @@
 }
 
 .clinical-document-metrics > button.is-danger strong { color: var(--clinical-red); }
+.clinical-document-metrics > button.is-priority strong { color: var(--clinical-accent); }
+
+.clinical-signature-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--clinical-accent) 24%, var(--clinical-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--clinical-accent) 7%, var(--clinical-surface));
+}
+.clinical-signature-overview > div { display: grid; gap: 3px; }
+.clinical-signature-overview span { color: var(--clinical-accent); font-size: 11px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.clinical-signature-overview strong { font-size: 14px; }
+.clinical-signature-overview small { color: var(--clinical-sub); font-size: 12px; line-height: 1.45; }
 
 .clinical-document-journey {
   display: grid;
@@ -468,7 +485,7 @@
 .clinical-documents-center-list.is-revamped > article {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(220px, 1.2fr) minmax(150px, .55fr) minmax(330px, auto);
+  grid-template-columns: auto minmax(190px, 1.05fr) minmax(205px, .8fr) minmax(150px, .55fr) minmax(330px, auto);
   align-items: center;
   gap: 14px;
   min-height: 92px;
@@ -510,6 +527,18 @@
 .clinical-document-row__status .is-manual { color: var(--clinical-yellow); }
 .clinical-document-row__status .is-failed,
 .clinical-document-row__status .is-cancelled { color: var(--clinical-red); }
+.clinical-document-row__next-action { display: grid; gap: 2px; margin-top: 2px; color: var(--clinical-sub) !important; font-size: 11px !important; line-height: 1.35; }
+.clinical-document-row__next-action b { color: var(--clinical-dim); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.clinical-document-row__next-action.is-action b { color: var(--clinical-accent); }
+.clinical-document-row__next-action.is-attention b { color: var(--clinical-red); }
+
+.clinical-signature-mini-journey { display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: center; gap: 6px; min-width: 150px; }
+.clinical-signature-mini-journey > span { display: grid; justify-items: center; gap: 4px; color: var(--clinical-dim); font-size: 10px; white-space: nowrap; }
+.clinical-signature-mini-journey b { width: 23px; height: 23px; display: grid; place-items: center; border: 1px solid var(--clinical-border-bright); border-radius: 50%; font-size: 10px; }
+.clinical-signature-mini-journey i { height: 1px; background: var(--clinical-border-bright); }
+.clinical-signature-mini-journey .is-complete b { border-color: var(--clinical-green); background: color-mix(in srgb, var(--clinical-green) 14%, transparent); color: var(--clinical-green); }
+.clinical-signature-mini-journey .is-current b { border-color: var(--clinical-accent); background: color-mix(in srgb, var(--clinical-accent) 14%, transparent); color: var(--clinical-accent); }
+.clinical-signature-mini-journey .is-error b { border-color: var(--clinical-red); color: var(--clinical-red); }
 
 .clinical-document-row__actions {
   display: flex;
@@ -615,8 +644,9 @@
   .clinical-patient-header__actions { grid-column: 3; grid-row: 1; }
   .clinical-patient-header__today { grid-column: 3; grid-row: 2; }
   .clinical-tabs { top: 206px; }
-  .clinical-documents-center-list.is-revamped > article { grid-template-columns: auto minmax(200px, 1fr) minmax(145px, .5fr); }
+  .clinical-documents-center-list.is-revamped > article { grid-template-columns: auto minmax(180px, 1fr) minmax(190px, .6fr); }
   .clinical-document-row__actions { grid-column: 2 / -1; justify-content: flex-start; }
+  .clinical-signature-mini-journey { grid-column: 2 / -1; justify-content: flex-start; }
 }
 
 @media (max-width: 760px) {
@@ -643,7 +673,9 @@
   .clinical-document-journey { grid-template-columns: repeat(7, auto); }
   .clinical-documents-center-list.is-revamped > article { grid-template-columns: auto minmax(0, 1fr); }
   .clinical-document-row__status { grid-column: 2; }
+  .clinical-signature-mini-journey { grid-column: 2; justify-content: flex-start; }
   .clinical-document-row__actions { grid-column: 1 / -1; }
+  .clinical-signature-overview { align-items: flex-start; flex-direction: column; }
   .clinical-document-row__actions > button { flex: 1; }
 }
 

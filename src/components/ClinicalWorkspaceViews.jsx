@@ -66,6 +66,22 @@ const documentTypeLabel = type => ({
   exam_request:'Pedido de exames',
 })[type] || 'Documento clínico'
 
+const signatureQueueCategory = (document, viewerId = '') => {
+  if (document.signature.status === 'signed') return 'signed'
+  if (['failed', 'cancelled'].includes(document.signature.status)) return 'attention'
+  if (document.signature.status === 'pending') return 'pending'
+  return viewerId && document.created_by === viewerId ? 'action' : 'pending'
+}
+
+const signatureNextAction = (document, canStartSignature) => {
+  if (document.signature.status === 'signed') return 'Documento confirmado e pronto para uso.'
+  if (document.signature.status === 'pending') return 'Abra a página segura ou atualize o status da assinatura.'
+  if (['failed', 'cancelled'].includes(document.signature.status)) {
+    return canStartSignature ? 'Revise o motivo e inicie uma nova tentativa.' : 'Aguarde o profissional que emitiu o documento.'
+  }
+  return canStartSignature ? 'Inicie a assinatura na página segura da BRy.' : 'A assinatura depende do profissional que emitiu o documento.'
+}
+
 const normalizeWhatsappPhone = value => {
   const digits = String(value || '').replace(/\D/g, '')
   if (!digits) return ''
@@ -107,6 +123,21 @@ function ClinicalDocumentJourney({ signatureStatus = 'manual' }) {
       <div className={signed ? 'is-current' : ''}><b>3</b><span><strong>Compartilhar</strong><small>WhatsApp ou e-mail, manual e seguro</small></span></div>
       <i aria-hidden="true" />
       <div><b>4</b><span><strong>Acompanhar</strong><small>Sem confirmação automática de leitura</small></span></div>
+    </div>
+  )
+}
+
+function ClinicalSignatureMiniJourney({ signatureStatus = 'manual' }) {
+  const signed = signatureStatus === 'signed'
+  const signing = signatureStatus === 'pending'
+  const failed = ['failed', 'cancelled'].includes(signatureStatus)
+  return (
+    <div className="clinical-signature-mini-journey" aria-label="Progresso da assinatura">
+      <span className="is-complete"><b>1</b><small>Documento</small></span>
+      <i aria-hidden="true" />
+      <span className={signed ? 'is-complete' : failed ? 'is-error' : signing || signatureStatus === 'manual' ? 'is-current' : ''}><b>2</b><small>Assinatura</small></span>
+      <i aria-hidden="true" />
+      <span className={signed ? 'is-current' : ''}><b>3</b><small>Pronto</small></span>
     </div>
   )
 }
@@ -493,8 +524,10 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
   }, [autoOpenDocumentId, loading])
   const normalizedQuery = query.trim().toLocaleLowerCase('pt-BR')
   const rows = index.documents.filter(document => {
+    const queueCategory = signatureQueueCategory(document, viewerId)
+    if (filter === 'action' && queueCategory !== 'action') return false
     if (filter === 'attention' && !['failed', 'cancelled'].includes(document.signature.status)) return false
-    if (!['all', 'attention'].includes(filter) && document.signature.status !== filter) return false
+    if (!['all', 'attention', 'action'].includes(filter) && document.signature.status !== filter) return false
     return !normalizedQuery || includesText([document.patientName, document.author_name, document.document_type, document.file_name, document.procedure_name], normalizedQuery)
   })
   const counts = index.documents.reduce((totals, document) => {
@@ -502,8 +535,9 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
     if (document.signature.status === 'signed') totals.signed += 1
     else if (document.signature.status === 'pending') totals.pending += 1
     else if (['failed', 'cancelled'].includes(document.signature.status)) totals.attention += 1
+    else if (signatureQueueCategory(document, viewerId) === 'action') totals.action += 1
     return totals
-  }, { all:0, signed:0, pending:0, attention:0 })
+  }, { all:0, signed:0, pending:0, attention:0, action:0 })
 
   async function startDocumentSignature() {
     if (!signingDocument || signatureBusy) return
@@ -599,14 +633,19 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
       {notice && <div className="clinical-document-access-note" role="status">{notice}</div>}
       <div className="clinical-document-metrics" aria-label="Resumo de documentos">
         <button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}><span>Todos</span><strong>{loading ? '—' : counts.all}</strong><small>No prontuário</small></button>
+        <button type="button" className={filter === 'action' ? 'is-active is-priority' : 'is-priority'} onClick={() => setFilter('action')}><span>Minha ação agora</span><strong>{loading ? '—' : counts.action}</strong><small>Assinar ou iniciar</small></button>
         <button type="button" className={filter === 'pending' ? 'is-active' : ''} onClick={() => setFilter('pending')}><span>Aguardando assinatura</span><strong>{loading ? '—' : counts.pending}</strong><small>Em andamento</small></button>
         <button type="button" className={filter === 'signed' ? 'is-active' : ''} onClick={() => setFilter('signed')}><span>Assinados</span><strong>{loading ? '—' : counts.signed}</strong><small>Confirmados</small></button>
         <button type="button" className={filter === 'attention' ? 'is-active is-danger' : 'is-danger'} onClick={() => setFilter('attention')}><span>Exigem atenção</span><strong>{loading ? '—' : counts.attention}</strong><small>Falha ou cancelamento</small></button>
       </div>
+      <div className="clinical-signature-overview">
+        <div><span>Fila de assinatura</span><strong>Comece pelo que pede uma decisão agora.</strong></div>
+        <small>Acompanhe cada documento pela trilha abaixo; o botão colorido é sempre a próxima ação recomendada.</small>
+      </div>
       <ClinicalDocumentJourney />
       <ClinicalSignatureQueue />
       <div className="clinical-filter-row" aria-label="Filtrar documentos">
-        {[['all','Todos'],['signed','Assinados'],['pending','Pendentes'],['failed','Com falha'],['manual','Via manual']].map(([id, label]) => <button key={id} type="button" className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
+        {[['all','Todos'],['action','Minha ação'],['signed','Assinados'],['pending','Pendentes'],['failed','Com falha'],['manual','Via manual']].map(([id, label]) => <button key={id} type="button" className={filter === id ? 'is-active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
       </div>
       {!loading && rows.length === 0 ? <div className="clinical-empty-panel">{incomplete ? 'Não foi possível confirmar os documentos desta clínica.' : 'Nenhum documento encontrado.'}</div> : (
         <div className="clinical-documents-center-list is-revamped">
@@ -616,6 +655,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             const canWhatsapp = Boolean(normalizeWhatsappPhone(patient?.phone))
             const canEmail = Boolean(String(patient?.email || '').trim())
             const canStartSignature = Boolean(viewerId && document.created_by === viewerId)
+            const queueCategory = signatureQueueCategory(document, viewerId)
             const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Revisar falha' : 'Assinar'
             const handleSignature = () => {
               if (document.signature.status === 'signed' && document.signature.attemptId) {
@@ -638,7 +678,8 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             <article key={document.id}>
               <span className={`clinical-document-center-icon is-${document.document_type}`}>{document.document_type === 'simple_prescription' ? 'Rx' : document.document_type === 'attached_pdf' ? 'PDF' : 'Ex'}</span>
               <span className="clinical-document-row__identity"><small>{documentTypeLabel(document.document_type)}</small><strong>{document.document_type === 'attached_pdf' ? document.file_name : document.patientName}</strong><em>{document.document_type === 'attached_pdf' ? document.patientName : document.author_name || 'Profissional registrado'}</em></span>
-              <span className="clinical-document-row__status"><strong>{dateLabel(document.issue_date)}</strong><small className={`is-${document.signature.status}`}>{document.signature.label}</small></span>
+              <span className="clinical-document-row__status"><strong>{dateLabel(document.issue_date)}</strong><small className={`is-${document.signature.status}`}>{document.signature.label}</small><em className={`clinical-document-row__next-action is-${queueCategory}`}><b>Próxima ação</b>{signatureNextAction(document, canStartSignature)}</em></span>
+              <ClinicalSignatureMiniJourney signatureStatus={document.signature.status} />
               <div className="clinical-document-row__actions">
                 <button type="button" onClick={openDocument}>Visualizar</button>
                 <button type="button" className="is-primary" disabled={signatureBusy} onClick={handleSignature}>{signingLabel}</button>
