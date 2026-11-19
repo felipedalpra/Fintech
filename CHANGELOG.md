@@ -12,6 +12,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 - Corrigida a validação de vendas de produtos com pagamentos em datas diferentes, que aceitava parcelas cuja soma não correspondia ao valor total e não enviava o primeiro vencimento ao razão financeiro. (`src/components/Products.jsx`, `src/lib/productSalePayments.js`, `tests/unit/productSalePayments.spec.js`.)
+- Ao escolher a situação `Parcelado` na venda de produto, a configuração de pagamento agora muda automaticamente para `Parcelado (cronograma)`, evitando que o registro fique com status parcelado e pagamento em uma única data. (`src/components/Products.jsx`.)
 
 ## [Unreleased] - 2026-11-16 (7)
 ### Added

@@ -417,6 +417,7 @@ export function Products({ data, setData, saveDataNow }) {
           <FInput label="Situação" value={form.paymentStatus || 'recebido'} onChange={value => setForm(current => ({
             ...current,
             paymentStatus:value,
+            paymentScheduleMode:value === 'parcelado' ? 'parcelas' : current.paymentScheduleMode,
             receivedDate:value === 'recebido' ? (current.receivedDate || today()) : '',
             dueDate:value === 'recebido' ? current.dueDate : (current.dueDate || current.saleDate || today()),
           }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }, { v:'parcelado', l:'Parcelado' }]} />
