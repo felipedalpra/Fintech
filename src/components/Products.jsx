@@ -6,8 +6,15 @@ import { Card, Btn, FInput, Modal, ConfirmModal, Badge } from './UI.jsx'
 import { FilterBar } from './FilterBar.jsx'
 import { SupplierSelector } from './SupplierSelector.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
-import { decodePaymentMethod, encodePaymentMethod } from '../lib/paymentMethodCodec.js'
+import { decodePaymentMethod } from '../lib/paymentMethodCodec.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
+import {
+  CONSULTATION_INSTALLMENT_FREQUENCIES,
+  generateConsultationInstallments,
+  roundPaymentAmount,
+  shiftInstallmentDate,
+} from '../lib/consultationPayments.js'
+import { prepareProductSalePayment } from '../lib/productSalePayments.js'
 
 const PRODUCT_EMPTY = {
   name:'',
@@ -41,6 +48,7 @@ const SALE_EMPTY = {
   payment2Date:today(),
   payment2Amount:0,
   payment2Method:'cartao',
+  schedulePayments:[],
   mixMethodA:'pix',
   mixMethodB:'cartao',
   mixAmountA:0,
@@ -84,6 +92,7 @@ const PAYMENT_MODES = [
 const PAYMENT_SCHEDULE_MODES = [
   { v:'unica', l:'Pagamento em 1 data' },
   { v:'duas_datas', l:'Pagamento em 2 datas' },
+  { v:'parcelas', l:'Parcelado (cronograma)' },
 ]
 const PAYMENT_METHOD_LABEL = {
   pix:'PIX',
@@ -106,10 +115,13 @@ export function Products({ data, setData, saveDataNow }) {
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(PRODUCT_EMPTY)
   const [confirmState, setConfirmState] = useState(null)
+  const [installmentModal, setInstallmentModal] = useState(null)
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
 
   const productsById = useMemo(() => new Map(data.products.map(item => [item.id, item])), [data.products])
   const performanceById = useMemo(() => new Map(m.productsByPerformance.map(item => [item.id, item])), [m.productsByPerformance])
+  const saleTotal = Number(form.totalValue) || ((Number(form.unitValue) || 0) * (Number(form.quantity) || 0))
+  const preparedSalePayment = prepareProductSalePayment(form, saleTotal)
 
   const filteredProducts = data.products
     .filter(item => item.name.toLowerCase().includes(search.toLowerCase()) || item.category.toLowerCase().includes(search.toLowerCase()))
@@ -154,36 +166,15 @@ export function Products({ data, setData, saveDataNow }) {
 
     if (modalType === 'sale') {
       if (!form.productId || !form.quantity) return
-      if (form.paymentStatus === 'recebido' && !form.receivedDate) return
-      if (form.paymentStatus === 'pendente' && !form.dueDate) return
+      if (form.paymentStatus === 'recebido' && form.paymentScheduleMode !== 'parcelas' && !form.receivedDate) return
+      if (form.paymentStatus === 'pendente' && form.paymentScheduleMode !== 'parcelas' && !form.dueDate) return
       const product = productsById.get(form.productId)
       const unitValue = form.unitValue || product?.salePrice || 0
       const totalValue = form.totalValue || (unitValue * (form.quantity || 0))
-      const payments = form.paymentScheduleMode === 'duas_datas'
-        ? [
-          { date:form.payment1Date, amount:form.payment1Amount, method:form.payment1Method },
-          { date:form.payment2Date, amount:form.payment2Amount, method:form.payment2Method },
-        ]
-        : []
-      const paymentMethod = encodePaymentMethod({
-        paymentMode:form.paymentMode,
-        paymentMethod:form.paymentMethod,
-        mixMethodA:form.mixMethodA,
-        mixMethodB:form.mixMethodB,
-        mixAmountA:form.mixAmountA,
-        mixAmountB:form.mixAmountB,
-        payments,
-      })
-      const scheduledTotal = (form.payment1Amount || 0) + (form.payment2Amount || 0)
-      if (form.paymentScheduleMode === 'duas_datas' && (
-        !form.payment1Date
-        || !form.payment2Date
-        || !form.payment1Method
-        || !form.payment2Method
-        || scheduledTotal <= 0
-      )) return
+      const preparedPayment = prepareProductSalePayment(form, totalValue)
+      if (!preparedPayment.scheduleValid) return
       const mixedTotal = (form.mixAmountA || 0) + (form.mixAmountB || 0)
-      if (form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
+      if (!preparedPayment.scheduled && form.paymentMode === 'misto' && (!form.mixMethodA || !form.mixMethodB || form.mixMethodA === form.mixMethodB || mixedTotal <= 0)) return
       const {
         paymentMode,
         paymentScheduleMode,
@@ -193,6 +184,7 @@ export function Products({ data, setData, saveDataNow }) {
         payment2Date,
         payment2Amount,
         payment2Method,
+        schedulePayments,
         mixMethodA,
         mixMethodB,
         mixAmountA,
@@ -205,7 +197,8 @@ export function Products({ data, setData, saveDataNow }) {
           ...baseForm,
           unitValue,
           totalValue,
-          paymentMethod,
+          paymentMethod:preparedPayment.paymentMethod,
+          dueDate:preparedPayment.dueDate,
           id:uid(),
         }],
       }))
@@ -339,7 +332,7 @@ export function Products({ data, setData, saveDataNow }) {
           columns={['Competência', 'Produto', 'Paciente', 'Qtd', 'Valor total', 'Situação', 'Liquidação / vencimento', 'Pagamento', 'Ações']}
           rows={data.productSales.slice().sort((a, b) => (b.saleDate || '').localeCompare(a.saleDate || '')).map(item => {
             const payment = decodePaymentMethod(item.paymentMethod)
-            const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
+            const paymentLabel = ['duas_datas', 'parcelas'].includes(payment.paymentScheduleMode) && payment.payments.length > 0
               ? payment.payments.map(entry => `${formatDateBR(entry.date)} · ${PAYMENT_METHOD_LABEL[entry.method] || entry.method} ${fmt(entry.amount)}`).join(' | ')
               : payment.paymentMode === 'misto'
                 ? `${PAYMENT_METHOD_LABEL[payment.mixMethodA] || payment.mixMethodA} ${fmt(payment.mixAmountA)} + ${PAYMENT_METHOD_LABEL[payment.mixMethodB] || payment.mixMethodB} ${fmt(payment.mixAmountB)}`
@@ -352,8 +345,8 @@ export function Products({ data, setData, saveDataNow }) {
                 item.patientName || 'Venda avulsa',
                 fmtN(item.quantity),
                 <span style={{ color:C.green, fontWeight:700 }}>{fmt(item.totalValue)}</span>,
-                <Badge color={item.paymentStatus === 'recebido' ? C.green : C.yellow} small>{item.paymentStatus === 'recebido' ? 'recebido' : 'a receber'}</Badge>,
-                formatDateBR(item.paymentStatus === 'recebido' ? item.receivedDate : item.dueDate),
+                <Badge color={item.paymentStatus === 'recebido' ? C.green : item.paymentStatus === 'parcelado' ? C.cyan : C.yellow} small>{item.paymentStatus === 'recebido' ? 'recebido' : item.paymentStatus === 'parcelado' ? 'parcelado' : 'a receber'}</Badge>,
+                formatDateBR(item.paymentStatus === 'recebido' ? item.receivedDate : (payment.payments?.[0]?.date || item.dueDate)),
                 paymentLabel,
                 <Btn variant="danger" onClick={() => setConfirmState({ type:'sale', id:item.id })} style={{ padding:'5px 12px', fontSize:12 }}>Excluir</Btn>,
               ],
@@ -425,15 +418,20 @@ export function Products({ data, setData, saveDataNow }) {
             ...current,
             paymentStatus:value,
             receivedDate:value === 'recebido' ? (current.receivedDate || today()) : '',
-            dueDate:value === 'pendente' ? (current.dueDate || current.saleDate || today()) : current.dueDate,
-          }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }]} />
+            dueDate:value === 'recebido' ? current.dueDate : (current.dueDate || current.saleDate || today()),
+          }))} options={[{ v:'recebido', l:'Recebido' }, { v:'pendente', l:'A receber' }, { v:'parcelado', l:'Parcelado' }]} />
           <FInput label="Quantidade" value={form.quantity} onChange={value => setForm(current => ({ ...current, quantity:value, totalValue:(current.unitValue || 0) * value }))} type="number" />
           <FInput label="Valor unitário" value={form.unitValue} onChange={value => setForm(current => ({ ...current, unitValue:value, totalValue:value * (current.quantity || 0) }))} type="number" />
           <FInput label="Data da venda (competência)" value={form.saleDate} onChange={value => setForm(current => ({ ...current, saleDate:value, competenceDate:value, dueDate:current.dueDate || value }))} type="date" />
-          {form.paymentStatus === 'recebido'
+          {form.paymentStatus === 'recebido' && form.paymentScheduleMode !== 'parcelas'
             ? <FInput label="Data real do recebimento (caixa)" required value={form.receivedDate || ''} onChange={value => setForm(current => ({ ...current, receivedDate:value }))} type="date" />
-            : <FInput label="Vencimento (previsão de recebimento)" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />}
-          <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
+            : form.paymentScheduleMode !== 'parcelas' && <FInput label="Vencimento (previsão de recebimento)" required value={form.dueDate || ''} onChange={value => setForm(current => ({ ...current, dueDate:value }))} type="date" />}
+          <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({
+            ...current,
+            paymentScheduleMode:value,
+            paymentStatus:value === 'parcelas' && current.paymentStatus === 'recebido' ? 'parcelado' : current.paymentStatus,
+            receivedDate:value === 'parcelas' ? '' : current.receivedDate,
+          }))} options={PAYMENT_SCHEDULE_MODES} />
           {form.paymentScheduleMode === 'duas_datas' && (
             <>
               <FInput label="Data pagamento 1" value={form.payment1Date} onChange={value => setForm(current => ({ ...current, payment1Date:value }))} type="date" />
@@ -446,9 +444,25 @@ export function Products({ data, setData, saveDataNow }) {
               <div />
             </>
           )}
-          {form.paymentScheduleMode !== 'duas_datas' && <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />}
-          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
-          {form.paymentScheduleMode !== 'duas_datas' && form.paymentMode === 'misto' && (
+          {form.paymentScheduleMode === 'parcelas' && (
+            <div style={{ gridColumn:'1 / -1', border:`1px solid ${C.border}`, borderRadius:12, padding:14, background:C.surface }}>
+              {(form.schedulePayments || []).length > 0 ? (
+                <>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:8 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{form.schedulePayments.length} parcelas · {fmt(form.schedulePayments.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</div>
+                    <Btn variant="ghost" style={{ padding:'5px 12px', fontSize:12 }} onClick={() => setInstallmentModal({ rows:form.schedulePayments.map(row => ({ ...row })), count:form.schedulePayments.length, frequency:'mensal', firstDate:form.schedulePayments[0]?.date || form.saleDate, method:form.schedulePayments[0]?.method || 'pix' })}>Editar parcelas</Btn>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:140, overflowY:'auto' }}>
+                    {form.schedulePayments.map((row, index) => <div key={`${row.date}-${index}`} style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:C.textSub, borderTop:index ? `1px solid ${C.border}44` : 'none', paddingTop:index ? 4 : 0 }}><span>{index + 1}ª · {formatDateBR(row.date)} · {PAYMENT_METHOD_LABEL[row.method] || row.method}</span><span style={{ fontWeight:700, color:C.text }}>{fmt(row.amount)}</span></div>)}
+                  </div>
+                  {!preparedSalePayment.scheduleValid && <div style={{ fontSize:12, color:C.yellow, marginTop:8 }}>O cronograma precisa de ao menos 2 parcelas válidas e somar exatamente {fmt(saleTotal)}.</div>}
+                </>
+              ) : <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap' }}><span style={{ fontSize:13, color:C.textSub }}>Nenhuma parcela configurada ainda.</span><Btn style={{ padding:'6px 14px', fontSize:12 }} onClick={() => setInstallmentModal({ rows:[], count:3, frequency:'mensal', firstDate:form.saleDate || today(), method:'pix' })}>Configurar parcelas</Btn></div>}
+            </div>
+          )}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && <FInput label="Recebimento" value={form.paymentMode} onChange={value => setForm(current => ({ ...current, paymentMode:value }))} options={PAYMENT_MODES} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && form.paymentMode !== 'misto' && <FInput label="Forma de pagamento" value={form.paymentMethod} onChange={value => setForm(current => ({ ...current, paymentMethod:value }))} options={PAYMENT_METHODS} />}
+          {form.paymentScheduleMode !== 'duas_datas' && form.paymentScheduleMode !== 'parcelas' && form.paymentMode === 'misto' && (
             <>
               <FInput label="Forma 1" value={form.mixMethodA} onChange={value => setForm(current => ({ ...current, mixMethodA:value }))} options={PAYMENT_METHODS} />
               <FInput label="Valor 1" value={form.mixAmountA} onChange={value => setForm(current => ({ ...current, mixAmountA:value }))} type="number" placeholder="0" />
@@ -460,8 +474,30 @@ export function Products({ data, setData, saveDataNow }) {
             </>
           )}
           <div style={{ gridColumn:'1 / -1' }}><FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" /></div>
-          <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId || (form.paymentStatus === 'recebido' ? !form.receivedDate : !form.dueDate)}>Salvar venda</Btn></div>
+          <div style={{ gridColumn:'1 / -1', display:'flex', gap:10, justifyContent:'flex-end', marginTop:8 }}><Btn variant="ghost" onClick={() => setModalType(null)}>Cancelar</Btn><Btn onClick={save} disabled={!form.productId || !preparedSalePayment.scheduleValid || (form.paymentStatus === 'recebido' && form.paymentScheduleMode !== 'parcelas' ? !form.receivedDate : form.paymentScheduleMode !== 'parcelas' && !form.dueDate)}>Salvar venda</Btn></div>
         </div>
+      </Modal>
+
+      <Modal open={!!installmentModal} onClose={() => setInstallmentModal(null)} title="Parcelas da venda" width={720}>
+        {installmentModal && (() => {
+          const rows = installmentModal.rows || []
+          const target = Number(form.totalValue) || ((Number(form.unitValue) || 0) * (Number(form.quantity) || 0))
+          const rowsTotal = roundPaymentAmount(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0))
+          const difference = roundPaymentAmount(rowsTotal - target)
+          const updateRow = (index, patch) => setInstallmentModal(current => ({ ...current, rows:current.rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row) }))
+          return <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1fr 1fr', gap:12 }}>
+              <FInput label="Número de parcelas" type="number" value={installmentModal.count} onChange={value => setInstallmentModal(current => ({ ...current, count:value }))} />
+              <FInput label="Frequência" value={installmentModal.frequency} onChange={value => setInstallmentModal(current => ({ ...current, frequency:value }))} options={CONSULTATION_INSTALLMENT_FREQUENCIES} />
+              <FInput label="Data da 1ª parcela" type="date" value={installmentModal.firstDate} onChange={value => setInstallmentModal(current => ({ ...current, firstDate:value }))} />
+              <FInput label="Forma de pagamento" value={installmentModal.method} onChange={value => setInstallmentModal(current => ({ ...current, method:value }))} options={PAYMENT_METHODS} />
+            </div>
+            <Btn variant="ghost" onClick={() => setInstallmentModal(current => ({ ...current, rows:generateConsultationInstallments({ total:target, count:current.count, firstDate:current.firstDate, frequency:current.frequency, method:current.method }) }))}>Gerar {Math.max(2, Math.min(60, Math.floor(Number(installmentModal.count) || 2)))} parcelas de {fmt(target / Math.max(2, Math.min(60, Math.floor(Number(installmentModal.count) || 2))))}</Btn>
+            {rows.length > 0 && <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:280, overflowY:'auto' }}>{rows.map((row, index) => <div key={index} style={{ display:'grid', gridTemplateColumns:isMobile ? '24px 1fr' : '24px 1.1fr 1fr 1fr 28px', gap:8, alignItems:'end' }}><div style={{ fontSize:12, color:C.textDim, paddingBottom:12 }}>{index + 1}</div><FInput label={index === 0 ? 'Vencimento' : ''} type="date" value={row.date} onChange={value => updateRow(index, { date:value })} /><FInput label={index === 0 ? 'Valor' : ''} type="number" value={row.amount} onChange={value => updateRow(index, { amount:value })} /><FInput label={index === 0 ? 'Forma' : ''} value={row.method} onChange={value => updateRow(index, { method:value })} options={PAYMENT_METHODS} /><Btn variant="ghost" style={{ padding:'8px', fontSize:12 }} onClick={() => setInstallmentModal(current => ({ ...current, rows:current.rows.filter((_, rowIndex) => rowIndex !== index) }))}>×</Btn></div>)}<Btn variant="ghost" style={{ fontSize:12 }} onClick={() => setInstallmentModal(current => ({ ...current, rows:[...current.rows, { date:current.rows.length ? shiftInstallmentDate(current.rows[current.rows.length - 1].date, 1, current.frequency) : (current.firstDate || today()), amount:0, method:current.method || 'pix' }] }))}>+ Adicionar parcela</Btn></div>}
+            {rows.length > 0 && <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, color:Math.abs(difference) > 0.01 ? C.yellow : C.green, fontWeight:700 }}><span>Soma das parcelas: {fmt(rowsTotal)}</span><span>{Math.abs(difference) > 0.01 ? `Diferença: ${fmt(difference)}` : 'Confere com o total'}</span></div>}
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setInstallmentModal(null)}>Cancelar</Btn><Btn disabled={rows.length < 2 || rows.some(row => !row.date || !row.method || !(Number(row.amount) > 0)) || Math.abs(difference) > 0.01} onClick={() => { setForm(current => ({ ...current, schedulePayments:rows.map(row => ({ date:row.date, amount:roundPaymentAmount(row.amount), method:row.method || 'pix' })), dueDate:rows.slice().sort((a, b) => a.date.localeCompare(b.date))[0]?.date || current.dueDate })); setInstallmentModal(null) }}>Salvar parcelas</Btn></div>
+          </div>
+        })()}
       </Modal>
 
       <Modal open={modalType === 'purchase'} onClose={() => setModalType(null)} title="Registrar compra de produto" width={640}>
