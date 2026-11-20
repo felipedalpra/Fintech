@@ -9,6 +9,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Changed
 - Central de assinaturas da BRy reorganizada para priorizar a próxima ação: novo indicador “Minha ação agora”, filtros coerentes, resumo operacional e trilha visual compacta em cada documento, deixando paciente, status e caminho de assinatura mais fáceis de interpretar. (`src/components/ClinicalWorkspaceViews.jsx`, `src/components/ClinicalRevamp.css`.)
+- Lançamentos financeiros importados agora podem ser removidos individualmente por um fluxo auditado, com motivo obrigatório e bloqueio automático quando houver conciliação, cobrança ou documento fiscal vinculado. A proteção contra exclusões diretas foi mantida. (`src/components/Finance.jsx`, `src/lib/financialImportStore.js`, `supabase/financial_import_line_removal.sql`.)
 - Vendas de produtos agora seguem o mesmo cronograma financeiro de consultas e cirurgias: permitem parcelamento mensal, quinzenal ou semanal, exibem e persistem o vencimento de cada parcela, ajustam a última parcela para fechar o total a centavo e só aceitam salvar quando o cronograma estiver completo. (`src/components/Products.jsx`, `src/lib/productSalePayments.js`.)
 
 ### Fixed
