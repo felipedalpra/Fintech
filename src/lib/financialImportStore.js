@@ -106,6 +106,20 @@ export async function loadImportHistory(limit = 50) {
   return { batches:data || [] }
 }
 
+// Remove somente uma origem importada, sempre pelo fluxo auditado do banco. O cliente nunca
+// arquiva a linha, a parcela ou o lançamento diretamente: a RPC valida vínculos e registra o motivo.
+export async function archiveFinancialImportSource(sourceId, reason = '') {
+  const { data, error } = await supabase.rpc('archive_financial_import_source', {
+    p_source_id:sourceId,
+    p_reason:String(reason || '').trim(),
+  })
+  if (error) return schemaMissing(error) || { error }
+  if (!data || data.source_id !== sourceId || data.status !== 'archived') {
+    return { error:new Error('O banco não confirmou a remoção deste lançamento importado.') }
+  }
+  return { data }
+}
+
 // Descarte de uma revisão que nunca entrou no financeiro. Passa por RPC de propósito: o guard de
 // "nenhuma linha aprovada" tem que viver no banco. Arquivar pelo cliente um lote que já virou
 // lançamento deixaria origens no financeiro sem lote cancelável para retirá-las depois.

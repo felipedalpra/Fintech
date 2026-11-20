@@ -24,6 +24,7 @@ import { releaseBankStatementLineClaims } from '../lib/bankReconciliationStore.j
 import { BillingChargeButton } from './BillingChargeButton.jsx'
 import { paymentScheduleFlow } from '../lib/paymentScheduleFlow.js'
 import { isProtectedFinancialImportRow } from '../lib/financeSync.js'
+import { archiveFinancialImportSource } from '../lib/financialImportStore.js'
 import { hasChangedReceiptFields, hasRecognizedReceipt, reverseReceivableInstallment, withReceivedInstallmentHistory } from '../lib/receivablePaymentReversal.js'
 import { FiscalDocumentCell, FiscalDocumentModal, FiscalDocumentSummary } from './FiscalDocumentModal.jsx'
 import { documentsForTarget, fiscalDocumentsSearchText, fiscalTargetFromMetric, fiscalTargetFromModal, matchesFiscalFilter } from '../lib/fiscalDocuments.js'
@@ -250,6 +251,8 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   })
   const [reconciliationReturn, setReconciliationReturn] = useState(() => readModalDraft()?.reconciliationReturn || null)
   const [confirmState, setConfirmState] = useState(null)
+  const [importedRemovalTarget, setImportedRemovalTarget] = useState(null)
+  const [importedRemovalReason, setImportedRemovalReason] = useState('')
   const [paymentConfirmState, setPaymentConfirmState] = useState(null)
   const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all', fiscalStatus:'all' })
   const [fiscalDocumentsByEntry, setFiscalDocumentsByEntry] = useState({})
@@ -292,6 +295,40 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const revenueGroupOptions = useMemo(() => postingGroupOptions(data?.chartAccounts || [], 'receivable'), [data?.chartAccounts])
   const expenseGroupOptions = useMemo(() => postingGroupOptions(data?.chartAccounts || [], 'payable'), [data?.chartAccounts])
   const canManageChartAccounts = role === 'admin' || role === 'gestao'
+
+  const openImportedRemoval = sourceRecord => {
+    if (!sourceRecord?.id) return
+    setImportedRemovalTarget({ id:sourceRecord.id, description:sourceRecord.description || 'Lançamento importado' })
+    setImportedRemovalReason('')
+  }
+
+  const closeImportedRemoval = () => {
+    if (savingLaunch) return
+    setImportedRemovalTarget(null)
+    setImportedRemovalReason('')
+  }
+
+  const removeImportedSource = async () => {
+    if (!importedRemovalTarget || importedRemovalReason.trim().length < 3 || savingLaunch) return
+    setSavingLaunch(true)
+    const result = await archiveFinancialImportSource(importedRemovalTarget.id, importedRemovalReason)
+    if (result.error) {
+      toast(result.schemaMissing
+        ? 'A remoção auditada ainda não está disponível neste banco. Aplique o SQL financeiro de remoção individual.'
+        : result.error.message || 'Não foi possível remover o lançamento importado.', 'warning')
+      setSavingLaunch(false)
+      return
+    }
+    applyServerConfirmedData?.(current => ({
+      ...current,
+      extraRevenues:(current.extraRevenues || []).filter(item => item.id !== importedRemovalTarget.id),
+      expenses:(current.expenses || []).filter(item => item.id !== importedRemovalTarget.id),
+    }))
+    toast('Lançamento importado removido com registro de auditoria.', 'warning')
+    setSavingLaunch(false)
+    setImportedRemovalTarget(null)
+    setImportedRemovalReason('')
+  }
 
   const refreshFiscalDocuments = async () => {
     if (!ownerId) return
@@ -1520,7 +1557,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
               <div style={{ display:'flex', gap:6 }}>
                 {sourceRecord && <Btn variant="ghost" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openEdit(editType, sourceRecord)}>Editar</Btn>}
                 {protectedImport
-                  ? <span title="Importações só podem ser removidas por um fluxo auditado." style={{ color:C.textDim, fontSize:11 }}>Importado protegido</span>
+                  ? <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openImportedRemoval(sourceRecord)}>Remover importado</Btn>
                   : removable
                   ? <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-entry', origin:item.origin, referenceId:item.referenceId, sourceInstallmentNumber:item.sourceInstallmentNumber || item.installmentNumber || 1, ledgerInstallmentNumber:item.installmentNumber || 1, title:removeLabels[item.origin], message:messages[item.origin], confirmLabel:item.origin === 'outra_receita' ? 'Remover' : 'Estornar recebimento', confirmVariant:'danger' })}>{removeLabels[item.origin]}</Btn>
                   : <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
@@ -1594,7 +1631,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           const protectedImport = isProtectedFinancialImportRow(sourceRecord)
           let removeBtn = null
           if (protectedImport) {
-            removeBtn = <span title="Importações só podem ser removidas por um fluxo auditado." style={{ color:C.textDim, fontSize:11 }}>Importado protegido</span>
+            removeBtn = <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => openImportedRemoval(sourceRecord)}>Remover importado</Btn>
           } else if (item.origin === 'despesa') {
             removeBtn = <Btn variant="danger" style={{ padding:'5px 10px', fontSize:12 }} onClick={() => setConfirmState({ action:'delete-expense', id:item.referenceId, title:'Excluir despesa', message:'Deseja excluir esta despesa? O lançamento será removido permanentemente.', confirmLabel:'Excluir', confirmVariant:'danger' })}>Remover</Btn>
           } else if (item.origin === 'compra_produto') {
@@ -2142,6 +2179,20 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         busy={savingLaunch}
         closeOnConfirm={false}
       />
+      <Modal open={Boolean(importedRemovalTarget)} onClose={closeImportedRemoval} title="Remover lançamento importado" width={560}>
+        {importedRemovalTarget && <div style={{ display:'grid', gap:14 }}>
+          <div style={{ color:C.text, fontWeight:800 }}>“{importedRemovalTarget.description}”</div>
+          <div style={{ color:C.textSub, fontSize:13, lineHeight:1.55 }}>
+            O lançamento será retirado do financeiro por arquivamento lógico. O lote, a linha original e a auditoria serão preservados. Se houver conciliação bancária, cobrança ou documento fiscal vinculado, o sistema bloqueará a operação até o vínculo ser tratado.
+          </div>
+          <label style={{ display:'grid', gap:6, color:C.textSub, fontSize:12, fontWeight:800 }} htmlFor="financial-import-removal-reason">Motivo da remoção (mínimo 3 caracteres)</label>
+          <textarea id="financial-import-removal-reason" aria-label="Motivo da remoção do lançamento importado" value={importedRemovalReason} onChange={event => setImportedRemovalReason(event.target.value)} maxLength={500} placeholder="Ex.: lançamento duplicado na planilha importada" style={{ minHeight:90, padding:10, resize:'vertical', border:`1px solid ${importedRemovalReason.trim().length < 3 ? C.yellow : C.border}`, borderRadius:8, background:C.surface, color:C.text, font: '13px inherit' }} />
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
+            <Btn variant="ghost" onClick={closeImportedRemoval} disabled={savingLaunch}>Cancelar</Btn>
+            <Btn variant="danger" onClick={removeImportedSource} disabled={savingLaunch || importedRemovalReason.trim().length < 3}>{savingLaunch ? 'Removendo…' : 'Confirmar remoção'}</Btn>
+          </div>
+        </div>}
+      </Modal>
       <Modal open={!!paymentConfirmState} onClose={() => setPaymentConfirmState(null)} title="Confirmar pagamento da despesa" width={460}>
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div style={{ color:C.textSub, fontSize:13 }}>
