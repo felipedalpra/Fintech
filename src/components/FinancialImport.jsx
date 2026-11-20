@@ -10,7 +10,7 @@ import { mergeApprovedStatementRecords } from '../lib/statementImportReview.js'
 import { approvableFinancialImportItem, buildFinancialImportReview, prepareFinancialImportLines } from '../lib/financialImport.js'
 import { batchProgress, isBatchComplete, restoreReviewState } from '../lib/financialImportBatch.js'
 import { canCancelImport, canDiscardImport, canResumeImport, importCancelBlockedMessage, importHistoryStatus, removeCanceledImportSources } from '../lib/financialImportHistory.js'
-import { approveFinancialImportLines, cancelFinancialImportBatch, closeBatch, createBatch, discardFinancialImportBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, loadImportHistory, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
+import { approveFinancialImportLines, archiveFinancialImportSource, cancelFinancialImportBatch, closeBatch, createBatch, discardFinancialImportBatch, findActiveBatch, findResumableBatch, loadBatchLines, loadBatchStatuses, loadImportHistory, reopenBatch, saveLineEdit, saveLinesDecision } from '../lib/financialImportStore.js'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
@@ -66,6 +66,8 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
   const [cancelTarget, setCancelTarget] = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [discardTarget, setDiscardTarget] = useState(null)
+  const [importedRemovalTarget, setImportedRemovalTarget] = useState(null)
+  const [importedRemovalReason, setImportedRemovalReason] = useState('')
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 820
 
   const s = {
@@ -371,6 +373,42 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
     if (await persistDecision([id], 'reopen')) setRejectedIds(current => current.filter(item => item !== id))
   }
 
+  function openImportedRemoval(item) {
+    const sourceId = item?.line?.sourceRecordId || item?.line?.source_id || item?.proposal?.record?.id
+    if (!sourceId) {
+      setError('Não foi possível identificar a origem financeira deste lançamento. Recarregue a revisão antes de continuar.')
+      return
+    }
+    setImportedRemovalTarget({ lineId:item.line.id, sourceId, description:item.line.description || 'Lançamento importado' })
+    setImportedRemovalReason('')
+  }
+
+  async function removeImportedSource() {
+    if (!importedRemovalTarget || importedRemovalReason.trim().length < 3 || busy) return
+    setBusy(true)
+    const result = await archiveFinancialImportSource(importedRemovalTarget.sourceId, importedRemovalReason)
+    if (result?.error) {
+      setError(result.schemaMissing
+        ? 'A remoção auditada ainda não está disponível neste banco. Aplique financial_import_line_removal.sql e recarregue a página.'
+        : result.error.message || 'Não foi possível remover o lançamento importado.')
+      setBusy(false)
+      return
+    }
+    applyServerConfirmedData(current => ({
+      ...current,
+      extraRevenues:(current.extraRevenues || []).filter(item => item.id !== importedRemovalTarget.sourceId),
+      expenses:(current.expenses || []).filter(item => item.id !== importedRemovalTarget.sourceId),
+    }))
+    setLines(current => current.filter(line => line.id !== importedRemovalTarget.lineId))
+    setSelectedIds(current => current.filter(id => id !== importedRemovalTarget.lineId))
+    setApprovedIds(current => current.filter(id => id !== importedRemovalTarget.lineId))
+    setRejectedIds(current => current.filter(id => id !== importedRemovalTarget.lineId))
+    setImportedRemovalTarget(null)
+    setImportedRemovalReason('')
+    setBusy(false)
+    toast('Lançamento importado removido com registro de auditoria.')
+  }
+
   function requestApproval(items) {
     if (!batch || !reviewPersisted) {
       setError('A revisão não está confirmada no banco. Não é possível aprovar lançamentos.')
@@ -666,7 +704,9 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
                 <div><div style={{ color:item.line.amount > 0 ? C.green : C.red, fontWeight:900, fontSize:16 }}>{fmt(item.line.amount)}</div><div style={{ ...s.muted, marginTop:4 }}>{item.line.amount > 0 ? 'Receita recebida' : 'Despesa paga'} · {item.proposal.accountName}</div></div>
                 <div style={{ ...s.row, justifyContent:isMobile ? 'flex-start' : 'flex-end' }}>
                   <Btn variant="ghost" onClick={() => beginEdit(item)} disabled={approved}>Editar</Btn>
-                  {rejected ? <Btn variant="ghost" onClick={() => reopen(item.line.id)}>Reabrir</Btn> : <Btn variant="ghost" onClick={() => reject([item])} disabled={approved}>Rejeitar</Btn>}
+                  {approved
+                    ? <Btn variant="danger" onClick={() => openImportedRemoval(item)} disabled={busy}>Remover importado</Btn>
+                    : rejected ? <Btn variant="ghost" onClick={() => reopen(item.line.id)}>Reabrir</Btn> : <Btn variant="ghost" onClick={() => reject([item])}>Rejeitar</Btn>}
                   {canApprove && <Btn variant="success" onClick={() => requestApproval([item])}>Aprovar</Btn>}
                 </div>
               </div>
@@ -749,6 +789,18 @@ export function FinancialImport({ data, applyServerConfirmedData }) {
               : 'O motivo fica registrado no histórico e na auditoria.'}
           </div>
           <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => { setCancelTarget(null); setCancelReason('') }} disabled={busy}>Voltar</Btn><Btn variant="danger" onClick={confirmCancellation} disabled={busy || cancelReasonTooShort}>{busy ? 'Cancelando…' : 'Confirmar cancelamento'}</Btn></div>
+        </div>}
+      </Modal>
+      <Modal open={Boolean(importedRemovalTarget)} onClose={() => { if (!busy) { setImportedRemovalTarget(null); setImportedRemovalReason('') } }} closeOnBackdrop={!busy} title="Remover lançamento importado" width={560} trackDirty={false}>
+        {importedRemovalTarget && <div style={s.stack}>
+          <div style={{ color:C.text, fontWeight:900 }}>“{importedRemovalTarget.description}”</div>
+          <div style={s.muted}>Este lançamento já foi importado para o financeiro, por isso não pode ser “rejeitado” como uma pendência. A remoção abaixo arquiva somente esta origem e preserva a linha, o lote e a auditoria.</div>
+          <label style={s.label} htmlFor="financial-import-line-removal-reason">Motivo da remoção (mínimo 3 caracteres)</label>
+          <textarea id="financial-import-line-removal-reason" aria-label="Motivo da remoção do lançamento importado" value={importedRemovalReason} onChange={event => setImportedRemovalReason(event.target.value)} maxLength={500} placeholder="Ex.: lançamento duplicado na planilha importada" style={{ ...s.input, minHeight:86, resize:'vertical', borderColor:importedRemovalReason.trim().length < 3 ? `${C.yellow}88` : C.border }} />
+          <div style={{ ...s.muted, color:importedRemovalReason.trim().length < 3 ? C.yellow : C.textSub, marginTop:-10 }}>
+            {importedRemovalReason.trim().length < 3 ? `Escreva o motivo para liberar a remoção — faltam ${3 - importedRemovalReason.trim().length} caractere(s).` : 'O motivo ficará registrado no histórico e na auditoria.'}
+          </div>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => { setImportedRemovalTarget(null); setImportedRemovalReason('') }} disabled={busy}>Voltar</Btn><Btn variant="danger" onClick={removeImportedSource} disabled={busy || importedRemovalReason.trim().length < 3}>{busy ? 'Removendo…' : 'Confirmar remoção'}</Btn></div>
         </div>}
       </Modal>
     </div>
