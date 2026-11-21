@@ -8,10 +8,10 @@ export function Pricing() {
       <div className="reveal" style={{ marginBottom:20 }}>
         <div style={{ fontSize:12, color:'#FDE68A', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:10 }}>Planos</div>
         <h2 style={{ margin:'0 0 8px', fontSize:'clamp(30px, 4vw, 48px)', lineHeight:1.04, letterSpacing:'-0.04em', color:'#F3FBFF' }}>
-          Um produto, ciclos diferentes para encaixar no seu caixa
+          Um plano único, sem letras miúdas
         </h2>
         <p style={{ margin:0, color:'#A8C1CC', fontSize:16, lineHeight:1.65, maxWidth:720 }}>
-          Escolha o ciclo que melhor se encaixa no caixa da clínica. O acesso ao ERP não expira por período de teste.
+          Um preço fixo por mês para toda a clínica. O acesso ao ERP não expira por período de teste.
         </p>
       </div>
 
@@ -23,9 +23,9 @@ export function Pricing() {
             style={{
               padding:20,
               borderRadius:20,
-              background:index === 2 ? 'linear-gradient(140deg, rgba(15, 50, 68, 0.82), rgba(8, 24, 40, 0.9))' : 'rgba(255,255,255,0.03)',
-              border:index === 2 ? '1px solid rgba(125,211,252,0.5)' : '1px solid rgba(255,255,255,0.1)',
-              boxShadow:index === 2 ? '0 18px 46px rgba(56,189,248,0.22)' : 'none',
+              background:index === 0 ? 'linear-gradient(140deg, rgba(15, 50, 68, 0.82), rgba(8, 24, 40, 0.9))' : 'rgba(255,255,255,0.03)',
+              border:index === 0 ? '1px solid rgba(125,211,252,0.5)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow:index === 0 ? '0 18px 46px rgba(56,189,248,0.22)' : 'none',
               display:'flex',
               flexDirection:'column',
               minHeight:312,
@@ -42,7 +42,7 @@ export function Pricing() {
             </div>
 
             <p style={{ margin:'0 0 8px', color:'#D1E6EF', fontSize:13, fontWeight:700, whiteSpace:'nowrap' }}>
-              {cycle.id === 'semestral' ? 'Cobrança a cada 6 meses' : cycle.id === 'anual' ? 'Cobrança anual' : cycle.cadenceLabel}
+              {cycle.cadenceLabel}
             </p>
             <p style={{ margin:'0 0 12px', color:'#A4BCC7', fontSize:14, lineHeight:1.5, minHeight:42 }}>
               {cycle.note}
@@ -50,7 +50,7 @@ export function Pricing() {
             <p style={{ margin:'0 0 16px', color:'#86EFAC', fontSize:12, fontWeight:800 }}>Acesso ao ERP liberado após confirmar o e-mail.</p>
 
             <Link to={buildCheckoutUrl(cycle.id)} style={{ textDecoration:'none', display:'block', marginTop:'auto' }}>
-              <Btn variant={index === 2 ? 'primary' : 'ghost'} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'12px 16px' }}>
+              <Btn variant={index === 0 ? 'primary' : 'ghost'} style={{ width:'100%', justifyContent:'center', display:'inline-flex', padding:'12px 16px' }}>
                 Escolher plano
               </Btn>
             </Link>

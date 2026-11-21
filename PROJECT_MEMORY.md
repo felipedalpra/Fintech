@@ -48,7 +48,7 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 - O frontend consome APIs e mantém experiência reativa sem expor segredos.
 
 3. **Monetização com planos fixos, sem trial no código**
-- Ciclos mensal/semestral/anual fixos (`src/billing/plans.js`); apesar do texto antigo deste documento, não há lógica de trial de 30 dias implementada — o acesso ao ERP nunca foi nem é condicionado a status de cobrança.
+- Plano único de R$ 500,00/mês (`src/billing/plans.js`, decisão de 2026-11-21 — substituiu os ciclos mensal/semestral/anual antigos); apesar do texto antigo deste documento, não há lógica de trial de 30 dias implementada — o acesso ao ERP nunca foi nem é condicionado a status de cobrança.
 
 4. **Recorrências por rotina automática**
 - Execução diária via cron para consolidar lançamentos recorrentes.

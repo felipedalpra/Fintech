@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-21 (3)
+
+### Changed
+- Plano único de R$ 500,00/mês substitui os antigos ciclos mensal/semestral/anual. (`src/billing/plans.js`, `src/pages/BillingPage.jsx`, `src/landing/Pricing.jsx`, `src/pages/TermsOfServicePage.jsx`, `api/_lib/saasBilling.js`, `api/_lib/billingProvider.js`.)
+
 ## [Unreleased] - 2026-11-21 (2)
 
 ### Fixed

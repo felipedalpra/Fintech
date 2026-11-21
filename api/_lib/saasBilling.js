@@ -124,7 +124,7 @@ async function handleCheckout(req, res) {
   }
   const { admin, ownerId } = await requireAdminOwner(req)
   const body = readBody(req)
-  const planId = ['mensal', 'semestral', 'anual'].includes(body.planId) ? body.planId : 'mensal'
+  const planId = 'mensal'
   const couponCode = String(body.couponCode || '').trim().toUpperCase()
   const firstDueDate = resolveFirstDueDate(body.firstDueDate)
 
