@@ -65,10 +65,19 @@ async function requireAdminOwner(req) {
   return { admin, user:userData.user, ownerId }
 }
 
-function nextDueDate() {
+function defaultNextDueDate() {
   const date = new Date()
   date.setUTCDate(date.getUTCDate() + 1)
   return date.toISOString().slice(0, 10)
+}
+
+export function resolveFirstDueDate(value) {
+  const raw = String(value || '').slice(0, 10)
+  if (!raw) return defaultNextDueDate()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw Object.assign(new Error('Data da primeira cobrança inválida.'), { statusCode:400 })
+  const todayKey = new Date().toISOString().slice(0, 10)
+  if (raw < todayKey) throw Object.assign(new Error('A data da primeira cobrança não pode ser no passado.'), { statusCode:400 })
+  return raw
 }
 
 async function resolveCoupon(admin, couponCode) {
@@ -117,6 +126,7 @@ async function handleCheckout(req, res) {
   const body = readBody(req)
   const planId = ['mensal', 'semestral', 'anual'].includes(body.planId) ? body.planId : 'mensal'
   const couponCode = String(body.couponCode || '').trim().toUpperCase()
+  const firstDueDate = resolveFirstDueDate(body.firstDueDate)
 
   const { data:account, error:accountError } = await admin.from('billing_accounts').select('*').eq('user_id', ownerId).maybeSingle()
   if (accountError) throw accountError
@@ -150,7 +160,7 @@ async function handleCheckout(req, res) {
       customerId:providerCustomerId,
       planId,
       amount,
-      nextDueDate:nextDueDate(),
+      nextDueDate:firstDueDate,
       description:`Assinatura SurgiMetrics - ${cycle.label}`,
       externalReference,
       discount:coupon ? { value:Number(coupon.discount_value), type:coupon.discount_type } : null,
