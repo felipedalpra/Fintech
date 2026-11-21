@@ -5,6 +5,14 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-21
+
+### Added
+- Assinatura SaaS da plataforma (Zentri Tech cobrando a clínica) passa a usar o Asaas em vez do Stripe, reaproveitando o adaptador já existente (`api/_lib/billingProvider.js`), com suporte a cupom de desconto fixo ou percentual aplicado na assinatura. Nova tela "Dados de pagamento" em `/app/billing` permite cadastrar nome, CPF/CNPJ, e-mail e telefone do responsável pelo pagamento; o cartão é digitado direto na página do Asaas e nunca passa pelo nosso servidor. Fica atrás da flag `SAAS_BILLING_ENABLED=false` (mesmo padrão de outras integrações pendentes de credencial real) até a Zentri criar a conta e cadastrar as chaves. (`api/_lib/saasBilling.js`, `api/_lib/billingProvider.js`, `api/financial/analysis.js`, `src/pages/BillingPage.jsx`, `src/lib/billingClient.js`, `supabase/saas_billing_asaas_schema.sql`.)
+
+### Changed
+- Removido o Stripe (conta perdida pelo responsável). Confirmado antes da remoção que o acesso ao `/app/*` nunca dependeu de status de assinatura — nenhuma conta, inclusive a da Dra. Vitória, é afetada. (`api/stripe/*` removido, `src/pages/CheckoutPage.jsx` removido — já não era roteado —, `src/billing/plans.js`, `.env.example`, `package.json`, `vercel.json`, `README.md`, `docs/SECURITY_OPERATIONS.md`, `src/pages/PrivacyPolicyPage.jsx`.)
+
 ## [Unreleased] - 2026-11-19
 
 ### Changed

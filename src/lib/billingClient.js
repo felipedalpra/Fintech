@@ -8,19 +8,6 @@ async function accessToken() {
   return data.session?.access_token || ''
 }
 
-async function stripeAuthFetch(path, payload = {}) {
-  const token = await accessToken()
-  if (!token) throw new Error('Sessão inválida. Entre novamente.')
-  const response = await fetch(path, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
-    body:JSON.stringify(payload),
-  })
-  const json = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`)
-  return json
-}
-
 async function billingFetch(action, { method = 'POST', body } = {}) {
   const token = await accessToken()
   if (!token) throw new Error('Sessão inválida. Entre novamente.')
@@ -43,6 +30,8 @@ export const createBillingCharge = payload => billingFetch('billing-create', { b
 export const cancelBillingCharge = chargeId => billingFetch('billing-cancel', { body:{ chargeId } })
 export const syncBillingCharge = chargeId => billingFetch('billing-sync', { body:{ chargeId } })
 
-// Assinatura SaaS da plataforma (Stripe) permanece separada das cobranças clínicas.
-export const createStripeCheckoutSession = planId => stripeAuthFetch('/api/stripe/create-checkout-session', { planId })
-export const createStripePortalSession = () => stripeAuthFetch('/api/stripe/create-portal-session')
+// Assinatura SaaS da plataforma (Zentri Tech cobrando a clínica via Asaas) permanece
+// separada das cobranças clínicas acima (a clínica cobrando seus próprios pacientes).
+export const fetchSaasBillingStatus = () => billingFetch('saas-billing-status', { method:'GET' })
+export const saveSaasBillingContact = payload => billingFetch('saas-billing-save-contact', { body:payload })
+export const createSaasBillingCheckout = payload => billingFetch('saas-billing-checkout', { body:payload })

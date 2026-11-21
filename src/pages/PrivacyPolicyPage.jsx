@@ -17,7 +17,7 @@ const SECTIONS = [
       'Dados da clínica: razão social, documento (CNPJ/CPF) e demais informações de perfil que você preencher.',
       'Dados financeiros e operacionais: lançamentos, receitas, custos, metas, produtos, procedimentos, recorrências, cirurgias e consultas.',
       'Dados de pacientes: nome do paciente e observações que você registrar em cirurgias, consultas e vendas. Recomendamos não inserir informações clínicas desnecessárias.',
-      'Dados de cobrança: o pagamento é processado pelo Stripe. Não armazenamos número completo de cartão.',
+      'Dados de cobrança: o pagamento é processado pelo Asaas. Não armazenamos número completo de cartão.',
       'Dados técnicos: informações básicas de uso e de dispositivo necessárias para segurança e funcionamento da plataforma.',
     ],
   },
@@ -58,7 +58,7 @@ const SECTIONS = [
     list:[
       'Supabase: autenticação e banco de dados.',
       'Vercel: hospedagem da aplicação.',
-      'Stripe: cobrança e assinaturas.',
+      'Asaas: cobrança e assinaturas.',
       'OpenAI: assistente financeiro com IA.',
       'Google: integração opcional com o Google Agenda.',
     ],

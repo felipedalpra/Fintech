@@ -5,7 +5,7 @@ SurgiMetrics é um ERP financeiro para clínicas e cirurgiões plásticos. O sis
 
 O produto também possui:
 - autenticação de usuários via Supabase
-- controle de assinatura e trial com Stripe
+- controle de assinatura SaaS (Zentri cobrando a clínica) via Asaas, atrás da flag `SAAS_BILLING_ENABLED`
 - assistente financeiro com IA para leitura dos dados da clínica
 - processamento de recorrências financeiras por endpoint dedicado
 
@@ -20,7 +20,7 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 
 ### Backend / API
 - Funções serverless em `api/*` (deploy na Vercel)
-- Endpoints para Stripe (`/api/stripe/*`), IA (`/api/financial-assistant`), análise (`/api/financial/analysis`), perfil seguro e recorrências
+- Ações de billing SaaS (`/api/financial/analysis?action=saas-billing-*`), IA (`/api/financial-assistant`), análise (`/api/financial/analysis`), perfil seguro e recorrências
 - Cron diário configurado em `vercel.json` para `/api/recurrences/process`
 
 ### Banco e autenticação
@@ -44,12 +44,11 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 - `src/lib/financeStore.js` prioriza tabelas relacionais quando disponíveis e cai para estrutura legada quando necessário.
 
 2. **Backend sensível no cliente, lógica crítica no serverless**
-- Operações sensíveis (Stripe, perfil seguro, IA e processamento de recorrências) ficam em `api/*`.
+- Operações sensíveis (billing SaaS, perfil seguro, IA e processamento de recorrências) ficam em `api/*`.
 - O frontend consome APIs e mantém experiência reativa sem expor segredos.
 
-3. **Monetização com trial e planos fixos**
-- Trial de 30 dias (`src/billing/plans.js`).
-- Ciclos mensal/semestral/anual alinhados com variáveis Stripe em produção.
+3. **Monetização com planos fixos, sem trial no código**
+- Ciclos mensal/semestral/anual fixos (`src/billing/plans.js`); apesar do texto antigo deste documento, não há lógica de trial de 30 dias implementada — o acesso ao ERP nunca foi nem é condicionado a status de cobrança.
 
 4. **Recorrências por rotina automática**
 - Execução diária via cron para consolidar lançamentos recorrentes.
@@ -62,6 +61,7 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 > Atualize esta seção a cada merge importante.
 
 ### Histórico recente (resumo)
+- 2026-11-21 (branch `fix/remove-stripe-replace-asaas-subscription`): removido o Stripe (conta perdida pelo Felipe). Confirmado antes da remoção que nenhuma rota (`ProtectedRoute`/`AuthContext`) jamais leu status de assinatura para bloquear `/app/*` — `BillingPage.jsx` já dizia explicitamente que o acesso ao ERP independe da cobrança, então a remoção não afeta o login de nenhuma conta, inclusive a da Dra. Vitória. `api/stripe/*` e `src/pages/CheckoutPage.jsx` (já morto, sem rota) foram excluídos; `billing_accounts.stripe_*` ficam inertes (migração aditiva, sem drop). A assinatura SaaS (Zentri cobrando a clínica) passa a usar o Asaas, reaproveitando o adaptador já existente em `api/_lib/billingProvider.js` (usado hoje para a clínica cobrar seus próprios pacientes — são contas Asaas diferentes, não confundir). Nova tela "Dados de pagamento" em `/app/billing` para a Dra. Vitória cadastrar nome/CPF-CNPJ/e-mail/telefone do responsável e um cupom opcional; o número do cartão nunca passa pelo nosso servidor — o fluxo redireciona para a página hospedada do Asaas. Tudo atrás da flag `SAAS_BILLING_ENABLED=false` (mesmo padrão da BRy/Evolution) até a Zentri criar a conta própria no Asaas e cadastrar `SAAS_BILLING_ASAAS_API_KEY`/`SAAS_BILLING_WEBHOOK_TOKEN`; até lá o formulário funciona normalmente e o botão de assinar fica desabilitado com aviso. Cupom de desconto é nativo do Asaas (`discount` fixo ou percentual na assinatura), validado contra a nova tabela `saas_billing_coupons` (cadastro manual, sem tela própria ainda). Aplicar `supabase/saas_billing_asaas_schema.sql` antes do deploy.
 - 2026-11-11 (branch `feat/finance-profit-evolution-chart`): a Visão geral do Financeiro ganhou um gráfico responsivo de evolução da rentabilidade, derivado da mesma `buildMetrics` canônica dos cartões e da DRE. Receita líquida e lucro líquido são comparados por dia, semana ou mês conforme o intervalo; hover mostra valores e margem do ponto, e o resumo destaca margem acumulada, lucro e melhor período. O gráfico respeita privacidade financeira e não cria persistência nem cálculo paralelo.
 - 2026-11-11 (branch `fix/financial-flow-fidelity-audit`): auditoria da clínica da Vitória confirmou reconciliação a centavo dos dados reais existentes e encontrou uma divergência estrutural na criação de atendimentos pela Agenda: custos clínicos e dedução de NF sem `cost_settlements` podiam ser interpretados como já pagos. Agenda e formulários completos passam a usar o mesmo contrato, com cada custo nascendo pendente e com liquidação própria; alíquota e valor da dedução são congelados em `invoice_tax_rate`/`invoice_tax_amount` e persistidos. Teste integrado cobre compra, estoque, venda, custo médio/CMV, cirurgia, consulta, custos, dedução, DRE, caixa, obrigações e reconciliação sem diferença. Nenhuma migration nova.
 - 2026-11-11 (branch `fix/ledger-check-actionable-diagnostics`): a Conferência do Razão passou a comparar cada indicador com o mesmo escopo contábil usado pelo Dashboard. Receitas financeiras deixam de gerar falsa divergência contra a receita bruta operacional e são mostradas numa linha própria, com os lançamentos e contas que explicam o valor e ações para revisar lançamento/classificação; divergências reais permanecem separadas e acionáveis.
@@ -145,7 +145,7 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 - Correções recentes em datas de consultas e recebimento parcial (`3c3cfb6`) mostram que regressões nesses campos têm impacto alto no dashboard.
 
 3. **Dependência forte de configuração de ambiente**
-- Falta de variáveis (`SUPABASE_*`, `STRIPE_*`, `OPENAI_API_KEY`) bloqueia funcionalidades essenciais.
+- Falta de variáveis (`SUPABASE_*`, `SAAS_BILLING_ASAAS_*`, `OPENAI_API_KEY`) bloqueia funcionalidades essenciais.
 
 ## 7) Próximos passos
 1. Formalizar versionamento semântico e registrar releases no changelog.
@@ -155,3 +155,4 @@ Objetivo central: dar previsibilidade de caixa e suporte à decisão financeira 
 5. Monitorar a telemetria do assistente financeiro v2 (taxa de erro, latência, modo limitado e custo por usuário) após aplicar `supabase/ai_assistant_schema.sql`.
 6. **Pendente — conectar a Google Agenda** (código pronto na branch `feat/google-calendar`): confirmar o projeto Google Cloud do `GOOGLE_CLIENT_ID` (prefixo `530038901215`), aplicar `supabase/google_calendar_schema.sql` antes do deploy, ativar Calendar API, autorizar URI `/api/google/calendar` e escopos, criar `GOOGLE_CALENDAR_REDIRECT_URI` na Vercel e decidir o merge. Checklist completo na Task 8 de `docs/superpowers/plans/2026-10-03-google-calendar-integration.md`.
 7. **Pendente — ativar Evolution API (adiado em 2026-10-16):** código e SQLs estão prontos. Ao retomar, executar a infraestrutura/VPS e DNS, cadastrar as variáveis server-side na Vercel, homologar QR/webhook/texto/mídias/status/reconexão com um número de teste e só depois migrar o número definitivo. Checklist autoritativo em `docs/PENDENCIAS_CLIENTE.md` e runbook em `docs/EVOLUTION_API_DEPLOY.md`.
+8. **Pendente — ativar a assinatura SaaS via Asaas (2026-11-21):** criar a conta própria da Zentri Tech no Asaas (separada da conta de cada clínica), cadastrar `SAAS_BILLING_ASAAS_API_KEY`/`SAAS_BILLING_WEBHOOK_TOKEN` na Vercel, configurar o webhook no painel do Asaas apontando para `POST /api/financial/analysis?action=saas-billing-webhook`, aplicar `supabase/saas_billing_asaas_schema.sql`, cadastrar os cupons desejados em `saas_billing_coupons` e só então mudar `SAAS_BILLING_ENABLED` para `true`. Até lá a tela de billing funciona normalmente (acesso ao ERP liberado) só com o botão de assinar desabilitado.

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { handleBillingRequest } from '../_lib/billing.js'
+import { handleSaasBillingRequest } from '../_lib/saasBilling.js'
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
   const query = readQuery(req)
   const action = String(query.action || '')
   if (action.startsWith('billing-')) return handleBillingRequest(req, res, action)
+  if (action.startsWith('saas-billing-')) return handleSaasBillingRequest(req, res, action)
 
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET')
