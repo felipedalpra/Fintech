@@ -54,11 +54,3 @@ export function buildSignupUrl(cycleId, email = '') {
 export function buildCheckoutUrl(cycleId) {
   return buildSignupUrl(cycleId)
 }
-
-export function buildStripePriceMap() {
-  return {
-    mensal:process.env.STRIPE_PRICE_MENSAL || '',
-    semestral:process.env.STRIPE_PRICE_SEMESTRAL || '',
-    anual:process.env.STRIPE_PRICE_ANUAL || '',
-  }
-}

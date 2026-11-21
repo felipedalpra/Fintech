@@ -167,6 +167,50 @@ export async function cancelAsaasPayment(config, providerChargeId) {
   })
 }
 
+const ASAAS_SUBSCRIPTION_CYCLES = { mensal:'MONTHLY', semestral:'SEMIANNUALLY', anual:'YEARLY' }
+
+export function asaasSubscriptionCycle(planId) {
+  return ASAAS_SUBSCRIPTION_CYCLES[planId] || 'MONTHLY'
+}
+
+export async function findAsaasSubscription(config, externalReference) {
+  const params = new URLSearchParams({ externalReference, limit:'1', offset:'0' })
+  const data = await asaasRequest({ ...config, path:`/subscriptions?${params}` })
+  return Array.isArray(data?.data) ? (data.data[0] || null) : null
+}
+
+export function buildAsaasSubscriptionPayload({ customerId, planId, amount, nextDueDate, description, externalReference, discount }) {
+  const normalizedAmount = Math.round(Number(amount || 0) * 100) / 100
+  if (!(normalizedAmount > 0)) throw new Error('Valor da assinatura inválido.')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(nextDueDate || ''))) throw new Error('Data do próximo vencimento inválida.')
+  const payload = {
+    customer:customerId,
+    billingType:'CREDIT_CARD',
+    cycle:asaasSubscriptionCycle(planId),
+    value:normalizedAmount,
+    nextDueDate,
+    description:String(description || '').slice(0, 500),
+    externalReference,
+    updatePendingPayments:false,
+  }
+  if (discount && Number(discount.value) > 0) {
+    payload.discount = {
+      value:Number(discount.value),
+      dueDateLimitDays:0,
+      type:discount.type === 'fixed' ? 'FIXED' : 'PERCENTAGE',
+    }
+  }
+  return payload
+}
+
+export async function createAsaasSubscription(config, input) {
+  return asaasRequest({ ...config, path:'/subscriptions', method:'POST', body:buildAsaasSubscriptionPayload(input) })
+}
+
+export async function cancelAsaasSubscription(config, subscriptionId) {
+  return asaasRequest({ ...config, path:`/subscriptions/${encodeURIComponent(subscriptionId)}`, method:'DELETE' })
+}
+
 export function canonicalChargeStatus(eventType, providerStatus = '') {
   const event = String(eventType || '').toUpperCase()
   const status = String(providerStatus || '').toUpperCase()

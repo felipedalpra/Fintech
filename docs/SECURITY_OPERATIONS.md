@@ -3,7 +3,7 @@
 ## Já implementado no código
 
 - Upload clínico: o servidor baixa o objeto privado, calcula SHA-256, identifica o MIME pelos bytes, confere extensão e tamanho e só então muda o status para `available`.
-- Rate limiting persistente: WhatsApp/Meta, envio de mensagens, Stripe webhook, recorrências e conclusão de upload usam `consume_api_rate_limit`, armazenado no Supabase.
+- Rate limiting persistente: WhatsApp/Meta, envio de mensagens, webhook de assinatura SaaS (Asaas), recorrências e conclusão de upload usam `consume_api_rate_limit`, armazenado no Supabase.
 - Eventos de segurança: acessos administrativos, negativas de acesso, webhooks negados e bloqueios de rate limit entram em `security_events`, sem guardar tokens ou conteúdo clínico.
 - RLS: funções `SECURITY DEFINER` legadas recebem `search_path` fixo e privilégios públicos são revogados quando não são necessários.
 - CSP: primeiro em `Content-Security-Policy-Report-Only`, com allowlist derivada do mapa atual de scripts e integrações.
@@ -25,7 +25,7 @@ Cada segredo deve existir somente no escopo que o utiliza. Nunca configurar chav
 | Supabase | Vercel, somente `SUPABASE_SERVICE_ROLE_KEY` no servidor; `VITE_SUPABASE_ANON_KEY` é pública | gerar nova service-role key, atualizar Vercel, redeploy, revogar a antiga |
 | Meta | Vercel: `META_APP_SECRET`, `META_VERIFY_TOKEN`; tokens por clínica ficam criptografados no banco | gerar novo App Secret/verify token, atualizar webhook e Vercel, testar assinatura e revogar tokens antigos |
 | WhatsApp/Evolution | Vercel: `EVOLUTION_API_KEY`; segredo por número no banco | gerar nova chave global, atualizar Vercel/redeploy, revalidar webhooks e renovar segredos por número |
-| Stripe | Vercel: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | criar chave/webhook secret novo, atualizar primeiro, testar evento assinado, revogar o anterior |
+| Asaas (assinatura SaaS) | Vercel: `SAAS_BILLING_ASAAS_API_KEY`, `SAAS_BILLING_WEBHOOK_TOKEN` | criar chave/token novo na conta da Zentri, atualizar Vercel primeiro, testar evento assinado, revogar o anterior |
 | Vercel | painel do projeto e membros da equipe | revisar membros, remover tokens pessoais antigos e exigir MFA |
 
 Após cada rotação: verificar logs sem valores de segredo, executar um fluxo positivo e um negativo, e confirmar que o valor antigo foi revogado no provedor.

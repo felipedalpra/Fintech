@@ -17,7 +17,7 @@ ERP financeiro para clínicas e cirurgiões plásticos com:
 
 1. Crie um projeto no Supabase.
 2. Rode o SQL base de [single_user_minimal_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/single_user_minimal_schema.sql:1) no SQL Editor.
-3. Rode o SQL de billing em [stripe_billing_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/stripe_billing_schema.sql:1).
+3. Rode o SQL de billing em [stripe_billing_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/stripe_billing_schema.sql:1) e depois [saas_billing_asaas_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/saas_billing_asaas_schema.sql:1).
 4. Rode o SQL do perfil seguro em [secure_profile_schema.sql](/Users/felipedalpra/Desktop/startup-finance/supabase/secure_profile_schema.sql:1).
 5. Copie `.env.example` para `.env` e preencha:
 
@@ -29,11 +29,12 @@ APP_DATA_ENCRYPTION_KEY=uma-chave-forte-para-criptografar-perfis
 BILLING_DATA_ENCRYPTION_KEY=uma-chave-forte-exclusiva-para-credenciais-de-cobranca
 VITE_APP_URL=https://sua-url-publica
 APP_URL=https://sua-url-publica
-STRIPE_SECRET_KEY=sk_live_ou_sk_test
-STRIPE_WEBHOOK_SECRET=whsec_xxx
-STRIPE_PRICE_MENSAL=price_xxx
-STRIPE_PRICE_SEMESTRAL=price_xxx
-STRIPE_PRICE_ANUAL=price_xxx
+# Assinatura SaaS (Zentri Tech cobrando a clínica) via Asaas. Flag fica false
+# até a conta própria da Zentri no Asaas existir.
+SAAS_BILLING_ENABLED=false
+SAAS_BILLING_ASAAS_API_KEY=
+SAAS_BILLING_ASAAS_ENVIRONMENT=sandbox
+SAAS_BILLING_WEBHOOK_TOKEN=gere-um-segredo-aleatorio-de-40-caracteres
 # Meta Ads: preencher somente na ativação do app Meta
 META_VERIFY_TOKEN=gere-um-token-aleatorio-forte
 META_APP_SECRET=app-secret-do-meta
@@ -46,12 +47,14 @@ META_GRAPH_VERSION=vXX.X
 - a URL de produção da Vercel
 - a URL de produção com `/reset-password`
 
-7. No Stripe:
-- crie 3 preços recorrentes
-- mensal: `R$ 197,00`
-- semestral: `R$ 1.062,00` a cada 6 meses
-- anual: `R$ 1.764,00` por ano
-- configure o webhook para `POST /api/stripe/webhook`
+7. Assinatura SaaS por cartão (Zentri cobrando a clínica): crie uma conta própria da
+Zentri Tech no Asaas (separada da conta de cada clínica usada para cobrar pacientes),
+cadastre `SAAS_BILLING_ASAAS_API_KEY`, configure o webhook de cobranças apontando para
+`POST /api/financial/analysis?action=saas-billing-webhook` com o header `asaas-access-token`
+igual a `SAAS_BILLING_WEBHOOK_TOKEN`, e só então mude `SAAS_BILLING_ENABLED` para `true`.
+Até lá, a tela de billing permanece funcional para preencher os dados de pagamento, mas o
+botão de assinar fica desabilitado. Cupons de desconto ficam em `saas_billing_coupons`
+(cadastro manual pela Zentri, sem tela própria ainda).
 
 8. Se a base já existir de uma versão anterior, aplique os scripts incrementais e valide as tabelas `billing_accounts` e `secure_profiles`.
 
@@ -86,11 +89,8 @@ A saída fica em `dist`.
 - `APP_DATA_ENCRYPTION_KEY`
 - `BILLING_DATA_ENCRYPTION_KEY` (recomendada para credenciais de cobrança; fallback seguro para `APP_DATA_ENCRYPTION_KEY`)
 - `APP_URL`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_MENSAL`
-- `STRIPE_PRICE_SEMESTRAL`
-- `STRIPE_PRICE_ANUAL`
+- `SAAS_BILLING_ENABLED` (`false` até a conta da Zentri no Asaas estar pronta)
+- `SAAS_BILLING_ASAAS_API_KEY` / `SAAS_BILLING_ASAAS_ENVIRONMENT` / `SAAS_BILLING_WEBHOOK_TOKEN`
 - `META_VERIFY_TOKEN` (somente quando ativar Meta Ads)
 - `META_APP_SECRET` (somente quando ativar Meta Ads)
 - `META_GRAPH_VERSION` (versão suportada escolhida na ativação)
@@ -113,8 +113,8 @@ A saída fica em `dist`.
 - criar conta
 - fazer login em `/login`
 - entrar em `/app`
-- validar trial de 30 dias em `/app/billing`
-- abrir checkout Stripe por um plano
+- em `/app/billing`, confirmar que o acesso ao ERP é liberado independente do status de cobrança
+- preencher e salvar os dados de pagamento; com `SAAS_BILLING_ENABLED=true`, assinar um plano e confirmar o redirecionamento para a página do Asaas
 - cadastrar procedimento
 - cadastrar cirurgia ou produto
 - recarregar a página

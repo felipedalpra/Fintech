@@ -31,7 +31,7 @@ const SECTIONS = [
     ],
     list:[
       'Planos: mensal (R$ 197,00 por mês), semestral (R$ 1.062,00 a cada 6 meses) e anual (R$ 1.764,00 por ano). Os valores podem ser reajustados, com aviso prévio, antes da renovação seguinte.',
-      'A cobrança é recorrente e processada pelo Stripe. Você autoriza a cobrança no ciclo escolhido até o cancelamento.',
+      'A cobrança é recorrente e processada pelo Asaas. Você autoriza a cobrança no ciclo escolhido até o cancelamento.',
       'Se o pagamento falhar, podemos suspender o acesso até a regularização. Seus dados são mantidos conforme a Política de Privacidade.',
     ],
   },
@@ -83,7 +83,7 @@ const SECTIONS = [
   {
     title:'11. Disponibilidade e limitação de responsabilidade',
     body:[
-      'Trabalhamos para manter a plataforma disponível e segura, mas não garantimos funcionamento ininterrupto ou livre de erros, nem que serviços de terceiros (como Google, Stripe, Supabase e OpenAI) estarão sempre disponíveis. Os indicadores dependem dos dados que você registra; confira as informações importantes antes de usá-las em decisões ou obrigações fiscais.',
+      'Trabalhamos para manter a plataforma disponível e segura, mas não garantimos funcionamento ininterrupto ou livre de erros, nem que serviços de terceiros (como Google, Asaas, Supabase e OpenAI) estarão sempre disponíveis. Os indicadores dependem dos dados que você registra; confira as informações importantes antes de usá-las em decisões ou obrigações fiscais.',
       'Na extensão permitida pela lei, não respondemos por lucros cessantes ou danos indiretos decorrentes do uso ou da impossibilidade de uso da plataforma, e nossa responsabilidade total fica limitada ao valor pago por você nos 12 meses anteriores ao fato. Nada nestes termos afasta direitos que a lei garante ao consumidor.',
     ],
   },
