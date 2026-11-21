@@ -17,6 +17,7 @@ export function BillingPage() {
   const [contact, setContact] = useState({ name:'', document:'', email:'', phone:'' })
   const [contactSaving, setContactSaving] = useState(false)
   const [couponCode, setCouponCode] = useState('')
+  const [firstDueDate, setFirstDueDate] = useState('')
 
   const selectedPlan = useMemo(() => getBillingCycle(billing?.selected_plan || 'mensal'), [billing])
   const isActive = billing?.status === 'active'
@@ -61,7 +62,7 @@ export function BillingPage() {
     setError('')
     setNotice('')
     try {
-      const payload = await createSaasBillingCheckout({ planId, couponCode })
+      const payload = await createSaasBillingCheckout({ planId, couponCode, firstDueDate })
       if (payload.url) window.location.href = payload.url
       else setNotice('Assinatura criada. O link de pagamento foi enviado para o e-mail de cobrança.')
     } catch (nextError) {
@@ -122,6 +123,10 @@ export function BillingPage() {
           <FInput label="Telefone" value={contact.phone} onChange={value => setContact(prev => ({ ...prev, phone:value }))}
             format={FIELD_STANDARDS.phone.format} maxLength={FIELD_STANDARDS.phone.maxLength} inputMode={FIELD_STANDARDS.phone.inputMode} validator={FIELD_STANDARDS.phone.validate} />
           <FInput label="Cupom de desconto (opcional)" value={couponCode} onChange={value => setCouponCode(value.toUpperCase())} placeholder="Ex.: BEMVINDA10" />
+          {!billing?.asaas_subscription_id ? (
+            <FInput label="Data da primeira cobrança" type="date" value={firstDueDate} onChange={setFirstDueDate}
+              help="Deixe em branco para cobrar a partir de amanhã. Se a clínica já pagou o mês atual por outro meio, informe a data do próximo vencimento combinado." />
+          ) : null}
         </div>
         <div style={{ display:'flex', gap:10, marginTop:16 }}>
           <Btn variant="ghost" onClick={saveContact} disabled={contactSaving || !contact.name}>{contactSaving ? 'Salvando...' : 'Salvar dados de pagamento'}</Btn>

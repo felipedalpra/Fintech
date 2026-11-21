@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-21 (2)
+
+### Fixed
+- A primeira cobrança da assinatura SaaS (Asaas) sempre agendava para "amanhã", o que cobraria em cima da hora uma clínica que já pagou o mês atual por outro meio (ex.: Pix). Agora é possível informar a data da primeira cobrança em `/app/billing` antes de assinar; sem preencher, mantém o comportamento padrão de amanhã. (`api/_lib/saasBilling.js`, `src/pages/BillingPage.jsx`, `tests/unit/saasBillingFirstDueDate.spec.js`.)
+
 ## [Unreleased] - 2026-11-21
 
 ### Added
