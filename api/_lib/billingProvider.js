@@ -167,10 +167,9 @@ export async function cancelAsaasPayment(config, providerChargeId) {
   })
 }
 
-const ASAAS_SUBSCRIPTION_CYCLES = { mensal:'MONTHLY', semestral:'SEMIANNUALLY', anual:'YEARLY' }
-
-export function asaasSubscriptionCycle(planId) {
-  return ASAAS_SUBSCRIPTION_CYCLES[planId] || 'MONTHLY'
+export function asaasSubscriptionCycle() {
+  // Plano único do SurgiMetrics é mensal.
+  return 'MONTHLY'
 }
 
 export async function findAsaasSubscription(config, externalReference) {

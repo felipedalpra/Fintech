@@ -30,7 +30,7 @@ const SECTIONS = [
       'Novas contas têm 30 dias de teste gratuito, sem necessidade de cartão. Depois do teste, o uso contínuo depende de uma assinatura paga.',
     ],
     list:[
-      'Planos: mensal (R$ 197,00 por mês), semestral (R$ 1.062,00 a cada 6 meses) e anual (R$ 1.764,00 por ano). Os valores podem ser reajustados, com aviso prévio, antes da renovação seguinte.',
+      'Plano único: R$ 500,00 por mês. O valor pode ser reajustado, com aviso prévio, antes da renovação seguinte.',
       'A cobrança é recorrente e processada pelo Asaas. Você autoriza a cobrança no ciclo escolhido até o cancelamento.',
       'Se o pagamento falhar, podemos suspender o acesso até a regularização. Seus dados são mantidos conforme a Política de Privacidade.',
     ],

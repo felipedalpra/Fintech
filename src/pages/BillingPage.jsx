@@ -148,7 +148,7 @@ export function BillingPage() {
               <div style={{ color:C.textDim, fontSize:14, lineHeight:1.7, marginBottom:18 }}>{cycle.note}</div>
               <Btn
                 onClick={() => startCheckout(cycle.id)}
-                variant={index === 2 ? 'primary' : 'ghost'}
+                variant={index === 0 ? 'primary' : 'ghost'}
                 disabled={busyPlan === cycle.id || !gatewayEnabled || !contactComplete}
                 title={!contactComplete ? 'Preencha e salve os dados de pagamento antes de assinar.' : !gatewayEnabled ? 'Cobrança por cartão ainda não está disponível.' : undefined}
                 style={{ width:'100%', justifyContent:'center', display:'inline-flex' }}
