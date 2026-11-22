@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-22
+
+### Fixed
+- Qualquer erro assíncrono dentro de uma ação de billing (ex.: Asaas rejeitar um dado inválido) derrubava a função inteira com erro genérico da Vercel (`FUNCTION_INVOCATION_FAILED`) em vez de mostrar a mensagem real, porque o dispatcher despachava `return handleX(req, res)` sem `await` — a rejeição escapava do `try/catch` como promessa não tratada. Corrigido em `api/_lib/billing.js` (cobrança de pacientes) e `api/_lib/saasBilling.js` (assinatura SaaS); achado testando o fluxo de assinatura em produção com uma conta fictícia. Reproduzido com o bug revertido antes de corrigir. (`tests/unit/saasBillingErrorHandling.spec.js`.)
+
 ## [Unreleased] - 2026-11-21 (3)
 
 ### Changed
