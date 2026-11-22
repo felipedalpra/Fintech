@@ -482,12 +482,12 @@ async function handleSync(req, res) {
 
 export async function handleBillingRequest(req, res, action) {
   try {
-    if (action === 'billing-status' && req.method === 'GET') return handleStatus(req, res)
-    if (action === 'billing-connect' && req.method === 'POST') return handleConnect(req, res)
-    if (action === 'billing-create' && req.method === 'POST') return handleCreate(req, res)
-    if (action === 'billing-cancel' && req.method === 'POST') return handleCancel(req, res)
-    if (action === 'billing-sync' && req.method === 'POST') return handleSync(req, res)
-    if (action === 'billing-webhook' && req.method === 'POST') return handleWebhook(req, res)
+    if (action === 'billing-status' && req.method === 'GET') return await handleStatus(req, res)
+    if (action === 'billing-connect' && req.method === 'POST') return await handleConnect(req, res)
+    if (action === 'billing-create' && req.method === 'POST') return await handleCreate(req, res)
+    if (action === 'billing-cancel' && req.method === 'POST') return await handleCancel(req, res)
+    if (action === 'billing-sync' && req.method === 'POST') return await handleSync(req, res)
+    if (action === 'billing-webhook' && req.method === 'POST') return await handleWebhook(req, res)
     res.setHeader('Allow', action === 'billing-status' ? 'GET' : 'POST')
     return res.status(405).json({ error:'Método não permitido.' })
   } catch (error) {

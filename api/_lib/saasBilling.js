@@ -224,10 +224,10 @@ async function handleWebhook(req, res) {
 
 export async function handleSaasBillingRequest(req, res, action) {
   try {
-    if (action === 'saas-billing-status' && req.method === 'GET') return handleStatus(req, res)
-    if (action === 'saas-billing-save-contact' && req.method === 'POST') return handleSaveContact(req, res)
-    if (action === 'saas-billing-checkout' && req.method === 'POST') return handleCheckout(req, res)
-    if (action === 'saas-billing-webhook' && req.method === 'POST') return handleWebhook(req, res)
+    if (action === 'saas-billing-status' && req.method === 'GET') return await handleStatus(req, res)
+    if (action === 'saas-billing-save-contact' && req.method === 'POST') return await handleSaveContact(req, res)
+    if (action === 'saas-billing-checkout' && req.method === 'POST') return await handleCheckout(req, res)
+    if (action === 'saas-billing-webhook' && req.method === 'POST') return await handleWebhook(req, res)
     res.setHeader('Allow', action === 'saas-billing-status' ? 'GET' : 'POST')
     return res.status(405).json({ error:'Método não permitido.' })
   } catch (error) {
