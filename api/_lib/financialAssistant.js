@@ -5,6 +5,9 @@ import { buildMetrics } from '../../src/financialMetrics.js'
 const MAX_QUESTION_LENGTH = 2_000
 const MAX_HISTORY_ITEMS = 8
 const MAX_HISTORY_CONTENT_LENGTH = 4_000
+const MAX_CONVERSATION_TITLE_LENGTH = 120
+const MAX_SAVED_MESSAGES = 100
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 export const FINANCIAL_ASSISTANT_TOOLS = [
@@ -101,7 +104,94 @@ export function validateAssistantPayload(body) {
   }
 
   const history = sanitizeHistory(body?.history)
-  return { question, history }
+  const conversationId = typeof body?.conversationId === 'string' && UUID_PATTERN.test(body.conversationId)
+    ? body.conversationId
+    : null
+  return { question, history, conversationId }
+}
+
+export function sanitizeConversationTitle(value) {
+  const title = String(value || '').replace(/\s+/g, ' ').trim().slice(0, MAX_CONVERSATION_TITLE_LENGTH)
+  return title || 'Nova conversa'
+}
+
+export function buildConversationTitle(question) {
+  const title = sanitizeConversationTitle(question)
+  return title.length < MAX_CONVERSATION_TITLE_LENGTH ? title : `${title.slice(0, MAX_CONVERSATION_TITLE_LENGTH - 1).trim()}…`
+}
+
+export async function createAssistantConversation(supabase, userId, title = 'Nova conversa') {
+  const { data, error } = await supabase
+    .from('ai_assistant_conversations')
+    .insert({ user_id:userId, title:sanitizeConversationTitle(title) })
+    .select('id,title,created_at,updated_at,last_message_at')
+    .single()
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Memória do assistente ainda não está ativada no banco.')
+  return data
+}
+
+export async function getAssistantConversations(supabase, userId) {
+  const { data, error } = await supabase
+    .from('ai_assistant_conversations')
+    .select('id,title,created_at,updated_at,last_message_at')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending:false })
+    .limit(50)
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Memória do assistente ainda não está ativada no banco.')
+  return data || []
+}
+
+export async function getAssistantConversation(supabase, userId, conversationId) {
+  if (!UUID_PATTERN.test(String(conversationId || ''))) throw new AssistantError(400, 'INVALID_CONVERSATION', 'Conversa inválida.')
+  const { data, error } = await supabase
+    .from('ai_assistant_conversations')
+    .select('id,title,created_at,updated_at,last_message_at')
+    .eq('id', conversationId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Memória do assistente ainda não está ativada no banco.')
+  if (!data) throw new AssistantError(404, 'CONVERSATION_NOT_FOUND', 'Conversa não encontrada.')
+  return data
+}
+
+export async function getAssistantMessages(supabase, userId, conversationId) {
+  await getAssistantConversation(supabase, userId, conversationId)
+  const { data, error } = await supabase
+    .from('ai_assistant_messages')
+    .select('id,role,content,source,mode,reason,evidence,request_id,created_at')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .order('created_at', { ascending:true })
+    .limit(MAX_SAVED_MESSAGES)
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Memória do assistente ainda não está ativada no banco.')
+  return data || []
+}
+
+export async function getAssistantHistory(supabase, userId, conversationId) {
+  await getAssistantConversation(supabase, userId, conversationId)
+  const { data, error } = await supabase
+    .from('ai_assistant_messages')
+    .select('role,content')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .order('created_at', { ascending:false })
+    .limit(MAX_HISTORY_ITEMS)
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Memória do assistente ainda não está ativada no banco.')
+  return sanitizeHistory((data || []).reverse())
+}
+
+export async function saveAssistantExchange(supabase, userId, conversationId, question, answer, meta = {}) {
+  const { error } = await supabase.rpc('save_ai_assistant_exchange', {
+    p_conversation_id:conversationId,
+    p_question:question,
+    p_answer:String(answer || '').slice(0, MAX_HISTORY_CONTENT_LENGTH),
+    p_source:meta.source || 'openai',
+    p_mode:meta.mode || 'conversational',
+    p_reason:meta.reason || '',
+    p_evidence:Array.isArray(meta.evidence) ? meta.evidence : [],
+    p_request_id:meta.requestId || null,
+  })
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Não foi possível salvar a conversa.')
 }
 
 export function sanitizeHistory(rawHistory) {

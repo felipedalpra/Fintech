@@ -5,12 +5,18 @@ import {
   FINANCIAL_ASSISTANT_TOOLS,
   authenticateFinancialRequest,
   consumeAssistantQuota,
+  createAssistantConversation,
   executeFinancialTool,
   extractResponseText,
   fetchFinancialData,
   findFunctionCalls,
+  getAssistantConversations,
+  getAssistantHistory,
+  getAssistantMessages,
+  getAssistantConversation,
   logAssistantEvent,
   parseFunctionArguments,
+  saveAssistantExchange,
   saoPauloDate,
   validateAssistantPayload,
 } from './_lib/financialAssistant.js'
@@ -21,13 +27,24 @@ const MAX_TOOL_ROUNDS = 3
 const REQUEST_TIMEOUT_MS = 20_000
 
 export default async function handler(req, res) {
+  if (req.method === 'GET') return handleConversationGet(req, res)
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST')
+    res.setHeader('Allow', 'GET, POST')
     return res.status(405).json({ error:'Method not allowed', code:'METHOD_NOT_ALLOWED' })
   }
 
   // Meta Ads: leitura por IA das campanhas (aba Análises). Fluxo isolado do CFO conversacional.
   if (req.body?.mode === 'meta-analysis') return handleMetaAnalysis(req, res)
+  if (req.body?.action === 'create-conversation') {
+    try {
+      const auth = await authenticateFinancialRequest(req)
+      const conversation = await createAssistantConversation(auth.supabase, auth.user.id)
+      return res.status(201).json({ conversation })
+    } catch (error) {
+      const normalized = normalizeError(error)
+      return res.status(normalized.status).json({ error:normalized.message, code:normalized.code })
+    }
+  }
 
   const startedAt = Date.now()
   const requestId = crypto.randomUUID()
@@ -39,7 +56,17 @@ export default async function handler(req, res) {
   try {
     const auth = await authenticateFinancialRequest(req)
     supabase = auth.supabase
-    const { question, history } = validateAssistantPayload(req.body)
+    const { question, history:clientHistory, conversationId:requestedConversationId } = validateAssistantPayload(req.body)
+    const conversation = requestedConversationId
+      ? await getAssistantConversation(supabase, auth.user.id, requestedConversationId)
+      : await createAssistantConversation(supabase, auth.user.id)
+    const conversationId = conversation.id
+    const history = await getAssistantHistory(supabase, auth.user.id, conversationId).catch(error => {
+      // Before the migration is applied, keep the explicit error instead of silently
+      // sending a client-controlled financial context to the model.
+      if (error?.code === 'MEMORY_UNAVAILABLE') throw error
+      return clientHistory
+    })
 
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) throw new AssistantError(503, 'AI_NOT_CONFIGURED', 'Assistente não configurado.')
@@ -106,6 +133,15 @@ export default async function handler(req, res) {
     if (!answer) throw new AssistantError(502, 'EMPTY_AI_RESPONSE', 'O assistente não gerou uma resposta válida.')
 
     const mode = usedTools.length > 0 ? 'tool_assisted' : 'conversational'
+    let memoryAvailable = true
+    try {
+      await saveAssistantExchange(supabase, auth.user.id, conversationId, question, answer, {
+        source:'openai', mode, evidence:dedupeEvidence(evidence), requestId, initialTitle:conversation.title,
+      })
+    } catch (memoryError) {
+      memoryAvailable = false
+      console.error('financial assistant memory error:', memoryError?.message)
+    }
     await logAssistantEvent(supabase, {
       requestId,
       status:'success',
@@ -122,6 +158,9 @@ export default async function handler(req, res) {
       mode,
       evidence:dedupeEvidence(evidence),
       requestId,
+      conversationId,
+      conversation: { ...conversation, title:conversation.title === 'Nova conversa' ? question.slice(0, 120) : conversation.title },
+      memoryAvailable,
     })
   } catch (error) {
     const normalized = normalizeError(error)
@@ -142,6 +181,25 @@ export default async function handler(req, res) {
       code:normalized.code,
       requestId,
     })
+  }
+}
+
+async function handleConversationGet(req, res) {
+  try {
+    const auth = await authenticateFinancialRequest(req)
+    const action = String(req.query?.action || 'conversations')
+    if (action === 'conversations') {
+      return res.status(200).json({ conversations:await getAssistantConversations(auth.supabase, auth.user.id) })
+    }
+    if (action === 'messages') {
+      const conversationId = String(req.query?.conversationId || '')
+      const conversation = await getAssistantConversation(auth.supabase, auth.user.id, conversationId)
+      return res.status(200).json({ conversation, messages:await getAssistantMessages(auth.supabase, auth.user.id, conversationId) })
+    }
+    return res.status(400).json({ error:'Ação inválida.', code:'INVALID_ACTION' })
+  } catch (error) {
+    const normalized = normalizeError(error)
+    return res.status(normalized.status).json({ error:normalized.message, code:normalized.code })
   }
 }
 

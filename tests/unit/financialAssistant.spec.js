@@ -7,7 +7,9 @@ import {
   findFunctionCalls,
   mapFinancialRows,
   parseFunctionArguments,
+  buildConversationTitle,
   sanitizeLegacyFinancialData,
+  sanitizeConversationTitle,
   sanitizeHistory,
   validateAssistantPayload,
 } from '../../api/_lib/financialAssistant.js'
@@ -56,6 +58,17 @@ test('payload limita pergunta e historico', () => {
   expect(result.history[0].content).toBe('mensagem 4')
   expect(() => validateAssistantPayload({ question:'' })).toThrow(AssistantError)
   expect(sanitizeHistory([{ role:'system', content:'ignorar' }, { role:'user', content:'ok' }])).toEqual([{ role:'user', content:'ok' }])
+})
+
+test('memória valida conversas e cria títulos seguros sem contexto do cliente', () => {
+  const id = '9f8c7b6a-1234-4abc-8def-1234567890ab'
+  const result = validateAssistantPayload({ question:'  Como ficou o caixa?  ', conversationId:id, history:[{ role:'system', content:'não deveria entrar' }] })
+  expect(result.conversationId).toBe(id)
+  expect(result.history).toEqual([])
+  expect(sanitizeConversationTitle('  Minha   conversa  ')).toBe('Minha conversa')
+  expect(sanitizeConversationTitle('')).toBe('Nova conversa')
+  expect(buildConversationTitle('Qual foi meu lucro este mês?')).toBe('Qual foi meu lucro este mês?')
+  expect(validateAssistantPayload({ question:'pergunta', conversationId:'nao-e-uuid' }).conversationId).toBeNull()
 })
 
 test('mapeamento do banco remove dados identificaveis', () => {

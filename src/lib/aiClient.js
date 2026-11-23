@@ -1,7 +1,7 @@
 import { answerFinancialQuestion } from '../ai/financialBrain.js'
 import { supabase } from './supabase.js'
 
-export async function queryFinancialAssistant({ question, brain, history = [] }) {
+export async function queryFinancialAssistant({ question, brain, history = [], conversationId = '' }) {
   const fallback = answerFinancialQuestion(question, brain)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 25_000)
@@ -21,6 +21,7 @@ export async function queryFinancialAssistant({ question, brain, history = [] })
       },
       body:JSON.stringify({
         question,
+        conversationId:conversationId || undefined,
         history:history
           .filter(item => item?.role === 'user' || item?.role === 'assistant')
           .slice(-8)
@@ -38,6 +39,8 @@ export async function queryFinancialAssistant({ question, brain, history = [] })
         reason:explainHttpError(response.status, payload?.code),
         evidence:[],
         requestId:payload?.requestId || '',
+        conversationId,
+        conversation:null,
       }
     }
 
@@ -49,6 +52,8 @@ export async function queryFinancialAssistant({ question, brain, history = [] })
       reason:'',
       evidence:Array.isArray(payload?.evidence) ? payload.evidence : [],
       requestId:payload?.requestId || '',
+      conversationId:payload?.conversationId || conversationId,
+      conversation:payload?.conversation || null,
     }
   } catch (error) {
     const code = error?.name === 'AbortError' ? 'AI_TIMEOUT' : error?.code
@@ -59,10 +64,37 @@ export async function queryFinancialAssistant({ question, brain, history = [] })
       reason:explainClientError(code),
       evidence:[],
       requestId:'',
+      conversationId,
+      conversation:null,
     }
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function financialAssistantRequest(path, options = {}) {
+  if (!supabase) throw new AssistantClientError('SESSION_REQUIRED', 'Supabase não configurado.')
+  const { data, error } = await supabase.auth.getSession()
+  if (error || !data?.session?.access_token) throw new AssistantClientError('SESSION_REQUIRED', 'Entre novamente para consultar os dados.')
+  const response = await fetch(`/api/financial-assistant${path}`, {
+    ...options,
+    headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${data.session.access_token}`, ...(options.headers || {}) },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new AssistantClientError(payload?.code || 'ASSISTANT_ERROR', payload?.error || 'Não foi possível consultar o assistente.')
+  return payload
+}
+
+export async function getFinancialConversations() {
+  return financialAssistantRequest('?action=conversations')
+}
+
+export async function getFinancialConversationMessages(conversationId) {
+  return financialAssistantRequest(`?action=messages&conversationId=${encodeURIComponent(conversationId)}`)
+}
+
+export async function createFinancialConversation() {
+  return financialAssistantRequest('', { method:'POST', body:JSON.stringify({ action:'create-conversation' }) })
 }
 
 // Meta Ads: gera a análise por IA das campanhas do período. Reusa /api/financial-assistant

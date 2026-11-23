@@ -1,189 +1,81 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { C, base } from '../theme.js'
 import { buildFinancialBrain } from '../ai/financialBrain.js'
-import { queryFinancialAssistant } from '../lib/aiClient.js'
+import { createFinancialConversation, getFinancialConversationMessages, getFinancialConversations, queryFinancialAssistant } from '../lib/aiClient.js'
 import { BrandLogo } from './BrandLogo.jsx'
 
-const QUICK_QUESTIONS = [
-  'Qual foi meu lucro este mês?',
-  'Qual procedimento é mais lucrativo?',
-  'O que preciso fazer esta semana?',
-]
-
-const INITIAL_MESSAGE = {
-  role:'assistant',
-  content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.',
-  meta:{ source:'local', mode:'welcome', reason:'', evidence:[] },
-}
+const QUICK_QUESTIONS = ['Qual foi meu lucro este mês?', 'Qual procedimento é mais lucrativo?', 'O que preciso fazer esta semana?']
+const INITIAL_MESSAGE = { role:'assistant', content:'Sou o copiloto do SurgiMetrics. Posso responder sobre lucro, caixa, metas, riscos e previsões.', meta:{ source:'local', mode:'welcome', reason:'', evidence:[] } }
 
 export function CopilotWidget({ data }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   const brain = useMemo(() => buildFinancialBrain(data), [data])
   const [open, setOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [loadingConversations, setLoadingConversations] = useState(false)
+  const [conversations, setConversations] = useState([])
+  const [activeConversationId, setActiveConversationId] = useState('')
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [messages, setMessages] = useState([INITIAL_MESSAGE])
   const bottomRef = useRef(null)
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior:'smooth' })
-  }, [messages, open, sending])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }) }, [messages, open, sending])
+
+  const loadConversations = async () => {
+    if (loaded || loadingConversations) return
+    setLoadingConversations(true)
+    try { const result = await getFinancialConversations(); setConversations(result.conversations || []) } catch { /* mantém o modo limitado */ }
+    finally { setLoaded(true); setLoadingConversations(false) }
+  }
+  const openCopilot = () => { setOpen(current => !current); if (!open) loadConversations() }
+
+  const selectConversation = async conversation => {
+    if (!conversation?.id || conversation.id === activeConversationId || sending) return
+    setActiveConversationId(conversation.id); setMessages([INITIAL_MESSAGE])
+    try {
+      const result = await getFinancialConversationMessages(conversation.id)
+      const restored = (result.messages || []).map(message => ({ role:message.role, content:message.content, meta:message.role === 'assistant' ? { source:message.source, mode:message.mode, reason:message.reason, evidence:message.evidence || [], requestId:message.request_id } : undefined }))
+      setMessages([INITIAL_MESSAGE, ...restored])
+    } catch { /* a saudação permite continuar mesmo se a memória estiver indisponível */ }
+  }
+
+  const newConversation = async () => {
+    if (sending) return
+    try {
+      const result = await createFinancialConversation(); const conversation = result.conversation
+      setConversations(current => [conversation, ...current.filter(item => item.id !== conversation.id)])
+      setActiveConversationId(conversation.id); setMessages([INITIAL_MESSAGE])
+    } catch { setActiveConversationId(''); setMessages([INITIAL_MESSAGE]) }
+  }
 
   const send = async presetQuestion => {
     const question = (presetQuestion || input).trim()
     if (!question || sending) return
-
-    setMessages(current => [...current, { role:'user', content:question }])
-    setInput('')
-    setSending(true)
-
-    try {
-      const result = await queryFinancialAssistant({ question, brain, history:messages })
-      setMessages(current => [...current, {
-        role:'assistant',
-        content:result.answer,
-        meta:{
-          source:result.source,
-          mode:result.mode,
-          reason:result.reason,
-          evidence:result.evidence,
-          requestId:result.requestId,
-          question,
-        },
-      }])
-    } finally {
-      setSending(false)
+    let conversationId = activeConversationId
+    if (!conversationId) {
+      try {
+        const created = await createFinancialConversation(); conversationId = created.conversation.id
+        setActiveConversationId(conversationId); setConversations(current => [created.conversation, ...current])
+      } catch { /* a resposta local ainda pode ser exibida */ }
     }
+    const history = messages
+    setMessages(current => [...current, { role:'user', content:question }]); setInput(''); setSending(true)
+    try {
+      const result = await queryFinancialAssistant({ question, brain, history, conversationId })
+      setMessages(current => [...current, { role:'assistant', content:result.answer, meta:{ source:result.source, mode:result.mode, reason:result.reason, evidence:result.evidence, requestId:result.requestId, question } }])
+      if (result.conversation) setConversations(current => current.map(item => item.id === result.conversation.id ? { ...item, ...result.conversation, updated_at:new Date().toISOString() } : item))
+    } finally { setSending(false) }
   }
 
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(current => !current)}
-        style={{
-          position:'fixed',
-          right:24,
-          bottom:isMobile ? 'calc(74px + env(safe-area-inset-bottom))' : 24,
-          width:62,
-          height:62,
-          borderRadius:20,
-          border:`1px solid ${C.borderBright}`,
-          background:C.surface,
-          display:'grid',
-          placeItems:'center',
-          padding:6,
-          cursor:'pointer',
-          boxShadow:'0 18px 45px rgba(15, 23, 42, 0.35)',
-          zIndex:60,
-        }}
-        title={open ? 'Fechar copiloto' : 'Abrir copiloto'}
-      >
-        <img
-          src="/assets/coruja-analitica.png"
-          alt="Coruja analítica SurgiMetrics"
-          style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:14 }}
-        />
-      </button>
-
-      {open && (
-        <div style={{ position:'fixed', right:24, bottom:isMobile ? 'calc(148px + env(safe-area-inset-bottom))' : 98, width:'min(420px, calc(100vw - 32px))', height:isMobile ? 'min(640px, calc(100vh - 220px))' : 'min(640px, calc(100vh - 140px))', borderRadius:24, border:`1px solid ${C.borderBright}`, background:C.card, boxShadow:'0 26px 80px rgba(15, 23, 42, 0.45)', zIndex:60, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-          <div style={{ padding:'18px 18px 16px', borderBottom:`1px solid ${C.border}`, background:`radial-gradient(circle at top right, ${C.cyan}22, transparent 40%), linear-gradient(180deg, ${C.surface}, ${C.card})` }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, marginBottom:14 }}>
-              <div>
-                <div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Copiloto</div>
-                <div style={{ color:C.text, fontWeight:800, marginTop:4 }}>Assistente financeiro da clínica</div>
-              </div>
-              <div style={{ display:'flex', gap:8 }}>
-                <button type="button" onClick={() => setMessages([INITIAL_MESSAGE])} style={{ height:34, borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, cursor:'pointer', padding:'0 10px', fontSize:11 }}>Limpar</button>
-                <button type="button" onClick={() => setOpen(false)} style={{ width:34, height:34, borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, cursor:'pointer' }}>×</button>
-              </div>
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'84px 1fr', gap:14, alignItems:'center' }}>
-              <AssistantPortrait />
-              <div>
-                <div style={{ color:C.text, fontSize:15, fontWeight:800, marginBottom:6 }}>Coruja analítica do SurgiMetrics</div>
-                <div style={{ color:C.textSub, fontSize:13, lineHeight:1.6, marginBottom:10 }}>
-                  CFO virtual focado em lucro, caixa, metas e previsões.
-                </div>
-                <BrandLogo size="sm" />
-              </div>
-            </div>
-          </div>
-
-          <div style={{ padding:'12px 14px', display:'flex', gap:8, flexWrap:'wrap', borderBottom:`1px solid ${C.border}` }}>
-            {QUICK_QUESTIONS.map(item => (
-              <button key={item} type="button" onClick={() => send(item)} style={{ padding:'6px 10px', borderRadius:999, border:`1px solid ${C.border}`, background:C.surface, color:C.textSub, fontSize:12, cursor:'pointer' }}>
-                {item}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ flex:1, overflowY:'auto', padding:16, display:'flex', flexDirection:'column', gap:12 }}>
-            {messages.map((message, index) => (
-              <div key={index} style={{ alignSelf:message.role === 'user' ? 'flex-end' : 'flex-start', maxWidth:'88%' }}>
-                <div style={{ padding:'12px 14px', borderRadius:message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background:message.role === 'user' ? C.accent : C.surface, border:`1px solid ${message.role === 'user' ? C.accent + '55' : C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }}>
-                  {message.content}
-                </div>
-                {message.role === 'assistant' && message.meta?.mode !== 'welcome' && (
-                  <ResponseMeta meta={message.meta} onRetry={message.meta?.question ? () => send(message.meta.question) : null} sending={sending} />
-                )}
-              </div>
-            ))}
-            {sending && <div style={{ maxWidth:'88%', padding:'12px 14px', borderRadius:'16px 16px 16px 4px', background:C.surface, border:`1px solid ${C.border}`, color:C.textDim, fontSize:13 }}>Analisando os dados...</div>}
-            <div ref={bottomRef} />
-          </div>
-
-          <div style={{ padding:14, borderTop:`1px solid ${C.border}`, display:'flex', gap:10 }}>
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-              rows={2}
-              placeholder="Pergunte ao copiloto"
-              style={{ ...base.input, flex:1, resize:'none', padding:'10px 12px', fontSize:13, lineHeight:1.5 }}
-            />
-            <button type="button" onClick={() => send()} disabled={!input.trim() || sending} style={{ minWidth:78, borderRadius:12, border:'none', background:C.accent, color:'#fff', cursor:sending ? 'not-allowed' : 'pointer', opacity:sending ? 0.6 : 1, fontWeight:700 }}>
-              Enviar
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  )
+  return <>
+    <button type="button" onClick={openCopilot} style={{ position:'fixed', right:24, bottom:isMobile ? 'calc(74px + env(safe-area-inset-bottom))' : 24, width:62, height:62, borderRadius:20, border:`1px solid ${C.borderBright}`, background:C.surface, display:'grid', placeItems:'center', padding:6, cursor:'pointer', boxShadow:'0 18px 45px rgba(15, 23, 42, 0.35)', zIndex:60 }} title={open ? 'Fechar copiloto' : 'Abrir copiloto'}><img src="/assets/coruja-analitica.png" alt="Coruja analítica SurgiMetrics" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:14 }} /></button>
+    {open && <div style={{ position:'fixed', right:24, bottom:isMobile ? 'calc(148px + env(safe-area-inset-bottom))' : 98, width:'min(760px, calc(100vw - 32px))', height:isMobile ? 'min(640px, calc(100vh - 220px))' : 'min(640px, calc(100vh - 140px))', borderRadius:24, border:`1px solid ${C.borderBright}`, background:C.card, boxShadow:'0 26px 80px rgba(15, 23, 42, 0.45)', zIndex:60, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ padding:'18px 18px 16px', borderBottom:`1px solid ${C.border}`, background:`radial-gradient(circle at top right, ${C.cyan}22, transparent 40%), linear-gradient(180deg, ${C.surface}, ${C.card})` }}><div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}><div><div style={{ fontSize:11, color:C.textSub, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em' }}>Copiloto</div><div style={{ color:C.text, fontWeight:800, marginTop:4 }}>Assistente financeiro da clínica</div></div><button type="button" onClick={() => setOpen(false)} style={{ width:34, height:34, borderRadius:10, border:`1px solid ${C.border}`, background:'transparent', color:C.textSub, cursor:'pointer' }}>×</button></div><div style={{ display:'flex', gap:12, alignItems:'center', marginTop:12 }}><AssistantPortrait /><div><div style={{ color:C.text, fontSize:14, fontWeight:800 }}>Coruja analítica do SurgiMetrics</div><div style={{ color:C.textSub, fontSize:12, lineHeight:1.5, marginTop:4 }}>CFO virtual focado em lucro, caixa, metas e previsões.</div><BrandLogo size="sm" /></div></div></div>
+      <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '190px 1fr', minHeight:0, flex:1 }}><aside style={{ borderRight:isMobile ? 'none' : `1px solid ${C.border}`, borderBottom:isMobile ? `1px solid ${C.border}` : 'none', padding:10, overflowY:'auto', maxHeight:isMobile ? 132 : 'none' }}><button type="button" onClick={newConversation} style={{ width:'100%', padding:'9px 10px', borderRadius:10, border:`1px solid ${C.accent}66`, background:`${C.accent}18`, color:C.text, cursor:'pointer', fontWeight:700, fontSize:12 }}>＋ Nova conversa</button><div style={{ color:C.textDim, fontSize:10, margin:'14px 6px 6px', textTransform:'uppercase', letterSpacing:'0.08em' }}>{loadingConversations ? 'Carregando...' : 'Conversas'}</div>{conversations.map(item => <button key={item.id} type="button" onClick={() => selectConversation(item)} style={{ display:'block', width:'100%', textAlign:'left', padding:'9px 8px', marginBottom:4, borderRadius:9, border:'none', background:item.id === activeConversationId ? `${C.accent}22` : 'transparent', color:item.id === activeConversationId ? C.text : C.textSub, cursor:sending ? 'not-allowed' : 'pointer', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:11 }}>{item.title || 'Nova conversa'}</button>)}{!conversations.length && !loadingConversations && <div style={{ color:C.textDim, fontSize:11, lineHeight:1.5, padding:6 }}>Suas conversas aparecerão aqui.</div>}</aside><section style={{ minWidth:0, display:'flex', flexDirection:'column' }}><div style={{ padding:'10px 12px', display:'flex', gap:7, flexWrap:'wrap', borderBottom:`1px solid ${C.border}` }}>{QUICK_QUESTIONS.map(item => <button key={item} type="button" onClick={() => send(item)} style={{ padding:'6px 9px', borderRadius:999, border:`1px solid ${C.border}`, background:C.surface, color:C.textSub, fontSize:11, cursor:'pointer' }}>{item}</button>)}</div><div style={{ flex:1, overflowY:'auto', padding:16, display:'flex', flexDirection:'column', gap:12 }}>{messages.map((message, index) => <div key={`${message.role}-${index}`} style={{ alignSelf:message.role === 'user' ? 'flex-end' : 'flex-start', maxWidth:'88%' }}><div style={{ padding:'12px 14px', borderRadius:message.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background:message.role === 'user' ? C.accent : C.surface, border:`1px solid ${message.role === 'user' ? C.accent + '55' : C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }}>{message.content}</div>{message.role === 'assistant' && message.meta?.mode !== 'welcome' && <ResponseMeta meta={message.meta} onRetry={message.meta?.question ? () => send(message.meta.question) : null} sending={sending} />}</div>)}{sending && <div style={{ maxWidth:'88%', padding:'12px 14px', borderRadius:'16px 16px 16px 4px', background:C.surface, border:`1px solid ${C.border}`, color:C.textDim, fontSize:13 }}>Analisando os dados...</div>}<div ref={bottomRef} /></div><div style={{ padding:14, borderTop:`1px solid ${C.border}`, display:'flex', gap:10 }}><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} rows={2} placeholder="Pergunte ao copiloto" style={{ ...base.input, flex:1, resize:'none', padding:'10px 12px', fontSize:13, lineHeight:1.5 }} /><button type="button" onClick={() => send()} disabled={!input.trim() || sending} style={{ minWidth:78, borderRadius:12, border:'none', background:C.accent, color:'#fff', cursor:sending ? 'not-allowed' : 'pointer', opacity:sending ? 0.6 : 1, fontWeight:700 }}>Enviar</button></div></section></div>
+    </div>}
+  </>
 }
 
-function ResponseMeta({ meta, onRetry, sending }) {
-  const limited = meta?.mode === 'limited' || meta?.source === 'fallback'
-  const period = meta?.evidence?.map(item => item.period).filter(Boolean)[0] || ''
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginTop:5, padding:'0 4px', color:limited ? C.yellow : C.textDim, fontSize:10, lineHeight:1.4 }}>
-      <span>{limited ? 'Modo limitado' : meta?.mode === 'tool_assisted' ? 'Dados consultados' : 'Resposta do assistente'}</span>
-      {period ? <span>· {period.replace('/', ' a ')}</span> : null}
-      {limited && meta?.reason ? <span>· {meta.reason}</span> : null}
-      {limited && onRetry ? (
-        <button type="button" onClick={onRetry} disabled={sending} style={{ border:'none', background:'transparent', color:C.accentLight, padding:0, cursor:sending ? 'not-allowed' : 'pointer', fontSize:10, textDecoration:'underline' }}>
-          Tentar novamente
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-function AssistantPortrait() {
-  return (
-    <div style={{ width:84, height:84, borderRadius:22, position:'relative', overflow:'hidden', border:`1px solid ${C.borderBright}`, background:C.surface, boxShadow:'inset 0 1px 0 rgba(255,255,255,0.08)' }}>
-      <img
-        src="/assets/coruja-analitica.png"
-        alt="Coruja analítica SurgiMetrics"
-        style={{ width:'100%', height:'100%', objectFit:'cover' }}
-      />
-    </div>
-  )
-}
+function ResponseMeta({ meta, onRetry, sending }) { const limited = meta?.mode === 'limited' || meta?.source === 'fallback'; const period = meta?.evidence?.map(item => item.period).filter(Boolean)[0] || ''; return <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginTop:5, padding:'0 4px', color:limited ? C.yellow : C.textDim, fontSize:10, lineHeight:1.4 }}><span>{limited ? 'Modo limitado' : meta?.mode === 'tool_assisted' ? 'Dados consultados' : 'Resposta do assistente'}</span>{period ? <span>· {period.replace('/', ' a ')}</span> : null}{limited && meta?.reason ? <span>· {meta.reason}</span> : null}{limited && onRetry ? <button type="button" onClick={onRetry} disabled={sending} style={{ border:'none', background:'transparent', color:C.accentLight, padding:0, cursor:sending ? 'not-allowed' : 'pointer', fontSize:10, textDecoration:'underline' }}>Tentar novamente</button> : null}</div> }
+function AssistantPortrait() { return <div style={{ width:56, height:56, borderRadius:16, overflow:'hidden', border:`1px solid ${C.borderBright}`, background:C.surface }}><img src="/assets/coruja-analitica.png" alt="Coruja analítica SurgiMetrics" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div> }
