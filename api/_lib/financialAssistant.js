@@ -124,7 +124,7 @@ export async function createAssistantConversation(supabase, userId, title = 'Nov
   const { data, error } = await supabase
     .from('ai_assistant_conversations')
     .insert({ user_id:userId, title:sanitizeConversationTitle(title) })
-    .select('id,title,created_at,updated_at,last_message_at')
+    .select('id,title,is_pinned,created_at,updated_at,last_message_at')
     .single()
   if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Memória do assistente ainda não está ativada no banco.')
   return data
@@ -133,7 +133,7 @@ export async function createAssistantConversation(supabase, userId, title = 'Nov
 export async function getAssistantConversations(supabase, userId) {
   const { data, error } = await supabase
     .from('ai_assistant_conversations')
-    .select('id,title,created_at,updated_at,last_message_at')
+    .select('id,title,is_pinned,created_at,updated_at,last_message_at')
     .eq('user_id', userId)
     .order('updated_at', { ascending:false })
     .limit(50)
@@ -145,7 +145,7 @@ export async function getAssistantConversation(supabase, userId, conversationId)
   if (!UUID_PATTERN.test(String(conversationId || ''))) throw new AssistantError(400, 'INVALID_CONVERSATION', 'Conversa inválida.')
   const { data, error } = await supabase
     .from('ai_assistant_conversations')
-    .select('id,title,created_at,updated_at,last_message_at')
+    .select('id,title,is_pinned,created_at,updated_at,last_message_at')
     .eq('id', conversationId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -158,7 +158,7 @@ export async function getAssistantMessages(supabase, userId, conversationId) {
   await getAssistantConversation(supabase, userId, conversationId)
   const { data, error } = await supabase
     .from('ai_assistant_messages')
-    .select('id,role,content,source,mode,reason,evidence,request_id,created_at')
+    .select('id,role,content,source,mode,reason,evidence,request_id,feedback,created_at')
     .eq('conversation_id', conversationId)
     .eq('user_id', userId)
     .order('created_at', { ascending:true })
@@ -192,6 +192,60 @@ export async function saveAssistantExchange(supabase, userId, conversationId, qu
     p_request_id:meta.requestId || null,
   })
   if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Não foi possível salvar a conversa.')
+  const { data:message, error:messageError } = await supabase
+    .from('ai_assistant_messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .eq('role', 'assistant')
+    .order('created_at', { ascending:false })
+    .limit(1)
+    .maybeSingle()
+  if (messageError) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Não foi possível confirmar a resposta salva.')
+  return message?.id || ''
+}
+
+export async function renameAssistantConversation(supabase, userId, conversationId, title) {
+  await getAssistantConversation(supabase, userId, conversationId)
+  const { data, error } = await supabase
+    .from('ai_assistant_conversations')
+    .update({ title:sanitizeConversationTitle(title), updated_at:new Date().toISOString() })
+    .eq('id', conversationId)
+    .eq('user_id', userId)
+    .select('id,title,is_pinned,created_at,updated_at,last_message_at')
+    .maybeSingle()
+  if (error || !data) throw new AssistantError(error ? 503 : 404, error ? 'MEMORY_UNAVAILABLE' : 'CONVERSATION_NOT_FOUND', error ? 'Não foi possível renomear a conversa.' : 'Conversa não encontrada.')
+  return data
+}
+
+export async function pinAssistantConversation(supabase, userId, conversationId, isPinned) {
+  await getAssistantConversation(supabase, userId, conversationId)
+  const { data, error } = await supabase
+    .from('ai_assistant_conversations')
+    .update({ is_pinned:Boolean(isPinned), updated_at:new Date().toISOString() })
+    .eq('id', conversationId)
+    .eq('user_id', userId)
+    .select('id,title,is_pinned,created_at,updated_at,last_message_at')
+    .maybeSingle()
+  if (error || !data) throw new AssistantError(error ? 503 : 404, error ? 'MEMORY_UNAVAILABLE' : 'CONVERSATION_NOT_FOUND', error ? 'Não foi possível fixar a conversa.' : 'Conversa não encontrada.')
+  return data
+}
+
+export async function deleteAssistantConversation(supabase, userId, conversationId) {
+  await getAssistantConversation(supabase, userId, conversationId)
+  const { error } = await supabase
+    .from('ai_assistant_conversations')
+    .delete()
+    .eq('id', conversationId)
+    .eq('user_id', userId)
+  if (error) throw new AssistantError(503, 'MEMORY_UNAVAILABLE', 'Não foi possível excluir a conversa.')
+}
+
+export async function setAssistantMessageFeedback(supabase, userId, messageId, feedback) {
+  if (!UUID_PATTERN.test(String(messageId || ''))) throw new AssistantError(400, 'INVALID_MESSAGE', 'Resposta inválida.')
+  if (feedback !== null && feedback !== 1 && feedback !== -1) throw new AssistantError(400, 'INVALID_FEEDBACK', 'Feedback inválido.')
+  const { error } = await supabase.rpc('set_ai_assistant_message_feedback', { p_message_id:messageId, p_feedback:feedback })
+  if (error) throw new AssistantError(503, 'FEEDBACK_UNAVAILABLE', 'Não foi possível salvar o feedback.')
 }
 
 export function sanitizeHistory(rawHistory) {

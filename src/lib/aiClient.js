@@ -41,6 +41,7 @@ export async function queryFinancialAssistant({ question, brain, history = [], c
         requestId:payload?.requestId || '',
         conversationId,
         conversation:null,
+        assistantMessageId:'',
       }
     }
 
@@ -54,6 +55,7 @@ export async function queryFinancialAssistant({ question, brain, history = [], c
       requestId:payload?.requestId || '',
       conversationId:payload?.conversationId || conversationId,
       conversation:payload?.conversation || null,
+      assistantMessageId:payload?.assistantMessageId || '',
     }
   } catch (error) {
     const code = error?.name === 'AbortError' ? 'AI_TIMEOUT' : error?.code
@@ -66,6 +68,7 @@ export async function queryFinancialAssistant({ question, brain, history = [], c
       requestId:'',
       conversationId,
       conversation:null,
+      assistantMessageId:'',
     }
   } finally {
     clearTimeout(timeout)
@@ -95,6 +98,18 @@ export async function getFinancialConversationMessages(conversationId) {
 
 export async function createFinancialConversation() {
   return financialAssistantRequest('', { method:'POST', body:JSON.stringify({ action:'create-conversation' }) })
+}
+
+export async function updateFinancialConversation(action, payload) {
+  return financialAssistantRequest('', { method:'PATCH', body:JSON.stringify({ action, ...payload }) })
+}
+
+export async function deleteFinancialConversation(conversationId) {
+  return financialAssistantRequest('', { method:'DELETE', body:JSON.stringify({ conversationId }) })
+}
+
+export async function saveFinancialMessageFeedback(messageId, feedback) {
+  return financialAssistantRequest('', { method:'PATCH', body:JSON.stringify({ action:'feedback', messageId, feedback }) })
 }
 
 // Meta Ads: gera a análise por IA das campanhas do período. Reusa /api/financial-assistant

@@ -6,6 +6,7 @@ import {
   authenticateFinancialRequest,
   consumeAssistantQuota,
   createAssistantConversation,
+  deleteAssistantConversation,
   executeFinancialTool,
   extractResponseText,
   fetchFinancialData,
@@ -15,6 +16,9 @@ import {
   getAssistantMessages,
   getAssistantConversation,
   logAssistantEvent,
+  pinAssistantConversation,
+  renameAssistantConversation,
+  setAssistantMessageFeedback,
   parseFunctionArguments,
   saveAssistantExchange,
   saoPauloDate,
@@ -28,8 +32,10 @@ const REQUEST_TIMEOUT_MS = 20_000
 
 export default async function handler(req, res) {
   if (req.method === 'GET') return handleConversationGet(req, res)
+  if (req.method === 'PATCH') return handleConversationPatch(req, res)
+  if (req.method === 'DELETE') return handleConversationDelete(req, res)
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST')
+    res.setHeader('Allow', 'GET, POST, PATCH, DELETE')
     return res.status(405).json({ error:'Method not allowed', code:'METHOD_NOT_ALLOWED' })
   }
 
@@ -134,8 +140,9 @@ export default async function handler(req, res) {
 
     const mode = usedTools.length > 0 ? 'tool_assisted' : 'conversational'
     let memoryAvailable = true
+    let assistantMessageId = ''
     try {
-      await saveAssistantExchange(supabase, auth.user.id, conversationId, question, answer, {
+      assistantMessageId = await saveAssistantExchange(supabase, auth.user.id, conversationId, question, answer, {
         source:'openai', mode, evidence:dedupeEvidence(evidence), requestId, initialTitle:conversation.title,
       })
     } catch (memoryError) {
@@ -159,6 +166,7 @@ export default async function handler(req, res) {
       evidence:dedupeEvidence(evidence),
       requestId,
       conversationId,
+      assistantMessageId,
       conversation: { ...conversation, title:conversation.title === 'Nova conversa' ? question.slice(0, 120) : conversation.title },
       memoryAvailable,
     })
@@ -181,6 +189,40 @@ export default async function handler(req, res) {
       code:normalized.code,
       requestId,
     })
+  }
+}
+
+async function handleConversationPatch(req, res) {
+  try {
+    const auth = await authenticateFinancialRequest(req)
+    const action = String(req.body?.action || '')
+    const conversationId = String(req.body?.conversationId || '')
+    if (action === 'rename-conversation') {
+      return res.status(200).json({ conversation:await renameAssistantConversation(auth.supabase, auth.user.id, conversationId, req.body?.title) })
+    }
+    if (action === 'pin-conversation') {
+      return res.status(200).json({ conversation:await pinAssistantConversation(auth.supabase, auth.user.id, conversationId, req.body?.isPinned) })
+    }
+    if (action === 'feedback') {
+      await setAssistantMessageFeedback(auth.supabase, auth.user.id, String(req.body?.messageId || ''), req.body?.feedback ?? null)
+      return res.status(200).json({ ok:true, messageId:req.body?.messageId, feedback:req.body?.feedback ?? null })
+    }
+    return res.status(400).json({ error:'Ação inválida.', code:'INVALID_ACTION' })
+  } catch (error) {
+    const normalized = normalizeError(error)
+    return res.status(normalized.status).json({ error:normalized.message, code:normalized.code })
+  }
+}
+
+async function handleConversationDelete(req, res) {
+  try {
+    const auth = await authenticateFinancialRequest(req)
+    const conversationId = String(req.body?.conversationId || req.query?.conversationId || '')
+    await deleteAssistantConversation(auth.supabase, auth.user.id, conversationId)
+    return res.status(200).json({ ok:true, conversationId })
+  } catch (error) {
+    const normalized = normalizeError(error)
+    return res.status(normalized.status).json({ error:normalized.message, code:normalized.code })
   }
 }
 
