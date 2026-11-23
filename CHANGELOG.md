@@ -7,6 +7,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-23 (2)
 
+### Added
+- O copiloto financeiro agora mantém conversas persistidas por usuário, permite criar e alternar entre múltiplos chats na barra lateral e reidrata o histórico salvo ao reabrir uma conversa. O backend usa o transcript protegido por RLS como contexto principal e continua limitando o histórico enviado ao modelo para preservar custo e latência. **Aplicar `supabase/ai_assistant_conversations_schema.sql` em produção antes do deploy.** (`src/components/CopilotWidget.jsx`, `src/lib/aiClient.js`, `api/financial-assistant.js`, `api/_lib/financialAssistant.js`, `supabase/ai_assistant_conversations_schema.sql`.)
+
 ### Fixed
 - Mídias recebidas pelo WhatsApp deixavam de ser exibidas porque o webhook as colocava corretamente na fila durável, mas o processamento da fila não estava mais agendado; o cron foi restaurado em frequência diária compatível com o plano Hobby da Vercel e a Inbox agora processa mídias pendentes ao atualizar, sincronizar, receber uma mídia em tempo real ou executar a revalidação periódica. Reações da Evolution guardam o emoji e o `provider_message_id` da mensagem original para serem renderizadas sobre ela, em vez de aparecerem como mensagens independentes. (`api/_lib/whatsapp.js`, `api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppChat.jsx`, `src/components/WhatsAppInbox.css`, `supabase/whatsapp_reactions_schema.sql`, `vercel.json`, `tests/unit/evolutionWhatsApp.spec.js`.)
 
