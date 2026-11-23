@@ -29,3 +29,12 @@ test('método não suportado responde 405 em vez de crashar', async () => {
   await handlePlatformAdminRequest(req, res, 'platform-admin-list-accounts')
   expect(res.statusCode).toBe(405)
 })
+
+test('checagem de status (usada pelo roteador do frontend) nunca lança erro, mesmo sem sessão', async () => {
+  const req = { method: 'GET', headers: {}, body: {} }
+  const res = mockRes()
+
+  await handlePlatformAdminRequest(req, res, 'platform-admin-status')
+  expect(res.statusCode).toBe(200)
+  expect(res.body).toEqual({ isPlatformAdmin: false })
+})

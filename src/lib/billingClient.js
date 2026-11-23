@@ -39,5 +39,6 @@ export const createSaasBillingCheckout = payload => billingFetch('saas-billing-c
 // Ferramenta interna da Zentri Tech para ajustar o preço contratado por clínica
 // (ex.: preço de entrada enquanto parte da plataforma não está pronta). Enxerga
 // contas de todas as clínicas; acesso restrito por e-mail no backend.
+export const fetchPlatformAdminStatus = () => billingFetch('platform-admin-status', { method:'GET' })
 export const fetchPlatformAdminAccounts = () => billingFetch('platform-admin-list-accounts', { method:'GET' })
 export const setPlatformAdminAccountValue = payload => billingFetch('platform-admin-set-value', { body:payload })
