@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-22 (2)
+
+### Fixed
+- O checkout da assinatura SaaS retornava um link de pagamento inútil (o domínio puro do Asaas) porque a assinatura em si não carrega `invoiceUrl` — esse link fica na cobrança (`payment`) que o Asaas gera automaticamente pra cada ciclo. Passa a buscar essa cobrança após criar/encontrar a assinatura e usar o link dela. Achado testando o fluxo real com uma assinatura de teste de verdade no Asaas (`sub_pr3dhu1k8lsx38s0`, cancelada após o teste). (`api/_lib/billingProvider.js`, `api/_lib/saasBilling.js`, `tests/unit/billingProvider.spec.js`.)
+
 ## [Unreleased] - 2026-11-22
 
 ### Fixed
