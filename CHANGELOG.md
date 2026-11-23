@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-23
+
+### Added
+- Nova ferramenta interna da Zentri Tech em `/zentri-admin` (fora do menu e do sistema de papéis de cada clínica; acesso restrito por e-mail via `ZENTRI_PLATFORM_ADMIN_EMAILS`) para ajustar o valor mensal contratado de qualquer clínica, sobrepondo o preço padrão do plano único. Pensado para preços de entrada enquanto parte da plataforma ainda não está pronta (ex.: financeiro), reajustado depois por marco — diferente de cupom promocional, que é recorrente em todo ciclo. Quando a clínica já tem assinatura ativa no Asaas, o novo valor é enviado pra lá também (vale a partir do próximo ciclo). (`api/_lib/platformAdmin.js`, `api/_lib/billingProvider.js`, `api/_lib/saasBilling.js`, `api/financial/analysis.js`, `src/pages/PlatformAdminPage.jsx`, `src/routes.jsx`, `src/lib/billingClient.js`, `supabase/saas_billing_contracted_value.sql`, `tests/unit/platformAdmin.spec.js`.)
+
 ## [Unreleased] - 2026-11-22 (2)
 
 ### Fixed

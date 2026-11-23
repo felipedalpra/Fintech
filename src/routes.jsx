@@ -7,6 +7,7 @@ import { FinanceWorkspace } from './pages/FinanceWorkspace.jsx'
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage.jsx'
 import { TermsOfServicePage } from './pages/TermsOfServicePage.jsx'
 import { PublicClinicalIntake } from './pages/PublicClinicalIntake.jsx'
+import { PlatformAdminPage } from './pages/PlatformAdminPage.jsx'
 import { LandingPage } from './landing/LandingPage.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 
@@ -43,6 +44,7 @@ export function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route path="/app" element={<AppEntryRedirect />} />
           <Route path="/app/:page" element={<FinanceWorkspace />} />
+          <Route path="/zentri-admin" element={<PlatformAdminPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
