@@ -5,6 +5,11 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-23 (2)
+
+### Added
+- Uma conta cujo e-mail esteja em `ZENTRI_PLATFORM_ADMIN_EMAILS` nunca entra no app da clínica — é redirecionada direto para `/zentri-admin` em qualquer tentativa de acessar `/app/*`. Pensado para a Zentri Tech ter uma conta de uso exclusivo da ferramenta de preço, sem workspace de clínica junto. Checagem leve e nova (`platform-admin-status`, sempre 200, nunca expõe a lista de e-mails ao navegador). (`api/_lib/platformAdmin.js`, `src/router/ProtectedRoute.jsx`, `src/lib/billingClient.js`, `tests/unit/platformAdmin.spec.js`.)
+
 ## [Unreleased] - 2026-11-23
 
 ### Added

@@ -28,23 +28,39 @@ function allowedEmails() {
     .split(',').map(item => item.trim().toLowerCase()).filter(Boolean)
 }
 
-async function requirePlatformAdmin(req) {
+async function resolveUserEmail(req) {
   const token = bearer(req)
-  if (!token) throw Object.assign(new Error('Sessão ausente.'), { statusCode:401 })
-  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) throw new Error('Supabase do servidor não configurado.')
+  if (!token || !supabaseUrl || !supabaseAnonKey) return ''
   const scoped = createClient(supabaseUrl, supabaseAnonKey, {
     auth:{ persistSession:false, autoRefreshToken:false },
     global:{ headers:{ Authorization:`Bearer ${token}` } },
   })
   const { data:userData, error } = await scoped.auth.getUser(token)
-  if (error || !userData?.user) throw Object.assign(new Error('Sessão inválida.'), { statusCode:401 })
-  const email = String(userData.user.email || '').trim().toLowerCase()
+  if (error || !userData?.user) return ''
+  return String(userData.user.email || '').trim().toLowerCase()
+}
+
+async function requirePlatformAdmin(req) {
+  const token = bearer(req)
+  if (!token) throw Object.assign(new Error('Sessão ausente.'), { statusCode:401 })
+  if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) throw new Error('Supabase do servidor não configurado.')
+  const email = await resolveUserEmail(req)
+  if (!email) throw Object.assign(new Error('Sessão inválida.'), { statusCode:401 })
   const allowed = allowedEmails()
   if (!allowed.length || !allowed.includes(email)) {
     throw Object.assign(new Error('Acesso restrito a administradores da plataforma.'), { statusCode:403 })
   }
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth:{ persistSession:false, autoRefreshToken:false } })
-  return { admin, user:userData.user }
+  return { admin }
+}
+
+// Checagem leve para o frontend decidir rota (ex.: mandar a conta da Zentri direto para
+// /zentri-admin em vez do app da clínica) sem nunca expor a lista de e-mails ao navegador.
+// Nunca lança erro: sessão ausente/inválida/não autorizada são todas `isPlatformAdmin:false`.
+async function handleStatus(req, res) {
+  const email = await resolveUserEmail(req)
+  const allowed = allowedEmails()
+  return res.status(200).json({ isPlatformAdmin:Boolean(email) && allowed.includes(email) })
 }
 
 function publicAccount(row) {
@@ -105,6 +121,7 @@ async function handleSetValue(req, res) {
 
 export async function handlePlatformAdminRequest(req, res, action) {
   try {
+    if (action === 'platform-admin-status' && req.method === 'GET') return await handleStatus(req, res)
     if (action === 'platform-admin-list-accounts' && req.method === 'GET') return await handleListAccounts(req, res)
     if (action === 'platform-admin-set-value' && req.method === 'POST') return await handleSetValue(req, res)
     res.setHeader('Allow', action === 'platform-admin-list-accounts' ? 'GET' : 'POST')
