@@ -409,6 +409,11 @@ export function WhatsAppInbox() {
       const { data:sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
       if (token) {
+        const mediaResponse = await fetch('/api/whatsapp?action=process-media-queue', {
+          headers:{ Authorization:`Bearer ${token}` },
+        })
+        const mediaResult = await mediaResponse.json().catch(() => ({}))
+        if (!mediaResponse.ok) throw new Error(mediaResult.error || 'Não foi possível recuperar as mídias pendentes do WhatsApp.')
         const response = await fetch('/api/whatsapp?action=sync-chat-identities', {
           method:'POST',
           headers:{ Authorization:`Bearer ${token}` },
@@ -439,6 +444,11 @@ export function WhatsAppInbox() {
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(result.error || 'Não foi possível recuperar as mensagens de hoje.')
+      const mediaResponse = await fetch('/api/whatsapp?action=process-media-queue', {
+        headers:{ Authorization:`Bearer ${token}` },
+      })
+      const mediaResult = await mediaResponse.json().catch(() => ({}))
+      if (!mediaResponse.ok) throw new Error(mediaResult.error || 'Mensagens recuperadas, mas não foi possível abrir as mídias pendentes.')
       await load({ silent:true })
       setSyncNotice(`${result.imported || 0} mensagem(ns) recuperada(s) de hoje${result.duplicates ? `; ${result.duplicates} já estava(m) no painel` : ''}.`)
     } catch (nextError) {

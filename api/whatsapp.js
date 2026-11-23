@@ -359,12 +359,14 @@ async function persistInboundMedia(supabase, number, parsed) {
 // Processa mídias fora do webhook. O provider recebe o ACK assim que a mensagem
 // textual/metadada estiver persistida; o payload bruto continua disponível para
 // recuperar a mídia sem depender de uma nova entrega da Evolution.
-export async function processWhatsAppMediaQueue({ limit = 20 } = {}) {
+export async function processWhatsAppMediaQueue({ limit = 20, ownerId = null } = {}) {
   const supabase = adminSupabase()
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50)
-  const result = await supabase.from('whatsapp_webhook_events')
+  let mediaQuery = supabase.from('whatsapp_webhook_events')
     .select('id, whatsapp_number_id, payload, attempts')
     .eq('processing_status', 'media_pending')
+  if (ownerId) mediaQuery = mediaQuery.eq('user_id', ownerId)
+  const result = await mediaQuery
     .order('received_at', { ascending: true })
     .limit(safeLimit)
   if (result.error) throw result.error
@@ -1504,11 +1506,15 @@ async function handleProcessMediaQueue(req, res) {
   const secret = process.env.CRON_SECRET || process.env.VERCEL_CRON_SECRET
   const headerSecret = req.headers['x-cron-secret'] || req.headers['X-Cron-Secret'] || ''
   const bearer = (req.headers.authorization || '').startsWith('Bearer ') ? req.headers.authorization.slice(7) : ''
-  if (!secret || (headerSecret !== secret && bearer !== secret)) {
-    return res.status(401).json({ error:'Invalid cron secret' })
+  let ownerId = null
+  const isCron = Boolean(secret && (headerSecret === secret || bearer === secret))
+  if (!isCron) {
+    const auth = await authenticatedAdmin(req)
+    if (auth.error) return res.status(auth.error.status).json({ error: auth.error.message })
+    ownerId = auth.ownerId
   }
   try {
-    const summary = await processWhatsAppMediaQueue({ limit:req.query?.limit })
+    const summary = await processWhatsAppMediaQueue({ limit:req.query?.limit, ownerId })
     return res.status(200).json({ ok:true, ...summary })
   } catch (error) {
     console.error('whatsapp media queue error:', error?.message)
