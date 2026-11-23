@@ -349,6 +349,16 @@ export function WhatsAppInbox() {
     return true
   }, [])
 
+  const processPendingMedia = useCallback(async () => {
+    const { data:sessionData } = await supabase.auth.getSession()
+    const token = sessionData.session?.access_token
+    if (!token) return false
+    const response = await fetch('/api/whatsapp?action=process-media-queue', {
+      headers:{ Authorization:`Bearer ${token}` },
+    })
+    return response.ok
+  }, [])
+
   const queueRealtimeMessage = useCallback(payload => {
     const messageId = payload?.new?.id || payload?.old?.id
     if (!messageId) return
@@ -359,6 +369,12 @@ export function WhatsAppInbox() {
       setMessages(currentRows => removeWhatsAppMessageRow(currentRows, messageId))
       return
     }
+    const mediaPending = payload?.new?.msg_type && payload.new.msg_type !== 'text' && !payload.new.media_url
+    if (mediaPending) {
+      void processPendingMedia().then(processed => {
+        if (processed && !document.hidden) reloadMessageWindow()
+      })
+    }
     pendingRealtimeIdsRef.current.add(messageId)
     if (realtimeBatchTimerRef.current) return
     realtimeBatchTimerRef.current = window.setTimeout(async () => {
@@ -368,7 +384,7 @@ export function WhatsAppInbox() {
       const refreshed = await refreshMessagesByIds(ids)
       if (!refreshed && !document.hidden) await reloadMessageWindow()
     }, WHATSAPP_REALTIME_BATCH_MS)
-  }, [refreshMessagesByIds, reloadMessageWindow])
+  }, [processPendingMedia, refreshMessagesByIds, reloadMessageWindow])
 
   const applyRealtimeConversationState = useCallback(payload => {
     const row = payload?.new || payload?.old
@@ -468,7 +484,9 @@ export function WhatsAppInbox() {
         else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) setRealtimeState('offline')
       })
     const authorizationPoll = window.setInterval(() => {
-      if (!document.hidden) load({ silent:true })
+      if (!document.hidden) {
+        void processPendingMedia().then(() => load({ silent:true }))
+      }
     }, WHATSAPP_REALTIME_FALLBACK_POLL_MS)
     return () => {
       window.clearInterval(authorizationPoll)
@@ -478,7 +496,7 @@ export function WhatsAppInbox() {
       setRealtimeState('connecting')
       supabase.removeChannel(channel)
     }
-  }, [applyRealtimeConversationState, applyRealtimeNumber, load, ownerId, queueRealtimeMessage])
+  }, [applyRealtimeConversationState, applyRealtimeNumber, load, ownerId, processPendingMedia, queueRealtimeMessage])
 
   const numberLabel = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.label])), [numbers])
   const numberOwner = useMemo(() => Object.fromEntries(numbers.map(number => [number.id, number.assigned_user_id || null])), [numbers])
