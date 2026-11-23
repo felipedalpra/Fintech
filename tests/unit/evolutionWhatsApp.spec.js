@@ -78,6 +78,22 @@ test('preserva eventos de grupo que antes eram descartados pelo parser', () => {
   expect(parseEvolutionIncomingMessage({ ...base, data:{ ...base.data, message:{ albumMessage:{} } } })).toMatchObject({ isGroup:true, text:'[Álbum recebido]' })
 })
 
+test('preserva a reação ligada à mensagem original', () => {
+  const result = parseEvolutionIncomingMessage({
+    event: 'messages.upsert',
+    data: {
+      key: { id: 'REACTION-1', remoteJid: '5511999999999@s.whatsapp.net', fromMe: true },
+      message: { reactionMessage: { text: '👍', key: { id: 'ORIGINAL-1', remoteJid: '5511999999999@s.whatsapp.net' } } },
+    },
+  })
+  expect(result).toMatchObject({
+    direction: 'outbound',
+    text: 'Reação: 👍',
+    reactionEmoji: '👍',
+    reactionTargetProviderMessageId: 'ORIGINAL-1',
+  })
+})
+
 test('envia texto com apikey somente no backend e confirma key.id', async () => {
   let request
   globalThis.fetch = async (url, options) => {

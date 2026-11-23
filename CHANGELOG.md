@@ -7,6 +7,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-23 (2)
 
+### Fixed
+- Mídias recebidas pelo WhatsApp deixavam de ser exibidas porque o webhook as colocava corretamente na fila durável, mas o processamento da fila não estava mais agendado; o cron foi restaurado e reações da Evolution agora guardam o emoji e o `provider_message_id` da mensagem original para serem renderizadas sobre ela, em vez de aparecerem como mensagens independentes. (`api/_lib/whatsapp.js`, `api/whatsapp.js`, `src/components/WhatsAppInbox.jsx`, `src/components/WhatsAppChat.jsx`, `src/components/WhatsAppInbox.css`, `supabase/whatsapp_reactions_schema.sql`, `vercel.json`, `tests/unit/evolutionWhatsApp.spec.js`.)
+
 ### Added
 - Uma conta cujo e-mail esteja em `ZENTRI_PLATFORM_ADMIN_EMAILS` nunca entra no app da clínica — é redirecionada direto para `/zentri-admin` em qualquer tentativa de acessar `/app/*`. Pensado para a Zentri Tech ter uma conta de uso exclusivo da ferramenta de preço, sem workspace de clínica junto. Checagem leve e nova (`platform-admin-status`, sempre 200, nunca expõe a lista de e-mails ao navegador). (`api/_lib/platformAdmin.js`, `src/router/ProtectedRoute.jsx`, `src/lib/billingClient.js`, `tests/unit/platformAdmin.spec.js`.)
 

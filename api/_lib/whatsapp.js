@@ -232,7 +232,8 @@ function evolutionMedia(message) {
   const reaction = message?.reactionMessage
   if (reaction && typeof reaction === 'object') {
     const emoji = String(reaction.text || reaction.emoji || '').trim()
-    return { msgType:'text', mediaUrl:null, mediaMime:null, caption: emoji ? `Reação: ${emoji}` : '[Reação]' }
+    const targetId = reaction.key?.id || reaction.messageKey?.id || reaction.stanzaId || null
+    return { msgType:'text', mediaUrl:null, mediaMime:null, caption: emoji ? `Reação: ${emoji}` : '[Reação]', reactionEmoji: emoji || null, reactionTargetProviderMessageId: targetId ? String(targetId) : null }
   }
   if (message?.stickerMessage && typeof message.stickerMessage === 'object') {
     return { msgType:'text', mediaUrl:null, mediaMime:null, caption:'[Figurinha recebida]' }
@@ -328,6 +329,8 @@ export function parseEvolutionIncomingMessage(body) {
     mediaUrl: media?.mediaUrl || null,
     mediaMime: media?.mediaMime || null,
     providerMessageId: key.id ? String(key.id) : (data.id ? String(data.id) : null),
+    reactionEmoji: media?.reactionEmoji || null,
+    reactionTargetProviderMessageId: media?.reactionTargetProviderMessageId || null,
     providerMediaMessage: media ? data : null,
     fromApi: event === 'send.message',
     createdAt: evolutionTimestamp(data.messageTimestamp || data.message?.messageTimestamp || body.date_time),

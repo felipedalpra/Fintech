@@ -39,11 +39,19 @@ export function WhatsAppChat({ patient }) {
   async function load() {
     setLoading(true)
     setError(null)
-    const { data, error: err } = await supabase
+    let result = await supabase
       .from('whatsapp_messages')
-      .select('id, direction, body, status, created_at, msg_type, media_url, media_mime, whatsapp_number_id')
+      .select('id, direction, body, status, created_at, provider_message_id, msg_type, media_url, media_mime, reaction_emoji, reaction_target_provider_message_id, whatsapp_number_id')
       .eq('patient_id', patient.id)
       .order('created_at', { ascending: true })
+    if (result.error && ['PGRST204', '42703'].includes(result.error.code)) {
+      result = await supabase
+        .from('whatsapp_messages')
+        .select('id, direction, body, status, created_at, provider_message_id, msg_type, media_url, media_mime, whatsapp_number_id')
+        .eq('patient_id', patient.id)
+        .order('created_at', { ascending: true })
+    }
+    const { data, error: err } = result
     if (err) { setError(err.message); setLoading(false); return }
     const nextMessages = data ?? []
     setMessages(nextMessages)
@@ -158,6 +166,8 @@ export function WhatsAppChat({ patient }) {
   const visibleMessages = numberId
     ? messages.filter(message => !message.whatsapp_number_id || message.whatsapp_number_id === numberId)
     : messages
+  const reactions = new Map(visibleMessages.filter(message => message.reaction_target_provider_message_id && message.reaction_emoji).map(message => [message.reaction_target_provider_message_id, message.reaction_emoji]))
+  const renderMessages = visibleMessages.filter(message => !message.reaction_target_provider_message_id)
 
   const renderBody = (m) => {
     const t = m.msg_type || 'text'
@@ -175,10 +185,10 @@ export function WhatsAppChat({ patient }) {
         <div style={s.list}>
           {loading ? <div style={s.empty}>Carregando conversa...</div>
             : visibleMessages.length === 0 ? <div style={s.empty}>Nenhuma mensagem neste número. Envie a primeira abaixo.</div>
-            : visibleMessages.map(m => (
+          : renderMessages.map(m => (
                 <div key={m.id} style={s.row(m.direction)}>
                   <div>
-                    <div style={s.bubble(m.direction)}>{renderBody(m)}</div>
+                    <div style={{ ...s.bubble(m.direction), position:'relative' }}>{renderBody(m)}{reactions.get(m.provider_message_id) && <span aria-label={`Reação ${reactions.get(m.provider_message_id)}`} style={{ position:'absolute', right:7, bottom:-9, padding:'2px 5px', borderRadius:12, background:'#24343c', fontSize:14 }}>{reactions.get(m.provider_message_id)}</span>}</div>
                     <div style={s.meta}>
                       {numberLabel[m.whatsapp_number_id] || (m.whatsapp_number_id ? 'Número removido' : 'Histórico legado')} · {fmtTime(m.created_at)}{m.direction === 'outbound' && m.status === 'failed' ? ' · falhou' : ''}
                     </div>
