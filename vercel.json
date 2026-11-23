@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/whatsapp?action=process-media-queue",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 12 * * *"
     }
   ],
   "headers": [
