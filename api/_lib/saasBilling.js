@@ -141,7 +141,10 @@ async function handleCheckout(req, res) {
   }
 
   const cycle = getBillingCycle(planId)
-  const amount = Number(cycle.chargeAmountCents || 0) / 100
+  // Preço contratual por clínica (ex.: valor de entrada enquanto parte da plataforma
+  // ainda não está pronta) sobrepõe o preço padrão do plano; ajustado pela Zentri em
+  // /zentri-admin, nunca pela própria clínica.
+  const amount = Number(account.contracted_monthly_value_cents ?? cycle.chargeAmountCents) / 100
   const config = asaasConfig()
   const externalReference = `saas:${ownerId}`
 

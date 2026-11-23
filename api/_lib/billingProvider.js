@@ -218,6 +218,19 @@ export async function cancelAsaasSubscription(config, subscriptionId) {
   return asaasRequest({ ...config, path:`/subscriptions/${encodeURIComponent(subscriptionId)}`, method:'DELETE' })
 }
 
+export async function updateAsaasSubscriptionValue(config, subscriptionId, value) {
+  const normalizedAmount = Math.round(Number(value || 0) * 100) / 100
+  if (!(normalizedAmount > 0)) throw new Error('Valor da assinatura inválido.')
+  // updatePendingPayments:false preserva a cobrança do ciclo atual já gerada; o novo
+  // valor passa a valer só a partir do próximo ciclo.
+  return asaasRequest({
+    ...config,
+    path:`/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    method:'PUT',
+    body:{ value:normalizedAmount, updatePendingPayments:false },
+  })
+}
+
 export function canonicalChargeStatus(eventType, providerStatus = '') {
   const event = String(eventType || '').toUpperCase()
   const status = String(providerStatus || '').toUpperCase()
