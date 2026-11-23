@@ -3,12 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { getBillingCycle } from '../../src/billing/plans.js'
 import { enforceRateLimit, rateLimitResponse } from './securityControls.js'
 import {
-  asaasBaseUrl,
-  asaasRequest,
   findAsaasCustomer,
   createAsaasCustomer,
   findAsaasSubscription,
   createAsaasSubscription,
+  findNextAsaasSubscriptionPayment,
 } from './billingProvider.js'
 
 // Assinatura SaaS: a Zentri Tech cobra a clínica pelo uso do SurgiMetrics.
@@ -169,7 +168,10 @@ async function handleCheckout(req, res) {
   }
 
   const subscriptionId = subscription?.id || account.asaas_subscription_id
-  const invoiceUrl = subscription?.paymentLink || null
+  // A assinatura em si nunca carrega link de pagamento; ele fica na cobrança (payment)
+  // que o Asaas gera automaticamente para o ciclo atual.
+  const payment = await findNextAsaasSubscriptionPayment(config, subscriptionId)
+  const invoiceUrl = payment?.invoiceUrl || null
 
   const { data:updated, error:updateError } = await admin.from('billing_accounts').update({
     provider:'asaas',
@@ -189,8 +191,9 @@ async function handleCheckout(req, res) {
   }
 
   if (!invoiceUrl) {
-    // Assinatura criada sem link direto: o Asaas envia o link de pagamento por e-mail/notificação ao cliente.
-    return res.status(200).json({ account:updated, url:`${asaasBaseUrl(config.environment).replace('/v3', '')}/` })
+    // Assinatura criada mas a primeira cobrança ainda não tem link (raro): o Asaas
+    // também envia o link de pagamento por e-mail/notificação ao responsável.
+    return res.status(200).json({ account:updated, url:null })
   }
   return res.status(200).json({ account:updated, url:invoiceUrl })
 }

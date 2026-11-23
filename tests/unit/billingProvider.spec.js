@@ -5,6 +5,7 @@ import {
   buildAsaasPaymentPayload,
   billingProviderCatalog,
   canonicalChargeStatus,
+  findNextAsaasSubscriptionPayment,
   getBillingProvider,
   normalizeAsaasPayment,
   normalizeAsaasWebhook,
@@ -22,6 +23,20 @@ test('Asaas usa hosts oficiais por ambiente e envia chave só no header', async 
   expect(captured.url).toBe('https://api-sandbox.asaas.com/v3/customers?limit=1')
   expect(captured.init.headers.access_token).toBe('secret-key')
   expect(captured.url).not.toContain('secret-key')
+})
+
+test('busca a cobrança do ciclo atual para pegar o link de pagamento (a assinatura em si não carrega esse link)', async () => {
+  let captured
+  const fetchImpl = async (url) => {
+    captured = url
+    return {
+      ok:true, status:200,
+      text:async () => JSON.stringify({ data:[{ id:'pay_1', invoiceUrl:'https://www.asaas.com/i/pay_1', subscription:'sub_1' }] }),
+    }
+  }
+  const payment = await findNextAsaasSubscriptionPayment({ environment:'production', apiKey:'k', fetchImpl }, 'sub_1')
+  expect(captured).toContain('/payments?subscription=sub_1')
+  expect(payment.invoiceUrl).toBe('https://www.asaas.com/i/pay_1')
 })
 
 test('payload preserva valor e vencimento determinados pelo razão', () => {

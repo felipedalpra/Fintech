@@ -178,6 +178,14 @@ export async function findAsaasSubscription(config, externalReference) {
   return Array.isArray(data?.data) ? (data.data[0] || null) : null
 }
 
+export async function findNextAsaasSubscriptionPayment(config, subscriptionId) {
+  // A assinatura em si não carrega link de pagamento: ele fica na cobrança (payment)
+  // que o Asaas gera automaticamente para cada ciclo.
+  const params = new URLSearchParams({ subscription:subscriptionId, limit:'1', offset:'0' })
+  const data = await asaasRequest({ ...config, path:`/payments?${params}` })
+  return Array.isArray(data?.data) ? (data.data[0] || null) : null
+}
+
 export function buildAsaasSubscriptionPayload({ customerId, planId, amount, nextDueDate, description, externalReference, discount }) {
   const normalizedAmount = Math.round(Number(amount || 0) * 100) / 100
   if (!(normalizedAmount > 0)) throw new Error('Valor da assinatura inválido.')
