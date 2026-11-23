@@ -29,14 +29,16 @@ const THREAD_PAGE_SIZE = 100
 const CONVERSATION_PAGE_SIZE = 500
 const UNNUMBERED_CONVERSATION_PAGE_SIZE = 100
 const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
-const CONTACT_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, contact_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name), crm_contacts(id, full_name, phone, status, patient_id)'
-const FULL_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name)'
-const ROUTING_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, chat_lid, contact_phone, patients(full_name)'
-const IDENTITY_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, patients(full_name)'
-const LEGACY_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)'
+const MEDIA_REACTION_COLUMNS = 'msg_type, media_url, media_mime, reaction_emoji, reaction_target_provider_message_id'
+const CONTACT_MESSAGE_COLUMNS = `id, phone, direction, body, status, created_at, patient_id, contact_id, whatsapp_number_id, ${MEDIA_REACTION_COLUMNS}, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name), crm_contacts(id, full_name, phone, status, patient_id)`
+const FULL_MESSAGE_COLUMNS = `id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, ${MEDIA_REACTION_COLUMNS}, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_lid, sender_photo, chat_lid, contact_phone, patients(full_name)`
+const ROUTING_MESSAGE_COLUMNS = `id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, ${MEDIA_REACTION_COLUMNS}, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, chat_lid, contact_phone, patients(full_name)`
+const IDENTITY_MESSAGE_COLUMNS = `id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, ${MEDIA_REACTION_COLUMNS}, is_group, chat_name, chat_photo, sender_name, sender_phone, sender_photo, patients(full_name)`
+const LEGACY_MESSAGE_COLUMNS = `id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, ${MEDIA_REACTION_COLUMNS}, patients(full_name)`
+const PRE_REACTION_MESSAGE_COLUMNS = 'id, phone, direction, body, status, created_at, patient_id, whatsapp_number_id, msg_type, media_url, media_mime, patients(full_name)'
 
 async function selectWhatsAppMessages(configureQuery) {
-  const columnSets = [CONTACT_MESSAGE_COLUMNS, FULL_MESSAGE_COLUMNS, ROUTING_MESSAGE_COLUMNS, IDENTITY_MESSAGE_COLUMNS, LEGACY_MESSAGE_COLUMNS]
+  const columnSets = [CONTACT_MESSAGE_COLUMNS, FULL_MESSAGE_COLUMNS, ROUTING_MESSAGE_COLUMNS, IDENTITY_MESSAGE_COLUMNS, LEGACY_MESSAGE_COLUMNS, PRE_REACTION_MESSAGE_COLUMNS]
   let result = null
   for (const columns of columnSets) {
     result = await configureQuery(supabase.from('whatsapp_messages').select(columns))
@@ -175,6 +177,10 @@ function MessageStatus({ status }) {
   if (status === 'read') return <span className="wa-status wa-status-read" title="Lida">✓✓</span>
   if (status === 'delivered') return <span className="wa-status" title="Entregue">✓✓</span>
   return <span className="wa-status" title="Enviada">✓</span>
+}
+
+function reactionTargetId(message) {
+  return message?.reaction_target_provider_message_id || ''
 }
 
 export function WhatsAppInbox() {
@@ -859,11 +865,14 @@ export function WhatsAppInbox() {
       {error && <div className="wa-error"><span>!</span><p>{error}</p>{pendingSend && <button type="button" onClick={resolveAndRetryPending} disabled={sending || uploading}>Confirmo que não chegou e tentar novamente</button>}<button type="button" onClick={() => setError(null)} aria-label="Fechar erro">×</button></div>}
       <div ref={messagesRef} className="wa-messages" role="log" aria-label={`Mensagens com ${current.name || current.phone}`} tabIndex="0"><div className="wa-history-loader">{hasOlder
         ? <button type="button" onClick={loadOlderMessages} disabled={loadingOlder}>{loadingOlder ? 'Carregando histórico…' : 'Carregar mensagens anteriores'}</button>
-        : <span>Início do histórico salvo</span>}</div>{thread.map((message, index) => {
-        const showDate = index === 0 || dateKey(thread[index - 1].created_at) !== dateKey(message.created_at)
+        : <span>Início do histórico salvo</span>}</div>{(() => {
+        const reactions = new Map(thread.filter(item => reactionTargetId(item) && item.reaction_emoji).map(item => [reactionTargetId(item), item.reaction_emoji]))
+        const visibleThread = thread.filter(item => !reactionTargetId(item))
+        return visibleThread.map((message, index) => {
+        const showDate = index === 0 || dateKey(visibleThread[index - 1].created_at) !== dateKey(message.created_at)
         const participant = participantIdentity(message)
-        return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}>{current.isGroup && message.direction === 'inbound' && <Avatar className="wa-participant-avatar" name={participant.primary} phone={message.sender_phone || message.sender_lid} photo={message.sender_photo}/>}<div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{current.isGroup && <span className="wa-participant-name">{participant.primary}{participant.secondary ? <small>{participant.secondary}</small> : null}</span>}{renderBody(message)}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span>{message.status === 'failed' && <button type="button" className="wa-retry" onClick={() => retryMessage(message)}>Tentar novamente</button>}</div></div></div>
-      })}</div>
+        return <div key={message.id} className="wa-message-block">{showDate && <div className="wa-date-separator"><span>{dateLabel(message.created_at)}</span></div>}<div className={`wa-message-row ${message.direction}`}>{current.isGroup && message.direction === 'inbound' && <Avatar className="wa-participant-avatar" name={participant.primary} phone={message.sender_phone || message.sender_lid} photo={message.sender_photo}/>}<div className={`wa-bubble ${message.direction} ${message.status === 'failed' ? 'is-failed' : ''}`}>{current.isGroup && <span className="wa-participant-name">{participant.primary}{participant.secondary ? <small>{participant.secondary}</small> : null}</span>}{renderBody(message)}{reactions.get(message.provider_message_id) && <span className="wa-reaction" aria-label={`Reação ${reactions.get(message.provider_message_id)}`}>{reactions.get(message.provider_message_id)}</span>}<span className="wa-message-meta"><time>{fmtTime(message.created_at)}</time>{message.direction === 'outbound' && <MessageStatus status={message.status}/>}</span>{message.status === 'failed' && <button type="button" className="wa-retry" onClick={() => retryMessage(message)}>Tentar novamente</button>}</div></div></div>
+      })})()}</div>
       <form className="wa-composer" onSubmit={send}><div className="wa-composer-tools">{currentReplyNumber
         ? <div className="wa-reply-number"><span>Respondendo por</span><strong>{currentReplyNumber.label}</strong></div>
         : <div className="wa-reply-unavailable">O número desta conversa está indisponível. Reconecte-o para responder sem trocar o remetente.</div>}<select aria-label="Respostas rápidas" defaultValue="" onChange={event => { const reply = savedReplies.find(item => item.id === event.target.value); if (reply) { setReplyText(reply.body); textSendRequestRef.current = null } event.target.value = '' }}><option value="">Respostas rápidas</option>{savedReplies.map(reply => <option key={reply.id} value={reply.id}>{reply.title}</option>)}</select><button type="button" onClick={saveReplyFromComposer}>Salvar resposta atual</button></div><div className="wa-composer-row">

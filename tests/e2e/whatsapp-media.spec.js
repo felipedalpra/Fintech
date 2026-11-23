@@ -47,6 +47,20 @@ test('lista mostra rótulo de mídia no preview da conversa', async ({ page }) =
   await expect(page.getByText(/^Documento: exames\.pdf$/)).toBeVisible()
 })
 
+test('mostra reação sobre a mensagem reagida, sem criar um balão separado', async ({ page }) => {
+  const rows = [
+    { ...MESSAGES[3], id:'original-1', provider_message_id:'ORIGINAL-1', body:'Mensagem original' },
+    { id:'reaction-1', phone:'5551900000001', direction:'outbound', body:'Reação: 👍', status:'sent', created_at:'2026-10-13T10:04:00Z', patient_id:'p1', whatsapp_number_id:'N1', msg_type:'text', media_url:null, media_mime:null, reaction_emoji:'👍', reaction_target_provider_message_id:'ORIGINAL-1', patients:{ full_name:'Ana Paula' } },
+  ]
+  await page.unroute('**/rest/v1/whatsapp_messages*')
+  await page.route('**/rest/v1/whatsapp_messages*', route => route.fulfill(json(rows)))
+  await page.goto('/app/inbox')
+  await page.getByText('Ana Paula').first().click()
+  await expect(page.getByText('Mensagem original')).toBeVisible()
+  await expect(page.locator('.wa-reaction')).toHaveText('👍')
+  await expect(page.locator('.wa-messages').getByText('Reação: 👍')).toHaveCount(0)
+})
+
 test('composer tem seletor de emoji que insere no texto', async ({ page }) => {
   await page.goto('/app/inbox')
   await page.getByText('Ana Paula').first().click()

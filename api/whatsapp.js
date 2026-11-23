@@ -85,6 +85,10 @@ function withoutSenderLid(row) {
   return Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'sender_lid'))
 }
 
+function withoutReactionFields(row) {
+  return Object.fromEntries(Object.entries(row).filter(([key]) => !['reaction_emoji', 'reaction_target_provider_message_id'].includes(key)))
+}
+
 function withoutProvider(row) {
   return Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'provider'))
 }
@@ -236,6 +240,10 @@ async function insertWhatsAppMessage(supabase, row, { selectId = false } = {}) {
   }
   if (missingMessageFields(result.error, PREVIOUS_MESSAGE_IDENTITY_FIELDS)) {
     payload = withoutMessageIdentity(payload)
+    result = await run(payload)
+  }
+  if (missingMessageFields(result.error, ['reaction_emoji', 'reaction_target_provider_message_id'])) {
+    payload = withoutReactionFields(payload)
     result = await run(payload)
   }
   return result
@@ -1988,6 +1996,8 @@ async function handleWebhook(req, res) {
     sender_lid: parsed.senderLid || null,
     sender_photo: parsed.senderPhoto || historicalSender?.sender_photo || null,
     msg_type: parsed.msgType || 'text', media_url: parsed.mediaUrl || null, media_mime: parsed.mediaMime || null,
+    reaction_emoji: parsed.reactionEmoji || null,
+    reaction_target_provider_message_id: parsed.reactionTargetProviderMessageId || null,
   }
   if (parsed.createdAt) row.created_at = parsed.createdAt
   const { error } = await insertWhatsAppMessage(supabase, row)
