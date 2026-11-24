@@ -246,7 +246,8 @@ const PAGES = {
   finance:props => <Finance {...props} defaultTab="overview" />,
   cashflow:props => <Finance {...props} defaultTab="fluxo" />,
   dre:props => <Finance {...props} defaultTab="dre" />,
-  balance:props => <Finance {...props} defaultTab="balanco" />,
+  // Compatibilidade com links antigos: o balanço deixou de ser uma aba do Financeiro.
+  balance:props => <Finance {...props} defaultTab="overview" />,
   goals:Goals,
   recurrences:Recurrences,
   reports:Reports,
