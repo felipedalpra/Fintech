@@ -53,7 +53,7 @@ export function CopilotWidget({ data }) {
         id:message.id,
         role:message.role,
         content:message.content,
-        meta:message.role === 'assistant' ? { source:message.source, mode:message.mode, reason:message.reason, evidence:message.evidence || [], requestId:message.request_id, messageId:message.id, feedback:message.feedback ?? null } : undefined,
+        meta:message.role === 'assistant' ? { source:message.source, mode:message.mode, reason:message.reason, evidence:message.evidence || [], requestId:message.request_id, messageId:message.id, persisted:true, feedback:message.feedback ?? null } : undefined,
       }))
       setMessages([INITIAL_MESSAGE, ...restored])
     } catch { /* a saudação permite continuar mesmo se a memória estiver indisponível */ }
@@ -115,7 +115,8 @@ export function CopilotWidget({ data }) {
     setMessages(current => [...current, { role:'user', content:question }]); setInput(''); setSending(true)
     try {
       const result = await queryFinancialAssistant({ question, brain, history, conversationId })
-      setMessages(current => [...current, { role:'assistant', content:result.answer, meta:{ source:result.source, mode:result.mode, reason:result.reason, evidence:result.evidence, requestId:result.requestId, question, messageId:result.assistantMessageId, feedback:null } }])
+      const localMessageId = createLocalMessageId()
+      setMessages(current => [...current, { id:localMessageId, role:'assistant', content:result.answer, meta:{ source:result.source, mode:result.mode, reason:result.reason, evidence:result.evidence, requestId:result.requestId, question, messageId:result.assistantMessageId || '', persisted:Boolean(result.assistantMessageId), feedback:null } }])
       if (result.conversation) replaceConversation(result.conversation)
     } finally { setSending(false) }
   }
@@ -133,14 +134,16 @@ export function CopilotWidget({ data }) {
   }
 
   const giveFeedback = async (message, feedback) => {
-    const messageId = message.id || message.meta?.messageId
-    if (!messageId || feedbackBusyId) return
+    const localMessageId = message.id || message.meta?.messageId
+    const persistedMessageId = message.meta?.persisted ? (message.meta?.messageId || message.id) : ''
+    if (!localMessageId || feedbackBusyId) return
     const previous = message.meta?.feedback ?? null
     const next = previous === feedback ? null : feedback
-    const sameMessage = item => (item.id || item.meta?.messageId) === messageId
+    const sameMessage = item => (item.id || item.meta?.messageId) === localMessageId
     setMessages(current => current.map(item => sameMessage(item) ? { ...item, meta:{ ...item.meta, feedback:next } } : item))
-    setFeedbackBusyId(messageId)
-    try { await saveFinancialMessageFeedback(messageId, next) }
+    if (!persistedMessageId) return
+    setFeedbackBusyId(localMessageId)
+    try { await saveFinancialMessageFeedback(persistedMessageId, next) }
     catch { setMessages(current => current.map(item => sameMessage(item) ? { ...item, meta:{ ...item.meta, feedback:previous } } : item)) }
     finally { setFeedbackBusyId('') }
   }
@@ -181,7 +184,7 @@ function MenuAction({ label, onClick, danger = false }) { return <button type="b
 function MessageBubble({ message, copied, onCopy, onShare, onFeedback }) {
   const isUser = message.role === 'user'
   if (isUser) return <div style={{ alignSelf:'flex-end', maxWidth:'88%' }}><div style={userBubbleStyle}>{message.content}</div></div>
-  return <div style={{ alignSelf:'flex-start', maxWidth:'92%' }}><div style={assistantBubbleStyle}>{message.content}</div>{message.meta?.mode !== 'welcome' && <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:5, padding:'0 4px', color:C.textDim, fontSize:11 }}><button type="button" onClick={onCopy} style={toolButtonStyle}>{copied ? 'Copiado' : 'Copiar'}</button><button type="button" onClick={onShare} style={toolButtonStyle}>Compartilhar</button><button type="button" onClick={() => onFeedback(1)} style={{ ...toolButtonStyle, color:message.meta?.feedback === 1 ? C.accentLight : C.textDim }} aria-label="Resposta útil">👍</button><button type="button" onClick={() => onFeedback(-1)} style={{ ...toolButtonStyle, color:message.meta?.feedback === -1 ? C.red : C.textDim }} aria-label="Resposta não útil">👎</button><ResponseMeta meta={message.meta} /></div>}</div>
+  return <div style={{ alignSelf:'flex-start', maxWidth:'92%' }}><div style={assistantBubbleStyle}>{message.content}</div>{message.meta?.mode !== 'welcome' && <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:5, padding:'0 4px', color:C.textDim, fontSize:11 }}><button type="button" onClick={onCopy} style={toolButtonStyle}>{copied ? 'Copiado' : 'Copiar'}</button><button type="button" onClick={onShare} style={toolButtonStyle}>Compartilhar</button><button type="button" onClick={() => onFeedback(1)} style={feedbackButtonStyle(message.meta?.feedback === 1, C.accentLight)} aria-label="Resposta útil" aria-pressed={message.meta?.feedback === 1} title="Resposta útil">👍</button><button type="button" onClick={() => onFeedback(-1)} style={feedbackButtonStyle(message.meta?.feedback === -1, C.red)} aria-label="Resposta não útil" aria-pressed={message.meta?.feedback === -1} title="Resposta não útil">👎</button><ResponseMeta meta={message.meta} /></div>}</div>
 }
 
 function ResponseMeta({ meta }) { const limited = meta?.mode === 'limited' || meta?.source === 'fallback'; const period = meta?.evidence?.map(item => item.period).filter(Boolean)[0] || ''; return <span style={{ marginLeft:4, color:limited ? C.yellow : C.textDim }}>{limited ? 'Modo limitado' : meta?.mode === 'tool_assisted' ? 'Dados consultados' : 'Resposta da IA'}{period ? ` · ${period.replace('/', ' a ')}` : ''}{limited && meta?.reason ? ` · ${meta.reason}` : ''}</span> }
@@ -194,3 +197,5 @@ const emptySection = { color:C.textDim, fontSize:11, lineHeight:1.5, padding:'0 
 const userBubbleStyle = { padding:'12px 14px', borderRadius:'16px 16px 4px 16px', background:C.accent, border:`1px solid ${C.accent}55`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }
 const assistantBubbleStyle = { padding:'12px 14px', borderRadius:'16px 16px 16px 4px', background:C.surface, border:`1px solid ${C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }
 const toolButtonStyle = { border:'none', background:'transparent', color:C.textDim, padding:'2px 4px', cursor:'pointer', fontSize:11 }
+function feedbackButtonStyle(active, color) { return { border:`1px solid ${active ? color + '88' : 'transparent'}`, background:active ? `${color}22` : 'transparent', color:active ? color : C.textDim, borderRadius:6, padding:'3px 5px', cursor:'pointer', fontSize:13, lineHeight:1 } }
+function createLocalMessageId() { return `local-${Date.now()}-${Math.random().toString(36).slice(2)}` }
