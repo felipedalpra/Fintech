@@ -134,6 +134,39 @@ test('procedimentos retornam margem e aceitam busca sem acento', () => {
   }])
 })
 
+test('simula aumento de preço com premissas explícitas', () => {
+  const result = executeFinancialTool('simulate_price_change', {
+    start_date:'2026-10-01', end_date:'2026-10-31', procedure_name:'Rinoplastia',
+    price_change_percent:10, volume_change_percent:0,
+  }, data)
+  expect(result).toMatchObject({
+    simulation:'price_change',
+    baseline:{ surgeries:1, revenue:10_000, profit:7_000, averageTicket:10_000 },
+    scenario:{ surgeries:1, revenue:11_000, profit:8_000, averageTicket:11_000 },
+    delta:{ revenue:1_000, profit:1_000 },
+  })
+  expect(result.assumptions.costsHeldConstant).toBe(true)
+})
+
+test('calcula cirurgias adicionais para uma meta de lucro', () => {
+  const result = executeFinancialTool('simulate_surgeries_needed', {
+    start_date:'2026-10-01', end_date:'2026-10-31', procedure_name:'Rinoplastia',
+    target_profit:20_000, target_revenue:null,
+  }, data)
+  expect(result).toMatchObject({ targetType:'profit', target:20_000, additionalSurgeries:2 })
+  expect(result.economicsPerSurgery).toMatchObject({ revenue:10_000, profit:7_000, marginPercent:70 })
+})
+
+test('recomendações trazem prioridade, evidência e impacto estimado', () => {
+  const result = executeFinancialTool('get_prioritized_recommendations', {
+    start_date:'2026-10-01', end_date:'2026-10-31', limit:5,
+  }, data)
+  expect(result.recommendations.length).toBeGreaterThan(0)
+  expect(result.recommendations[0]).toMatchObject({ priority:'alta', impactType:'profit' })
+  expect(result.recommendations[0].estimatedImpact).toBe(7_000)
+  expect(result.recommendations[0].evidence.period).toBe('2026-10-01/2026-10-31')
+})
+
 test('mapeamento do banco inclui custo de instrumentadora/prótese e NF congelada da cirurgia', () => {
   // Achado real (15/11/2026): mapFinancialRows (usado pelo agente de IA) nunca foi atualizado
   // quando as colunas instrumentation_cost/prosthesis_cost foram adicionadas (commit d097106) —

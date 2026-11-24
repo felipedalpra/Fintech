@@ -8,6 +8,9 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-11-23 (2)
 
 ### Added
+
+- Respostas do copiloto passam a renderizar Markdown com estilo de chat: negrito, itálico, listas, títulos, citações, links e blocos de código deixam de aparecer como marcadores literais (`**`, `-` etc.).
+- Copiloto financeiro: explicação detalhada baseada em evidências estruturadas, simulação de alteração de preço, cálculo de cirurgias necessárias para metas de receita/lucro e recomendações priorizadas com impacto financeiro estimado e premissas explícitas.
 - O painel do copiloto passa a manter o scroll dentro da lista de mensagens, mesmo quando aberto sobre páginas longas do CRM/Financeiro; a coluna do chat tem altura limitada e o scroll não é propagado para a plataforma. (`src/components/CopilotWidget.jsx`.)
 - As ações de copiar e compartilhar respostas do copiloto agora usam ícones compactos, mantendo `title` e `aria-label` para explicar cada ação ao passar o mouse ou usar leitor de tela. (`src/components/CopilotWidget.jsx`, `src/components/NavIcon.jsx`.)
 - Feedback 👍/👎 do copiloto agora tem resposta visual imediata mesmo quando a resposta ainda não possui ID persistido (como no modo limitado); quando há ID, o feedback continua sendo gravado no Supabase. O estado ativo também ganhou fundo, contorno e `aria-pressed`, eliminando a aparência de clique ignorado. (`src/components/CopilotWidget.jsx`.)
