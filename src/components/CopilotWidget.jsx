@@ -185,10 +185,55 @@ function MenuAction({ label, onClick, danger = false }) { return <button type="b
 function MessageBubble({ message, copied, onCopy, onShare, onFeedback }) {
   const isUser = message.role === 'user'
   if (isUser) return <div style={{ alignSelf:'flex-end', maxWidth:'88%' }}><div style={userBubbleStyle}>{message.content}</div></div>
-  return <div style={{ alignSelf:'flex-start', maxWidth:'92%' }}><div style={assistantBubbleStyle}>{message.content}</div>{message.meta?.mode !== 'welcome' && <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:5, padding:'0 4px', color:C.textDim, fontSize:11 }}><button type="button" onClick={onCopy} style={toolButtonStyle} aria-label={copied ? 'Resposta copiada' : 'Copiar resposta'} title={copied ? 'Copiado' : 'Copiar resposta'}>{copied ? '✓' : <NavIcon name="copy" size={15} />}</button><button type="button" onClick={onShare} style={toolButtonStyle} aria-label="Compartilhar resposta" title="Compartilhar resposta"><NavIcon name="share" size={15} /></button><button type="button" onClick={() => onFeedback(1)} style={feedbackButtonStyle(message.meta?.feedback === 1, C.accentLight)} aria-label="Resposta útil" aria-pressed={message.meta?.feedback === 1} title="Resposta útil">👍</button><button type="button" onClick={() => onFeedback(-1)} style={feedbackButtonStyle(message.meta?.feedback === -1, C.red)} aria-label="Resposta não útil" aria-pressed={message.meta?.feedback === -1} title="Resposta não útil">👎</button><ResponseMeta meta={message.meta} /></div>}</div>
+  return <div style={{ alignSelf:'flex-start', maxWidth:'92%' }}><div style={assistantBubbleStyle}><MarkdownMessage content={message.content} /></div>{message.meta?.mode !== 'welcome' && <><EvidenceDetails evidence={message.meta?.evidence} /><div style={{ display:'flex', alignItems:'center', gap:4, marginTop:5, padding:'0 4px', color:C.textDim, fontSize:11 }}><button type="button" onClick={onCopy} style={toolButtonStyle} aria-label={copied ? 'Resposta copiada' : 'Copiar resposta'} title={copied ? 'Copiado' : 'Copiar resposta'}>{copied ? '✓' : <NavIcon name="copy" size={15} />}</button><button type="button" onClick={onShare} style={toolButtonStyle} aria-label="Compartilhar resposta" title="Compartilhar resposta"><NavIcon name="share" size={15} /></button><button type="button" onClick={() => onFeedback(1)} style={feedbackButtonStyle(message.meta?.feedback === 1, C.accentLight)} aria-label="Resposta útil" aria-pressed={message.meta?.feedback === 1} title="Resposta útil">👍</button><button type="button" onClick={() => onFeedback(-1)} style={feedbackButtonStyle(message.meta?.feedback === -1, C.red)} aria-label="Resposta não útil" aria-pressed={message.meta?.feedback === -1} title="Resposta não útil">👎</button><ResponseMeta meta={message.meta} /></div></>}</div>
+}
+
+function MarkdownMessage({ content }) {
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n')
+  const blocks = []
+  let paragraph = []
+  let list = []
+  let listType = ''
+  let code = []
+  let inCode = false
+  const flushParagraph = () => { if (paragraph.length) { blocks.push(<p key={`p-${blocks.length}`} style={markdownStyles.paragraph}>{inlineMarkdown(paragraph.join(' '))}</p>); paragraph = [] } }
+  const flushList = () => { if (!list.length) return; const Tag = listType === 'ordered' ? 'ol' : 'ul'; blocks.push(<Tag key={`list-${blocks.length}`} style={markdownStyles[listType]}>{list.map((item, index) => <li key={`${index}-${item}`}>{inlineMarkdown(item)}</li>)}</Tag>); list = []; listType = '' }
+  lines.forEach((line, index) => {
+    if (/^\s*```/.test(line)) { flushParagraph(); flushList(); if (inCode) { blocks.push(<pre key={`code-${index}`} style={markdownStyles.code}><code>{code.join('\n')}</code></pre>); code = [] } inCode = !inCode; return }
+    if (inCode) { code.push(line); return }
+    if (!line.trim()) { flushParagraph(); flushList(); return }
+    const heading = line.match(/^\s{0,3}(#{1,3})\s+(.+)$/)
+    if (heading) { flushParagraph(); flushList(); blocks.push(<div key={`h-${index}`} style={markdownStyles.heading}>{inlineMarkdown(heading[2])}</div>); return }
+    const bullet = line.match(/^\s*[-*•]\s+(.+)$/)
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/)
+    if (bullet || ordered) { flushParagraph(); const nextType = ordered ? 'ordered' : 'unordered'; if (listType && listType !== nextType) flushList(); listType = nextType; list.push((bullet || ordered)[1]); return }
+    if (/^\s*>\s?/.test(line)) { flushParagraph(); flushList(); blocks.push(<blockquote key={`quote-${index}`} style={markdownStyles.quote}>{inlineMarkdown(line.replace(/^\s*>\s?/, ''))}</blockquote>); return }
+    flushList(); paragraph.push(line.trim())
+  })
+  if (inCode) blocks.push(<pre key={`code-final`} style={markdownStyles.code}><code>{code.join('\n')}</code></pre>)
+  flushParagraph(); flushList()
+  return <div style={markdownStyles.root}>{blocks}</div>
+}
+
+function inlineMarkdown(value) {
+  const tokens = String(value).split(/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\([^)]*\))/g).filter(Boolean)
+  return tokens.map((token, index) => {
+    if (/^`[^`]+`$/.test(token)) return <code key={index} style={markdownStyles.inlineCode}>{token.slice(1, -1)}</code>
+    if (/^\*\*[^*]+\*\*$/.test(token) || /^__[^_]+__$/.test(token)) return <strong key={index}>{token.slice(2, -2)}</strong>
+    if (/^\*[^*]+\*$/.test(token) || /^_[^_]+_$/.test(token)) return <em key={index}>{token.slice(1, -1)}</em>
+    const link = token.match(/^\[([^\]]+)\]\(([^)]*)\)$/)
+    if (link && /^https?:\/\//i.test(link[2])) return <a key={index} href={link[2]} target="_blank" rel="noreferrer" style={{ color:C.accentLight }}>{link[1]}</a>
+    return <span key={index}>{token}</span>
+  })
 }
 
 function ResponseMeta({ meta }) { const limited = meta?.mode === 'limited' || meta?.source === 'fallback'; const period = meta?.evidence?.map(item => item.period).filter(Boolean)[0] || ''; return <span style={{ marginLeft:4, color:limited ? C.yellow : C.textDim }}>{limited ? 'Modo limitado' : meta?.mode === 'tool_assisted' ? 'Dados consultados' : 'Resposta da IA'}{period ? ` · ${period.replace('/', ' a ')}` : ''}{limited && meta?.reason ? ` · ${meta.reason}` : ''}</span> }
+function EvidenceDetails({ evidence = [] }) {
+  const items = Array.isArray(evidence) ? evidence.filter(item => item?.highlights?.length || item?.period || item?.recordCount) : []
+  if (!items.length) return null
+  return <details style={{ marginTop:7, padding:'0 4px', color:C.textDim, fontSize:10 }}><summary style={{ cursor:'pointer', color:C.textSub, fontWeight:700 }}>Evidências dos dados</summary><div style={{ display:'grid', gap:5, marginTop:6 }}>{items.map((item, index) => <div key={`${item.tool || item.label}-${index}`} style={{ padding:'7px 8px', border:`1px solid ${C.border}`, borderRadius:8, background:`${C.surface}99` }}><div style={{ color:C.textSub, fontWeight:700 }}>{item.label || 'Dados consultados'}{item.period ? ` · ${item.period.replaceAll('/', ' a ')}` : ''}</div>{item.recordCount ? <div style={{ marginTop:2 }}>Registros considerados: {item.recordCount}</div> : null}{item.highlights?.length ? <div style={{ display:'flex', flexWrap:'wrap', gap:'3px 8px', marginTop:3 }}>{item.highlights.map(highlight => <span key={`${highlight.key}-${highlight.label}`}>{highlight.label}: {formatEvidenceValue(highlight)}</span>)}</div> : null}</div>)}</div></details>
+}
+function formatEvidenceValue(item) { const numeric = Number(item.value); if (!Number.isFinite(numeric)) return String(item.value); return /percent|margem/i.test(item.key || '') ? `${numeric}%` : ['revenue', 'totalExpenses', 'netProfit', 'cashFlow', 'profit', 'averageTicket', 'target'].includes(item.key) ? new Intl.NumberFormat('pt-BR', { style:'currency', currency:'BRL' }).format(numeric) : new Intl.NumberFormat('pt-BR', { maximumFractionDigits:2 }).format(numeric) }
 function AssistantPortrait() { return <div style={{ width:42, height:42, borderRadius:13, overflow:'hidden', border:`1px solid ${C.borderBright}`, background:C.surface }}><img src="/assets/coruja-analitica.png" alt="Coruja analítica SurgiMetrics" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div> }
 function sortConversations(items) { return [...items].sort((a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned)) || new Date(b.updated_at || 0) - new Date(a.updated_at || 0)) }
 
@@ -197,6 +242,7 @@ const sectionLabel = { color:C.textDim, fontSize:10, margin:'18px 6px 7px', text
 const emptySection = { color:C.textDim, fontSize:11, lineHeight:1.5, padding:'0 6px' }
 const userBubbleStyle = { padding:'12px 14px', borderRadius:'16px 16px 4px 16px', background:C.accent, border:`1px solid ${C.accent}55`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }
 const assistantBubbleStyle = { padding:'12px 14px', borderRadius:'16px 16px 16px 4px', background:C.surface, border:`1px solid ${C.border}`, color:C.text, whiteSpace:'pre-wrap', fontSize:13, lineHeight:1.6 }
+const markdownStyles = { root:{ whiteSpace:'normal' }, paragraph:{ margin:'0 0 10px' }, heading:{ fontWeight:800, fontSize:14, margin:'2px 0 8px' }, unordered:{ margin:'0 0 10px', paddingLeft:20 }, ordered:{ margin:'0 0 10px', paddingLeft:22 }, quote:{ margin:'0 0 10px', paddingLeft:10, borderLeft:`3px solid ${C.accent}`, color:C.textSub }, code:{ margin:'0 0 10px', padding:10, overflowX:'auto', borderRadius:8, background:'#0a1020', color:C.text, fontSize:12, whiteSpace:'pre-wrap' }, inlineCode:{ padding:'1px 4px', borderRadius:4, background:`${C.card}cc`, color:C.accentLight, fontSize:'0.92em' } }
 const toolButtonStyle = { border:'none', background:'transparent', color:C.textDim, padding:'3px 5px', cursor:'pointer', fontSize:13, width:26, height:26, display:'grid', placeItems:'center', borderRadius:6 }
 function feedbackButtonStyle(active, color) { return { border:`1px solid ${active ? color + '88' : 'transparent'}`, background:active ? `${color}22` : 'transparent', color:active ? color : C.textDim, borderRadius:6, padding:'3px 5px', cursor:'pointer', fontSize:13, lineHeight:1 } }
 function createLocalMessageId() { return `local-${Date.now()}-${Math.random().toString(36).slice(2)}` }

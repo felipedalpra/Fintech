@@ -85,6 +85,37 @@ export const FINANCIAL_ASSISTANT_TOOLS = [
     {},
     [],
   ),
+  tool(
+    'simulate_price_change',
+    'Simula o efeito de alterar o preço e, opcionalmente, o volume de cirurgias em um período.',
+    {
+      ...dateRangeProperties(),
+      procedure_name:{ type:['string', 'null'], description:'Procedimento específico ou null para todas as cirurgias.' },
+      price_change_percent:{ type:'number', minimum:-90, maximum:500, description:'Variação de preço em percentual.' },
+      volume_change_percent:{ type:'number', minimum:-90, maximum:500, description:'Variação de volume em percentual. Use zero se não foi informada.' },
+    },
+    ['start_date', 'end_date', 'procedure_name', 'price_change_percent', 'volume_change_percent'],
+  ),
+  tool(
+    'simulate_surgeries_needed',
+    'Calcula quantas cirurgias adicionais são necessárias para alcançar uma meta de receita ou lucro.',
+    {
+      ...dateRangeProperties(),
+      procedure_name:{ type:['string', 'null'], description:'Procedimento específico ou null para a média da clínica.' },
+      target_profit:{ type:['number', 'null'], minimum:0, description:'Meta de lucro no período ou null.' },
+      target_revenue:{ type:['number', 'null'], minimum:0, description:'Meta de receita no período ou null.' },
+    },
+    ['start_date', 'end_date', 'procedure_name', 'target_profit', 'target_revenue'],
+  ),
+  tool(
+    'get_prioritized_recommendations',
+    'Gera recomendações financeiras priorizadas, com evidência e impacto estimado explicitamente assumido.',
+    {
+      ...dateRangeProperties(),
+      limit:{ type:'integer', minimum:1, maximum:5, description:'Máximo de recomendações.' },
+    },
+    ['start_date', 'end_date', 'limit'],
+  ),
 ]
 
 export class AssistantError extends Error {
@@ -536,6 +567,12 @@ export function executeFinancialTool(name, rawArgs, data, currentDate = saoPaulo
       return getGoalProgress(data, args)
     case 'get_forecast':
       return getForecast(data)
+    case 'simulate_price_change':
+      return simulatePriceChange(data, args)
+    case 'simulate_surgeries_needed':
+      return simulateSurgeriesNeeded(data, args)
+    case 'get_prioritized_recommendations':
+      return getPrioritizedRecommendations(data, args)
     default:
       throw new AssistantError(400, 'UNKNOWN_TOOL', 'Ferramenta financeira não permitida.')
   }
@@ -749,6 +786,121 @@ function getForecast(data) {
     nextYear:moneyObject({ revenue:nextYearRevenue, expenses:nextYearExpenses, netProfit:nextYearRevenue - nextYearExpenses }),
     recordCount:(data.surgeries || []).length + (data.consultations || []).length + (data.expenses || []).length,
   }
+}
+
+function simulationBase(data, range, procedureName) {
+  const metrics = buildMetrics(data, { startDate:range.startDate, endDate:range.endDate, balanceDate:range.endDate })
+  const needle = normalizeText(procedureName)
+  const procedures = metrics.byProcedure.filter(item => !needle || normalizeText(item.name).includes(needle))
+  const surgeries = procedures.reduce((sum, item) => sum + number(item.count), 0)
+  const revenue = procedures.reduce((sum, item) => sum + number(item.revenue), 0)
+  const profit = procedures.reduce((sum, item) => sum + number(item.profit), 0)
+  if (needle && procedures.length === 0) throw new AssistantError(400, 'PROCEDURE_NOT_FOUND', 'Não encontrei esse procedimento no período informado.')
+  return {
+    period:periodLabel(range),
+    subject:procedureName || 'todas as cirurgias',
+    surgeries,
+    revenue:money(revenue),
+    profit:money(profit),
+    averageTicket:surgeries > 0 ? money(revenue / surgeries) : 0,
+    profitPerSurgery:surgeries > 0 ? money(profit / surgeries) : 0,
+    marginPercent:revenue > 0 ? percent(profit / revenue) : 0,
+    recordCount:procedures.length,
+  }
+}
+
+function simulatePriceChange(data, args) {
+  const range = validateRange(args.start_date, args.end_date)
+  const base = simulationBase(data, range, args.procedure_name)
+  const priceChangePercent = number(args.price_change_percent)
+  const volumeChangePercent = number(args.volume_change_percent)
+  const priceFactor = 1 + priceChangePercent / 100
+  const volumeFactor = 1 + volumeChangePercent / 100
+  const scenario = {
+    surgeries:money(base.surgeries * volumeFactor),
+    revenue:money(base.revenue * priceFactor * volumeFactor),
+    profit:money(base.profit * volumeFactor + base.revenue * (priceFactor - 1) * volumeFactor),
+    averageTicket:money(base.averageTicket * priceFactor),
+  }
+  return {
+    simulation:'price_change',
+    period:base.period,
+    subject:base.subject,
+    baseline:base,
+    assumptions:{ priceChangePercent, volumeChangePercent, costsHeldConstant:true },
+    scenario,
+    delta:{ revenue:money(scenario.revenue - base.revenue), profit:money(scenario.profit - base.profit) },
+    recordCount:base.recordCount,
+  }
+}
+
+function simulateSurgeriesNeeded(data, args) {
+  const range = validateRange(args.start_date, args.end_date)
+  const targetProfit = args.target_profit == null ? null : number(args.target_profit)
+  const targetRevenue = args.target_revenue == null ? null : number(args.target_revenue)
+  if (targetProfit == null && targetRevenue == null) {
+    throw new AssistantError(400, 'INVALID_SIMULATION_TARGET', 'Informe uma meta de lucro ou de receita para a simulação.')
+  }
+  const base = simulationBase(data, range, args.procedure_name)
+  const target = targetProfit != null ? targetProfit : targetRevenue
+  const current = targetProfit != null ? base.profit : base.revenue
+  const perSurgery = targetProfit != null ? base.profitPerSurgery : base.averageTicket
+  if (perSurgery <= 0) throw new AssistantError(400, 'INSUFFICIENT_SIMULATION_DATA', 'Não há margem positiva ou ticket médio suficiente para calcular essa meta.')
+  const additional = Math.max(0, Math.ceil((target - current) / perSurgery))
+  return {
+    simulation:'surgeries_needed',
+    period:base.period,
+    subject:base.subject,
+    targetType:targetProfit != null ? 'profit' : 'revenue',
+    target:money(target),
+    baseline:{ surgeries:base.surgeries, revenue:base.revenue, profit:base.profit },
+    economicsPerSurgery:{ revenue:base.averageTicket, profit:base.profitPerSurgery, marginPercent:base.marginPercent },
+    additionalSurgeries:additional,
+    projected:{ surgeries:base.surgeries + additional, revenue:money(base.revenue + additional * base.averageTicket), profit:money(base.profit + additional * base.profitPerSurgery) },
+    assumption:'Cada nova cirurgia repete o ticket e a margem média observados no período; custos variáveis não foram alterados.',
+    recordCount:base.recordCount,
+  }
+}
+
+function getPrioritizedRecommendations(data, args) {
+  const range = validateRange(args.start_date, args.end_date)
+  const limit = boundedInteger(args.limit, 5, 1, 5)
+  const metrics = buildMetrics(data, { startDate:range.startDate, endDate:range.endDate, balanceDate:range.endDate })
+  const recommendations = []
+  const procedures = [...metrics.byProcedure].sort((a, b) => number(b.profit) - number(a.profit))
+  const topProcedure = procedures[0]
+  if (topProcedure && number(topProcedure.count) > 0) {
+    recommendations.push({
+      priority:'alta', action:`Priorizar ${topProcedure.name} na agenda`, impactType:'profit',
+      estimatedImpact:money(number(topProcedure.profit) / number(topProcedure.count)),
+      impactUnit:'por cirurgia adicional', assumption:'impacto estimado pela margem média observada no período',
+      reason:`É o procedimento com maior lucro acumulado: ${money(topProcedure.profit)} em ${number(topProcedure.count)} cirurgia(s).`,
+      evidence:{ period:periodLabel(range), surgeries:number(topProcedure.count), revenue:money(topProcedure.revenue), profit:money(topProcedure.profit), marginPercent:topProcedure.revenue > 0 ? percent(topProcedure.profit / topProcedure.revenue) : 0 },
+    })
+  }
+  const expenseEntries = Object.entries(metrics.expensesByCategory || {}).sort((a, b) => number(b[1]) - number(a[1]))
+  if (expenseEntries[0] && number(expenseEntries[0][1]) > 0) {
+    const saving = money(number(expenseEntries[0][1]) * 0.1)
+    recommendations.push({
+      priority:'alta', action:`Revisar a categoria de despesas ${expenseEntries[0][0]}`, impactType:'profit',
+      estimatedImpact:saving, impactUnit:'potencial mensal se reduzir 10%', assumption:'estimativa de economia de 10%, não uma garantia',
+      reason:`É a maior categoria do período, com ${money(expenseEntries[0][1])}.`,
+      evidence:{ period:periodLabel(range), category:expenseEntries[0][0], total:money(expenseEntries[0][1]) },
+    })
+  }
+  const openPayables = number(metrics.payablesOpenTotal)
+  if (openPayables > 0) recommendations.push({
+    priority:'media', action:'Renegociar e calendarizar contas a pagar em aberto', impactType:'cash',
+    estimatedImpact:money(openPayables), impactUnit:'caixa protegido', assumption:'valor bruto em aberto; não representa economia',
+    reason:'Há compromissos em aberto que pressionam o caixa projetado.', evidence:{ period:periodLabel(range), openPayables:money(openPayables) },
+  })
+  const lowestMargin = [...procedures].filter(item => number(item.revenue) > 0).sort((a, b) => number(a.profit) / number(a.revenue) - number(b.profit) / number(b.revenue))[0]
+  if (lowestMargin && number(lowestMargin.profit) < 0) recommendations.push({
+    priority:'alta', action:`Revisar preço e custos de ${lowestMargin.name}`, impactType:'risk',
+    estimatedImpact:money(Math.abs(number(lowestMargin.profit))), impactUnit:'perda observada no período', assumption:'impacto histórico, não projeção futura',
+    reason:'O procedimento apresentou lucro negativo no período.', evidence:{ period:periodLabel(range), surgeries:number(lowestMargin.count), revenue:money(lowestMargin.revenue), profit:money(lowestMargin.profit) },
+  })
+  return { period:periodLabel(range), recommendations:recommendations.slice(0, limit), recordCount:countMetricsRecords(metrics) }
 }
 
 function metricsSummary(metrics) {
