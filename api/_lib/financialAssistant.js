@@ -612,10 +612,14 @@ export function saoPauloDate(now = new Date()) {
 
 function getFinancialSummary(data, range) {
   const metrics = buildMetrics(data, { startDate:range.startDate, endDate:range.endDate, balanceDate:range.endDate })
+  const position = buildMetrics(data, { balanceDate:range.endDate })
   const result = metricsSummary(metrics)
   return {
     period:periodLabel(range),
     ...result,
+    cashBalance:money(position.cashBalance),
+    cashPositionDate:range.endDate,
+    projectedBalance:money(position.prediction),
     recordCount:countMetricsRecords(metrics),
   }
 }
@@ -917,6 +921,7 @@ function metricsSummary(metrics) {
     cashIn:money(metrics.cashIn),
     cashOut:money(metrics.cashOut),
     cashFlow:money(metrics.cashBalance),
+    cashBalance:money(metrics.cashBalance),
     receivablesOpen:money(metrics.receivablesOpenTotal),
     payablesOpen:money(metrics.payablesOpenTotal),
     projectedBalance:money(metrics.prediction),

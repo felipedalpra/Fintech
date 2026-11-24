@@ -1279,7 +1279,7 @@ export function FinanceWorkspace() {
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
           <div style={{ display:'flex', flexDirection:'column', gap:ultraCompactDesktop ? 2 : 4 }}>
             <div>
-              <div style={{ fontSize:9, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:1 }}>Caixa hoje</div>
+              <div style={{ fontSize:9, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:1 }}>Caixa atual</div>
               <div style={{ fontSize:isMobile ? 20 : (ultraCompactDesktop ? 14 : 16), fontWeight:900, color:C.accent, lineHeight:1.1 }}>{presentationMode ? maskMoney() : fmt(summary.cashBalance)}</div>
             </div>
             {!ultraCompactDesktop && (
