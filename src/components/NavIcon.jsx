@@ -162,6 +162,20 @@ export function NavIcon({ name, size = 14, style }) {
         <circle cx="14" cy="20" r="2"/>
       </svg>
     )
+    case 'copy': return (
+      <svg {...props}>
+        <rect x="9" y="9" width="11" height="11" rx="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </svg>
+    )
+    case 'share': return (
+      <svg {...props}>
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <path d="m8.7 10.5 6.6-3.9M8.7 13.5l6.6 3.9" />
+      </svg>
+    )
     default: return (
       <svg {...props}>
         <circle cx="12" cy="12" r="5"/>
