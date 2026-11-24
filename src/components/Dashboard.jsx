@@ -9,6 +9,7 @@ import { InsuranceBreakdown } from './InsuranceBreakdown.jsx'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 import { EyeIcon } from './EyeIcon.jsx'
 import { maskMoney } from '../lib/privacyMask.js'
+import './Dashboard.css'
 
 const PERIOD_OPTIONS = [
   { value:'day', label:'Hoje' },
@@ -158,6 +159,83 @@ function useWindowWidth() {
   return width
 }
 
+function formatChartMonth(key) {
+  return new Date(`${key}-01T00:00:00`).toLocaleDateString('pt-BR', { month:'short' }).replace('.', '')
+}
+
+function FlowLineChart({ monthKeys, revenueByMonth, expenseByMonth, formatMoney, isMobile }) {
+  const [hovered, setHovered] = useState(null)
+  if (!monthKeys.length) return <div className="dashboard-chart-empty">Ainda não há movimentações suficientes para montar o fluxo.</div>
+
+  const width = 760
+  const height = isMobile ? 250 : 290
+  const pad = { top:24, right:20, bottom:42, left:12 }
+  const plotW = width - pad.left - pad.right
+  const plotH = height - pad.top - pad.bottom
+  const points = monthKeys.map((key, index) => ({
+    key,
+    label:formatChartMonth(key),
+    revenue:Number(revenueByMonth[key] || 0),
+    expense:Number(expenseByMonth[key] || 0),
+    x:pad.left + (monthKeys.length === 1 ? plotW / 2 : (index / (monthKeys.length - 1)) * plotW),
+  }))
+  const max = Math.max(...points.flatMap(point => [point.revenue, point.expense]), 1)
+  const y = value => pad.top + plotH - (value / max) * plotH
+  const line = key => points.map(point => `${point.x},${y(point[key])}`).join(' ')
+  const area = key => `${points[0].x},${pad.top + plotH} ${line(key)} ${points[points.length - 1].x},${pad.top + plotH}`
+  const active = hovered == null ? null : points[hovered]
+  const gridValues = [0, 0.25, 0.5, 0.75, 1]
+
+  return (
+    <div className="dashboard-line-chart" onMouseLeave={() => setHovered(null)}>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Evolução de entradas e saídas no período">
+        <defs>
+          <linearGradient id="dashboard-revenue-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={C.cyan} stopOpacity=".28" />
+            <stop offset="100%" stopColor={C.cyan} stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="dashboard-expense-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={C.red} stopOpacity=".2" />
+            <stop offset="100%" stopColor={C.red} stopOpacity="0" />
+          </linearGradient>
+          <filter id="dashboard-line-glow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {gridValues.map(value => {
+          const lineY = pad.top + plotH - value * plotH
+          return <line key={value} x1={pad.left} x2={width - pad.right} y1={lineY} y2={lineY} className="dashboard-chart-grid" />
+        })}
+        <polygon points={area('revenue')} fill="url(#dashboard-revenue-fill)" />
+        <polygon points={area('expense')} fill="url(#dashboard-expense-fill)" />
+        <polyline points={line('revenue')} className="dashboard-chart-line revenue" filter="url(#dashboard-line-glow)" />
+        <polyline points={line('expense')} className="dashboard-chart-line expense" />
+        {points.map((point, index) => (
+          <g key={point.key} onMouseEnter={() => setHovered(index)}>
+            <rect x={point.x - Math.max(plotW / monthKeys.length / 2, 24)} y={pad.top} width={Math.max(plotW / monthKeys.length, 48)} height={plotH} fill="transparent" />
+            <circle cx={point.x} cy={y(point.revenue)} r={active?.key === point.key ? 6 : 3.5} className="dashboard-chart-dot revenue-dot" />
+            <circle cx={point.x} cy={y(point.expense)} r={active?.key === point.key ? 6 : 3.5} className="dashboard-chart-dot expense-dot" />
+            <text x={point.x} y={height - 15} textAnchor="middle" className="dashboard-chart-label">{point.label}</text>
+          </g>
+        ))}
+        {active && (
+          <>
+            <line x1={active.x} x2={active.x} y1={pad.top} y2={pad.top + plotH} className="dashboard-chart-guide" />
+            <foreignObject x={Math.min(Math.max(active.x - 105, 8), width - 218)} y={10} width="210" height="78">
+              <div className="dashboard-chart-tooltip">
+                <strong>{active.label}</strong>
+                <span><i className="dashboard-tooltip-dot revenue" />Entradas: {formatMoney(active.revenue)}</span>
+                <span><i className="dashboard-tooltip-dot expense" />Saídas: {formatMoney(active.expense)}</span>
+              </div>
+            </foreignObject>
+          </>
+        )}
+      </svg>
+    </div>
+  )
+}
+
 export function Dashboard({ data, saveError }) {
   const windowWidth = useWindowWidth()
   const isMobile = windowWidth < 900
@@ -184,7 +262,6 @@ export function Dashboard({ data, saveError }) {
   const prevAllTimeM = useMemo(() => buildMetrics(data, { endDate: prevRange.end }), [data, prevRange])
 
   const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
-  const maxBar = Math.max(...monthKeys.map(key => Math.max(m.revenueByMonth[key] || 0, m.expenseByMonth[key] || 0)), 1)
   const topProcedure = m.byProcedure[0]
   const topProduct = m.productsByPerformance[0]
   const formatMoney = value => maskFinancialValue(value, financialPrivacyMode, fmt)
@@ -304,7 +381,20 @@ export function Dashboard({ data, saveError }) {
     <>
     {showCompareModal && <CompareModal data={data} onClose={() => setShowCompareModal(false)} />}
     <FinancialDrilldownModal detail={detail} onClose={closeDrilldown} />
-    <div style={{ display:'flex', flexDirection:'column', gap:24 }}>
+    <div className="dashboard-shell" style={{ display:'flex', flexDirection:'column', gap:24 }}>
+
+      <div className="dashboard-hero">
+        <div>
+          <span className="dashboard-eyebrow">Radar financeiro · {periodLabel || 'período selecionado'}</span>
+          <h2>Visão geral da operação</h2>
+          <p>Os indicadores mais importantes da clínica, organizados para uma decisão rápida.</p>
+        </div>
+        <div className="dashboard-hero-number">
+          <span>Resultado do período</span>
+          <strong style={{ color:netProfitColor }}>{formatMoney(m.netProfit)}</strong>
+          <small><DeltaBadge current={m.netProfit} previous={pm.netProfit} /> margem {netMargin}</small>
+        </div>
+      </div>
 
       {/* Seletor de período */}
       <div style={{ background:`linear-gradient(180deg, ${C.bg}FA, ${C.bg}EB)`, border:`1px solid ${C.border}66`, borderRadius:18, padding:isMobile ? 14 : 18, backdropFilter:'blur(12px)' }}>
@@ -418,7 +508,7 @@ export function Dashboard({ data, saveError }) {
       </div>
 
       {/* KPI cards */}
-      <div style={{ display:'grid', gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(auto-fill,minmax(240px,1fr))', gap:isMobile ? 10 : 16 }}>
+      <div className="dashboard-kpi-grid" style={{ gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(4,minmax(0,1fr))', gap:isMobile ? 10 : 16 }}>
         {kpis.map(item => (
           <Card
             key={item.label}
@@ -429,15 +519,15 @@ export function Dashboard({ data, saveError }) {
             }}
             title="Clique para ver os lançamentos"
             ariaLabel={`Ver lançamentos de ${item.label}`}
-            style={{ padding:isMobile ? 14 : 20 }}
+            style={{ padding:isMobile ? 14 : 20, minHeight:isMobile ? 132 : 158 }}
           >
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <div className="dashboard-kpi-top" style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
               <div style={{ fontSize:isMobile ? 10 : 11, color:C.textSub, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:8, lineHeight:1.35 }}>{item.label}</div>
               {item.sparkline && item.sparkline.length >= 2 && (
                 <Sparkline values={item.sparkline} color={item.sparkColor} />
               )}
             </div>
-            <div style={{ fontSize:isMobile ? 20 : 26, fontWeight:800, color:item.color, letterSpacing:'-0.02em', display:'flex', alignItems:'baseline', flexWrap:'wrap', lineHeight:1.2 }}>
+            <div className="dashboard-kpi-value" style={{ fontSize:isMobile ? 20 : 26, fontWeight:800, color:item.color, letterSpacing:'-0.04em', display:'flex', alignItems:'baseline', flexWrap:'wrap', lineHeight:1.2 }}>
               {item.isCurrency ? formatMoney(item.value) : fmtN(item.value)}
             </div>
             <div style={{ fontSize:isMobile ? 11 : 12, color:C.textDim, marginTop:4, lineHeight:1.4 }}>
@@ -491,28 +581,18 @@ export function Dashboard({ data, saveError }) {
         </Card>
       )}
 
-      <div style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1.25fr 1fr', gap:16 }}>
-        <Card>
-          <h3 style={{ margin:'0 0 20px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Entradas x saídas no período</h3>
-          {monthKeys.length === 0 ? <p style={{ color:C.textDim, fontSize:13 }}>Ainda não há movimentações suficientes para montar o fluxo.</p> : (
-            <>
-              <div style={{ display:'flex', gap:isMobile ? 4 : 8, alignItems:'flex-end', height:160, overflowX:isMobile ? 'auto' : 'visible', paddingBottom:isMobile ? 8 : 0 }}>
-                {monthKeys.map(key => {
-                  const rec = m.revenueByMonth[key] || 0
-                  const exp = m.expenseByMonth[key] || 0
-                  const recH = Math.max((rec / maxBar) * 140, 2)
-                  const expH = Math.max((exp / maxBar) * 140, 2)
-                  const label = new Date(`${key}-01T00:00:00`).toLocaleDateString('pt-BR', { month:'short' })
-                  return <div key={key} style={{ flex:isMobile ? '0 0 42px' : 1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}><div style={{ display:'flex', gap:3, alignItems:'flex-end', height:140 }}><div style={{ width:16, height:recH, background:`linear-gradient(0deg,${C.green},${C.cyan})`, borderRadius:'3px 3px 0 0' }} /><div style={{ width:16, height:expH, background:`linear-gradient(0deg,${C.red}88,${C.red})`, borderRadius:'3px 3px 0 0' }} /></div><span style={{ fontSize:10, color:C.textDim }}>{label}</span></div>
-                })}
-              </div>
-              <div style={{ display:'flex', gap:16, marginTop:14 }}><span style={{ fontSize:11, color:C.textSub, display:'flex', alignItems:'center', gap:6 }}><span style={{ width:10, height:10, background:C.green, borderRadius:2, display:'inline-block' }} />Entradas</span><span style={{ fontSize:11, color:C.textSub, display:'flex', alignItems:'center', gap:6 }}><span style={{ width:10, height:10, background:C.red, borderRadius:2, display:'inline-block' }} />Saídas</span></div>
-            </>
-          )}
+      <div className="dashboard-main-grid" style={{ display:'grid', gridTemplateColumns:isMobile ? '1fr' : '1.35fr 1fr', gap:16 }}>
+        <Card style={{ minWidth:0 }}>
+          <div className="dashboard-card-heading">
+            <div><span className="dashboard-eyebrow">Fluxo operacional</span><h3>Entradas x saídas</h3></div>
+            <span className="dashboard-live-pill"><i /> ao vivo</span>
+          </div>
+          <FlowLineChart monthKeys={monthKeys} revenueByMonth={m.revenueByMonth} expenseByMonth={m.expenseByMonth} formatMoney={formatMoney} isMobile={isMobile} />
+          <div className="dashboard-chart-legend"><span><i className="revenue" />Entradas</span><span><i className="expense" />Saídas</span><span className="dashboard-chart-hint">Passe o cursor sobre a linha</span></div>
         </Card>
 
         <Card>
-          <h3 style={{ margin:'0 0 16px', fontSize:13, color:C.textSub, fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase' }}>Ranking de rentabilidade</h3>
+          <div className="dashboard-card-heading"><div><span className="dashboard-eyebrow">Performance</span><h3>Ranking de rentabilidade</h3></div><span className="dashboard-card-icon">↗</span></div>
           <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
             <div>
               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}><span style={{ fontSize:13, color:C.text, fontWeight:600 }}>Procedimento líder</span><span style={{ fontSize:13, color:C.textSub }}>{topProcedure ? formatMoney(topProcedure.profit) : 'Sem dados'}</span></div>
