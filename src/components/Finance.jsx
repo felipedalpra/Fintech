@@ -1117,7 +1117,6 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     ['inadimplencia', 'Inadimplência'],
     ['pacientes', 'Por paciente'],
     ['dre', 'DRE'],
-    ['balanco', 'Balanço'],
     ['fluxo', 'Fluxo de caixa'],
     ['indicadores', 'Indicadores'],
   ]

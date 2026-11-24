@@ -7,6 +7,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ## [Unreleased] - 2026-11-23 (2)
 
+### Changed
+
+- A aba interna de Balanço patrimonial foi removida do Financeiro por enquanto. Os dados e relatórios patrimoniais continuam preservados; links antigos para `/app/balance` abrem a Visão geral sem exibir uma tela vazia. (`src/components/Finance.jsx`, `src/pages/FinanceWorkspace.jsx`.)
+
 ### Added
 
 - Respostas do copiloto passam a renderizar Markdown com estilo de chat: negrito, itálico, listas, títulos, citações, links e blocos de código deixam de aparecer como marcadores literais (`**`, `-` etc.).
