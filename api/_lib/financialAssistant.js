@@ -614,14 +614,40 @@ function getFinancialSummary(data, range) {
   const metrics = buildMetrics(data, { startDate:range.startDate, endDate:range.endDate, balanceDate:range.endDate })
   const position = buildMetrics(data, { balanceDate:range.endDate })
   const result = metricsSummary(metrics)
+  const receivablesOpen = money(position.receivablesOpenTotal)
+  const payablesOpen = money(position.payablesOpenTotal)
+  const cashBalance = money(position.cashBalance)
+  const projectedBalance = money(position.prediction)
   return {
     period:periodLabel(range),
     ...result,
-    cashBalance:money(position.cashBalance),
+    cashBalance,
     cashPositionDate:range.endDate,
-    projectedBalance:money(position.prediction),
+    projectedBalance,
+    cashPosition:{
+      asOf:range.endDate,
+      realizedBalance:cashBalance,
+      receivablesOpen,
+      payablesOpen,
+      projectedBalance,
+      formula:`${cashBalance} + ${receivablesOpen} - ${payablesOpen} = ${projectedBalance}`,
+      receivablesBreakdown:aggregateOpenItems(position.accountsReceivable),
+      payablesBreakdown:aggregateOpenItems(position.accountsPayable),
+    },
     recordCount:countMetricsRecords(metrics),
   }
+}
+
+function aggregateOpenItems(items = []) {
+  const grouped = new Map()
+  for (const item of items) {
+    const key = item.source || item.category || 'outros'
+    const current = grouped.get(key) || { source:key, total:0, count:0 }
+    current.total += number(item.value)
+    current.count += 1
+    grouped.set(key, current)
+  }
+  return [...grouped.values()].sort((a, b) => b.total - a.total).map(item => ({ ...item, total:money(item.total) }))
 }
 
 function compareFinancialPeriods(data, args) {

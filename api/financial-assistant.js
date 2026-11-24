@@ -463,6 +463,13 @@ function buildEvidence(toolName, result) {
     label:evidenceLabel(toolName),
     period:periods.join(' vs '),
     recordCount:Number(result?.recordCount || 0),
+    calculation:result?.cashPosition?.formula || result?.calculation || '',
+    details:result?.cashPosition ? [
+      { label:'Caixa realizado', value:result.cashPosition.realizedBalance, key:'cashBalance' },
+      { label:'Contas a receber em aberto', value:result.cashPosition.receivablesOpen, key:'receivablesOpen' },
+      { label:'Contas a pagar em aberto', value:result.cashPosition.payablesOpen, key:'payablesOpen' },
+      { label:'Saldo projetado', value:result.cashPosition.projectedBalance, key:'projectedBalance' },
+    ] : [],
     highlights:evidenceHighlights(result),
   }
 }
@@ -487,6 +494,7 @@ function evidenceHighlights(result) {
   const keys = [
     ['revenue', 'Receita'], ['totalExpenses', 'Despesas'], ['netProfit', 'Lucro líquido'],
     ['netMarginPercent', 'Margem líquida'], ['cashBalance', 'Caixa realizado'], ['cashFlow', 'Fluxo de caixa do período'],
+    ['cashIn', 'Entradas do período'], ['cashOut', 'Saídas do período'], ['receivablesOpen', 'Recebíveis em aberto'], ['payablesOpen', 'Contas a pagar em aberto'], ['projectedBalance', 'Saldo projetado'],
     ['surgeries', 'Cirurgias'], ['averageTicket', 'Ticket médio'], ['profit', 'Lucro'],
     ['additionalSurgeries', 'Cirurgias adicionais'], ['target', 'Meta'],
   ]

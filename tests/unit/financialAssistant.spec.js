@@ -128,6 +128,8 @@ test('separa caixa realizado do fluxo do período e do saldo projetado', () => {
   expect(result.cashBalance).toBe(6_450)
   expect(result.projectedBalance).toBe(8_450)
   expect(result.cashPositionDate).toBe('2026-10-04')
+  expect(result.cashPosition.formula).toBe('6450 + 2000 - 0 = 8450')
+  expect(result.cashPosition.receivablesBreakdown).toEqual([{ source:'consulta', total:2_000, count:1 }])
 })
 
 test('despesas agrupam por categoria e status', () => {
