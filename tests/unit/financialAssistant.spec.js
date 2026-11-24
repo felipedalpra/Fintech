@@ -112,6 +112,26 @@ test('resumo usa os mesmos calculos financeiros do dashboard', () => {
   })
 })
 
+test('separa caixa realizado do fluxo do período e do saldo projetado', () => {
+  const dataWithOpenReceivable = {
+    ...data,
+    consultations:[...data.consultations, {
+      id:'c2', patient:'', date:'2026-10-04', dueDate:'2026-10-04', consultationType:'avaliacao', value:2_000,
+      paymentType:'particular', paymentMethod:'pix', invoiceIssuancePercent:0,
+      paymentStatus:'aberto', paymentDate:'', forecastPaymentDate:'',
+    }],
+  }
+  const result = executeFinancialTool('get_financial_summary', {
+    start_date:'2026-10-04', end_date:'2026-10-04',
+  }, dataWithOpenReceivable)
+  expect(result.cashFlow).toBe(-1_000)
+  expect(result.cashBalance).toBe(6_450)
+  expect(result.projectedBalance).toBe(8_450)
+  expect(result.cashPositionDate).toBe('2026-10-04')
+  expect(result.cashPosition.formula).toBe('6450 + 2000 - 0 = 8450')
+  expect(result.cashPosition.receivablesBreakdown).toEqual([{ source:'consulta', total:2_000, count:1 }])
+})
+
 test('despesas agrupam por categoria e status', () => {
   const paid = executeFinancialTool('get_expense_breakdown', {
     start_date:'2026-10-01', end_date:'2026-10-31', status:'paid', limit:10,
