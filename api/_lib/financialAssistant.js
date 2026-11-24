@@ -339,17 +339,17 @@ export async function logAssistantEvent(supabase, event) {
 
 export async function fetchFinancialData(supabase, userId) {
   const queries = [
-    ['procedures', 'id,name,price,duration_hours'],
-    ['products', 'id,name,category,purchase_price,sale_price,opening_stock,active'],
-    ['surgeries', 'id,procedure_id,total_value,date,competence_date,due_date,payment_method,payment_status,payment_date,hospital_cost,anesthesia_cost,material_cost,instrumentation_cost,prosthesis_cost,other_costs,invoice_issuance_percent,invoice_tax_rate,invoice_tax_amount,cost_settlements'],
-    ['consultations', 'id,date,competence_date,due_date,consultation_type,value,payment_type,payment_method,invoice_issuance_percent,invoice_tax_rate,invoice_tax_amount,insurance,payment_status,forecast_payment_date,payment_date,cost_settlements'],
-    ['product_sales', 'id,product_id,quantity,unit_value,total_value,sale_date,competence_date,due_date,received_date,payment_method,status'],
-    ['product_purchases', 'id,product_id,quantity,total_value,purchase_date'],
-    ['extra_revenues', 'id,category,value,date'],
-    ['expenses', 'id,category,value,due_date,payment_date,status'],
-    ['assets', 'id,category,value'],
-    ['liabilities', 'id,category,value'],
-    ['goals', 'id,name,metric,target,period,due_date'],
+    ['procedures', 'id,name,price,duration_hours,archived_at'],
+    ['products', 'id,name,category,purchase_price,sale_price,opening_stock,active,archived_at'],
+    ['surgeries', 'id,procedure_id,total_value,date,competence_date,due_date,payment_method,payment_status,payment_date,hospital_cost,anesthesia_cost,material_cost,instrumentation_cost,prosthesis_cost,other_costs,invoice_issuance_percent,invoice_tax_rate,invoice_tax_amount,cost_settlements,archived_at'],
+    ['consultations', 'id,date,competence_date,due_date,consultation_type,value,payment_type,payment_method,invoice_issuance_percent,invoice_tax_rate,invoice_tax_amount,insurance,payment_status,forecast_payment_date,payment_date,cost_settlements,archived_at'],
+    ['product_sales', 'id,product_id,quantity,unit_value,total_value,sale_date,competence_date,due_date,received_date,payment_method,status,archived_at'],
+    ['product_purchases', 'id,product_id,quantity,total_value,purchase_date,archived_at'],
+    ['extra_revenues', 'id,category,value,date,archived_at'],
+    ['expenses', 'id,category,value,due_date,payment_date,status,archived_at'],
+    ['assets', 'id,category,value,archived_at'],
+    ['liabilities', 'id,category,value,archived_at'],
+    ['goals', 'id,name,metric,target,period,due_date,archived_at'],
   ]
 
   const [results, recurrencesResult, chartAccountsResult, procedureLinksResult, revenueLinksResult, expenseLinksResult, recurrenceLinksResult] = await Promise.all([
@@ -374,7 +374,7 @@ export async function fetchFinancialData(supabase, userId) {
     throw new AssistantError(503, 'FINANCIAL_DATA_UNAVAILABLE', `Não foi possível consultar ${tableName}.`)
   }
 
-  const rows = Object.fromEntries(queries.map(([tableName], index) => [tableName, results[index].data || []]))
+  const rows = Object.fromEntries(queries.map(([tableName], index) => [tableName, (results[index].data || []).filter(item => !item.archived_at)]))
   const procedureLinks = new Map((procedureLinksResult.data || []).map(item => [item.id, item.chart_account_id]))
   rows.procedures = rows.procedures.map(item => ({ ...item, chart_account_id:procedureLinks.get(item.id) || null }))
   const recurrenceLinks = new Map((recurrenceLinksResult.data || []).map(item => [item.id, item.chart_account_id]))
@@ -403,15 +403,16 @@ export function sanitizeLegacyFinancialData(payload) {
 }
 
 export function mapFinancialRows(rows = {}) {
+  const activeRows = key => (rows[key] || []).filter(item => !item.archived_at)
   return {
-    procedures:(rows.procedures || []).map(item => ({
+    procedures:activeRows('procedures').map(item => ({
       id:item.id,
       name:item.name || 'Sem procedimento',
       price:number(item.price),
       durationHours:number(item.duration_hours),
       chartAccountId:item.chart_account_id || null,
     })),
-    products:(rows.products || []).map(item => ({
+    products:activeRows('products').map(item => ({
       id:item.id,
       name:item.name || 'Sem produto',
       category:item.category || 'outros',
@@ -420,7 +421,7 @@ export function mapFinancialRows(rows = {}) {
       stock:number(item.opening_stock),
       active:item.active !== false,
     })),
-    surgeries:(rows.surgeries || []).map(item => ({
+    surgeries:activeRows('surgeries').map(item => ({
       id:item.id,
       patient:'',
       procedureId:item.procedure_id || '',
@@ -442,7 +443,7 @@ export function mapFinancialRows(rows = {}) {
       invoiceTaxAmount:item.invoice_tax_amount == null ? null : number(item.invoice_tax_amount),
       costSettlements:item.cost_settlements || {},
     })),
-    consultations:(rows.consultations || []).map(item => ({
+    consultations:activeRows('consultations').map(item => ({
       id:item.id,
       patient:'',
       date:item.date || '',
@@ -461,7 +462,7 @@ export function mapFinancialRows(rows = {}) {
       paymentDate:item.payment_date || '',
       costSettlements:item.cost_settlements || {},
     })),
-    productSales:(rows.product_sales || []).map(item => ({
+    productSales:activeRows('product_sales').map(item => ({
       id:item.id,
       productId:item.product_id,
       quantity:number(item.quantity),
@@ -474,14 +475,14 @@ export function mapFinancialRows(rows = {}) {
       paymentStatus:item.status || 'legacy_unverified',
       paymentMethod:item.payment_method || 'pix',
     })),
-    productPurchases:(rows.product_purchases || []).map(item => ({
+    productPurchases:activeRows('product_purchases').map(item => ({
       id:item.id,
       productId:item.product_id,
       quantity:number(item.quantity),
       totalValue:number(item.total_value),
       purchaseDate:item.purchase_date || '',
     })),
-    extraRevenues:(rows.extra_revenues || []).map(item => ({
+    extraRevenues:activeRows('extra_revenues').map(item => ({
       id:item.id,
       description:'',
       category:item.category || 'outras_receitas',
@@ -489,7 +490,7 @@ export function mapFinancialRows(rows = {}) {
       value:number(item.value),
       date:item.date || '',
     })),
-    expenses:(rows.expenses || []).map(item => ({
+    expenses:activeRows('expenses').map(item => ({
       id:item.id,
       description:'',
       category:item.category || 'outros',
@@ -499,19 +500,19 @@ export function mapFinancialRows(rows = {}) {
       paymentDate:item.payment_date || '',
       status:item.status || 'aberto',
     })),
-    assets:(rows.assets || []).map(item => ({
+    assets:activeRows('assets').map(item => ({
       id:item.id,
       name:'',
       category:item.category || 'banco',
       value:number(item.value),
     })),
-    liabilities:(rows.liabilities || []).map(item => ({
+    liabilities:activeRows('liabilities').map(item => ({
       id:item.id,
       name:'',
       category:item.category || 'outros',
       value:number(item.value),
     })),
-    goals:(rows.goals || []).map(item => ({
+    goals:activeRows('goals').map(item => ({
       id:item.id,
       name:item.name || `Meta de ${item.metric || 'resultado'}`,
       metric:item.metric || 'faturamento',

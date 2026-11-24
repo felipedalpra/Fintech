@@ -84,6 +84,17 @@ test('mapeamento do banco remove dados identificaveis', () => {
   expect(mapped.surgeries[0].patient).toBe('')
 })
 
+test('mapeamento do assistente ignora lançamentos arquivados como o frontend', () => {
+  const mapped = mapFinancialRows({
+    surgeries:[
+      { id:'active', procedure_id:'p1', total_value:100, date:'2026-10-01', payment_status:'pago' },
+      { id:'archived', procedure_id:'p1', total_value:999_999, date:'2026-10-01', payment_status:'pago', archived_at:'2026-10-02T00:00:00Z' },
+    ],
+    procedures:[{ id:'p1', name:'Procedimento ativo' }],
+  })
+  expect(mapped.surgeries.map(item => item.id)).toEqual(['active'])
+})
+
 test('fallback legado também remove dados identificáveis', () => {
   const mapped = sanitizeLegacyFinancialData({
     procedures:[{ id:'p1', name:'Rinoplastia' }],
