@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { applyBankSettlement } from '../../src/lib/bankSettlement.js'
+import { applyBankSettlement, validateSettlementAdjustments } from '../../src/lib/bankSettlement.js'
 
 const line = { posted_date:'2026-11-20', financial_account_id:'account-1' }
 
@@ -21,4 +21,10 @@ test('baixa uma despesa como pagamento na data efetiva do extrato', () => {
 test('recusa baixa sem método suportado ou origem inexistente', () => {
   const candidate = { id:'installment-3', amount:10, financial_entries:{ source_type:'expense', source_id:'missing' } }
   expect(() => applyBankSettlement({ expenses:[] }, candidate, line, 'manual')).toThrow()
+})
+
+test('valida pagamento líquido mantendo o título bruto e separando taxa', () => {
+  const candidate = { amount:1000, financial_entries:{ direction:'receivable' } }
+  expect(validateSettlementAdjustments(candidate, { amount:970 }, { feesAmount:30 })).toMatchObject({ valid:true, expected:970, bank:970 })
+  expect(validateSettlementAdjustments(candidate, { amount:970 }, { feesAmount:20 }).valid).toBe(false)
 })

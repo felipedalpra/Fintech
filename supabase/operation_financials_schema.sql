@@ -7,7 +7,7 @@
 
 do $$
 declare t text;
-  tables text[] := array['surgeries','consultations','product_sales'];
+  tables text[] := array['surgeries','consultations','product_sales','product_purchases','extra_revenues','expenses'];
 begin
   foreach t in array tables loop
     execute format('alter table public.%I add column if not exists discount_amount    numeric(12,2)', t);

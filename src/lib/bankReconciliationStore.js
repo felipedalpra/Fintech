@@ -180,6 +180,21 @@ export async function fetchStatementLines(ownerId, importId) {
     .order('line_index', { ascending:true }))
 }
 
+export async function fetchInternalTransferCandidates(ownerId, line) {
+  if (!ownerId || !line?.postedDate || !line?.financial_account_id) return []
+  const { data, error } = await supabase
+    .from('bank_statement_lines')
+    .select('id,financial_account_id,posted_date,amount,description,review_status,archived_at')
+    .eq('user_id', ownerId)
+    .eq('posted_date', line.postedDate)
+    .eq('review_status', 'pending')
+    .neq('financial_account_id', line.financial_account_id)
+    .is('archived_at', null)
+    .limit(200)
+  if (error) throw error
+  return data || []
+}
+
 export async function setBankStatementLinesReview({ lineIds, status, reason = null }) {
   const ids = [...new Set((lineIds || []).filter(Boolean))]
   if (!ids.length) throw new Error('Selecione ao menos uma linha para revisar.')
@@ -192,6 +207,19 @@ export async function setBankStatementLinesReview({ lineIds, status, reason = nu
   if (error) throw error
   if (Number(data) !== ids.length) throw new Error('Nem todas as linhas tiveram a revisão confirmada pelo sistema.')
   return Number(data)
+}
+
+export async function confirmBankInternalTransfer({ sourceLineId, destinationLineId, justification }) {
+  const { data, error } = await supabase.rpc('confirm_bank_internal_transfer', {
+    p_source_line_id:sourceLineId,
+    p_destination_line_id:destinationLineId,
+    p_justification:String(justification || '').trim(),
+  })
+  if (error) throw error
+  if (!data?.id || data.source_line_id !== sourceLineId || data.destination_line_id !== destinationLineId) {
+    throw new Error('A transferência interna não foi confirmada pelo sistema.')
+  }
+  return data
 }
 
 export async function claimBankStatementLinesForCreation(lineIds, claimToken, { allowOverlap = false } = {}) {

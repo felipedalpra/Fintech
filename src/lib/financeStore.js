@@ -187,6 +187,7 @@ async function fetchRelationalData(userId) {
       receivedDate:item.received_date || '',
       paymentMethod:item.payment_method || 'pix',
       financialAccountId:item.financial_account_id || null,
+      feesAmount:Number(item.fees_amount || 0), interestAmount:Number(item.interest_amount || 0), discountAmount:Number(item.discount_amount || 0),
       receiptSettlements:item.receipt_settlements && typeof item.receipt_settlements === 'object' ? item.receipt_settlements : {},
       competenceDate:item.competence_date || item.sale_date || '',
     })),
@@ -201,6 +202,7 @@ async function fetchRelationalData(userId) {
       paymentDate:item.payment_date || '',
       paymentMethod:item.payment_method || '',
       financialAccountId:item.financial_account_id || null,
+      feesAmount:Number(item.fees_amount || 0), interestAmount:Number(item.interest_amount || 0), discountAmount:Number(item.discount_amount || 0),
       documentNumber:item.document_number || '',
       purchaseDate:item.purchase_date || '',
       competenceDate:item.competence_date || item.purchase_date || '',
@@ -222,6 +224,7 @@ async function fetchRelationalData(userId) {
       status:item.status || 'recebido',
       paymentMethod:item.payment_method || '',
       financialAccountId:item.financial_account_id || null,
+      feesAmount:Number(item.fees_amount || 0), interestAmount:Number(item.interest_amount || 0), discountAmount:Number(item.discount_amount || 0),
       chartAccountId:item.chart_account_id || null,
     })),
     expenses:(expensesResult.data || []).map(item => ({
@@ -233,6 +236,7 @@ async function fetchRelationalData(userId) {
       paymentDate:item.payment_date || '',
       paymentMethod:item.payment_method || '',
       financialAccountId:item.financial_account_id || null,
+      feesAmount:Number(item.fees_amount || 0), interestAmount:Number(item.interest_amount || 0), discountAmount:Number(item.discount_amount || 0),
       status:item.status || 'aberto',
       supplierId:item.supplier_id || null,
       costCenter:item.cost_center || '',
@@ -336,6 +340,9 @@ function mapProductSalesRows(userId, data) {
     received_date:item.receivedDate || null,
     payment_method:item.paymentMethod || null,
     financial_account_id:item.financialAccountId || null,
+    fees_amount:item.feesAmount || 0,
+    interest_amount:item.interestAmount || 0,
+    discount_amount:item.discountAmount || 0,
     receipt_settlements:item.receiptSettlements || {},
   }))
 }
@@ -357,6 +364,9 @@ function mapProductPurchasesRows(userId, data) {
     competence_date:item.competenceDate || item.purchaseDate || null,
     due_date:item.dueDate || item.purchaseDate || null,
     financial_account_id:item.financialAccountId || null,
+    fees_amount:item.feesAmount || 0,
+    interest_amount:item.interestAmount || 0,
+    discount_amount:item.discountAmount || 0,
   }))
 }
 

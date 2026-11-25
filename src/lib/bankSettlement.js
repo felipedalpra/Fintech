@@ -19,12 +19,30 @@ export function settlementSource(installment) {
   return { sourceType, sourceId, collection:sourceCollection(sourceType) }
 }
 
+export function defaultSettlementAdjustments(installment, line) {
+  const gross = Math.abs(Number(installment?.amount || 0))
+  const bank = Math.abs(Number(line?.amount || 0))
+  const direction = installment?.financial_entries?.direction || installment?.financial_entry?.direction || installment?.entry?.direction
+  return { feesAmount:direction === 'receivable' ? Math.max(0, gross - bank) : Math.max(0, bank - gross), interestAmount:0, discountAmount:0 }
+}
+
+export function validateSettlementAdjustments(installment, line, adjustments = {}) {
+  const gross = Math.abs(Number(installment?.amount || 0))
+  const bank = Math.abs(Number(line?.amount || 0))
+  const fees = Math.max(0, Number(adjustments.feesAmount || 0))
+  const interest = Math.max(0, Number(adjustments.interestAmount || 0))
+  const discount = Math.max(0, Number(adjustments.discountAmount || 0))
+  const direction = installment?.financial_entries?.direction || installment?.financial_entry?.direction || installment?.entry?.direction
+  const expected = direction === 'receivable' ? gross - fees + interest - discount : gross + fees + interest - discount
+  return { valid:Math.abs(expected - bank) <= 0.005, expected, bank }
+}
+
 function sourceStatus(sourceType, paid) {
   if (sourceType === 'product_sale' || sourceType === 'extra_revenue') return paid ? 'recebido' : 'pendente'
   return paid ? 'pago' : 'pendente'
 }
 
-function setScheduledSettlement(record, sourceType, installment, line, paymentMethod) {
+function setScheduledSettlement(record, sourceType, installment, line, paymentMethod, adjustments = {}) {
   const key = String(installment.source_installment_number || installment.installment_number || 1)
   const receiptSettlements = {
     ...(record.receiptSettlements || {}),
@@ -34,6 +52,9 @@ function setScheduledSettlement(record, sourceType, installment, line, paymentMe
       amount:Number(installment.amount || 0),
       method:paymentMethod,
       financialAccountId:line.financial_account_id || null,
+      feesAmount:Number(adjustments.feesAmount || 0),
+      interestAmount:Number(adjustments.interestAmount || 0),
+      discountAmount:Number(adjustments.discountAmount || 0),
       status:'received',
     },
   }
@@ -50,7 +71,7 @@ function setScheduledSettlement(record, sourceType, installment, line, paymentMe
   }
 }
 
-export function applyBankSettlement(data, installment, line, paymentMethod) {
+export function applyBankSettlement(data, installment, line, paymentMethod, adjustments = {}) {
   const { sourceType, sourceId } = settlementSource(installment)
   const sourceComponent = installment?.financial_entries?.source_component || installment?.financial_entry?.source_component || installment?.entry?.source_component || 'revenue'
   const collection = sourceCollection(sourceType)
@@ -66,7 +87,7 @@ export function applyBankSettlement(data, installment, line, paymentMethod) {
   next[collection] = records.map(record => {
     if (record.id !== sourceId) return record
     if (['surgery', 'consultation', 'product_sale'].includes(sourceType) && sourceComponent === 'revenue') {
-      return setScheduledSettlement(record, sourceType, installment, line, paymentMethod)
+      return setScheduledSettlement(record, sourceType, installment, line, paymentMethod, adjustments)
     }
     if (['surgery', 'consultation'].includes(sourceType) && sourceComponent !== 'revenue') {
       const current = record.costSettlements?.[sourceComponent] || {}
@@ -84,6 +105,9 @@ export function applyBankSettlement(data, installment, line, paymentMethod) {
       ...(sourceType === 'extra_revenue' ? { receivedDate:date } : { paymentDate:date }),
       paymentMethod,
       financialAccountId:line.financial_account_id || null,
+      feesAmount:Number(adjustments.feesAmount || 0),
+      interestAmount:Number(adjustments.interestAmount || 0),
+      discountAmount:Number(adjustments.discountAmount || 0),
     }
   })
   return next

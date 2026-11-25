@@ -11,15 +11,18 @@ import { matchBankStatementLines, validateManualReconciliation } from '../lib/ba
 import { missingPersistedLedgerInstallments } from '../lib/bankReconciliationLedger.js'
 import { evaluateStatementIntegrity, suggestStatementAccount, summarizeReconciliationCoverage } from '../lib/bankStatementIntegrity.js'
 import { applyCompetenceChoice, buildStatementImportReview, linesWithSameDescription, mergeApprovedStatementRecords, proposalForStatementLine, summarizeStatementReview } from '../lib/statementImportReview.js'
+import { transferCandidates, transferRecord } from '../lib/bankTransfer.js'
 import {
   archiveBankStatementImport,
   findIncompleteImport,
   claimBankStatementLinesForCreation,
   confirmBankReconciliation,
+  confirmBankInternalTransfer,
   createFinancialAccount,
   fetchBankReconciliations,
   fetchBankStatementImports,
   fetchFinancialAccounts,
+  fetchInternalTransferCandidates,
   fetchReconciliationInstallments,
   importBankStatement,
   isBankReconciliationSchemaMissing,
@@ -29,7 +32,7 @@ import {
   setBankStatementLinesReview,
 } from '../lib/bankReconciliationStore.js'
 import { describeImportFailure } from '../lib/supabaseErrorMessage.js'
-import { applyBankSettlement, settlementSource } from '../lib/bankSettlement.js'
+import { applyBankSettlement, defaultSettlementAdjustments, settlementSource, validateSettlementAdjustments } from '../lib/bankSettlement.js'
 
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const CLAIM_TIMEOUT_MS = 20_000
@@ -145,6 +148,7 @@ export function BankReconciliation({ data, saveDataNow }) {
   const [competenceMode, setCompetenceMode] = useState('line')
   const [competenceDate, setCompetenceDate] = useState('')
   const [ignoreReason, setIgnoreReason] = useState('Transferência interna')
+  const [transferConfirm, setTransferConfirm] = useState(null)
 
   const s = {
     stack:{ display:'flex', flexDirection:'column', gap:18 },
@@ -445,7 +449,7 @@ export function BankReconciliation({ data, saveDataNow }) {
     }
     const ranked = match.candidates.find(item => item.installmentId === installmentId)
     setReason('')
-    setConfirming({ match, candidate, validation, ranked, settle:candidate.status === 'pending', paymentMethod:candidate.payment_method || '' })
+    setConfirming({ match, candidate, validation, ranked, settle:candidate.status === 'pending', paymentMethod:candidate.payment_method || '', adjustments:defaultSettlementAdjustments(candidate, match.line) })
   }
 
   async function doConfirm() {
@@ -459,13 +463,14 @@ export function BankReconciliation({ data, saveDataNow }) {
     try {
       if (confirming.settle) {
         if (!confirming.paymentMethod) throw new Error('Selecione a forma de pagamento para baixar a parcela.')
+        if (!validateSettlementAdjustments(confirming.candidate, confirming.match.line, confirming.adjustments).valid) throw new Error('Informe taxas, juros e descontos até o valor líquido bater com o valor do extrato.')
         if (!saveDataNow) throw new Error('O salvamento confirmado não está disponível nesta tela.')
         const settlementLine = confirming.match.line
-        const settledData = applyBankSettlement(data, confirming.candidate, settlementLine, confirming.paymentMethod)
+        const settledData = applyBankSettlement(data, confirming.candidate, settlementLine, confirming.paymentMethod, confirming.adjustments)
         const source = settlementSource(confirming.candidate)
         const settledRecord = settledData[source.collection]?.find(item => item.id === source.sourceId)
         const settled = saveDataNow(
-          current => applyBankSettlement(current, confirming.candidate, settlementLine, confirming.paymentMethod),
+          current => applyBankSettlement(current, confirming.candidate, settlementLine, confirming.paymentMethod, confirming.adjustments),
           { collection:source.collection, record:settledRecord },
         )
         if (settled?.then) await settled
@@ -654,6 +659,42 @@ export function BankReconciliation({ data, saveDataNow }) {
     } catch (caught) {
       if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
       else setError(caught.message || 'Não foi possível ignorar as linhas selecionadas.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function requestInternalTransfer(item) {
+    setBusy(true)
+    setError('')
+    try {
+      const candidates = transferCandidates(item.line, await fetchInternalTransferCandidates(ownerId, item.line))
+      if (!candidates.length) throw new Error('Nenhuma linha pendente de outra conta com mesmo valor, data e sentido oposto foi encontrada.')
+      setTransferConfirm({ line:item.line, candidates, selectedId:candidates[0].id, justification:'' })
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
+      else setError(caught.message || 'Não foi possível procurar o outro lado da transferência.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function confirmInternalTransfer() {
+    if (!transferConfirm) return
+    const counterpart = transferConfirm.candidates.find(item => item.id === transferConfirm.selectedId)
+    if (!counterpart) return setError('Selecione a linha correspondente da outra conta.')
+    let record
+    try { record = transferRecord(transferConfirm.line, counterpart, transferConfirm.justification) } catch (caught) { setError(caught.message); return }
+    setBusy(true)
+    setError('')
+    try {
+      await confirmBankInternalTransfer({ sourceLineId:record.sourceFinancialAccountId === transferConfirm.line.financial_account_id ? transferConfirm.line.id : counterpart.id, destinationLineId:record.destinationFinancialAccountId === transferConfirm.line.financial_account_id ? transferConfirm.line.id : counterpart.id, justification:record.justification })
+      setTransferConfirm(null)
+      await refreshImport(selectedImportId)
+      toast('Transferência interna registrada sem afetar a DRE ou o caixa consolidado.')
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
+      else setError(caught.message || 'Não foi possível registrar a transferência interna.')
     } finally {
       setBusy(false)
     }
@@ -1168,7 +1209,10 @@ export function BankReconciliation({ data, saveDataNow }) {
                     {match.processing ? <>
                       <span style={s.muted}>Criação reservada. Conclua ou cancele pelo formulário financeiro aberto nesta sessão.</span>
                       {recoverableClaim && <Btn variant="ghost" onClick={() => recoverProcessingLine(match)} disabled={busy}>Liberar reserva antiga</Btn>}
-                    </> : <Btn variant="ghost" onClick={() => requestIgnore([match])} disabled={busy}>Ignorar</Btn>}
+                    </> : <>
+                      <Btn variant="ghost" onClick={() => requestInternalTransfer(match)} disabled={busy}>Transferência interna</Btn>
+                      <Btn variant="ghost" onClick={() => requestIgnore([match])} disabled={busy}>Ignorar</Btn>
+                    </>}
                   </div>
                 </>
               )}
@@ -1249,6 +1293,11 @@ export function BankReconciliation({ data, saveDataNow }) {
                 {SETTLEMENT_PAYMENT_METHODS.map(method => <option key={method.value} value={method.value}>{method.label}</option>)}
               </select>
             </label>}
+            {confirming.settle && <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
+              {[[ 'feesAmount','Taxas' ], [ 'interestAmount','Juros' ], [ 'discountAmount','Descontos' ]].map(([key, label]) => <label key={key} style={{ color:C.textSub, fontSize:12 }}>{label}
+                <input type="number" min="0" step="0.01" value={confirming.adjustments[key]} onChange={event => setConfirming(current => ({ ...current, adjustments:{ ...current.adjustments, [key]:event.target.value } }))} style={{ ...s.input, marginTop:6 }} />
+              </label>)}
+            </div>}
           </>}
           {confirming.validation.requiresJustification && <label style={{ color:C.textSub, fontSize:12 }}>Justificativa da divergência<textarea value={reason} onChange={event => setReason(event.target.value)} style={{ ...s.input, minHeight:80, marginTop:6, resize:'vertical' }} /></label>}
           <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setConfirming(null)}>Cancelar</Btn><Btn variant="success" onClick={doConfirm} disabled={busy || (confirming.settle && !confirming.paymentMethod)}>{confirming.settle ? 'Baixar e confirmar' : 'Confirmar vínculo'}</Btn></div>
@@ -1261,6 +1310,20 @@ export function BankReconciliation({ data, saveDataNow }) {
           <label style={{ color:C.textSub, fontSize:12 }}>Motivo<textarea value={reason} onChange={event => setReason(event.target.value)} style={{ ...s.input, minHeight:80, marginTop:6, resize:'vertical' }} /></label>
           <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setReversing(null)}>Cancelar</Btn><Btn variant="danger" onClick={doReverse} disabled={busy || reason.trim().length < 3}>Desconciliar</Btn></div>
         </div>
+      </Modal>
+
+      <Modal open={Boolean(transferConfirm)} onClose={() => setTransferConfirm(null)} title="Registrar transferência interna" width={580} trackDirty={false}>
+        {transferConfirm && <div style={s.stack}>
+          <div style={s.muted}>As duas linhas serão marcadas como transferência interna. Nenhum lançamento de receita ou despesa será criado.</div>
+          <Card style={{ padding:14 }}><div style={{ color:C.text, fontWeight:800 }}>{transferConfirm.line.description || 'Linha bancária'} · {fmt(transferConfirm.line.amount)}</div><div style={{ ...s.muted, marginTop:4 }}>{formatDateBR(transferConfirm.line.postedDate)}</div></Card>
+          <label style={{ color:C.textSub, fontSize:12 }}>Linha correspondente da outra conta
+            <select value={transferConfirm.selectedId} onChange={event => setTransferConfirm(current => ({ ...current, selectedId:event.target.value }))} style={{ ...s.input, marginTop:6 }}>
+              {transferConfirm.candidates.map(item => <option key={item.id} value={item.id}>{item.description || 'Sem descrição'} · {fmt(item.amount)} · {item.financial_account_id}</option>)}
+            </select>
+          </label>
+          <label style={{ color:C.textSub, fontSize:12 }}>Justificativa obrigatória<textarea value={transferConfirm.justification} onChange={event => setTransferConfirm(current => ({ ...current, justification:event.target.value }))} style={{ ...s.input, minHeight:80, marginTop:6, resize:'vertical' }} /></label>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setTransferConfirm(null)}>Cancelar</Btn><Btn variant="success" onClick={confirmInternalTransfer} disabled={busy || transferConfirm.justification.trim().length < 3}>Confirmar transferência</Btn></div>
+        </div>}
       </Modal>
     </div>
   )

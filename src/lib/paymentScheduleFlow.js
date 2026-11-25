@@ -32,7 +32,10 @@ export function paymentScheduleFlow(totalValueRaw, item) {
       ...entry,
       dueDate:entry.date,
       settlementDate:String(settlement.receivedDate),
-      amount:Math.max(0, Number(settlement.amount ?? entry.amount)),
+      amount:Math.max(0, Number(settlement.grossAmount ?? settlement.amount ?? entry.amount)),
+      feesAmount:Math.max(0, Number(settlement.feesAmount || 0)),
+      interestAmount:Math.max(0, Number(settlement.interestAmount || 0)),
+      discountAmount:Math.max(0, Number(settlement.discountAmount || 0)),
       method:String(settlement.method || entry.method || ''),
       financialAccountId:settlement.financialAccountId || item?.financialAccountId || null,
     }
@@ -46,7 +49,7 @@ export function paymentScheduleFlow(totalValueRaw, item) {
     return {
       hasSchedule:false,
       installments:[],
-      paidInstallments:paid ? [{ index:0, date:dueDate, dueDate, settlementDate, amount:totalValue, method:explicit?.method || decoded.paymentMethod || '', financialAccountId:explicit?.financialAccountId || item?.financialAccountId || null }] : [],
+      paidInstallments:paid ? [{ index:0, date:dueDate, dueDate, settlementDate, amount:totalValue, feesAmount:Number(explicit?.feesAmount || 0), interestAmount:Number(explicit?.interestAmount || 0), discountAmount:Number(explicit?.discountAmount || 0), method:explicit?.method || decoded.paymentMethod || '', financialAccountId:explicit?.financialAccountId || item?.financialAccountId || null }] : [],
       openInstallments:paid || totalValue <= 0 ? [] : [{ index:0, date:dueDate, dueDate, settlementDate:null, amount:totalValue, method:decoded.paymentMethod || '', financialAccountId:item?.financialAccountId || null }],
       paidAmount:paid ? totalValue : 0,
       openAmount:paid ? 0 : totalValue,

@@ -25,7 +25,7 @@ function statusFromAmounts(paid, open, canceled) {
 // Numera e ordena as parcelas (pagas + abertas) de um item com cronograma.
 function installmentsFromFlow(flow, canceled) {
   const all = [
-    ...(flow.paidInstallments || []).map(p => ({ source_installment_number:p.index + 1, amount: round2(p.amount), due_date: p.dueDate || p.date || null, settlement_date: p.settlementDate || p.date || null, payment_method:p.method || null, financial_account_id:p.financialAccountId || null, status: 'paid' })),
+    ...(flow.paidInstallments || []).map(p => ({ source_installment_number:p.index + 1, amount: round2(p.amount), due_date: p.dueDate || p.date || null, settlement_date: p.settlementDate || p.date || null, payment_method:p.method || null, financial_account_id:p.financialAccountId || null, fees_amount:round2(p.feesAmount), interest_amount:round2(p.interestAmount), discount_amount:round2(p.discountAmount), status: 'paid' })),
     ...(flow.openInstallments || []).map(o => ({ source_installment_number:o.index + 1, amount: round2(o.amount), due_date: o.dueDate || o.date || null, settlement_date: null, payment_method:o.method || null, financial_account_id:o.financialAccountId || null, status: 'pending' })),
   ].sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
   all.forEach((x, i) => {
@@ -68,7 +68,7 @@ function frozenOrDerivedTax(item, base) {
 }
 
 function singleEntry({ sourceType, sourceComponent, direction, item, total, competenceDate, issueDate, dueDate,
-  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter, originLabel, paymentMethod, financialAccountId, account }) {
+  paidDate, isPaid, canceled, partyType, partyId, partyName, category, costCenter, originLabel, paymentMethod, financialAccountId, feesAmount, interestAmount, discountAmount, account }) {
   const paid = canceled ? 0 : (isPaid ? round2(total) : 0)
   const open = canceled ? 0 : (isPaid ? 0 : round2(total))
   const installment = {
@@ -78,6 +78,9 @@ function singleEntry({ sourceType, sourceComponent, direction, item, total, comp
     settlement_date: isPaid && !canceled ? (paidDate || dueDate || null) : null,
     payment_method:paymentMethod || null,
     financial_account_id:financialAccountId || null,
+    fees_amount:round2(feesAmount),
+    interest_amount:round2(interestAmount),
+    discount_amount:round2(discountAmount),
     status: canceled ? 'canceled' : (isPaid ? 'paid' : 'pending'),
   }
   return {
@@ -190,6 +193,7 @@ export function buildLedger(data = {}, options = {}) {
     account:findChartAccount(accounts, { systemKey:'asset_inventory_products', direction:'payable' }),
     paymentMethod:item.paymentMethod || null,
     financialAccountId:item.financialAccountId || null,
+    feesAmount:item.feesAmount || 0, interestAmount:item.interestAmount || 0, discountAmount:item.discountAmount || 0,
   })))
 
   // Receita extra: recebida (status padrão 'recebido') → caixa em received_date||date; senão em aberto.
@@ -206,6 +210,7 @@ export function buildLedger(data = {}, options = {}) {
       account:findChartAccount(accounts, { id:item.chartAccountId, legacyCategory:item.category, direction:'receivable' }),
       paymentMethod:item.paymentMethod || null,
       financialAccountId:item.financialAccountId || null,
+      feesAmount:item.feesAmount || 0, interestAmount:item.interestAmount || 0, discountAmount:item.discountAmount || 0,
     }))
   })
 
@@ -220,7 +225,8 @@ export function buildLedger(data = {}, options = {}) {
     costCenter:item.costCenter || null, originLabel:item.originLabel || null,
     account:findChartAccount(accounts, { id:item.chartAccountId, legacyCategory:item.category, direction:'payable' }),
     paymentMethod:item.paymentMethod || null,
-      financialAccountId:item.financialAccountId || null,
+    financialAccountId:item.financialAccountId || null,
+    feesAmount:item.feesAmount || 0, interestAmount:item.interestAmount || 0, discountAmount:item.discountAmount || 0,
   })))
 
   // Cada ocorrência da regra vira um título próprio e idempotente pelo componente occurrence:data.

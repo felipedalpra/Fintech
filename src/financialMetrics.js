@@ -145,7 +145,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           id:`ledger-${entry.direction}-${entry.source_type}-${entry.source_id}-${entry.source_component}-${row.installment_number}`,
           description:rows.length > 1 ? `${presentation.description} (parcela ${row.installment_number}/${rows.length})` : presentation.description,
           category:presentation.category,
-          value:paidValue,
+          value:Math.max(0, paidValue - Number(row.fees_amount || 0) + Number(row.interest_amount || 0) - Number(row.discount_amount || 0)),
           date:row.settlement_date,
           origin:presentation.origin,
           originLabel:source?.originLabel || '',

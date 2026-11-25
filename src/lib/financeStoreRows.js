@@ -18,6 +18,9 @@ export function mapExtraRevenuesRows(userId, data) {
     status:item.status || 'recebido',
     payment_method:item.paymentMethod || null,
     financial_account_id:item.financialAccountId || null,
+    fees_amount:item.feesAmount || 0,
+    interest_amount:item.interestAmount || 0,
+    discount_amount:item.discountAmount || 0,
     ...(item.chartAccountId ? { chart_account_id:item.chartAccountId } : {}),
   }))
 }
@@ -167,6 +170,9 @@ export function mapExpensesRows(userId, data) {
     payment_date:item.paymentDate || null,
     payment_method:item.paymentMethod || null,
     financial_account_id:item.financialAccountId || null,
+    fees_amount:item.feesAmount || 0,
+    interest_amount:item.interestAmount || 0,
+    discount_amount:item.discountAmount || 0,
     status:item.status || 'aberto',
     supplier_id:item.supplierId || null,
     cost_center:item.costCenter || null,

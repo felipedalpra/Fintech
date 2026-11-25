@@ -51,6 +51,16 @@ test('Fase 10: DRE lê competência do razão e caixa lê liquidação', () => {
   expect(metrics.cashBalance).toBe(110)
 })
 
+test('taxa de recebimento reduz o caixa sem alterar a receita bruta', () => {
+  const metrics = buildMetrics({
+    ...data,
+    surgeries:[], consultations:[], productSales:[], productPurchases:[], expenses:[],
+    extraRevenues:[{ id:'fee-revenue', description:'Cartão', value:1000, date:'2026-01-10', receivedDate:'2026-01-10', status:'recebido', feesAmount:30 }],
+  }, { startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31' })
+  expect(metrics.grossRevenue).toBe(1000)
+  expect(metrics.cashIn).toBe(970)
+})
+
 test('drill-downs reconciliam a centavo com os indicadores financeiros', () => {
   const metrics = buildMetrics(data, {
     startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31',
