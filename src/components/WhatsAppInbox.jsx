@@ -359,6 +359,18 @@ export function WhatsAppInbox() {
     return response.ok
   }, [])
 
+  // Também tenta recuperar mídias já persistidas ao abrir o Inbox. Sem esta
+  // chamada, uma mensagem antiga dependia do polling de 30 segundos ou de um
+  // clique manual em Atualizar para deixar de aparecer como apenas "[Áudio]".
+  useEffect(() => {
+    if (!ownerId) return undefined
+    let active = true
+    void processPendingMedia().then(processed => {
+      if (active && processed) load({ silent:true })
+    })
+    return () => { active = false }
+  }, [ownerId, processPendingMedia, load])
+
   const queueRealtimeMessage = useCallback(payload => {
     const messageId = payload?.new?.id || payload?.old?.id
     if (!messageId) return

@@ -40,6 +40,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ### Fixed
 
 - Corrigida a causa estrutural dos áudios recebidos ficarem apenas como `[Áudio]`: a fila usava `media_pending`/`media_processing`, mas o CHECK canônico do banco não aceitava esses estados e o webhook escondia a falha. O schema passa a aceitar a fila, o webhook registra uma marca de compatibilidade quando a migration ainda não foi aplicada e a fila também recupera eventos antigos presos em `received`.
+- A recuperação da fila de mídia agora também começa ao abrir o Inbox, sem esperar o polling de 30 segundos ou um clique manual em Atualizar.
 
 - Corrigida a altura do shell móvel do inbox para manter a lista de conversas acima da barra inferior; atualizados seletores E2E para a interface atual e alinhado o mock da galeria clínica à conclusão server-side do upload.
 - O cadastro de números Evolution agora normaliza o telefone formatado antes de enviá-lo ao backend, mantendo o payload em dígitos e evitando divergência entre exibição e integração.
