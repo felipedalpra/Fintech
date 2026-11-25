@@ -86,6 +86,7 @@ create table if not exists public.product_purchases (
   quantity numeric(12,2) not null default 1,
   total_value numeric(12,2) not null default 0,
   supplier text,
+  payment_method text,
   purchase_date date not null,
   created_at timestamptz not null default timezone('utc', now())
 );
@@ -110,6 +111,7 @@ create table if not exists public.expenses (
   value numeric(12,2) not null default 0,
   due_date date not null,
   payment_date date,
+  payment_method text,
   status text not null default 'aberto',
   is_financial_import boolean not null default false,
   created_at timestamptz not null default timezone('utc', now())

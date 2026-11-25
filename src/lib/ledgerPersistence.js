@@ -181,7 +181,7 @@ function normalizeRecurrence(row) {
 export async function syncRecurringLedger(client, userId, recurrenceRows, fromDate, toDate) {
   const [{ data:revenueRows, error:revenueError }, { data:expenseRows, error:expenseError }, { data:chartAccounts, error:chartError }] = await Promise.all([
     client.from('extra_revenues').select('id,description,category,chart_account_id,value,date,received_date,due_date,competence_date,status').eq('user_id', userId),
-    client.from('expenses').select('id,description,category,chart_account_id,value,due_date,payment_date,competence_date,status').eq('user_id', userId),
+    client.from('expenses').select('id,description,category,chart_account_id,value,due_date,payment_date,payment_method,competence_date,status').eq('user_id', userId),
     client.from('chart_accounts').select('*').eq('user_id', userId),
   ])
   if (revenueError) throw revenueError
@@ -191,7 +191,7 @@ export async function syncRecurringLedger(client, userId, recurrenceRows, fromDa
   const data = {
     recurrences:(recurrenceRows || []).map(normalizeRecurrence),
     extraRevenues:(revenueRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, chartAccountId:row.chart_account_id || null, value:Number(row.value || 0), date:row.date || '', receivedDate:row.received_date || '', dueDate:row.due_date || row.date || '', competenceDate:row.competence_date || row.date || '', status:row.status || 'recebido' })),
-    expenses:(expenseRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, chartAccountId:row.chart_account_id || null, value:Number(row.value || 0), dueDate:row.due_date || '', paymentDate:row.payment_date || '', competenceDate:row.competence_date || row.due_date || '', status:row.status || 'aberto' })),
+    expenses:(expenseRows || []).map(row => ({ id:row.id, description:row.description, category:row.category, chartAccountId:row.chart_account_id || null, value:Number(row.value || 0), dueDate:row.due_date || '', paymentDate:row.payment_date || '', paymentMethod:row.payment_method || '', competenceDate:row.competence_date || row.due_date || '', status:row.status || 'aberto' })),
     chartAccounts:chartAccounts || [],
   }
   const ledger = buildLedger(data, { recurrenceFrom:fromDate, recurrenceTo:toDate })

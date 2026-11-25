@@ -164,6 +164,7 @@ export function mapExpensesRows(userId, data) {
     due_date:item.dueDate,
     competence_date:item.competenceDate || item.dueDate || null,
     payment_date:item.paymentDate || null,
+    payment_method:item.paymentMethod || null,
     status:item.status || 'aberto',
     supplier_id:item.supplierId || null,
     cost_center:item.costCenter || null,

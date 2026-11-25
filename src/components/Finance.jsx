@@ -110,7 +110,7 @@ function settleProductSaleInstallment(record, account, selectedPaymentMethod, re
   }
 }
 
-function settleClinicalCostComponent(record, item, paidDate) {
+function settleClinicalCostComponent(record, item, paidDate, paymentMethod) {
   const componentKey = item.sourceComponent
   if (!componentKey) return record
   const existing = record.costSettlements?.[componentKey] || {}
@@ -118,7 +118,7 @@ function settleClinicalCostComponent(record, item, paidDate) {
     ...record,
     costSettlements:{
       ...(record.costSettlements || {}),
-      [componentKey]:{ ...existing, status:'pago', paymentDate:paidDate },
+      [componentKey]:{ ...existing, status:'pago', paymentDate:paidDate, paymentMethod:paymentMethod || existing.paymentMethod || null },
     },
   }
 }
@@ -946,39 +946,39 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const markExpenseAsPaid = item => {
     setPaymentConfirmState({
       item,
-      paidToday:'sim',
       paymentDate:today(),
+      paymentMethod:item.paymentMethod || '',
     })
   }
 
-  const applyMarkExpenseAsPaid = (item, paidDate) => {
+  const applyMarkExpenseAsPaid = (item, paidDate, selectedPaymentMethod) => {
     if (item.source === 'recorrencia') {
       const exists = data.expenses.some(record => record.description === item.supplier && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.dueDate === item.dueDate)
       if (!exists) {
         setData(current => ({
           ...current,
-          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', chartAccountId:item.chartAccountId || null, value:item.value || 0, dueDate:item.dueDate, paymentDate:paidDate, status:'pago' }],
+          expenses:[...current.expenses, { id:uid(), description:item.supplier, category:item.category || 'outros', chartAccountId:item.chartAccountId || null, value:item.value || 0, dueDate:item.dueDate, paymentDate:paidDate, paymentMethod:selectedPaymentMethod, status:'pago' }],
         }))
       }
       toast('Recorrência marcada como paga.')
       return
     }
     if (item.source === 'compra_produto') {
-      setData(current => ({ ...current, productPurchases:current.productPurchases.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
+      setData(current => ({ ...current, productPurchases:current.productPurchases.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate, paymentMethod:selectedPaymentMethod } : record) }))
       toast('Compra de produto marcada como paga.')
       return
     }
     if (item.source === 'custo_cirurgico') {
-      setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleClinicalCostComponent(record, item, paidDate) : record) }))
+      setData(current => ({ ...current, surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleClinicalCostComponent(record, item, paidDate, selectedPaymentMethod) : record) }))
       toast('Custo cirúrgico marcado como pago.')
       return
     }
     if (item.source === 'custo_consulta') {
-      setData(current => ({ ...current, consultations:current.consultations.map(record => record.id === item.sourceId ? settleClinicalCostComponent(record, item, paidDate) : record) }))
+      setData(current => ({ ...current, consultations:current.consultations.map(record => record.id === item.sourceId ? settleClinicalCostComponent(record, item, paidDate, selectedPaymentMethod) : record) }))
       toast('Custo da consulta marcado como pago.')
       return
     }
-    setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate } : record) }))
+    setData(current => ({ ...current, expenses:current.expenses.map(record => record.id === item.sourceId ? { ...record, status:'pago', paymentDate:paidDate, paymentMethod:selectedPaymentMethod } : record) }))
     toast('Despesa marcada como paga.')
   }
 
@@ -1123,12 +1123,17 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
 
   const confirmExpensePayment = () => {
     if (!paymentConfirmState?.item) return
-    const paidDate = paymentConfirmState.paidToday === 'sim' ? today() : paymentConfirmState.paymentDate
-    if (!paidDate) {
-      toast('Informe a data de pagamento.', 'warning')
+    if (!paymentConfirmState.paymentMethod) {
+      toast('Informe a forma de pagamento.', 'warning')
       return
     }
-    applyMarkExpenseAsPaid(paymentConfirmState.item, paidDate)
+    const paidDate = paymentConfirmState.paymentDate
+    const currentDate = today()
+    if (!isIsoDateString(paidDate) || paidDate > currentDate) {
+      toast('Informe uma data de pagamento válida, que não seja futura.', 'warning')
+      return
+    }
+    applyMarkExpenseAsPaid(paymentConfirmState.item, paidDate, paymentConfirmState.paymentMethod)
     setPaymentConfirmState(null)
   }
 
@@ -2250,19 +2255,21 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             {paymentConfirmState?.item ? `Pagamento de ${money(paymentConfirmState.item.value || 0)} em "${paymentConfirmState.item.supplier || paymentConfirmState.item.description || 'despesa'}".` : ''}
           </div>
           <FInput
-            label="A despesa foi paga hoje?"
-            value={paymentConfirmState?.paidToday || 'sim'}
-            onChange={value => setPaymentConfirmState(current => ({ ...(current || {}), paidToday:value, paymentDate:value === 'sim' ? today() : '' }))}
-            options={[{ v:'sim', l:'Sim' }, { v:'nao', l:'Não' }]}
+            label="Forma de pagamento"
+            value={paymentConfirmState?.paymentMethod || ''}
+            onChange={value => setPaymentConfirmState(current => ({ ...(current || {}), paymentMethod:value }))}
+            options={[{ v:'', l:'Selecione…' }, ...PAYMENT_METHODS]}
+            required
           />
-          {paymentConfirmState?.paidToday === 'nao' && (
-            <FInput
-              label="Data real do pagamento"
-              type="date"
-              value={paymentConfirmState?.paymentDate || ''}
-              onChange={value => setPaymentConfirmState(current => ({ ...(current || {}), paymentDate:value }))}
-            />
-          )}
+          <FInput
+            label="Data efetiva do pagamento"
+            type="date"
+            value={paymentConfirmState?.paymentDate || ''}
+            max={today()}
+            onChange={value => setPaymentConfirmState(current => ({ ...(current || {}), paymentDate:value }))}
+            required
+          />
+          <div style={{ color:C.textDim, fontSize:12, lineHeight:1.45 }}>A forma já cadastrada e a data de hoje vêm preenchidas, mas você pode editar ambos antes de confirmar.</div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
             <Btn variant="ghost" onClick={() => setPaymentConfirmState(null)}>Cancelar</Btn>
             <Btn variant="success" onClick={confirmExpensePayment}>Confirmar pagamento</Btn>

@@ -14,6 +14,7 @@ test('marcador de importacao sobrevive normalizacao e serializacao de receita e 
     expenses:[{
       id:'30000000-0000-4000-8000-000000000001',
       description:'Despesa importada', value:50, dueDate:'2026-11-01',
+      paymentMethod:'cartao',
       originLabel:'', isFinancialImport:true,
     }],
   })
@@ -22,5 +23,6 @@ test('marcador de importacao sobrevive normalizacao e serializacao de receita e 
   expect(normalized.expenses[0].isFinancialImport).toBe(true)
   expect(mapExtraRevenuesRows(OWNER, normalized)[0].is_financial_import).toBe(true)
   expect(mapExpensesRows(OWNER, normalized)[0].is_financial_import).toBe(true)
+  expect(mapExpensesRows(OWNER, normalized)[0].payment_method).toBe('cartao')
 })
 

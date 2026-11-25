@@ -39,6 +39,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 
+- “Contas a pagar” agora confirma forma e data efetiva do pagamento no mesmo popup de “Contas a receber”, preserva esses dados em despesas, compras de produtos e custos clínicos e bloqueia datas futuras.
+
 - O popup de confirmação de recebimento agora permite informar a data efetiva do pagamento, usando hoje como padrão, validando datas futuras e preservando a data de competência/vencimento nos recebimentos manuais; o campo compartilhado respeita o limite máximo no calendário.
 
 - Corrigida a causa estrutural dos áudios recebidos ficarem apenas como `[Áudio]`: a fila usava `media_pending`/`media_processing`, mas o CHECK canônico do banco não aceitava esses estados e o webhook escondia a falha. O schema passa a aceitar a fila, o webhook registra uma marca de compatibilidade quando a migration ainda não foi aplicada e a fila também recupera eventos antigos presos em `received`.
