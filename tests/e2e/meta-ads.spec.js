@@ -71,8 +71,8 @@ test('Desempenho agrega por campanha e calcula KPIs e métricas derivadas', asyn
   }
 
   // Campanhas agregadas e selo do melhor CPL (C1 tem CPL R$50; C2 sem leads fica fora).
-  await expect(page.getByText('Rinoplastia — Interesse SP')).toBeVisible()
-  await expect(page.getByText('Mamoplastia — Lookalike')).toBeVisible()
+  await expect(page.locator('table').getByText('Rinoplastia — Interesse SP')).toBeVisible()
+  await expect(page.locator('table').getByText('Mamoplastia — Lookalike')).toBeVisible()
   await expect(page.getByText('★ melhor CPL')).toBeVisible()
 
   // KPIs totais (gasto 230, CPL médio 76,67) e número agregado de uma campanha (gasto 150).
@@ -89,7 +89,7 @@ test('Desempenho agrega por campanha e calcula KPIs e métricas derivadas', asyn
 test('trocar o nível para Conjuntos recarrega os dados do nível', async ({ page }) => {
   await page.goto('/app/ads')
   await page.getByRole('main').getByRole('button', { name: 'Conjuntos', exact: true }).click()
-  await expect(page.getByText('Conjunto Reels 25-44')).toBeVisible()
+  await expect(page.locator('table').getByText('Conjunto Reels 25-44')).toBeVisible()
 })
 
 test('aba Análises mostra estado vazio com botão Reanalisar quando não há cache', async ({ page }) => {

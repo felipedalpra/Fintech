@@ -1196,7 +1196,7 @@ export function FinanceWorkspace() {
   }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', height:isInboxPage || !isMobile ? (isMobile ? 'calc(100dvh - 58px - env(safe-area-inset-bottom))' : '100dvh') : 'auto', background:C.bg }}>
+    <div style={{ display:'flex', flexDirection:'column', minHeight:isInboxPage && isMobile ? 0 : '100vh', height:isInboxPage || !isMobile ? (isMobile ? 'calc(100dvh - 58px - env(safe-area-inset-bottom))' : '100dvh') : 'auto', background:C.bg }}>
       {isMobile && mobileNavOpen && <div onClick={() => setMobileNavOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.56)', zIndex:30 }} />}
 
       {/* Barra de áreas (topo, full-width). No mobile vira uma faixa fina: só nome da área ativa + sino; a navegação entre áreas desce para a barra inferior, estilo iPhone. */}

@@ -51,7 +51,7 @@ test('admin cria instância Evolution por QR sem receber credenciais da infraest
   await expect(page.locator('input[type="password"]')).toHaveCount(0)
 
   await page.getByPlaceholder('Ex: Concierge').fill('Homologação')
-  await page.getByPlaceholder('Ex: 5511999990000').fill('5511999990000')
+  await page.getByLabel('Telefone (opcional)').fill('5511999990000')
   await page.getByRole('button', { name:'Criar e mostrar QR Code' }).click()
 
   await expect(page.getByTestId('evolution-qrcode')).toBeVisible()
@@ -105,7 +105,7 @@ test('admin conecta três instâncias distintas e a quarta é recusada', async (
 
   for (const [label, phone] of [['Recepção','5511999990001'], ['Comercial','5511999990002'], ['Pós-operatório','5511999990003']]) {
     await page.getByPlaceholder('Ex: Concierge').fill(label)
-    await page.getByPlaceholder('Ex: 5511999990000').fill(phone)
+    await page.getByLabel('Telefone (opcional)').fill(phone)
     await page.getByRole('button', { name:'Criar e mostrar QR Code' }).click()
     await expect(page.getByText(label, { exact:true })).toBeVisible()
   }

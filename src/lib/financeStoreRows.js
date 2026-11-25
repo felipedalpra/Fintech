@@ -16,6 +16,7 @@ export function mapExtraRevenuesRows(userId, data) {
     origin_label:item.originLabel || null,
     is_financial_import:item.isFinancialImport === true,
     status:item.status || 'recebido',
+    payment_method:item.paymentMethod || null,
     ...(item.chartAccountId ? { chart_account_id:item.chartAccountId } : {}),
   }))
 }

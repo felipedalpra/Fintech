@@ -29,6 +29,7 @@ export async function clinicalAssetSha256(file) {
 }
 
 export async function completeClinicalAssetUpload(assetId, accessToken) {
+  if (!accessToken) throw new Error('Sessão expirada. Entre novamente para concluir o upload.')
   const response = await fetch('/api/clinical-assets/complete', {
     method:'POST',
     headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${accessToken}` },

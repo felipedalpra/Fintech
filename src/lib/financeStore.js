@@ -217,6 +217,7 @@ async function fetchRelationalData(userId) {
       originLabel:item.origin_label || '',
       isFinancialImport:item.is_financial_import === true,
       status:item.status || 'recebido',
+      paymentMethod:item.payment_method || '',
       chartAccountId:item.chart_account_id || null,
     })),
     expenses:(expensesResult.data || []).map(item => ({

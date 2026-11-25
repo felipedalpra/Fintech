@@ -36,10 +36,12 @@ import { FinanceProfitTrend } from './FinanceProfitTrend.jsx'
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
   { v:'cartao', l:'Cartão' },
+  { v:'cartao_link', l:'Link de cartão' },
   { v:'dinheiro', l:'Dinheiro' },
   { v:'boleto', l:'Boleto' },
   { v:'transferencia', l:'Transferência' },
 ]
+const PAYMENT_METHOD_LABELS = Object.fromEntries(PAYMENT_METHODS.map(item => [item.v, item.l]))
 const SURGERY_PAYMENT_STATUS = [
   { v:'pago', l:'Pago' },
   { v:'pendente', l:'Pendente' },
@@ -55,7 +57,7 @@ const DEFAULT_COST_CENTERS = [
   'Recursos Humanos',
   'Outros',
 ]
-const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', chartAccountId:'', value:0, patientId:'', patient:'', date:today(), competenceDate:today(), dueDate:today(), status:'recebido', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
+const EXTRA_REVENUE_EMPTY = { description:'', category:'outras_receitas', chartAccountId:'', value:0, patientId:'', patient:'', date:today(), competenceDate:today(), dueDate:today(), status:'recebido', paymentMethod:'pix', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 const EXPENSE_EMPTY = { description:'', category:'outros', chartAccountId:'', value:0, supplierId:'', supplier:'', dueDate:today(), competenceDate:today(), paymentDate:today(), status:'pago', costCenter:'', originLabel:'', launchType:'variavel', recurrenceFrequency:'mensal', recurrenceDay:5, recurrenceStartDate:today(), recurrenceEndDate:'', recurrenceAutoMarkAsPaid:false, recurrenceActive:true }
 
 // Origem exibida: rótulo livre preenchido pelo usuário (ex: "Indicação") ou,
@@ -67,7 +69,7 @@ const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', saving:false, error:'' }
 
-function settleReceivableInstallment(record, account) {
+function settleReceivableInstallment(record, account, selectedPaymentMethod) {
   const installment = account.openInstallmentRows?.[0] || { installmentNumber:1, amount:account.value }
   const sourceInstallmentNumber = installment.sourceInstallmentNumber || installment.installmentNumber
   const remainingOpenInstallments = Number(account.openInstallments || account.openInstallmentRows?.length || 1)
@@ -88,7 +90,7 @@ function settleReceivableInstallment(record, account) {
     [String(sourceInstallmentNumber)]:withReceivedInstallmentHistory(previousSettlements[String(sourceInstallmentNumber)], {
       receivedDate,
       amount:installment.amount,
-      method:installment.paymentMethod || record.paymentMethod || 'manual',
+      method:selectedPaymentMethod || installment.paymentMethod || record.paymentMethod || 'manual',
     }),
   }
   return {
@@ -99,8 +101,8 @@ function settleReceivableInstallment(record, account) {
   }
 }
 
-function settleProductSaleInstallment(record, account) {
-  const settled = settleReceivableInstallment(record, account)
+function settleProductSaleInstallment(record, account, selectedPaymentMethod) {
+  const settled = settleReceivableInstallment(record, account, selectedPaymentMethod)
   const allPaid = Number(account.openInstallments || account.openInstallmentRows?.length || 1) === 1
   return {
     ...settled,
@@ -254,6 +256,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const [importedRemovalTarget, setImportedRemovalTarget] = useState(null)
   const [importedRemovalReason, setImportedRemovalReason] = useState('')
   const [paymentConfirmState, setPaymentConfirmState] = useState(null)
+  const [receivablePaymentState, setReceivablePaymentState] = useState(null)
   const [listFilters, setListFilters] = useState({ search:'', category:'all', origin:'all', status:'all', launchType:'all', fiscalStatus:'all' })
   const [fiscalDocumentsByEntry, setFiscalDocumentsByEntry] = useState({})
   const [fiscalTarget, setFiscalTarget] = useState(null)
@@ -856,32 +859,32 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     setShowModal(false)
   }
 
-  const markReceivableAsPaid = item => {
+  const applyMarkReceivableAsPaid = (item, selectedPaymentMethod) => {
     if (item.source === 'recorrencia') {
       const exists = data.extraRevenues.some(record => record.description === item.description && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.date === item.dueDate)
       if (!exists) {
         setData(current => ({
           ...current,
-          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', chartAccountId:item.chartAccountId || null, value:item.value || 0, date:item.dueDate, receivedDate:item.dueDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido' }],
+          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', chartAccountId:item.chartAccountId || null, value:item.value || 0, date:item.dueDate, receivedDate:item.dueDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido', paymentMethod:selectedPaymentMethod }],
         }))
       }
       toast('Recorrência marcada como recebida.')
       return
     }
     if (item.source === 'outra_receita') {
-      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', date:today(), receivedDate:today() } : record) }))
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', paymentMethod:selectedPaymentMethod, date:today(), receivedDate:today() } : record) }))
       toast('Receita marcada como recebida.')
       return
     }
     if (item.source === 'venda_produto') {
-      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? settleProductSaleInstallment(record, item) : record) }))
+      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? settleProductSaleInstallment(record, item, selectedPaymentMethod) : record) }))
       toast(Number(item.openInstallments || item.openInstallmentRows?.length || 1) === 1 ? 'Venda de produto marcada como recebida.' : 'Parcela da venda marcada como recebida.')
       return
     }
     if (item.source === 'cirurgia') {
       setData(current => ({
         ...current,
-        surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item) : record),
+        surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item, selectedPaymentMethod) : record),
       }))
       toast('Parcela marcada como recebida.')
       return
@@ -889,12 +892,26 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     if (item.source === 'consulta') {
       setData(current => ({
         ...current,
-        consultations:current.consultations.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item) : record),
+        consultations:current.consultations.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item, selectedPaymentMethod) : record),
       }))
       toast('Parcela marcada como recebida.')
       return
     }
     toast('Marcado como recebido.')
+  }
+
+  const markReceivableAsPaid = item => setReceivablePaymentState({
+    item,
+    paymentMethod:item.openInstallmentRows?.[0]?.paymentMethod || item.paymentMethod || '',
+  })
+
+  const confirmReceivablePayment = () => {
+    if (!receivablePaymentState?.item || !receivablePaymentState.paymentMethod) {
+      toast('Informe a forma de pagamento.', 'warning')
+      return
+    }
+    applyMarkReceivableAsPaid(receivablePaymentState.item, receivablePaymentState.paymentMethod)
+    setReceivablePaymentState(null)
   }
 
   const receivableActions = item => item.source === 'recorrencia'
@@ -1346,6 +1363,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   // mostrando "Cirurgias 0%" logo acima de uma tabela cheia de cirurgias.
   const revenueOrigins = useMemo(() => foldRevenueOriginTail(m.revenueOriginBreakdown || []), [m.revenueOriginBreakdown])
   const revenueOriginsTotal = revenueOrigins[0]?.total || 0
+  const paymentMethodBreakdown = m.paymentMethodBreakdown || []
 
 
 
@@ -1417,6 +1435,33 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         </div>
 
         <FinanceProfitTrend points={profitTrend} formatMoney={money} privacyMode={financialPrivacyMode} />
+
+        {paymentMethodBreakdown.length > 0 && (
+          <Card style={{ padding:20 }} data-testid="payment-method-breakdown">
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:12, flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color:C.text }}>Recebimentos por forma de pagamento</div>
+                <div style={{ fontSize:11.5, color:C.textDim, marginTop:3 }}>Considera os recebimentos efetivados no período.</div>
+              </div>
+              <div style={{ fontSize:12, color:C.textSub }}>{paymentMethodBreakdown.reduce((sum, item) => sum + item.count, 0)} recebimento(s)</div>
+            </div>
+            <div style={{ display:'grid', gap:10, marginTop:14 }}>
+              {paymentMethodBreakdown.map(item => {
+                const total = paymentMethodBreakdown.reduce((sum, entry) => sum + entry.value, 0)
+                const pct = total > 0 ? (item.value / total) * 100 : 0
+                return <div key={item.method}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:12, fontSize:12, marginBottom:5 }}>
+                    <span style={{ color:C.textSub }}>{PAYMENT_METHOD_LABELS[item.method] || 'Não informado'} · {item.count} recebimento(s)</span>
+                    <strong style={{ color:C.text }}>{money(item.value)}</strong>
+                  </div>
+                  <div style={{ height:7, background:C.border, borderRadius:99, overflow:'hidden' }}>
+                    <div style={{ width:`${Math.max(pct, 1)}%`, height:'100%', background:C.accent, borderRadius:99 }} />
+                  </div>
+                </div>
+              })}
+            </div>
+          </Card>
+        )}
 
         {nextDueItem && (
           <Card style={{ padding:'12px 18px', border:`1px solid ${C.yellow}44`, background:`${C.yellow}08`, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
@@ -2214,6 +2259,25 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
             <Btn variant="ghost" onClick={() => setPaymentConfirmState(null)}>Cancelar</Btn>
             <Btn variant="success" onClick={confirmExpensePayment}>Confirmar pagamento</Btn>
+          </div>
+        </div>
+      </Modal>
+      <Modal open={!!receivablePaymentState} onClose={() => setReceivablePaymentState(null)} title="Confirmar recebimento" width={460}>
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ color:C.textSub, fontSize:13 }}>
+            {receivablePaymentState?.item ? `Recebimento de ${money(receivablePaymentState.item.value || 0)}${receivablePaymentState.item.patient ? ` de ${receivablePaymentState.item.patient}` : ''}.` : ''}
+          </div>
+          <FInput
+            label="Forma de pagamento"
+            value={receivablePaymentState?.paymentMethod || ''}
+            onChange={value => setReceivablePaymentState(current => ({ ...(current || {}), paymentMethod:value }))}
+            options={[{ v:'', l:'Selecione…' }, ...PAYMENT_METHODS]}
+            required
+          />
+          <div style={{ color:C.textDim, fontSize:12, lineHeight:1.45 }}>A opção já cadastrada vem selecionada, mas você pode alterá-la antes de confirmar.</div>
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
+            <Btn variant="ghost" onClick={() => setReceivablePaymentState(null)}>Cancelar</Btn>
+            <Btn variant="success" onClick={confirmReceivablePayment}>Confirmar recebimento</Btn>
           </div>
         </div>
       </Modal>

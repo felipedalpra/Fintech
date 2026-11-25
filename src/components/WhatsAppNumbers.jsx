@@ -87,7 +87,7 @@ export function WhatsAppNumbers({ canManageAll = true }) {
     setMsg(null)
     if (provider === 'evolution') {
       try {
-        const result = await whatsappApi('provision-number', { label: label.trim(), phone })
+        const result = await whatsappApi('provision-number', { label: label.trim(), phone: phone.replace(/\D/g, '') || null })
         setQrCode({ numberId: result.number?.id, label: result.number?.label || label.trim(), ...(result.qrcode || {}) })
         setMsg({ type: 'success', text: `Instância de "${label.trim()}" criada. Escaneie o QR Code pelo WhatsApp Business.` })
         setLabel(''); setPhone('')

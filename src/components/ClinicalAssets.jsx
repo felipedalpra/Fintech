@@ -27,6 +27,7 @@ const ASSET_COLUMNS = 'id,user_id,patient_id,created_by,asset_kind,stage,capture
 const PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp'
 const DOCUMENT_ACCEPT = 'application/pdf'
 const MAX_BATCH_FILES = 12
+const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
 
 function initialForm(stage = 'before') {
   return { stage, captured_on:today(), region:'', procedure_name:'', notes:'', consent_acceptance_id:'' }
@@ -306,8 +307,9 @@ export function ClinicalAssets({ patient, ownerId, viewerId = '', initialAction 
         }
         setProgress({ current:index + 1, total:fileEntries.length, label:`Confirmando ${file.name}` })
         const { data:{ session } = {} } = await supabase.auth.getSession()
-        if (!session?.access_token) throw new Error('Sessão expirada. Entre novamente para concluir o upload.')
-        await completeClinicalAssetUpload(reservedAsset.asset_id, session.access_token)
+        const accessToken = E2E_BYPASS_AUTH ? 'e2e-token' : session?.access_token
+        if (!accessToken) throw new Error('Sessão expirada. Entre novamente para concluir o upload.')
+        await completeClinicalAssetUpload(reservedAsset.asset_id, accessToken)
         completed += 1
       } catch (nextError) {
         failures.push(`${file.name}: ${nextError.message || 'falha no envio'}`)

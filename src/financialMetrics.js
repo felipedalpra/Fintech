@@ -159,6 +159,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           installmentDisplayNumber:row.installment_number,
           installmentsTotal:rows.length,
           sourceComponent:entry.source_component,
+          paymentMethod:row.payment_method || '',
           chartAccountId:entry.chart_account_id || null,
           accountNature:entry.account_nature || null,
           dreSection:entry.dre_section || null,
@@ -194,6 +195,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       accountNature:entry.account_nature || null,
       dreSection:entry.dre_section || null,
       competenceDate:entry.competence_date,
+      patientId:entry.party_id || null,
       openInstallments:openRows.length,
       installmentsTotal:rows.length,
       status:rawStatus && !['pago', 'recebido'].includes(rawStatus) ? rawStatus : 'pendente',
@@ -370,6 +372,13 @@ export function buildMetrics(rawData, options = {}) {
   const cashIn = entriesFinancial.reduce((acc, item) => acc + item.value, 0)
   const cashOut = exitsFinancial.reduce((acc, item) => acc + item.value, 0)
   const cashBalance = cashIn - cashOut
+  const paymentMethodBreakdown = Object.values(entriesFinancial.reduce((acc, item) => {
+    const key = item.paymentMethod || 'nao_informado'
+    if (!acc[key]) acc[key] = { method:key, count:0, value:0 }
+    acc[key].count += 1
+    acc[key].value += Number(item.value || 0)
+    return acc
+  }, {})).sort((a, b) => b.value - a.value)
 
   const accountsReceivable = [...ledger.accountsReceivable]
 
@@ -569,6 +578,7 @@ export function buildMetrics(rawData, options = {}) {
     cashIn,
     cashOut,
     cashBalance,
+    paymentMethodBreakdown,
     surgeriesCompleted,
     consultationsCompleted,
     averageTicket,

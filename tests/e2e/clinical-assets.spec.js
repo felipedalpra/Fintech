@@ -51,6 +51,22 @@ test('envia, confirma, recarrega e arquiva foto clínica privada', async ({ page
     }
     await route.fulfill(json(true))
   })
+  await page.route('**/api/clinical-assets/complete*', async route => {
+    const { assetId } = await route.request().postDataJSON()
+    if (assetId === 'asset-photo' && !assets.some(asset => asset.id === 'asset-photo')) {
+      assets.unshift({
+        id:'asset-photo', user_id:'e2e-user-id', patient_id:'patient-assets', created_by:'e2e-user-id',
+        asset_kind:'clinical_photo', stage:'before', captured_on:'2026-10-22', region:'Abdômen',
+        procedure_name:'Abdominoplastia', notes:'Registro pré-operatório', bucket_id:'clinical-assets',
+        object_path:'e2e-user-id/patient-assets/asset-photo/original.png', file_name:'antes.png',
+        expected_mime_type:'image/png', expected_file_size:PNG.length, observed_mime_type:'image/png',
+        file_size:PNG.length, client_sha256:'a'.repeat(64), consent_acceptance_id:'consent-image',
+        status:'available', created_at:'2026-10-22T12:00:00Z', completed_at:'2026-10-22T12:00:01Z',
+        failed_at:null, archived_at:null,
+      })
+    }
+    await route.fulfill(json({ ok:true, assetId }))
+  })
   await page.route('**/rest/v1/rpc/log_clinical_asset_access*', async route => {
     auditIds.push((await route.request().postDataJSON()).p_asset_id)
     await route.fulfill(json(true))

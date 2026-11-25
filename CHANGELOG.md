@@ -5,6 +5,15 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - `Changed`: alterações em comportamentos existentes
 - `Fixed`: correções de bugs
 
+## [Unreleased] - 2026-11-25
+
+### Added
+
+- **Forma de pagamento na baixa de recebíveis**: “Marcar recebido” agora abre um popup de confirmação. A forma já cadastrada vem pré-selecionada, pode ser alterada antes da confirmação e, quando não existe, a baixa exige uma escolha. O método fica registrado por parcela; receitas adicionais também passam a persistir a forma, incluindo “Link de cartão” separado de cartão presencial. Aplicar `supabase/extra_revenue_payment_method.sql` antes do deploy. (`src/components/Finance.jsx`, `src/lib/financeStore.js`, `src/lib/financeStoreRows.js`, `supabase/erp_relational_schema.sql`, `supabase/single_user_minimal_schema.sql`.)
+- O Financeiro agora resume os recebimentos efetivados por forma de pagamento; dados antigos sem método ficam explicitamente como “Não informado”. (`src/financialMetrics.js`, `src/lib/financialLedger.js`, `src/components/Finance.jsx`.)
+
+- **Link de pagamento na emissão de cobrança**: a tela Financeiro agora permite escolher “Link de pagamento”, validar uma URL HTTPS fornecida pelo gateway de cartão, visualizar uma mensagem pronta com valor, vencimento e link clicável e abrir o envio no WhatsApp do paciente via `wa.me`. Essa modalidade não depende de banco/Asaas nem envia o link automaticamente; o telefone é lido com o escopo normal do paciente e a URL nunca é aberta sem validação. (`src/components/BillingChargeButton.jsx`, `src/lib/paymentLink.js`, `src/financialMetrics.js`, `tests/unit/paymentLink.spec.js`.)
+
 ## [Unreleased] - 2026-11-23 (2)
 
 ### Changed
@@ -29,6 +38,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - A resposta do copiloto agora retorna o identificador persistido da mensagem do assistente, permitindo que feedback e ações de resposta continuem funcionando após recarregar a conversa.
 
 ### Fixed
+
+- Corrigida a altura do shell móvel do inbox para manter a lista de conversas acima da barra inferior; atualizados seletores E2E para a interface atual e alinhado o mock da galeria clínica à conclusão server-side do upload.
+- O cadastro de números Evolution agora normaliza o telefone formatado antes de enviá-lo ao backend, mantendo o payload em dígitos e evitando divergência entre exibição e integração.
+- A confirmação do upload clínico usa o token de bypass somente no ambiente E2E, no componente que conhece o ambiente, mantendo a biblioteca de ativos compatível com o runner unitário e sem relaxar a autenticação em produção.
 
 - O gráfico de fluxo do Dashboard agora preenche todos os meses do período selecionado, inclusive meses sem movimentação, permitindo visualizar o ano inteiro e traçar as linhas corretamente quando há dados concentrados em um único mês. (`src/components/Dashboard.jsx`.)
 
