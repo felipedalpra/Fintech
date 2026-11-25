@@ -15,6 +15,7 @@ import { hasChangedReceiptFields, hasRecognizedReceipt } from '../lib/receivable
 import { useToast } from '../context/ToastContext.jsx'
 import { CUSTOM_PROCEDURE_VALUE, procedureDisplayName, resolveCustomProcedureFields } from '../lib/customProcedure.js'
 import { CITY_OPTIONS } from '../lib/clinicalCalendar.js'
+import { ATTENDANCE_PERIODS, compareAttendanceDateTime, getAttendancePeriodRange, matchesAttendancePeriod, uniqueAttendanceOptions } from '../lib/attendanceListFilters.js'
 
 const PAYMENT_METHODS = [
   { v:'pix', l:'PIX' },
@@ -166,6 +167,12 @@ export function Sales({ data, setData, saveDataNow }) {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
   const [sortBy, setSortBy] = useState('recentes') // 'recentes' | 'antigas' | 'valor'
+  const [period, setPeriod] = useState('todos')
+  const [periodFrom, setPeriodFrom] = useState('')
+  const [periodTo, setPeriodTo] = useState('')
+  const [procedureFilter, setProcedureFilter] = useState('todos')
+  const [surgeonFilter, setSurgeonFilter] = useState('todos')
+  const [cityFilter, setCityFilter] = useState('todos')
   const [page, setPage] = useState(1)
   const [installmentModal, setInstallmentModal] = useState(null)
   const { detail, openDrilldown, closeDrilldown } = useFinancialDrilldown()
@@ -305,11 +312,16 @@ export function Sales({ data, setData, saveDataNow }) {
     setShowModal(false)
   }
 
-  const filtered = data.surgeries
-    .filter(item => item.patient.toLowerCase().includes(search.toLowerCase()) && (filterStatus === 'todos' || item.paymentStatus === filterStatus))
+  const periodRange = getAttendancePeriodRange(period, today(), periodFrom, periodTo)
+  const filtered = [...data.surgeries]
+    .filter(item => String(item.patient || '').toLowerCase().includes(search.toLowerCase()) && (filterStatus === 'todos' || item.paymentStatus === filterStatus))
+    .filter(item => procedureFilter === 'todos' || item.procedureId === procedureFilter || (procedureFilter === 'custom' && item.customProcedureName))
+    .filter(item => surgeonFilter === 'todos' || item.surgeon === surgeonFilter)
+    .filter(item => cityFilter === 'todos' || item.city === cityFilter)
+    .filter(item => matchesAttendancePeriod(item, periodRange))
     .sort((a, b) => {
       if (sortBy === 'valor') return (b.totalValue || 0) - (a.totalValue || 0)
-      const cmp = (a.date || '').localeCompare(b.date || '')
+      const cmp = compareAttendanceDateTime(a, b)
       return sortBy === 'antigas' ? cmp : -cmp
     })
 
@@ -317,7 +329,7 @@ export function Sales({ data, setData, saveDataNow }) {
   // valem sobre a lista INTEIRA; a página é só o recorte exibido.
   const pageView = paginate(filtered, page)
   const visible = pageView.rows
-  useEffect(() => { setPage(1) }, [search, filterStatus, sortBy, data.surgeries.length])
+  useEffect(() => { setPage(1) }, [search, filterStatus, sortBy, period, periodFrom, periodTo, procedureFilter, surgeonFilter, cityFilter, data.surgeries.length])
 
   // Summary stats
   const totalAReceber = data.surgeries
@@ -362,13 +374,26 @@ export function Sales({ data, setData, saveDataNow }) {
           { label:'Pagamento', value:filterStatus, onChange:setFilterStatus, options:[
             { v:'todos', l:'Todos' }, ...PAYMENT_STATUS.map(s => ({ v:s.v, l:s.l })),
           ] },
+          { label:'Procedimento', value:procedureFilter, onChange:setProcedureFilter, options:[
+            { v:'todos', l:'Todos os procedimentos' },
+            ...data.procedures.map(item => ({ v:item.id, l:item.name })),
+            ...(data.surgeries.some(item => item.customProcedureName) ? [{ v:'custom', l:'Outro / combinado' }] : []),
+          ] },
+          { label:'Cirurgião', value:surgeonFilter, onChange:setSurgeonFilter, options:[
+            { v:'todos', l:'Todos os cirurgiões' }, ...uniqueAttendanceOptions(data.surgeries, 'surgeon'),
+          ] },
+          { label:'Cidade', value:cityFilter, onChange:setCityFilter, options:[
+            { v:'todos', l:'Todas as cidades' }, ...uniqueAttendanceOptions(data.surgeries, 'city'),
+          ] },
+          { label:'Período', value:period, onChange:setPeriod, options:ATTENDANCE_PERIODS },
           { label:'Ordenar', value:sortBy, onChange:setSortBy, options:[
-            { v:'recentes', l:'Mais recentes' }, { v:'antigas', l:'Mais antigas' }, { v:'valor', l:'Maior valor' },
+            { v:'recentes', l:'Mais recentes (data/hora)' }, { v:'antigas', l:'Mais antigas (data/hora)' }, { v:'valor', l:'Maior valor' },
           ] },
         ]}
+        dateRange={period === 'personalizado' ? { from:periodFrom, to:periodTo, onFromChange:setPeriodFrom, onToChange:setPeriodTo } : null}
         count={filtered.length}
         countLabel="cirurgia"
-        onClear={() => { setSearch(''); setFilterStatus('todos'); setSortBy('recentes') }}
+        onClear={() => { setSearch(''); setFilterStatus('todos'); setProcedureFilter('todos'); setSurgeonFilter('todos'); setCityFilter('todos'); setPeriod('todos'); setPeriodFrom(''); setPeriodTo(''); setSortBy('recentes') }}
         right={<Btn onClick={openAdd}>+ Nova Cirurgia</Btn>}
       />
 
@@ -428,7 +453,7 @@ export function Sales({ data, setData, saveDataNow }) {
                       )}
                     </td>
                     <td style={{ padding:'13px 18px' }}><Badge color={procedure?.color || C.textDim} small>{procedureDisplayName(item, data.procedures, 'Sem procedimento')}</Badge></td>
-                    <td style={{ padding:'13px 18px', color:C.textSub }}>{formatDateBR(item.date)}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}><div>{formatDateBR(item.date)}</div>{item.startTime && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{item.startTime}</div>}</td>
                     <td style={{ padding:'13px 18px', color:C.green, fontWeight:700 }}>
                       {fmt(item.totalValue)}
                       {Number(item.thirdPartyPassthroughValue || 0) > 0 && (
@@ -481,6 +506,7 @@ export function Sales({ data, setData, saveDataNow }) {
                 <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
                   <MetricPill label="Procedimento" value={procedureDisplayName(item, data.procedures, 'Sem procedimento')} color={procedure?.color || C.textSub} />
                   <MetricPill label="Data" value={formatDateBR(item.date)} color={C.textSub} />
+                  {item.startTime && <MetricPill label="Horário" value={item.startTime} color={C.cyan} />}
                   <MetricPill label="Valor total" value={fmt(item.totalValue)} color={C.green} />
                   {Number(item.thirdPartyPassthroughValue || 0) > 0 && (
                     <MetricPill label="Valor total ao paciente" value={fmt((item.totalValue || 0) + Number(item.thirdPartyPassthroughValue || 0))} color={C.textSub} />

@@ -99,3 +99,20 @@ test('Cirurgias também pagina em 25', async ({ page }) => {
   await pager.getByRole('button', { name:'Próxima' }).click()
   await expect(pager.getByText('26–50 de 60 cirurgias')).toBeVisible()
 })
+
+test('Cirurgias filtra por período e exibe o horário', async ({ page }) => {
+  await mock(page, {
+    procedures:[{ id:'proc-a', name:'Mamoplastia', price:10000, color:'#fff' }],
+    surgeries:[
+      { id:'s1', user_id:'e2e-user-id', patient:'Paciente Hoje', procedure_id:'proc-a', date:HOJE, start_time:'09:30', total_value:1000, payment_status:'pago', payment_method:'pix' },
+      { id:'s2', user_id:'e2e-user-id', patient:'Paciente Antigo', procedure_id:'proc-a', date:'2025-01-10', start_time:'14:00', total_value:2000, payment_status:'pendente', payment_method:'pix' },
+    ],
+  })
+  await page.goto('/app/sales')
+
+  await expect(page.getByText('Paciente Hoje')).toBeVisible()
+  await expect(page.getByText('09:30')).toBeVisible()
+  await page.getByLabel('Período', { exact:true }).selectOption('hoje')
+  await expect(page.getByText('Paciente Hoje')).toBeVisible()
+  await expect(page.getByText('Paciente Antigo')).toHaveCount(0)
+})

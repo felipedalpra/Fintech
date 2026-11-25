@@ -19,6 +19,7 @@ import {
   shiftInstallmentDate,
 } from '../lib/consultationPayments.js'
 import { hasRecognizedReceipt } from '../lib/receivablePaymentReversal.js'
+import { ATTENDANCE_PERIODS, compareAttendanceDateTime, getAttendancePeriodRange, matchesAttendancePeriod, uniqueAttendanceOptions } from '../lib/attendanceListFilters.js'
 
 const TYPES = [
   { v:'avaliacao', l:'Avaliação' },
@@ -128,6 +129,11 @@ export function Consultations({ data, setData, saveDataNow }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos') // paymentStatus
   const [sortBy, setSortBy] = useState('recentes')          // 'recentes' | 'antigas' | 'valor'
+  const [period, setPeriod] = useState('todos')
+  const [periodFrom, setPeriodFrom] = useState('')
+  const [periodTo, setPeriodTo] = useState('')
+  const [typeFilter, setTypeFilter] = useState('todos')
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState('todos')
   const [page, setPage] = useState(1)
   const [installmentModal, setInstallmentModal] = useState(null)
   const editingRecord = editing ? data.consultations.find(item => item.id === editing) : null
@@ -231,19 +237,23 @@ export function Consultations({ data, setData, saveDataNow }) {
     setShowModal(false)
   }
 
-  const filtered = data.consultations
-    .filter(item => item.patient.toLowerCase().includes(search.toLowerCase()))
+  const periodRange = getAttendancePeriodRange(period, today(), periodFrom, periodTo)
+  const filtered = [...data.consultations]
+    .filter(item => String(item.patient || '').toLowerCase().includes(search.toLowerCase()))
     .filter(item => statusFilter === 'todos' || item.paymentStatus === statusFilter)
+    .filter(item => typeFilter === 'todos' || item.consultationType === typeFilter)
+    .filter(item => paymentTypeFilter === 'todos' || item.paymentType === paymentTypeFilter)
+    .filter(item => matchesAttendancePeriod(item, periodRange))
     .sort((a, b) => {
       if (sortBy === 'valor') return (b.value || 0) - (a.value || 0)
-      const cmp = (a.date || '').localeCompare(b.date || '')
+      const cmp = compareAttendanceDateTime(a, b)
       return sortBy === 'antigas' ? cmp : -cmp
     })
   // Lista longa pagina em 25: a clínica tem centenas de consultas e rolar tudo não é navegar.
   // A ordenação e os filtros valem sobre a lista INTEIRA; a página é só o recorte exibido.
   const pageView = paginate(filtered, page)
   const visible = pageView.rows
-  useEffect(() => { setPage(1) }, [search, statusFilter, sortBy, data.consultations.length])
+  useEffect(() => { setPage(1) }, [search, statusFilter, sortBy, period, periodFrom, periodTo, typeFilter, paymentTypeFilter, data.consultations.length])
 
   const preparedPayment = prepareConsultationPayment(form, form.value)
 
@@ -258,13 +268,21 @@ export function Consultations({ data, setData, saveDataNow }) {
           { label:'Pagamento', value:statusFilter, onChange:setStatusFilter, options:[
             { v:'todos', l:'Todos' }, { v:'pago', l:'Pago' }, { v:'pendente', l:'Pendente' }, { v:'parcelado', l:'Parcelado' },
           ] },
+          { label:'Tipo', value:typeFilter, onChange:setTypeFilter, options:[
+            { v:'todos', l:'Todos os tipos' }, ...uniqueAttendanceOptions(data.consultations, 'consultationType'),
+          ] },
+          { label:'Atendimento', value:paymentTypeFilter, onChange:setPaymentTypeFilter, options:[
+            { v:'todos', l:'Particular e convênio' }, ...PAYMENT_TYPES.map(item => ({ v:item.v, l:item.l })),
+          ] },
+          { label:'Período', value:period, onChange:setPeriod, options:ATTENDANCE_PERIODS },
           { label:'Ordenar', value:sortBy, onChange:setSortBy, options:[
-            { v:'recentes', l:'Mais recentes' }, { v:'antigas', l:'Mais antigas' }, { v:'valor', l:'Maior valor' },
+            { v:'recentes', l:'Mais recentes (data/hora)' }, { v:'antigas', l:'Mais antigas (data/hora)' }, { v:'valor', l:'Maior valor' },
           ] },
         ]}
+        dateRange={period === 'personalizado' ? { from:periodFrom, to:periodTo, onFromChange:setPeriodFrom, onToChange:setPeriodTo } : null}
         count={filtered.length}
         countLabel="consulta"
-        onClear={() => { setSearch(''); setStatusFilter('todos'); setSortBy('recentes') }}
+        onClear={() => { setSearch(''); setStatusFilter('todos'); setTypeFilter('todos'); setPaymentTypeFilter('todos'); setPeriod('todos'); setPeriodFrom(''); setPeriodTo(''); setSortBy('recentes') }}
         right={<Btn onClick={openAdd}>+ Nova Consulta</Btn>}
       />
 
@@ -285,7 +303,7 @@ export function Consultations({ data, setData, saveDataNow }) {
                 return (
                   <tr key={item.id} style={{ borderBottom:`1px solid ${C.border}` }}>
                     <td style={{ padding:'13px 18px', color:C.text, fontWeight:600 }}>{item.patient}</td>
-                    <td style={{ padding:'13px 18px', color:C.textSub }}>{formatDateBR(item.date)}</td>
+                    <td style={{ padding:'13px 18px', color:C.textSub }}><div>{formatDateBR(item.date)}</div>{item.startTime && <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{item.startTime}</div>}</td>
                     <td style={{ padding:'13px 18px', color:C.textSub }}>{item.consultationType}</td>
                     <td style={{ padding:'13px 18px', color:C.textSub }}>
                       <div>{item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType}</div>
@@ -321,6 +339,7 @@ export function Consultations({ data, setData, saveDataNow }) {
                 <div style={{ color:C.text, fontWeight:700 }}>{item.patient}</div>
                 <div style={{ display:'grid', gridTemplateColumns:isNarrow ? '1fr' : '1fr 1fr', gap:8, marginTop:10 }}>
                   <MetricPill label="Data" value={formatDateBR(item.date)} color={C.textSub} />
+                  {item.startTime && <MetricPill label="Horário" value={item.startTime} color={C.cyan} />}
                   <MetricPill label="Tipo" value={item.consultationType} color={C.textSub} />
                   <MetricPill label="Convênio" value={item.paymentType === 'particular' ? 'Particular' : item.insurance || item.paymentType} color={C.textSub} />
                   <MetricPill label="Forma" value={paymentLabel} color={C.textSub} />

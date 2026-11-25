@@ -9,6 +9,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Added
 
+- Listagens de consultas e cirurgias ganharam filtros por período (incluindo período personalizado), paciente, pagamento e atributos operacionais, ordenação por data/hora e exibição do horário agendado em desktop e mobile. (`src/components/Consultations.jsx`, `src/components/Sales.jsx`, `src/components/FilterBar.jsx`, `src/lib/attendanceListFilters.js`.)
+
 - Transferências internas passam a ter pares auditáveis entre duas linhas bancárias, sem gerar receita ou despesa.
 - A baixa conciliada passa a separar valor bruto de taxas, juros e descontos, permitindo registrar o valor líquido efetivamente movimentado no banco. Aplicar `supabase/operation_financials_schema.sql` antes do deploy.
 - Parcelas de cirurgia, consulta e venda de produto podem ser conciliadas parcialmente, mantendo o saldo restante em aberto.
