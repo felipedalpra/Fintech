@@ -9,6 +9,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Changed
 
+- Cards de indicadores do Dashboard agora ficam lado a lado em quatro colunas em telas largas, reduzem para duas em telas intermediárias e uma em celulares estreitos, evitando uma coluna vertical longa e excesso de rolagem. (`src/components/Dashboard.jsx`, `src/components/Dashboard.css`.)
+
 - Dashboard financeiro redesenhado com hierarquia visual mais clara, destaque do resultado do período, KPIs proporcionais e gráfico de fluxo em linhas com hover, tooltip, guia vertical e preenchimento tecnológico. Os cálculos, filtros, privacidade financeira e drilldowns continuam usando as mesmas métricas canônicas. (`src/components/Dashboard.jsx`, `src/components/Dashboard.css`.)
 
 - A aba interna de Balanço patrimonial foi removida do Financeiro por enquanto. Os dados e relatórios patrimoniais continuam preservados; links antigos para `/app/balance` abrem a Visão geral sem exibir uma tela vazia. (`src/components/Finance.jsx`, `src/pages/FinanceWorkspace.jsx`.)
