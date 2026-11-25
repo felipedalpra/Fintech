@@ -11,6 +11,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 - Transferências internas passam a ter pares auditáveis entre duas linhas bancárias, sem gerar receita ou despesa.
 - A baixa conciliada passa a separar valor bruto de taxas, juros e descontos, permitindo registrar o valor líquido efetivamente movimentado no banco. Aplicar `supabase/operation_financials_schema.sql` antes do deploy.
+- Criado cursor durável por conta/provedor para futura sincronização bancária automática, com retomada, pausa e falhas auditáveis. Aplicar `supabase/bank_sync_cursors_schema.sql` antes do deploy.
 
 - **Forma de pagamento na baixa de recebíveis**: “Marcar recebido” agora abre um popup de confirmação. A forma já cadastrada vem pré-selecionada, pode ser alterada antes da confirmação e, quando não existe, a baixa exige uma escolha. O método fica registrado por parcela; receitas adicionais também passam a persistir a forma, incluindo “Link de cartão” separado de cartão presencial. Aplicar `supabase/extra_revenue_payment_method.sql` antes do deploy. (`src/components/Finance.jsx`, `src/lib/financeStore.js`, `src/lib/financeStoreRows.js`, `supabase/erp_relational_schema.sql`, `supabase/single_user_minimal_schema.sql`.)
 - O Financeiro agora resume os recebimentos efetivados por forma de pagamento; dados antigos sem método ficam explicitamente como “Não informado”. (`src/financialMetrics.js`, `src/lib/financialLedger.js`, `src/components/Finance.jsx`.)

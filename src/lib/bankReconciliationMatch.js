@@ -130,6 +130,15 @@ export function matchBankStatementLines(lines = [], installments = [], activeRec
 
   const pending = []
   const resultByLine = new Map()
+  // O valor é uma regra eliminatória forte: indexar por direção/centavos evita
+  // comparar cada linha com todas as parcelas em extratos grandes.
+  const installmentBuckets = new Map()
+  installments.forEach(installment => {
+    const key = `${candidateDirection(installment)}:${toCents(installment.amount)}`
+    const bucket = installmentBuckets.get(key) || []
+    bucket.push(installment)
+    installmentBuckets.set(key, bucket)
+  })
   ;[...lines].sort((a, b) => String(a.id || a.sourceLineKey).localeCompare(String(b.id || b.sourceLineKey))).forEach(line => {
     const lineId = line.id || line.sourceLineKey
     const reconciliation = reconciliationByLine.get(lineId)
@@ -137,7 +146,10 @@ export function matchBankStatementLines(lines = [], installments = [], activeRec
       resultByLine.set(lineId, { line, status:'reconciled', reconciliation, candidates:[] })
       return
     }
-    const candidates = installments
+    const direction = lineDirection(line)
+    const cents = toCents(line.amount)
+    const narrowed = [cents - 1, cents, cents + 1].flatMap(amount => installmentBuckets.get(`${direction}:${amount}`) || [])
+    const candidates = narrowed
       .map(installment => rankCandidate(line, installment, windowDays))
       .filter(Boolean)
       .sort((a, b) => b.score - a.score || a.differenceDays - b.differenceDays || String(a.installmentId).localeCompare(String(b.installmentId)))
