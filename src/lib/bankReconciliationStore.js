@@ -274,11 +274,36 @@ export async function fetchBankReconciliations(ownerId, importId) {
     if (error) throw error
     reconciliations.push(...(data || []))
   }
+  const { data:groupLines, error:groupError } = await supabase
+    .from('bank_reconciliation_group_lines')
+    .select('statement_line_id,amount,bank_reconciliation_groups!inner(id,user_id,financial_installment_id,difference_amount,justification,confirmed_by,confirmed_at,reversed_by,reversed_at,reversal_reason)')
+    .eq('bank_reconciliation_groups.user_id', ownerId)
+    .in('statement_line_id', lineIds)
+  if (groupError) throw groupError
+  for (const row of groupLines || []) {
+    const group = row.bank_reconciliation_groups
+    if (!group?.reversed_at) reconciliations.push({
+      id:`group:${group.id}:${row.statement_line_id}`,
+      statement_line_id:row.statement_line_id,
+      financial_installment_id:group.financial_installment_id,
+      match_method:'grouped', score:null, match_reasons:['conciliação agrupada'],
+      difference_amount:group.difference_amount, difference_days:null,
+      justification:group.justification, confirmed_by:group.confirmed_by, confirmed_at:group.confirmed_at,
+      reversed_by:group.reversed_by, reversed_at:group.reversed_at, reversal_reason:group.reversal_reason,
+      reconciliation_group_id:group.id,
+    })
+  }
   const activeReconciliations = await fetchAll(() => supabase
     .from('bank_reconciliations')
     .select('financial_installment_id')
     .eq('user_id', ownerId)
     .is('reversed_at', null))
+  const activeGroups = await fetchAll(() => supabase
+    .from('bank_reconciliation_groups')
+    .select('financial_installment_id')
+    .eq('user_id', ownerId)
+    .is('reversed_at', null))
+  activeReconciliations.push(...(activeGroups || []))
   const accountId = lines[0]?.financial_account_id
   const currentFingerprints = new Set(lines.map(line => line.movement_fingerprint).filter(Boolean))
   const overlappingLines = accountId ? await fetchAll(() => supabase
@@ -328,6 +353,19 @@ export async function confirmBankReconciliation({ lineId, installmentId, method,
   return data
 }
 
+export async function confirmBankReconciliationGroup({ lineIds, installmentId, justification, windowDays }) {
+  const ids = [...new Set((lineIds || []).filter(Boolean))]
+  const { data, error } = await supabase.rpc('confirm_bank_reconciliation_group', {
+    p_line_ids:ids,
+    p_installment_id:installmentId,
+    p_justification:String(justification || '').trim(),
+    p_window_days:Number(windowDays ?? 3),
+  })
+  if (error) throw error
+  if (!data?.id || data.financial_installment_id !== installmentId) throw new Error('A conciliação agrupada não foi confirmada pelo sistema.')
+  return data
+}
+
 export async function reverseBankReconciliation(reconciliationId, reason) {
   const { data, error } = await supabase.rpc('reverse_bank_reconciliation', {
     p_reconciliation_id:reconciliationId,
@@ -335,6 +373,13 @@ export async function reverseBankReconciliation(reconciliationId, reason) {
   })
   if (error) throw error
   if (!data?.id || !data.reversed_at) throw new Error('A desconciliação não foi confirmada pelo sistema.')
+  return data
+}
+
+export async function reverseBankReconciliationGroup(groupId, reason) {
+  const { data, error } = await supabase.rpc('reverse_bank_reconciliation_group', { p_group_id:groupId, p_reason:String(reason || '').trim() })
+  if (error) throw error
+  if (!data?.id || !data.reversed_at) throw new Error('A desconciliação agrupada não foi confirmada pelo sistema.')
   return data
 }
 

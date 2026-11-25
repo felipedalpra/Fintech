@@ -17,6 +17,7 @@ import {
   findIncompleteImport,
   claimBankStatementLinesForCreation,
   confirmBankReconciliation,
+  confirmBankReconciliationGroup,
   confirmBankInternalTransfer,
   createFinancialAccount,
   fetchBankReconciliations,
@@ -29,6 +30,7 @@ import {
   recoverBankStatementLineClaim,
   releaseBankStatementLineClaims,
   reverseBankReconciliation,
+  reverseBankReconciliationGroup,
   setBankStatementLinesReview,
 } from '../lib/bankReconciliationStore.js'
 import { describeImportFailure } from '../lib/supabaseErrorMessage.js'
@@ -149,6 +151,7 @@ export function BankReconciliation({ data, saveDataNow }) {
   const [competenceDate, setCompetenceDate] = useState('')
   const [ignoreReason, setIgnoreReason] = useState('Transferência interna')
   const [transferConfirm, setTransferConfirm] = useState(null)
+  const [groupConfirm, setGroupConfirm] = useState(null)
 
   const s = {
     stack:{ display:'flex', flexDirection:'column', gap:18 },
@@ -507,8 +510,9 @@ export function BankReconciliation({ data, saveDataNow }) {
     setBusy(true)
     setError('')
     try {
-      await reverseBankReconciliation(reversing.id, reason)
-      toast('Conciliação desfeita e preservada no histórico.', 'warning')
+      if (reversing.reconciliation_group_id) await reverseBankReconciliationGroup(reversing.reconciliation_group_id, reason)
+      else await reverseBankReconciliation(reversing.id, reason)
+      toast(reversing.reconciliation_group_id ? 'Conciliação agrupada desfeita e preservada no histórico.' : 'Conciliação desfeita e preservada no histórico.', 'warning')
       setReversing(null)
       setReason('')
       await refreshImport(selectedImportId)
@@ -536,6 +540,30 @@ export function BankReconciliation({ data, saveDataNow }) {
     setCompetenceMode('line')
     setCompetenceDate('')
     setBulkConfirm({ type:'approve', items:eligible })
+  }
+
+  function requestGroupedReconciliation() {
+    const items = selectedReviews.filter(item => !['reconciled', 'ignored'].includes(item.reviewStatus) && selections[item.line.id])
+    const installmentIds = [...new Set(items.map(item => selections[item.line.id]))]
+    if (items.length < 2) { setError('Selecione pelo menos duas linhas pendentes e escolha a mesma parcela para agrupá-las.'); return }
+    if (installmentIds.length !== 1) { setError('As linhas agrupadas precisam apontar para a mesma parcela.'); return }
+    setGroupConfirm({ items, installmentId:installmentIds[0], justification:'' })
+  }
+
+  async function confirmGroupedReconciliation() {
+    if (!groupConfirm || groupConfirm.justification.trim().length < 3) return setError('Informe uma justificativa para a conciliação agrupada.')
+    setBusy(true)
+    setError('')
+    try {
+      await confirmBankReconciliationGroup({ lineIds:groupConfirm.items.map(item => item.line.id), installmentId:groupConfirm.installmentId, justification:groupConfirm.justification, windowDays })
+      setGroupConfirm(null)
+      setSelectedLineIds([])
+      await refreshImport(selectedImportId)
+      toast('Conciliação agrupada confirmada.')
+    } catch (caught) {
+      if (isBankReconciliationSchemaMissing(caught)) flagSchemaMissing(caught)
+      else setError(caught.message || 'Não foi possível confirmar a conciliação agrupada.')
+    } finally { setBusy(false) }
   }
 
   function requestIgnore(items) {
@@ -1088,6 +1116,7 @@ export function BankReconciliation({ data, saveDataNow }) {
               </label>
               <div style={s.row}>
                 <Btn variant="ghost" onClick={() => requestIgnore(visibleMatches)} disabled={busy || !visibleMatches.some(item => !item.processing && !['reconciled', 'ignored'].includes(item.reviewStatus))}>Ignorar visíveis</Btn>
+                <Btn variant="ghost" onClick={requestGroupedReconciliation} disabled={busy || selectedReviews.length < 2}>Agrupar selecionadas</Btn>
                 <Btn variant="success" onClick={() => requestApprove(selectedReviews)} disabled={busy || !ledgerReady || selectedReviews.length === 0}>Aprovar selecionados ({selectedReviews.length})</Btn>
               </div>
             </div>
@@ -1276,6 +1305,15 @@ export function BankReconciliation({ data, saveDataNow }) {
               else ignoreReviewItems(bulkConfirm.items)
             }}>{bulkConfirm.type === 'approve' ? 'Confirmar aprovação' : bulkConfirm.type === 'create_duplicate' ? 'Criar mesmo assim' : 'Confirmar que deseja ignorar'}</Btn>
           </div>
+        </div>}
+      </Modal>
+
+      <Modal open={Boolean(groupConfirm)} onClose={() => setGroupConfirm(null)} title="Conciliação agrupada" width={580} trackDirty={false}>
+        {groupConfirm && <div style={s.stack}>
+          <div style={s.muted}>As linhas selecionadas serão somadas e vinculadas à mesma parcela. O valor bruto da parcela permanece no razão; qualquer diferença precisa ser explicada.</div>
+          <Card style={{ padding:14 }}>{groupConfirm.items.map(item => <div key={item.line.id} style={{ ...s.row, justifyContent:'space-between', color:C.text, fontSize:12 }}><span>{item.line.description || 'Linha bancária'} · {formatDateBR(item.line.postedDate)}</span><strong>{fmt(item.line.amount)}</strong></div>)}</Card>
+          <label style={{ color:C.textSub, fontSize:12 }}>Justificativa obrigatória<textarea value={groupConfirm.justification} onChange={event => setGroupConfirm(current => ({ ...current, justification:event.target.value }))} style={{ ...s.input, minHeight:80, marginTop:6, resize:'vertical' }} /></label>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setGroupConfirm(null)}>Cancelar</Btn><Btn variant="success" onClick={confirmGroupedReconciliation} disabled={busy || groupConfirm.justification.trim().length < 3}>Confirmar agrupamento</Btn></div>
         </div>}
       </Modal>
 
