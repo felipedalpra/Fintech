@@ -69,11 +69,10 @@ const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const FINANCE_MODAL_TYPES = new Set(['extra', 'expense', 'asset', 'liability'])
 const QUICK_CATEGORY_EMPTY = { open:false, direction:'', name:'', parentId:'', saving:false, error:'' }
 
-function settleReceivableInstallment(record, account, selectedPaymentMethod) {
+function settleReceivableInstallment(record, account, selectedPaymentMethod, receivedDate = today()) {
   const installment = account.openInstallmentRows?.[0] || { installmentNumber:1, amount:account.value }
   const sourceInstallmentNumber = installment.sourceInstallmentNumber || installment.installmentNumber
   const remainingOpenInstallments = Number(account.openInstallments || account.openInstallmentRows?.length || 1)
-  const receivedDate = today()
   const legacyFlow = paymentScheduleFlow(record.totalValue ?? record.value ?? account.value, record)
   const legacySettlements = Object.fromEntries((legacyFlow.paidInstallments || []).map(entry => [String(entry.index + 1), {
     receivedDate:entry.settlementDate || record.paymentDate || receivedDate,
@@ -101,13 +100,13 @@ function settleReceivableInstallment(record, account, selectedPaymentMethod) {
   }
 }
 
-function settleProductSaleInstallment(record, account, selectedPaymentMethod) {
-  const settled = settleReceivableInstallment(record, account, selectedPaymentMethod)
+function settleProductSaleInstallment(record, account, selectedPaymentMethod, receivedDate = today()) {
+  const settled = settleReceivableInstallment(record, account, selectedPaymentMethod, receivedDate)
   const allPaid = Number(account.openInstallments || account.openInstallmentRows?.length || 1) === 1
   return {
     ...settled,
     paymentStatus:allPaid ? 'recebido' : 'pendente',
-    receivedDate:today(),
+    receivedDate,
   }
 }
 
@@ -859,32 +858,32 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     setShowModal(false)
   }
 
-  const applyMarkReceivableAsPaid = (item, selectedPaymentMethod) => {
+  const applyMarkReceivableAsPaid = (item, selectedPaymentMethod, receivedDate) => {
     if (item.source === 'recorrencia') {
       const exists = data.extraRevenues.some(record => record.description === item.description && record.category === item.category && Number(record.value || 0) === Number(item.value || 0) && record.date === item.dueDate)
       if (!exists) {
         setData(current => ({
           ...current,
-          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', chartAccountId:item.chartAccountId || null, value:item.value || 0, date:item.dueDate, receivedDate:item.dueDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido', paymentMethod:selectedPaymentMethod }],
+          extraRevenues:[...current.extraRevenues, { id:uid(), description:item.description, category:item.category || 'outras_receitas', chartAccountId:item.chartAccountId || null, value:item.value || 0, date:item.dueDate, receivedDate, dueDate:item.dueDate, competenceDate:item.dueDate, status:'recebido', paymentMethod:selectedPaymentMethod }],
         }))
       }
       toast('Recorrência marcada como recebida.')
       return
     }
     if (item.source === 'outra_receita') {
-      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', paymentMethod:selectedPaymentMethod, date:today(), receivedDate:today() } : record) }))
+      setData(current => ({ ...current, extraRevenues:current.extraRevenues.map(record => record.id === item.sourceId ? { ...record, status:'recebido', paymentMethod:selectedPaymentMethod, receivedDate } : record) }))
       toast('Receita marcada como recebida.')
       return
     }
     if (item.source === 'venda_produto') {
-      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? settleProductSaleInstallment(record, item, selectedPaymentMethod) : record) }))
+      setData(current => ({ ...current, productSales:current.productSales.map(record => record.id === item.sourceId ? settleProductSaleInstallment(record, item, selectedPaymentMethod, receivedDate) : record) }))
       toast(Number(item.openInstallments || item.openInstallmentRows?.length || 1) === 1 ? 'Venda de produto marcada como recebida.' : 'Parcela da venda marcada como recebida.')
       return
     }
     if (item.source === 'cirurgia') {
       setData(current => ({
         ...current,
-        surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item, selectedPaymentMethod) : record),
+        surgeries:current.surgeries.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item, selectedPaymentMethod, receivedDate) : record),
       }))
       toast('Parcela marcada como recebida.')
       return
@@ -892,7 +891,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     if (item.source === 'consulta') {
       setData(current => ({
         ...current,
-        consultations:current.consultations.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item, selectedPaymentMethod) : record),
+        consultations:current.consultations.map(record => record.id === item.sourceId ? settleReceivableInstallment(record, item, selectedPaymentMethod, receivedDate) : record),
       }))
       toast('Parcela marcada como recebida.')
       return
@@ -903,14 +902,22 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const markReceivableAsPaid = item => setReceivablePaymentState({
     item,
     paymentMethod:item.openInstallmentRows?.[0]?.paymentMethod || item.paymentMethod || '',
+    paymentDate:today(),
   })
 
   const confirmReceivablePayment = () => {
-    if (!receivablePaymentState?.item || !receivablePaymentState.paymentMethod) {
+    if (!receivablePaymentState?.item) return
+    if (!receivablePaymentState.paymentMethod) {
       toast('Informe a forma de pagamento.', 'warning')
       return
     }
-    applyMarkReceivableAsPaid(receivablePaymentState.item, receivablePaymentState.paymentMethod)
+    const receivedDate = receivablePaymentState.paymentDate
+    const currentDate = today()
+    if (!isIsoDateString(receivedDate) || receivedDate > currentDate) {
+      toast('Informe uma data de recebimento válida, que não seja futura.', 'warning')
+      return
+    }
+    applyMarkReceivableAsPaid(receivablePaymentState.item, receivablePaymentState.paymentMethod, receivedDate)
     setReceivablePaymentState(null)
   }
 
@@ -2274,7 +2281,15 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             options={[{ v:'', l:'Selecione…' }, ...PAYMENT_METHODS]}
             required
           />
-          <div style={{ color:C.textDim, fontSize:12, lineHeight:1.45 }}>A opção já cadastrada vem selecionada, mas você pode alterá-la antes de confirmar.</div>
+          <FInput
+            label="Data efetiva do recebimento"
+            type="date"
+            value={receivablePaymentState?.paymentDate || ''}
+            max={today()}
+            onChange={value => setReceivablePaymentState(current => ({ ...(current || {}), paymentDate:value }))}
+            required
+          />
+          <div style={{ color:C.textDim, fontSize:12, lineHeight:1.45 }}>A forma já cadastrada e a data de hoje vêm preenchidas, mas você pode editar ambos antes de confirmar.</div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
             <Btn variant="ghost" onClick={() => setReceivablePaymentState(null)}>Cancelar</Btn>
             <Btn variant="success" onClick={confirmReceivablePayment}>Confirmar recebimento</Btn>

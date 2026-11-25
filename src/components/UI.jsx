@@ -79,7 +79,7 @@ export function Btn({ children, onClick, variant='primary', disabled, style, ...
   )
 }
 
-export function FInput({ label, value, onChange, type='text', placeholder, options, required, creatable, format, help, maxLength, inputMode, autoComplete, validator }) {
+export function FInput({ label, value, onChange, type='text', placeholder, options, required, creatable, format, help, maxLength, min, max, inputMode, autoComplete, validator }) {
   const isNum = type === 'number'
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState('')
@@ -137,6 +137,8 @@ export function FInput({ label, value, onChange, type='text', placeholder, optio
               list={options && creatable ? listId : undefined}
               onChange={e => isNum ? setDraft(e.target.value) : onChange(format ? format(e.target.value) : e.target.value)}
               maxLength={maxLength}
+              min={min}
+              max={max}
               inputMode={isNum ? 'decimal' : inputMode}
               autoComplete={autoComplete}
               required={required}
