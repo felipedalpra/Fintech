@@ -239,7 +239,6 @@ function FlowLineChart({ monthKeys, revenueByMonth, expenseByMonth, formatMoney,
 export function Dashboard({ data, saveError }) {
   const windowWidth = useWindowWidth()
   const isMobile = windowWidth < 900
-  const isNarrow = windowWidth < 380
   const { financialPrivacyMode, toggleFinancialPrivacy, presentationMode } = useFinancialPrivacy()
   const [showCompareModal, setShowCompareModal] = useState(false)
   const [period, setPeriod] = useState('month')
@@ -508,7 +507,7 @@ export function Dashboard({ data, saveError }) {
       </div>
 
       {/* KPI cards */}
-      <div className="dashboard-kpi-grid" style={{ gridTemplateColumns:isMobile ? (isNarrow ? '1fr' : 'repeat(2,minmax(0,1fr))') : 'repeat(4,minmax(0,1fr))', gap:isMobile ? 10 : 16 }}>
+      <div className="dashboard-kpi-grid" style={{ gap:isMobile ? 10 : 16 }}>
         {kpis.map(item => (
           <Card
             key={item.label}
