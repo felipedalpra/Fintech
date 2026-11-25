@@ -15,6 +15,7 @@ export function FilterBar({
   search, onSearch, searchPlaceholder = 'Buscar…',
   selects = [], count, countLabel, countPluralLabel,
   onClear, right, isMobile = false,
+  dateRange,
 }) {
   const inputStyle = {
     background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
@@ -24,6 +25,7 @@ export function FilterBar({
   const labelStyle = { fontSize: 10, fontWeight: 700, color: C.textDim, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 3, display: 'block' }
 
   const hasActiveFilter = !!search || selects.some(s => s.value && s.value !== (s.options?.[0]?.v ?? ''))
+    || Boolean(dateRange?.from || dateRange?.to)
   const label = count === 1 ? countLabel : (countPluralLabel || `${countLabel}s`)
 
   return (
@@ -41,12 +43,27 @@ export function FilterBar({
       {selects.map((s, i) => (
         <div key={i} style={{ flex: isMobile ? '1 1 45%' : '0 0 auto' }}>
           <label style={labelStyle}>{s.label}</label>
-          <select value={s.value} onChange={e => s.onChange(e.target.value)}
+          <select aria-label={s.label} value={s.value} onChange={e => s.onChange(e.target.value)}
             style={{ ...selectStyle, width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }}>
             {s.options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
         </div>
       ))}
+
+      {dateRange && (
+        <>
+          <div style={{ flex: isMobile ? '1 1 45%' : '0 0 auto' }}>
+            <label style={labelStyle}>{dateRange.fromLabel || 'De'}</label>
+            <input aria-label={dateRange.fromLabel || 'Data inicial'} type="date" value={dateRange.from || ''}
+              onChange={e => dateRange.onFromChange(e.target.value)} style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: isMobile ? '1 1 45%' : '0 0 auto' }}>
+            <label style={labelStyle}>{dateRange.toLabel || 'Até'}</label>
+            <input aria-label={dateRange.toLabel || 'Data final'} type="date" value={dateRange.to || ''}
+              onChange={e => dateRange.onToChange(e.target.value)} style={{ ...inputStyle, width: isMobile ? '100%' : 'auto', boxSizing: 'border-box' }} />
+          </div>
+        </>
+      )}
 
       {onClear && hasActiveFilter && (
         <button type="button" onClick={onClear}
