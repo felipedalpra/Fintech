@@ -76,6 +76,7 @@ create table if not exists public.product_sales (
   total_value numeric(12,2) not null default 0,
   sale_date date not null,
   payment_method text,
+  financial_account_id uuid,
   created_at timestamptz not null default timezone('utc', now())
 );
 
@@ -87,6 +88,7 @@ create table if not exists public.product_purchases (
   total_value numeric(12,2) not null default 0,
   supplier text,
   payment_method text,
+  financial_account_id uuid,
   purchase_date date not null,
   created_at timestamptz not null default timezone('utc', now())
 );
@@ -99,6 +101,7 @@ create table if not exists public.extra_revenues (
   value numeric(12,2) not null default 0,
   date date not null,
   payment_method text,
+  financial_account_id uuid,
   is_financial_import boolean not null default false,
   created_at timestamptz not null default timezone('utc', now())
 );
@@ -112,6 +115,7 @@ create table if not exists public.expenses (
   due_date date not null,
   payment_date date,
   payment_method text,
+  financial_account_id uuid,
   status text not null default 'aberto',
   is_financial_import boolean not null default false,
   created_at timestamptz not null default timezone('utc', now())

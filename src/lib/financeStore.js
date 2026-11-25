@@ -186,6 +186,7 @@ async function fetchRelationalData(userId) {
       dueDate:item.due_date || item.sale_date || '',
       receivedDate:item.received_date || '',
       paymentMethod:item.payment_method || 'pix',
+      financialAccountId:item.financial_account_id || null,
       receiptSettlements:item.receipt_settlements && typeof item.receipt_settlements === 'object' ? item.receipt_settlements : {},
       competenceDate:item.competence_date || item.sale_date || '',
     })),
@@ -199,6 +200,7 @@ async function fetchRelationalData(userId) {
       status:item.status || 'pago',
       paymentDate:item.payment_date || '',
       paymentMethod:item.payment_method || '',
+      financialAccountId:item.financial_account_id || null,
       documentNumber:item.document_number || '',
       purchaseDate:item.purchase_date || '',
       competenceDate:item.competence_date || item.purchase_date || '',
@@ -219,6 +221,7 @@ async function fetchRelationalData(userId) {
       isFinancialImport:item.is_financial_import === true,
       status:item.status || 'recebido',
       paymentMethod:item.payment_method || '',
+      financialAccountId:item.financial_account_id || null,
       chartAccountId:item.chart_account_id || null,
     })),
     expenses:(expensesResult.data || []).map(item => ({
@@ -229,6 +232,7 @@ async function fetchRelationalData(userId) {
       dueDate:item.due_date || '',
       paymentDate:item.payment_date || '',
       paymentMethod:item.payment_method || '',
+      financialAccountId:item.financial_account_id || null,
       status:item.status || 'aberto',
       supplierId:item.supplier_id || null,
       costCenter:item.cost_center || '',
@@ -331,6 +335,7 @@ function mapProductSalesRows(userId, data) {
     due_date:item.dueDate || item.saleDate || null,
     received_date:item.receivedDate || null,
     payment_method:item.paymentMethod || null,
+    financial_account_id:item.financialAccountId || null,
     receipt_settlements:item.receiptSettlements || {},
   }))
 }
@@ -351,6 +356,7 @@ function mapProductPurchasesRows(userId, data) {
     purchase_date:item.purchaseDate,
     competence_date:item.competenceDate || item.purchaseDate || null,
     due_date:item.dueDate || item.purchaseDate || null,
+    financial_account_id:item.financialAccountId || null,
   }))
 }
 

@@ -29,6 +29,7 @@ import {
   setBankStatementLinesReview,
 } from '../lib/bankReconciliationStore.js'
 import { describeImportFailure } from '../lib/supabaseErrorMessage.js'
+import { applyBankSettlement, settlementSource } from '../lib/bankSettlement.js'
 
 const FINANCE_MODAL_DRAFT_KEY = 'surgimetrics_modal_draft_finance'
 const CLAIM_TIMEOUT_MS = 20_000
@@ -48,6 +49,14 @@ const NAVIGATION_GRACE_MS = 2_000
 export const BANK_RECONCILIATION_RETURN_KEY = 'surgimetrics_bank_reconciliation_return'
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 const MAX_LINES = 50_000
+const SETTLEMENT_PAYMENT_METHODS = [
+  { value:'pix', label:'PIX' },
+  { value:'cartao', label:'Cartão' },
+  { value:'cartao_link', label:'Link de cartão' },
+  { value:'dinheiro', label:'Dinheiro' },
+  { value:'boleto', label:'Boleto' },
+  { value:'transferencia', label:'Transferência' },
+]
 
 function newClaimToken() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -436,7 +445,7 @@ export function BankReconciliation({ data, saveDataNow }) {
     }
     const ranked = match.candidates.find(item => item.installmentId === installmentId)
     setReason('')
-    setConfirming({ match, candidate, validation, ranked })
+    setConfirming({ match, candidate, validation, ranked, settle:candidate.status === 'pending', paymentMethod:candidate.payment_method || '' })
   }
 
   async function doConfirm() {
@@ -448,6 +457,19 @@ export function BankReconciliation({ data, saveDataNow }) {
     setBusy(true)
     setError('')
     try {
+      if (confirming.settle) {
+        if (!confirming.paymentMethod) throw new Error('Selecione a forma de pagamento para baixar a parcela.')
+        if (!saveDataNow) throw new Error('O salvamento confirmado não está disponível nesta tela.')
+        const settlementLine = confirming.match.line
+        const settledData = applyBankSettlement(data, confirming.candidate, settlementLine, confirming.paymentMethod)
+        const source = settlementSource(confirming.candidate)
+        const settledRecord = settledData[source.collection]?.find(item => item.id === source.sourceId)
+        const settled = saveDataNow(
+          current => applyBankSettlement(current, confirming.candidate, settlementLine, confirming.paymentMethod),
+          { collection:source.collection, record:settledRecord },
+        )
+        if (settled?.then) await settled
+      }
       const createdFromLine = entryOf(confirming.candidate).source_id === confirming.match.line.id
       await confirmBankReconciliation({
         lineId:confirming.match.line.id,
@@ -458,7 +480,7 @@ export function BankReconciliation({ data, saveDataNow }) {
         justification:reason || (createdFromLine ? 'Retomada do vínculo do lançamento criado por esta linha.' : ''),
         windowDays,
       })
-      toast('Conciliação confirmada. Nenhum valor ou status financeiro foi alterado.')
+      toast(confirming.settle ? 'Parcela baixada e conciliação confirmada.' : 'Conciliação confirmada. Nenhum valor ou status financeiro foi alterado.')
       setConfirming(null)
       setReason('')
       if (createdContext?.lineId === confirming.match.line.id) setCreatedContext(null)
@@ -1213,11 +1235,23 @@ export function BankReconciliation({ data, saveDataNow }) {
 
       <Modal open={Boolean(confirming)} onClose={() => { setConfirming(null); setReason('') }} title="Confirmar vínculo" width={580} trackDirty={false}>
         {confirming && <div style={s.stack}>
-          <div style={s.muted}>Esta ação apenas registra o vínculo. Não altera valor, data, status, baixa, DRE ou fluxo de caixa.</div>
+          <div style={s.muted}>{confirming.settle ? 'A parcela será baixada usando a data do extrato e a conta bancária desta linha.' : 'Esta ação apenas registra o vínculo. Não altera valor, data, status, baixa, DRE ou fluxo de caixa.'}</div>
           <Card style={{ padding:14 }}><div style={{ color:C.text, fontWeight:800 }}>{confirming.match.line.description || 'Linha do extrato'} · {fmt(confirming.match.line.amount)}</div><div style={{ ...s.muted, marginTop:4 }}>{installmentLabel(confirming.candidate)}</div></Card>
           {confirming.validation.warnings.length > 0 && <div style={{ color:C.yellow, fontSize:12 }}>{confirming.validation.warnings.map(item => <div key={item}>⚠ {item}</div>)}</div>}
+          {confirming.candidate.status === 'pending' && <>
+            <label style={{ display:'flex', alignItems:'center', gap:8, color:C.textSub, fontSize:12 }}>
+              <input type="checkbox" checked={Boolean(confirming.settle)} onChange={event => setConfirming(current => ({ ...current, settle:event.target.checked }))} />
+              Baixar esta parcela usando a data do extrato
+            </label>
+            {confirming.settle && <label style={{ color:C.textSub, fontSize:12 }}>Forma de pagamento
+              <select aria-label="Forma de pagamento da conciliação" value={confirming.paymentMethod || ''} onChange={event => setConfirming(current => ({ ...current, paymentMethod:event.target.value }))} style={{ ...s.input, marginTop:6 }}>
+                <option value="">Selecione…</option>
+                {SETTLEMENT_PAYMENT_METHODS.map(method => <option key={method.value} value={method.value}>{method.label}</option>)}
+              </select>
+            </label>}
+          </>}
           {confirming.validation.requiresJustification && <label style={{ color:C.textSub, fontSize:12 }}>Justificativa da divergência<textarea value={reason} onChange={event => setReason(event.target.value)} style={{ ...s.input, minHeight:80, marginTop:6, resize:'vertical' }} /></label>}
-          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setConfirming(null)}>Cancelar</Btn><Btn variant="success" onClick={doConfirm} disabled={busy}>Confirmar vínculo</Btn></div>
+          <div style={{ ...s.row, justifyContent:'flex-end' }}><Btn variant="ghost" onClick={() => setConfirming(null)}>Cancelar</Btn><Btn variant="success" onClick={doConfirm} disabled={busy || (confirming.settle && !confirming.paymentMethod)}>{confirming.settle ? 'Baixar e confirmar' : 'Confirmar vínculo'}</Btn></div>
         </div>}
       </Modal>
 

@@ -39,6 +39,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 
+- A conciliação bancária passa a poder baixar uma parcela pendente usando a data do extrato, a conta bancária conciliada e a forma de pagamento, mantendo a opção de somente vincular.
 - “Contas a pagar” agora confirma forma e data efetiva do pagamento no mesmo popup de “Contas a receber”, preserva esses dados em despesas, compras de produtos e custos clínicos e bloqueia datas futuras.
 
 - O popup de confirmação de recebimento agora permite informar a data efetiva do pagamento, usando hoje como padrão, validando datas futuras e preservando a data de competência/vencimento nos recebimentos manuais; o campo compartilhado respeita o limite máximo no calendário.

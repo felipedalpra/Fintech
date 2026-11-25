@@ -83,6 +83,8 @@ end $$;
 
 -- 4. Receitas extras: separa data de RECEBIMENTO (caixa) da competência/vencimento (modelo de 3 datas).
 alter table public.extra_revenues add column if not exists received_date date;
+alter table public.extra_revenues add column if not exists financial_account_id uuid;
+alter table public.product_sales add column if not exists financial_account_id uuid;
 
 -- "Atrasado" é SEMPRE derivado (due_date < hoje e em aberto), nunca gravado como status fixo.
 -- O write-through foi implementado em JS reutilizando a projeção canônica, para que

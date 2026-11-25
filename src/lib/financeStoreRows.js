@@ -17,6 +17,7 @@ export function mapExtraRevenuesRows(userId, data) {
     is_financial_import:item.isFinancialImport === true,
     status:item.status || 'recebido',
     payment_method:item.paymentMethod || null,
+    financial_account_id:item.financialAccountId || null,
     ...(item.chartAccountId ? { chart_account_id:item.chartAccountId } : {}),
   }))
 }
@@ -165,6 +166,7 @@ export function mapExpensesRows(userId, data) {
     competence_date:item.competenceDate || item.dueDate || null,
     payment_date:item.paymentDate || null,
     payment_method:item.paymentMethod || null,
+    financial_account_id:item.financialAccountId || null,
     status:item.status || 'aberto',
     supplier_id:item.supplierId || null,
     cost_center:item.costCenter || null,

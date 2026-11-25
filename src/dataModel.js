@@ -133,6 +133,7 @@ export function normalizeData(data) {
           dueDate:expense.dueDate || expense.date || '',
           paymentDate:expense.paymentDate || expense.paidDate || '',
           paymentMethod:expense.paymentMethod || '',
+          financialAccountId:expense.financialAccountId || null,
           status:expense.status || (expense.paymentDate ? 'pago' : 'aberto'),
           costCenter:expense.costCenter || '',
           competenceDate:expense.competenceDate || expense.dueDate || expense.date || '',
