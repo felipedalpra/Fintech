@@ -28,7 +28,7 @@ test('recupera um lancamento pendente sem remover linhas novas do servidor', () 
 
 test('ignora operacao invalida', () => {
   const data = { extraRevenues:[], expenses:[] }
-  expect(mergePendingFinanceSave(data, { collection:'surgeries', record:{ id:'x' } })).toBe(data)
+  expect(mergePendingFinanceSave(data, { collection:'unknown', record:{ id:'x' } })).toBe(data)
   expect(mergePendingFinanceSave(data, { collection:'expenses', record:{} })).toBe(data)
 })
 
@@ -42,4 +42,20 @@ test('recupera um lote de importacao financeira sem apagar dados existentes', ()
   })
   expect(recovered.extraRevenues.map(item => item.id)).toEqual(['existing', 'new-revenue'])
   expect(recovered.expenses.map(item => item.id)).toEqual(['new-expense'])
+})
+
+test('retoma baixa conciliada em qualquer origem operacional', () => {
+  const data = { surgeries:[], consultations:[], productSales:[], productPurchases:[], extraRevenues:[], expenses:[] }
+  const recovered = mergePendingFinanceSave(data, {
+    operations:[
+      { collection:'surgeries', record:{ id:'s1', paymentStatus:'pago' } },
+      { collection:'consultations', record:{ id:'c1', paymentStatus:'pago' } },
+      { collection:'productSales', record:{ id:'v1', paymentStatus:'recebido' } },
+      { collection:'productPurchases', record:{ id:'p1', status:'pago' } },
+    ],
+  })
+  expect(recovered.surgeries[0].paymentStatus).toBe('pago')
+  expect(recovered.consultations[0].paymentStatus).toBe('pago')
+  expect(recovered.productSales[0].paymentStatus).toBe('recebido')
+  expect(recovered.productPurchases[0].status).toBe('pago')
 })

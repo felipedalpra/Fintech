@@ -1,4 +1,4 @@
-const ALLOWED_COLLECTIONS = new Set(['extraRevenues', 'expenses'])
+const ALLOWED_COLLECTIONS = new Set(['surgeries', 'consultations', 'productSales', 'productPurchases', 'extraRevenues', 'expenses'])
 
 export function mergePendingFinanceSave(data, pendingSave) {
   if (Array.isArray(pendingSave?.operations)) {
