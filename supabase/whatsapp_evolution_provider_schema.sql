@@ -119,7 +119,7 @@ create table if not exists public.whatsapp_webhook_events (
   dedup_key           text not null,
   payload             jsonb not null,
   processing_status   text not null default 'received'
-                        check (processing_status in ('received', 'processed', 'ignored', 'failed')),
+                        check (processing_status in ('received', 'processed', 'ignored', 'failed', 'media_pending', 'media_processing')),
   attempts            integer not null default 1 check (attempts > 0),
   error_message       text,
   received_at         timestamptz not null default timezone('utc', now()),
@@ -141,6 +141,9 @@ create unique index if not exists uq_whatsapp_webhook_event_dedup
 create index if not exists idx_whatsapp_webhook_event_retry
   on public.whatsapp_webhook_events(processing_status, received_at)
   where processing_status in ('received', 'failed');
+create index if not exists idx_whatsapp_webhook_media_queue
+  on public.whatsapp_webhook_events(received_at)
+  where processing_status in ('media_pending', 'media_processing');
 create index if not exists idx_whatsapp_webhook_event_number
   on public.whatsapp_webhook_events(user_id, whatsapp_number_id, received_at desc);
 create index if not exists idx_whatsapp_webhook_event_expiry

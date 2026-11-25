@@ -68,6 +68,8 @@ const MAX_WHATSAPP_MEDIA_BYTES = 16 * 1024 * 1024
 const INBOUND_MEDIA_BUCKET = 'wa-media-inbound'
 const INBOUND_MEDIA_PREFIX = `storage://${INBOUND_MEDIA_BUCKET}/`
 const OUTBOUND_MEDIA_BUCKET = 'wa-media'
+const MEDIA_PENDING_MARKER = '[whatsapp-media-pending]'
+const MEDIA_PROCESSING_MARKER = '[whatsapp-media-processing]'
 const DEFAULT_WHATSAPP_WEBHOOK_BASE = 'https://www.surgimetrics.com.br/api/whatsapp?action=webhook'
 const NUMBER_PROVIDER_FIELDS = 'id, user_id, label, phone, active, assigned_user_id, instance_url, api_token, webhook_secret, provider, provider_instance_name, connection_state, connected_at, last_health_at, last_webhook_at, last_webhook_event, webhook_verified_at, archived_at'
 const MESSAGE_IDENTITY_FIELDS = ['is_group', 'chat_name', 'chat_photo', 'sender_name', 'sender_phone', 'sender_lid', 'sender_photo', 'chat_lid', 'contact_phone']
@@ -310,11 +312,33 @@ async function beginWebhookEvent(supabase, number, metadata, req) {
 
 async function finishWebhookEvent(supabase, id, status, errorMessage = null) {
   if (!id) return
-  await supabase.from('whatsapp_webhook_events').update({
+  const result = await supabase.from('whatsapp_webhook_events').update({
     processing_status: status,
     processed_at: status === 'processed' || status === 'ignored' ? new Date().toISOString() : null,
     error_message: errorMessage ? String(errorMessage).slice(0, 1000) : null,
   }).eq('id', id)
+  if (result.error) console.error('whatsapp webhook event status update error:', result.error.message)
+  return result
+}
+
+// A fila antiga pode estar em produção antes da migration que adiciona os
+// estados media_pending/media_processing. Nesse caso o CHECK do banco rejeita
+// a transição, mas o webhook ainda precisa deixar uma marca recuperável; sem
+// isso a mensagem fica eternamente como "[Áudio]" e parece ter sido recebida.
+async function markMediaPending(supabase, eventId) {
+  const statusResult = await supabase.from('whatsapp_webhook_events').update({
+    processing_status:'media_pending', processed_at:null, error_message:null,
+  }).eq('id', eventId).eq('processing_status', 'received').select('id').maybeSingle()
+  if (!statusResult.error && statusResult.data?.id) return { mode:'status' }
+
+  const fallback = await supabase.from('whatsapp_webhook_events').update({
+    error_message:MEDIA_PENDING_MARKER, processed_at:null,
+  }).eq('id', eventId).eq('processing_status', 'received').select('id').maybeSingle()
+  if (fallback.error || !fallback.data?.id) {
+    throw statusResult.error || fallback.error || new Error('Não foi possível reservar a mídia para processamento.')
+  }
+  console.error('whatsapp media queue migration missing; using compatibility marker')
+  return { mode:'marker' }
 }
 
 function inboundMediaExtension(mimetype, fileName) {
@@ -363,7 +387,7 @@ export async function processWhatsAppMediaQueue({ limit = 20, ownerId = null } =
   const supabase = adminSupabase()
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50)
   let mediaQuery = supabase.from('whatsapp_webhook_events')
-    .select('id, whatsapp_number_id, payload, attempts')
+    .select('id, whatsapp_number_id, payload, attempts, processing_status, error_message, received_at')
     .eq('processing_status', 'media_pending')
   if (ownerId) mediaQuery = mediaQuery.eq('user_id', ownerId)
   const result = await mediaQuery
@@ -371,23 +395,56 @@ export async function processWhatsAppMediaQueue({ limit = 20, ownerId = null } =
     .limit(safeLimit)
   if (result.error) throw result.error
 
-  const summary = { claimed:0, processed:0, failed:0, skipped:0 }
-  for (const event of result.data || []) {
-    const claimed = await supabase.from('whatsapp_webhook_events').update({
-      processing_status:'media_processing', error_message:null, processed_at:null,
-    }).eq('id', event.id).eq('processing_status', 'media_pending').select('id').maybeSingle()
-    if (claimed.error || !claimed.data) continue
-    summary.claimed += 1
+  // Recupera também eventos criados antes da correção do CHECK. O primeiro
+  // filtro pega a marca explícita; o segundo permite reparar mensagens antigas
+  // que ficaram em `received` sem qualquer marca quando a transição falhou.
+  let fallbackQuery = supabase.from('whatsapp_webhook_events')
+    .select('id, whatsapp_number_id, payload, attempts, processing_status, error_message, received_at')
+    .eq('processing_status', 'received')
+    .eq('error_message', MEDIA_PENDING_MARKER)
+  if (ownerId) fallbackQuery = fallbackQuery.eq('user_id', ownerId)
+  const marked = await fallbackQuery.order('received_at', { ascending: true }).limit(safeLimit)
+  if (marked.error) throw marked.error
+  const recoveryCutoff = new Date(Date.now() - 60_000).toISOString()
+  let recoveryQuery = supabase.from('whatsapp_webhook_events')
+    .select('id, whatsapp_number_id, payload, attempts, processing_status, error_message, received_at')
+    .eq('processing_status', 'received')
+    .is('error_message', null)
+    .lt('received_at', recoveryCutoff)
+  if (ownerId) recoveryQuery = recoveryQuery.eq('user_id', ownerId)
+  const stale = await recoveryQuery.order('received_at', { ascending: true }).limit(safeLimit)
+  if (stale.error) throw stale.error
+  const events = [...(result.data || []), ...(marked.data || []), ...(stale.data || [])]
+    .filter((event, index, rows) => rows.findIndex(candidate => candidate.id === event.id) === index)
 
+  const summary = { claimed:0, processed:0, failed:0, skipped:0 }
+  for (const event of events) {
     try {
       const { data:number } = await getWhatsAppNumber(supabase, event.whatsapp_number_id)
       if (!number) throw new Error('Número do evento de mídia não encontrado.')
       const parsed = parseProviderIncomingMessage(number.provider, event.payload || {})
       if (!parsed || parsed.msgType === 'text' || !parsed.providerMessageId) {
-        await finishWebhookEvent(supabase, event.id, 'processed', 'Mídia não encontrada no payload; mensagem preservada.')
+        if (event.processing_status === 'media_pending' || event.error_message === MEDIA_PENDING_MARKER) {
+          await finishWebhookEvent(supabase, event.id, 'processed', 'Mídia não encontrada no payload; mensagem preservada.')
+        }
         summary.skipped += 1
         continue
       }
+
+      const claimed = event.processing_status === 'media_pending'
+        ? await supabase.from('whatsapp_webhook_events').update({
+            processing_status:'media_processing', error_message:null, processed_at:null,
+          }).eq('id', event.id).eq('processing_status', 'media_pending').select('id').maybeSingle()
+        : event.error_message === MEDIA_PENDING_MARKER
+          ? await supabase.from('whatsapp_webhook_events').update({
+              error_message:MEDIA_PROCESSING_MARKER, processed_at:null,
+            }).eq('id', event.id).eq('processing_status', 'received').eq('error_message', MEDIA_PENDING_MARKER).select('id').maybeSingle()
+          : await supabase.from('whatsapp_webhook_events').update({
+              error_message:MEDIA_PROCESSING_MARKER, processed_at:null,
+            }).eq('id', event.id).eq('processing_status', 'received').is('error_message', null).select('id').maybeSingle()
+      if (claimed.error || !claimed.data) continue
+      summary.claimed += 1
+
       const persistedMedia = await persistInboundMedia(supabase, number, parsed)
       const messageUpdate = await supabase.from('whatsapp_messages').update({
         media_url: persistedMedia?.mediaUrl || null,
@@ -2020,7 +2077,7 @@ async function handleWebhook(req, res) {
   }
 
   if (mediaPending) {
-    await finishWebhookEvent(supabase, audit.id, 'media_pending')
+    await markMediaPending(supabase, audit.id)
     return res.status(200).json({ ok:true, mediaQueued:true })
   }
 

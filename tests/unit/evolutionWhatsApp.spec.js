@@ -244,6 +244,20 @@ test('preserva evento de mídia mesmo quando a Evolution não fornece URL públi
   expect(parsed).toMatchObject({ msgType: 'image', mediaUrl: null, mediaMime: 'image/jpeg', text: 'foto' })
 })
 
+test('preserva áudio da Evolution sem URL para a fila baixar pelo envelope original', () => {
+  const parsed = parseEvolutionIncomingMessage({
+    event:'messages.upsert',
+    data:{
+      key:{ id:'EV-AUDIO', fromMe:false, remoteJid:'5551999@s.whatsapp.net' },
+      message:{ audioMessage:{ mimetype:'audio/ogg; codecs=opus', ptt:true, seconds:8 } },
+    },
+  })
+  expect(parsed).toMatchObject({
+    msgType:'audio', mediaUrl:null, mediaMime:'audio/ogg; codecs=opus', text:'[Áudio]',
+    providerMediaMessage:{ key:{ id:'EV-AUDIO' }, message:{ audioMessage:{ ptt:true } } },
+  })
+})
+
 test('normaliza confirmação numérica de entrega da Evolution', () => {
   expect(parseEvolutionMessageStatus({
     event: 'messages.update',
