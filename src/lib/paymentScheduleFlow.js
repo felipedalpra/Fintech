@@ -43,9 +43,22 @@ export function paymentScheduleFlow(totalValueRaw, item) {
 
   if (schedule.length === 0) {
     const explicit = settlements['1']
-    const paid = Boolean(explicit?.receivedDate && explicit?.status !== 'reversed') || (!hasExplicitSettlements && ['pago', 'recebido'].includes(item?.paymentStatus))
+    const explicitActive = Boolean(explicit?.receivedDate && explicit?.status !== 'reversed')
+    const explicitAmount = explicitActive ? Math.min(totalValue, Math.max(0, Number(explicit?.amount ?? totalValue))) : 0
+    const partial = explicitActive && explicitAmount > 0 && explicitAmount < totalValue
+    const paid = (explicitActive && !partial) || (!hasExplicitSettlements && ['pago', 'recebido'].includes(item?.paymentStatus))
     const dueDate = item?.forecastPaymentDate || item?.dueDate || item?.date
     const settlementDate = explicit?.receivedDate || item?.paymentDate || item?.receivedDate || dueDate
+    if (partial) {
+      return {
+        hasSchedule:false,
+        installments:[],
+        paidInstallments:[{ index:0, date:dueDate, dueDate, settlementDate, amount:explicitAmount, feesAmount:Number(explicit?.feesAmount || 0), interestAmount:Number(explicit?.interestAmount || 0), discountAmount:Number(explicit?.discountAmount || 0), method:explicit?.method || decoded.paymentMethod || '', financialAccountId:explicit?.financialAccountId || item?.financialAccountId || null }],
+        openInstallments:[{ index:1, date:dueDate, dueDate, settlementDate:null, amount:Math.max(0, totalValue - explicitAmount), method:decoded.paymentMethod || '', financialAccountId:item?.financialAccountId || null }],
+        paidAmount:explicitAmount,
+        openAmount:Math.max(0, totalValue - explicitAmount),
+      }
+    }
     return {
       hasSchedule:false,
       installments:[],

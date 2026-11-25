@@ -76,3 +76,14 @@ test('liquidação histórica menor que a parcela redistribui todo o saldo sem p
   expect(flow.openInstallments).toEqual([expect.objectContaining({ amount:700, dueDate:'2026-11-10' })])
   expect([...flow.paidInstallments, ...flow.openInstallments].reduce((sum, item) => sum + item.amount, 0)).toBe(1000)
 })
+
+test('liquidação parcial sem cronograma preserva o saldo aberto', () => {
+  const flow = paymentScheduleFlow(1000, {
+    date:'2026-10-10', dueDate:'2026-10-10', paymentStatus:'pendente',
+    receiptSettlements:{ '1':{ receivedDate:'2026-10-16', amount:300, method:'pix' } },
+  })
+  expect(flow.paidAmount).toBe(300)
+  expect(flow.openAmount).toBe(700)
+  expect(flow.paidInstallments[0]).toMatchObject({ amount:300, settlementDate:'2026-10-16' })
+  expect(flow.openInstallments[0]).toMatchObject({ amount:700, settlementDate:null })
+})

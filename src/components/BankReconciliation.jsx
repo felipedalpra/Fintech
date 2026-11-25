@@ -449,7 +449,8 @@ export function BankReconciliation({ data, saveDataNow }) {
     }
     const ranked = match.candidates.find(item => item.installmentId === installmentId)
     setReason('')
-    setConfirming({ match, candidate, validation, ranked, settle:candidate.status === 'pending', paymentMethod:candidate.payment_method || '', adjustments:defaultSettlementAdjustments(candidate, match.line) })
+    const sourceType = entryOf(candidate).source_type
+    setConfirming({ match, candidate, validation, ranked, settle:candidate.status === 'pending', partialEligible:['surgery','consultation','product_sale'].includes(sourceType), partialPayment:false, paymentMethod:candidate.payment_method || '', adjustments:defaultSettlementAdjustments(candidate, match.line) })
   }
 
   async function doConfirm() {
@@ -463,14 +464,15 @@ export function BankReconciliation({ data, saveDataNow }) {
     try {
       if (confirming.settle) {
         if (!confirming.paymentMethod) throw new Error('Selecione a forma de pagamento para baixar a parcela.')
-        if (!validateSettlementAdjustments(confirming.candidate, confirming.match.line, confirming.adjustments).valid) throw new Error('Informe taxas, juros e descontos até o valor líquido bater com o valor do extrato.')
+        const adjustments = confirming.partialEligible ? confirming.adjustments : { ...confirming.adjustments, paidAmount:Number(confirming.candidate.amount || 0) }
+        if (!validateSettlementAdjustments(confirming.candidate, confirming.match.line, adjustments).valid) throw new Error('Informe o valor quitado, taxas, juros e descontos até o valor líquido bater com o valor do extrato.')
         if (!saveDataNow) throw new Error('O salvamento confirmado não está disponível nesta tela.')
         const settlementLine = confirming.match.line
-        const settledData = applyBankSettlement(data, confirming.candidate, settlementLine, confirming.paymentMethod, confirming.adjustments)
+        const settledData = applyBankSettlement(data, confirming.candidate, settlementLine, confirming.paymentMethod, adjustments)
         const source = settlementSource(confirming.candidate)
         const settledRecord = settledData[source.collection]?.find(item => item.id === source.sourceId)
         const settled = saveDataNow(
-          current => applyBankSettlement(current, confirming.candidate, settlementLine, confirming.paymentMethod, confirming.adjustments),
+          current => applyBankSettlement(current, confirming.candidate, settlementLine, confirming.paymentMethod, adjustments),
           { collection:source.collection, record:settledRecord },
         )
         if (settled?.then) await settled
@@ -1294,6 +1296,13 @@ export function BankReconciliation({ data, saveDataNow }) {
               </select>
             </label>}
             {confirming.settle && <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
+              {confirming.partialEligible && <label style={{ gridColumn:'1 / -1', display:'flex', alignItems:'center', gap:8, color:C.textSub, fontSize:12 }}>
+                <input type="checkbox" checked={Boolean(confirming.partialPayment)} onChange={event => setConfirming(current => ({ ...current, partialPayment:event.target.checked, adjustments:event.target.checked ? { ...current.adjustments, paidAmount:Math.abs(Number(current.match.line.amount || 0)), feesAmount:0, interestAmount:0, discountAmount:0 } : defaultSettlementAdjustments(current.candidate, current.match.line) }))} />
+                Registrar como pagamento parcial
+              </label>}
+              <label style={{ color:C.textSub, fontSize:12 }}>Valor bruto quitado
+                <input type="number" min="0.01" step="0.01" disabled={!confirming.partialEligible} value={confirming.adjustments.paidAmount} onChange={event => setConfirming(current => ({ ...current, adjustments:{ ...current.adjustments, paidAmount:event.target.value } }))} style={{ ...s.input, marginTop:6 }} />
+              </label>
               {[[ 'feesAmount','Taxas' ], [ 'interestAmount','Juros' ], [ 'discountAmount','Descontos' ]].map(([key, label]) => <label key={key} style={{ color:C.textSub, fontSize:12 }}>{label}
                 <input type="number" min="0" step="0.01" value={confirming.adjustments[key]} onChange={event => setConfirming(current => ({ ...current, adjustments:{ ...current.adjustments, [key]:event.target.value } }))} style={{ ...s.input, marginTop:6 }} />
               </label>)}
