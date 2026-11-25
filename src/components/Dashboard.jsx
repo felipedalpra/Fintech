@@ -163,6 +163,25 @@ function formatChartMonth(key) {
   return new Date(`${key}-01T00:00:00`).toLocaleDateString('pt-BR', { month:'short' }).replace('.', '')
 }
 
+function getChartMonthKeys(range, revenueByMonth = {}, expenseByMonth = {}) {
+  if (!range?.start || !range?.end) {
+    return Object.keys({ ...revenueByMonth, ...expenseByMonth }).sort().slice(-12)
+  }
+
+  const start = new Date(`${range.start}T00:00:00`)
+  const end = new Date(`${range.end}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return []
+
+  const keys = []
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
+  const lastMonth = new Date(end.getFullYear(), end.getMonth(), 1)
+  while (cursor <= lastMonth) {
+    keys.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`)
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+  return keys
+}
+
 function FlowLineChart({ monthKeys, revenueByMonth, expenseByMonth, formatMoney, isMobile }) {
   const [hovered, setHovered] = useState(null)
   if (!monthKeys.length) return <div className="dashboard-chart-empty">Ainda não há movimentações suficientes para montar o fluxo.</div>
@@ -260,7 +279,7 @@ export function Dashboard({ data, saveError }) {
   const allTimeM = useMemo(() => buildMetrics(data), [data])
   const prevAllTimeM = useMemo(() => buildMetrics(data, { endDate: prevRange.end }), [data, prevRange])
 
-  const monthKeys = Object.keys({ ...m.revenueByMonth, ...m.expenseByMonth }).sort().slice(-6)
+  const monthKeys = getChartMonthKeys(periodRange, m.revenueByMonth, m.expenseByMonth)
   const topProcedure = m.byProcedure[0]
   const topProduct = m.productsByPerformance[0]
   const formatMoney = value => maskFinancialValue(value, financialPrivacyMode, fmt)

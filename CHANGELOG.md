@@ -30,6 +30,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Fixed
 
+- O gráfico de fluxo do Dashboard agora preenche todos os meses do período selecionado, inclusive meses sem movimentação, permitindo visualizar o ano inteiro e traçar as linhas corretamente quando há dados concentrados em um único mês. (`src/components/Dashboard.jsx`.)
+
 - Copiloto financeiro: a leitura server-side agora ignora registros financeiros arquivados (`archived_at`), alinhando sua base com o frontend e impedindo que lançamentos excluídos/arquivados inflem o caixa e os saldos apresentados pela IA.
 - Evidências do copiloto financeiro agora mostram a mesma base usada na resposta: caixa realizado, fluxo do período, recebíveis e contas a pagar em aberto, saldo projetado, fórmula de composição e origem agregada dos títulos, evitando cards zerados que representavam apenas o dia consultado.
 - Copiloto financeiro: corrigida a interpretação de “caixa atual”. A resposta agora usa o saldo realizado acumulado até a data, separa o fluxo do período e identifica o saldo projetado como projeção com recebíveis e contas a pagar; o resumo lateral também foi renomeado de “Caixa hoje” para “Caixa atual”.
