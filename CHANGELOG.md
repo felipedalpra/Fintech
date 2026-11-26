@@ -11,6 +11,10 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 - A assinatura BRy agora só pode ser solicitada em lotes de exatamente 10 documentos. A fila bloqueia lotes incompletos e o backend rejeita qualquer quantidade diferente, removendo a criação acidental de envelopes individuais. O fluxo ganhou cobertura E2E para lotes com menos de 10, seleção exata, confirmação de custo e bloqueio da assinatura individual. (`src/components/ClinicalWorkspaceViews.jsx`, `api/_lib/clinicalSignatureBry.js`, `api/_lib/bryEasySign.js`, `tests/e2e/clinical-signature-bry.spec.js`.)
 
+### Fixed
+
+- Endpoints de perfil seguro agora respondem 401 (`SESSION_REQUIRED`) quando a sessão está ausente ou inválida, em vez de transformar falhas de autenticação em HTTP 500. (`api/_lib/secureProfile.js`, `tests/unit/secureProfile.spec.js`.)
+
 - Listagens de consultas e cirurgias ganharam filtros por período (incluindo período personalizado), paciente, pagamento e atributos operacionais, ordenação por data/hora e exibição do horário agendado em desktop e mobile. (`src/components/Consultations.jsx`, `src/components/Sales.jsx`, `src/components/FilterBar.jsx`, `src/lib/attendanceListFilters.js`.)
 
 - Transferências internas passam a ter pares auditáveis entre duas linhas bancárias, sem gerar receita ou despesa.

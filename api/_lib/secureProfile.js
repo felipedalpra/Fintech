@@ -7,6 +7,13 @@ const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABA
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const encryptionKey = process.env.APP_DATA_ENCRYPTION_KEY
 
+function sessionRequiredError() {
+  return Object.assign(new Error('Sessao obrigatoria.'), {
+    statusCode:401,
+    publicCode:'SESSION_REQUIRED',
+  })
+}
+
 export function getServerSupabase() {
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase env not configured')
   return createClient(supabaseUrl, supabaseAnonKey)
@@ -22,11 +29,11 @@ export function getAdminSupabase() {
 export async function getAuthenticatedUser(req) {
   const authHeader = req.headers.authorization || req.headers.Authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-  if (!token) throw new Error('Missing bearer token')
+  if (!token) throw sessionRequiredError()
 
   const supabase = getServerSupabase()
   const { data, error } = await supabase.auth.getUser(token)
-  if (error || !data?.user) throw new Error('Invalid auth token')
+  if (error || !data?.user) throw sessionRequiredError()
   return data.user
 }
 
