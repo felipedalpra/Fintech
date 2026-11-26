@@ -46,6 +46,7 @@ function signatureRow(overrides = {}) {
 
 async function openDocumentsCenter(page, {
   documents = [documentRow()],
+  queueDocuments = [],
   signatures:initialSignatures = [],
   calls = {},
   requestHandler,
@@ -91,6 +92,17 @@ async function openDocumentsCenter(page, {
       body:JSON.stringify({ attempts:[{ id:ATTEMPT, documentId:DOCUMENT, status:'pending' }], signingUrl:SIGNING_URL }),
     })
   })
+
+  await page.route('**/api/secure-profile?action=clinical-signature-queue', route => route.fulfill({
+    status:200,
+    contentType:'application/json',
+    body:JSON.stringify({
+      available:true,
+      maxPerEnvelope:10,
+      integration:{ available:true, environment:'homologation', reason:null, requestedMode:'QUALIFIED' },
+      documents:queueDocuments,
+    }),
+  }))
 
   await page.route('**/api/secure-profile?action=clinical-signature-link', async route => {
     calls.link = (calls.link || 0) + 1
@@ -140,46 +152,100 @@ async function openDocumentsCenter(page, {
   }
 
   await page.goto('/app/clinical-documents')
-  await expect(page.getByTestId('clinical-documents-center')).toBeVisible()
+  await expect(page.getByTestId('clinical-documents-center')).toBeVisible({ timeout:30_000 })
   return page.locator('.clinical-documents-center-list > article').first()
 }
 
-test('oferece assinar, confirma antes de gerar custo e abre a página de assinatura', async ({ page }) => {
+function queueDocument(index) {
+  return {
+    id:`30000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    documentType:index % 2 ? 'exam_request' : 'simple_prescription',
+    issueDate:'2026-10-28',
+    patientId:'patient-signature',
+    patientName:`Paciente ${index}`,
+    createdAt:`2026-10-28T${String(9 + index).padStart(2, '0')}:00:00Z`,
+  }
+}
+
+test('não permite iniciar assinatura com menos de dez documentos disponíveis', async ({ page }) => {
+  const queueDocuments = Array.from({ length:9 }, (_, index) => queueDocument(index + 1))
+  await openDocumentsCenter(page, { queueDocuments })
+
+  const queue = page.getByTestId('clinical-sign-queue')
+  await expect(queue).toBeVisible()
+  await expect(queue).toContainText('A BRy exige exatamente 10 documentos')
+  await expect(queue).toContainText('Faltam 1')
+  await expect(queue.getByRole('button', { name:'Selecionar 10' })).toBeDisabled()
+  await expect(queue.getByRole('button', { name:'Assinar lote de 10' })).toBeDisabled()
+})
+
+test('seleciona exatamente dez documentos, confirma o custo e envia um único lote', async ({ page }) => {
+  const calls = {}
+  let requestPayload = null
+  const queueDocuments = Array.from({ length:10 }, (_, index) => queueDocument(index + 1))
+  await openDocumentsCenter(page, {
+    calls,
+    queueDocuments,
+    requestHandler:async (route, calls2, signatures) => {
+      requestPayload = route.request().postDataJSON()
+      signatures.length = 0
+      await route.fulfill({
+        status:200,
+        contentType:'application/json',
+        body:JSON.stringify({ attempts:[], signingUrl:SIGNING_URL }),
+      })
+    },
+  })
+
+  const queue = page.getByTestId('clinical-sign-queue')
+  const checkboxes = queue.getByRole('checkbox')
+  await expect(checkboxes).toHaveCount(10)
+  for (let index = 0; index < 9; index += 1) await checkboxes.nth(index).check()
+  await expect(queue.getByTestId('clinical-sign-queue-count')).toHaveText('9 de 10 selecionados')
+  await expect(queue.getByRole('button', { name:'Assinar lote de 10' })).toBeDisabled()
+
+  await checkboxes.nth(9).check()
+  await expect(queue.getByTestId('clinical-sign-queue-count')).toHaveText('10 de 10 selecionados')
+  await expect(queue.getByRole('button', { name:'Assinar lote de 10' })).toBeEnabled()
+  await queue.getByRole('button', { name:'Assinar lote de 10' }).click()
+  await expect(queue.getByRole('group', { name:'Confirmar assinatura em lote' })).toContainText('exatamente 10 documentos')
+  expect(calls.request).toBeUndefined()
+
+  await queue.getByRole('button', { name:'Confirmar e assinar' }).click()
+  await expect.poll(() => calls.request).toBe(1)
+  expect(requestPayload.documentIds).toHaveLength(10)
+  expect(new Set(requestPayload.documentIds).size).toBe(10)
+  expect(requestPayload.documentIds).toEqual(queueDocuments.map(document => document.id))
+  await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
+})
+
+test('não oferece assinatura individual e orienta para o lote de dez', async ({ page }) => {
   const calls = {}
   const row = await openDocumentsCenter(page, { calls })
 
   await expect(row).toContainText('Ainda não assinado')
-  await expect(row.getByRole('button', { name:'Assinar' })).toBeVisible()
+  await expect(row.getByRole('button', { name:'Entrar no lote de 10' })).toBeVisible()
 
-  await row.getByRole('button', { name:'Assinar' }).click()
+  await row.getByRole('button', { name:'Entrar no lote de 10' }).click()
   const dialog = page.locator('.clinical-sign-document-dialog')
-  await expect(dialog).toContainText('Isso tem um custo, mesmo que a assinatura não seja concluída')
+  await expect(dialog).toContainText('A BRy exige exatamente 10 documentos por envelope')
+  await expect(dialog).toContainText('Nenhum envelope foi criado para este documento individual')
   expect(calls.request).toBeUndefined()
 
-  await dialog.getByRole('button', { name:'Confirmar e assinar' }).click()
+  await dialog.getByRole('button', { name:'Voltar para a fila de 10 documentos' }).click()
   await expect(dialog).toHaveCount(0)
-  expect(calls.request).toBe(1)
-  await expect(row).toContainText('Assinatura em andamento')
-
-  // A aba de assinatura abre com proteção contra window.opener e sem expor o link no DOM.
-  await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
-  const opened = await page.evaluate(() => window.__openedWindows)
-  expect(opened[0].url).toBe(SIGNING_URL)
-  expect(opened[0].features).toContain('noopener')
-  expect(opened[0].features).toContain('noreferrer')
-  await expect(page.locator('body')).not.toContainText('/sign/signer-1')
-  expect(await page.content()).not.toContain(SIGNING_URL)
+  expect(calls.request).toBeUndefined()
 })
 
-test('cancelar a confirmação não solicita assinatura', async ({ page }) => {
+test('fechar a orientação de lote não solicita assinatura', async ({ page }) => {
   const calls = {}
   const row = await openDocumentsCenter(page, { calls })
 
-  await row.getByRole('button', { name:'Assinar' }).click()
+  await row.getByRole('button', { name:'Entrar no lote de 10' }).click()
   const dialog = page.locator('.clinical-sign-document-dialog')
-  await dialog.getByRole('button', { name:'Cancelar' }).click()
+  await dialog.getByRole('button', { name:'Fechar' }).click()
   await expect(dialog).toHaveCount(0)
-  await expect(row.getByRole('button', { name:'Assinar' })).toBeVisible()
+  await expect(row.getByRole('button', { name:'Entrar no lote de 10' })).toBeVisible()
   expect(calls.request).toBeUndefined()
 })
 
@@ -235,12 +301,12 @@ test('falha terminal permite nova tentativa e explica o motivo', async ({ page }
   const row = await openDocumentsCenter(page, { calls, signatures:[signatureRow({ status:'failed' })] })
   await expect(row).toContainText('A assinatura não deu certo')
 
-  await row.getByRole('button', { name:'Revisar falha' }).click()
+  await row.getByRole('button', { name:'Entrar no lote de 10' }).click()
   const dialog = page.locator('.clinical-sign-document-dialog')
-  await dialog.getByRole('button', { name:'Confirmar e assinar' }).click()
+  await expect(dialog).toContainText('A BRy exige exatamente 10 documentos por envelope')
+  await dialog.getByRole('button', { name:'Voltar para a fila de 10 documentos' }).click()
   await expect(dialog).toHaveCount(0)
-  expect(calls.request).toBe(1)
-  await expect(row).toContainText('Assinatura em andamento')
+  expect(calls.request).toBeUndefined()
 })
 
 test('resultado desconhecido pode ser encerrado para liberar nova tentativa', async ({ page }) => {
@@ -264,25 +330,17 @@ test('quem não emitiu o documento não recebe a ação de assinar', async ({ pa
 
   await expect(row).toContainText('Ainda não assinado')
   await expect(row.getByRole('button', { name:'Ver assinatura' })).toBeVisible()
-  await expect(row.getByRole('button', { name:'Assinar' })).toHaveCount(0)
+  await expect(row.getByRole('button', { name:'Entrar no lote de 10' })).toHaveCount(0)
 })
 
-test('pop-up bloqueado avisa sem expor o link, e reabrir a página não cria outro pedido', async ({ page }) => {
+test('a orientação individual não abre pop-up nem cria pedido', async ({ page }) => {
   const calls = {}
   const row = await openDocumentsCenter(page, { calls })
 
-  await row.getByRole('button', { name:'Assinar' }).click()
+  await row.getByRole('button', { name:'Entrar no lote de 10' }).click()
   const dialog = page.locator('.clinical-sign-document-dialog')
-  await page.evaluate(() => { window.__popupBlocked = true })
-  await dialog.getByRole('button', { name:'Confirmar e assinar' }).click()
-  await expect(page.getByText(/bloqueou a página de assinatura/)).toBeVisible()
+  await expect(dialog).toContainText('Nenhum envelope foi criado para este documento individual')
   expect(await page.content()).not.toContain(SIGNING_URL)
-
-  // A saída prometida na mensagem existe de verdade: reabrir a página sem criar outro pedido.
-  await page.evaluate(() => { window.__popupBlocked = false; window.__openedWindows = [] })
-  await row.getByRole('button', { name:'Acompanhar assinatura' }).click()
-  await page.locator('.clinical-sign-document-dialog').getByRole('button', { name:'Abrir página de assinatura' }).click()
-  await expect.poll(() => page.evaluate(() => window.__openedWindows.length)).toBe(1)
-  expect(calls.link).toBe(1)
-  expect(calls.request).toBe(1)
+  expect(calls.request).toBeUndefined()
+  expect(await page.evaluate(() => window.__openedWindows.length)).toBe(0)
 })

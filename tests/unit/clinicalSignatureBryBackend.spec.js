@@ -1212,6 +1212,23 @@ function batchBody(ids) {
   return { headers:{ authorization:'Bearer sessao' }, query:{}, body:{ documentIds:ids, requestId:REQUEST_ID } }
 }
 
+test('a BRy recusa qualquer lote diferente de dez antes de consultar ou escrever documentos', async () => {
+  let consulted = false
+  const admin = batchSupabase({ clinical_documents:[documentRow], clinical_signature_connections:[connectionRow] })
+  const originalFrom = admin.from
+  admin.from = table => {
+    if (table === 'clinical_documents') consulted = true
+    return originalFrom(table)
+  }
+  for (const ids of [[DOCUMENT], [DOCUMENT, DOCUMENT_2], Array.from({ length:11 }, (_, index) => `30000000-0000-4000-8000-0000000000${String(index).padStart(2, '0')}`)]) {
+    const error = await requestClinicalSignature(batchBody(ids), deps({ admin })).catch(nextError => nextError)
+    expect(error.statusCode).toBe(400)
+    expect(error.publicCode).toBe('lote_incompleto')
+  }
+  expect(consulted).toBe(false)
+  expect(admin.calls.inserts).toHaveLength(0)
+})
+
 test('dois documentos viram UM envelope, cada um com seu OID e seu nonce', async () => {
   const admin = batchSupabase({
     clinical_documents:[documentRow, documentRow2],

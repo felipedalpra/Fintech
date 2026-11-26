@@ -359,7 +359,7 @@ function translateDatabaseError(error) {
 // Solicitar assinatura
 // ---------------------------------------------------------------------------
 
-// Solicita a assinatura de ATE 10 documentos em um unico envelope da BRy.
+// Solicita a assinatura de EXATAMENTE 10 documentos em um unico envelope da BRy.
 //
 // Por que em lote: a BRy cobra por ENVELOPE (R$ 7,50 em 29/10/2026) e aceita 10
 // documentos por envelope. Um envelope por documento faria cada pedido de exame
@@ -385,8 +385,8 @@ export async function requestClinicalSignature(req, deps = defaultClinicalSignat
   if (documentIds.length === 0 || !documentIds.every(id => UUID_PATTERN.test(id))) {
     throw httpError('Documento invalido.', 400)
   }
-  if (documentIds.length > MAX_DOCUMENTS_PER_ENVELOPE) {
-    throw httpError(`Assine no maximo ${MAX_DOCUMENTS_PER_ENVELOPE} documentos por vez.`, 400, 'lote_grande_demais')
+  if (documentIds.length !== MAX_DOCUMENTS_PER_ENVELOPE) {
+    throw httpError(`A BRy exige um lote de exatamente ${MAX_DOCUMENTS_PER_ENVELOPE} documentos.`, 400, 'lote_incompleto')
   }
 
   // Os documentos sao relidos do banco: nada do corpo da requisicao e aproveitado.

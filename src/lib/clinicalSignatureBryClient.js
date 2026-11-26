@@ -4,6 +4,7 @@ import { supabase } from './supabase.js'
 // do backend: o navegador nunca envia ownerId, autoria, CRM, CPF, caminho de
 // arquivo ou status, e nunca recebe token, credencial ou caminho de storage.
 const E2E_BYPASS_AUTH = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true'
+const BRY_DOCUMENTS_PER_ENVELOPE = 10
 
 async function authFetch(action, payload = {}) {
   const token = E2E_BYPASS_AUTH
@@ -39,10 +40,13 @@ export function fetchClinicalSignatureQueue() {
 // autoridade nenhuma e e revalidada no servidor.
 // Um envelope por LOTE: a BRy cobra por envelope, entao assinar dez documentos
 // de uma vez custa o mesmo que assinar um.
-// Aceita um id ou uma lista: o backend so entende lista, e passar uma string
-// por engano devolvia 400 silenciosamente em vez de assinar.
+// A lista precisa conter exatamente dez documentos; o backend repete a regra
+// como ultima barreira contra envelopes individuais.
 export function requestClinicalSignature(documents, requestId) {
   const documentIds = Array.isArray(documents) ? documents : [documents]
+  if (documentIds.length !== BRY_DOCUMENTS_PER_ENVELOPE) {
+    return Promise.reject(new Error(`A BRy exige exatamente ${BRY_DOCUMENTS_PER_ENVELOPE} documentos por envelope.`))
+  }
   return authFetch('clinical-signature-request', { documentIds, requestId })
 }
 
