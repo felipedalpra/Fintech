@@ -9,6 +9,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Added
 
+- A assinatura BRy agora só pode ser solicitada em lotes de exatamente 10 documentos. A fila bloqueia lotes incompletos e o backend rejeita qualquer quantidade diferente, removendo a criação acidental de envelopes individuais. (`src/components/ClinicalWorkspaceViews.jsx`, `api/_lib/clinicalSignatureBry.js`, `api/_lib/bryEasySign.js`.)
+
 - Listagens de consultas e cirurgias ganharam filtros por período (incluindo período personalizado), paciente, pagamento e atributos operacionais, ordenação por data/hora e exibição do horário agendado em desktop e mobile. (`src/components/Consultations.jsx`, `src/components/Sales.jsx`, `src/components/FilterBar.jsx`, `src/lib/attendanceListFilters.js`.)
 
 - Transferências internas passam a ter pares auditáveis entre duas linhas bancárias, sem gerar receita ou despesa.

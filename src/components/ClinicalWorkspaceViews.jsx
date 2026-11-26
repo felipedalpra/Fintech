@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Btn } from './UI.jsx'
 import { uid } from '../utils.js'
-import { supabase } from '../lib/supabase.js'
 import {
   abandonClinicalSignature,
   fetchClinicalSignatureLink,
@@ -381,10 +380,11 @@ export function ClinicalPendingView({ index, loading, unavailableSources, onOpen
   )
 }
 
-// Fila de assinatura em lote. A BRy cobra POR ENVELOPE e cada envelope aceita
-// dez documentos: assinar de dez em dez custa um décimo de assinar um a um.
+// Fila de assinatura em lote. A BRy cobra POR ENVELOPE e exige dez documentos:
+// assinar de dez em dez custa um décimo de assinar um a um.
 // O backend decide o que é assinável; esta tela só mostra e deixa escolher.
 function ClinicalSignatureQueue() {
+  const REQUIRED_DOCUMENTS_PER_ENVELOPE = 10
   const [state, setState] = useState({ status:'loading', documents:[], integration:null, maxPerEnvelope:10 })
   const [selected, setSelected] = useState([])
   const [confirming, setConfirming] = useState(false)
@@ -403,7 +403,7 @@ function ClinicalSignatureQueue() {
   }
   useEffect(() => { load() }, [])
 
-  const max = state.maxPerEnvelope || 10
+  const max = REQUIRED_DOCUMENTS_PER_ENVELOPE
   const available = Boolean(state.integration?.available)
   function toggle(id) {
     setSelected(current => current.includes(id)
@@ -412,7 +412,11 @@ function ClinicalSignatureQueue() {
   }
 
   async function sign() {
-    if (busy || selected.length === 0) return
+    if (busy) return
+    if (selected.length !== max) {
+      setError(`Selecione exatamente ${max} documentos para criar o envelope.`)
+      return
+    }
     setBusy(true); setConfirming(false); setNotice(''); setError('')
     try {
       const response = await requestClinicalSignature(selected, uid())
@@ -435,6 +439,7 @@ function ClinicalSignatureQueue() {
 
   if (state.status === 'loading') return null
   if (state.status === 'unavailable' || !available || state.documents.length === 0) return null
+  const enoughDocuments = state.documents.length >= max
 
   return (
     <section className="clinical-sign-queue" data-testid="clinical-sign-queue">
@@ -442,8 +447,8 @@ function ClinicalSignatureQueue() {
         <div>
           <strong>Assinar vários de uma vez</strong>
           <span>
-            Você pode juntar até {max} documentos num pedido só de assinatura.
-            Isso custa bem menos do que assinar um por um.
+            A BRy exige exatamente {max} documentos no mesmo pedido de assinatura.
+            Isso evita criar envelopes individuais e consumir créditos desnecessariamente.
           </span>
         </div>
         <b data-testid="clinical-sign-queue-count">{selected.length} de {max} selecionados</b>
@@ -451,6 +456,7 @@ function ClinicalSignatureQueue() {
 
       {error && <div className="clinical-form-error" role="alert">{error}</div>}
       {notice && <div className="clinical-document-access-note" role="status">{notice}</div>}
+      {!enoughDocuments && <div className="clinical-document-access-note" role="status">Ainda não há {max} documentos disponíveis para formar um envelope. Faltam {max - state.documents.length}.</div>}
 
       <ul>
         {state.documents.map(document => {
@@ -480,7 +486,7 @@ function ClinicalSignatureQueue() {
       {confirming ? (
         <div className="clinical-signature-confirm" role="group" aria-label="Confirmar assinatura em lote">
           <span>
-            Isso junta {selected.length} documento(s) num pedido só de assinatura. Tem um custo,
+            Isso junta exatamente {selected.length} documentos num pedido só de assinatura. Tem um custo,
             mesmo que a assinatura não seja concluída. Uma página externa vai abrir em outra aba.
             Confirmar?
           </span>
@@ -491,11 +497,11 @@ function ClinicalSignatureQueue() {
         </div>
       ) : (
         <footer>
-          <Btn variant="ghost" disabled={busy || state.documents.length === 0} onClick={() => setSelected(state.documents.slice(0, max).map(item => item.id))}>
-            Selecionar {Math.min(max, state.documents.length)}
+          <Btn variant="ghost" disabled={busy || !enoughDocuments} onClick={() => setSelected(state.documents.slice(0, max).map(item => item.id))}>
+            Selecionar {max}
           </Btn>
-          <Btn disabled={busy || selected.length === 0} onClick={() => setConfirming(true)}>
-            Assinar {selected.length > 0 ? `${selected.length} documento(s)` : 'documentos'}
+          <Btn disabled={busy || selected.length !== max} onClick={() => setConfirming(true)}>
+            Assinar lote de {max}
           </Btn>
         </footer>
       )}
@@ -538,35 +544,6 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
     else if (signatureQueueCategory(document, viewerId) === 'action') totals.action += 1
     return totals
   }, { all:0, signed:0, pending:0, attention:0, action:0 })
-
-  async function startDocumentSignature() {
-    if (!signingDocument || signatureBusy) return
-    setSignatureBusy(true)
-    setNotice('')
-    try {
-      let documentId = signingDocument.sourceDocumentId || (signingDocument.document_type === 'attached_pdf' ? '' : signingDocument.id)
-      if (!documentId && signingDocument.assetId) {
-        const { data:preparedId, error:prepareError } = await supabase.rpc('prepare_clinical_asset_signature', { p_asset_id:signingDocument.assetId })
-        if (prepareError || !preparedId) throw prepareError || new Error('Não foi possível preparar este arquivo para assinatura.')
-        documentId = preparedId
-      }
-      if (!documentId) throw new Error('Este documento ainda não tem um registro pronto para assinatura.')
-      const response = await requestClinicalSignature([documentId], uid())
-      setSigningDocument(null)
-      await onRefresh?.()
-      if (response.signingUrl) {
-        const popup = window.open(response.signingUrl, '_blank', 'noopener,noreferrer')
-        if (popup) popup.opener = null
-        else setNotice('O pedido foi criado, mas o navegador bloqueou a página de assinatura. Libere pop-ups e use "Acompanhar assinatura" para continuar.')
-      } else {
-        setNotice('O pedido foi criado. Use "Acompanhar assinatura" para abrir a página de assinatura ou atualizar o estado.')
-      }
-    } catch (error) {
-      setNotice(error.message || 'Não foi possível iniciar a assinatura deste documento.')
-    } finally {
-      setSignatureBusy(false)
-    }
-  }
 
   async function openDocumentSignature(document) {
     if (signatureBusy || !document.signature.attemptId) return
@@ -656,7 +633,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             const canEmail = Boolean(String(patient?.email || '').trim())
             const canStartSignature = Boolean(viewerId && document.created_by === viewerId)
             const queueCategory = signatureQueueCategory(document, viewerId)
-            const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Revisar falha' : 'Assinar'
+            const signingLabel = document.signature.status === 'pending' ? 'Acompanhar assinatura' : document.signature.status === 'signed' ? 'Ver assinado' : !canStartSignature ? 'Ver assinatura' : document.signature.status === 'failed' ? 'Entrar no lote de 10' : 'Entrar no lote de 10'
             const handleSignature = () => {
               if (document.signature.status === 'signed' && document.signature.attemptId) {
                 openDocumentSignature(document)
@@ -719,15 +696,15 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
             <header>
               <div>
                 <span>Assinatura digital</span>
-                <h3 id="clinical-sign-document-title">{pending ? 'Acompanhar assinatura' : signed ? 'Documento assinado' : 'Assinar documento'}</h3>
-                <p>{signed ? 'O documento já foi assinado.' : 'Uma página externa segura vai abrir para você assinar com o seu certificado digital.'}</p>
+                <h3 id="clinical-sign-document-title">{pending ? 'Acompanhar assinatura' : signed ? 'Documento assinado' : 'Assinatura em lote'}</h3>
+                <p>{signed ? 'O documento já foi assinado.' : pending ? 'Acompanhe o lote que já foi enviado para assinatura.' : 'A BRy exige exatamente 10 documentos por envelope. Selecione o lote na fila de assinatura acima.'}</p>
               </div>
               <button type="button" onClick={() => setSigningDocument(null)} aria-label="Fechar">×</button>
             </header>
             <div className="clinical-sign-document-dialog__body">
               <ClinicalDocumentJourney signatureStatus={signingDocument.signature.status} />
               <div><span>Documento</span><strong>{signingDocument.file_name || documentTypeLabel(signingDocument.document_type)}</strong><small>{signingDocument.patientName} · {dateLabel(signingDocument.issue_date)}</small></div>
-              {!signed && <p>{pending ? 'Se você já concluiu na página que abriu, atualize o status aqui.' : 'Isso tem um custo, mesmo que a assinatura não seja concluída. O status só muda para "assinado" depois da confirmação real.'}</p>}
+              {!signed && <p>{pending ? 'Se você já concluiu na página que abriu, atualize o status aqui.' : 'Nenhum envelope foi criado para este documento individual.'}</p>}
               {notice && <div className="clinical-document-access-note" role="status">{notice}</div>}
             </div>
             <footer>
@@ -740,10 +717,7 @@ export function ClinicalDocumentsCenter({ index, patients = [], clinicName = '',
               ) : signed ? (
                 <Btn disabled={signatureBusy} onClick={() => openDocumentSignature(signingDocument)}>{signatureBusy ? 'Abrindo…' : 'Ver documento assinado'}</Btn>
               ) : (
-                <>
-                  <Btn variant="ghost" disabled={signatureBusy} onClick={() => setSigningDocument(null)}>Cancelar</Btn>
-                  <Btn disabled={signatureBusy} onClick={startDocumentSignature}>{signatureBusy ? 'Abrindo…' : 'Confirmar e assinar'}</Btn>
-                </>
+                <Btn disabled={signatureBusy} onClick={() => setSigningDocument(null)}>Voltar para a fila de 10 documentos</Btn>
               )}
             </footer>
           </div>
