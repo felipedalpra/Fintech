@@ -304,6 +304,7 @@ function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, me
       {hasSuggestion && (
         <div onClick={e => e.stopPropagation()}>
           <SuggestionBox opp={opp} disabled={isMoving}
+            stages={allStages}
             onAccept={() => onAccept?.(opp)} onReject={() => onReject?.(opp)} />
         </div>
       )}
@@ -348,9 +349,9 @@ function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, me
 }
 
 // Aviso da IA no card (sugere e confirma). Mostra o estágio proposto, o motivo e a confiança.
-export function SuggestionBox({ opp, disabled, onAccept, onReject }) {
+export function SuggestionBox({ opp, disabled, stages = [], onAccept, onReject }) {
   const pct = opp.suggested_confidence != null ? Math.round(Number(opp.suggested_confidence) * 100) : null
-  const label = STAGE_LABEL[opp.suggested_stage] || opp.suggested_stage
+  const label = stages.find(stage => stage.key === opp.suggested_stage)?.label || opp.suggested_stage
   const s = {
     box: { background: `linear-gradient(135deg, ${C.accent}1f, ${(C.purple || '#8B5CF6')}18)`, border: `1px solid ${C.accent}55`, borderRadius: 11, padding: '9px 10px', marginBottom: 10 },
     head: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 800, color: C.accent, marginBottom: 3 },

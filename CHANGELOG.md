@@ -18,6 +18,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - A assinatura BRy agora só pode ser solicitada em lotes de exatamente 10 documentos. A fila bloqueia lotes incompletos e o backend rejeita qualquer quantidade diferente, removendo a criação acidental de envelopes individuais. O fluxo ganhou cobertura E2E para lotes com menos de 10, seleção exata, confirmação de custo e bloqueio da assinatura individual. (`src/components/ClinicalWorkspaceViews.jsx`, `api/_lib/clinicalSignatureBry.js`, `api/_lib/bryEasySign.js`, `tests/e2e/clinical-signature-bry.spec.js`.)
 
 ### Fixed
+- Corrigida a referência de etapa sugerida pela IA no Kanban, que causava `STAGE_LABEL is not defined` após a habilitação de etapas personalizadas (`src/components/OpportunityPipeline.jsx`).
 
 - Endpoints de perfil seguro agora respondem 401 (`SESSION_REQUIRED`) quando a sessão está ausente ou inválida, em vez de transformar falhas de autenticação em HTTP 500. (`api/_lib/secureProfile.js`, `tests/unit/secureProfile.spec.js`.)
 
