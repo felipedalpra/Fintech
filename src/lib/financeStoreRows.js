@@ -2,7 +2,10 @@ export function mapExtraRevenuesRows(userId, data) {
   return data.extraRevenues.map(item => ({
     id:item.id,
     user_id:userId,
-    description:item.description,
+    // Registros antigos/importados podem não trazer description no objeto em memória.
+    // Nunca omitir uma coluna NOT NULL do payload: no PostgREST isso vira NULL e derruba
+    // a gravação inteira ao classificar outro lançamento.
+    description:item.description || 'Receita sem descrição',
     category:item.category || 'outras_receitas',
     value:item.value || 0,
     // `date` é uma coluna legada NOT NULL. Para títulos pendentes ela recebe apenas um
@@ -162,7 +165,7 @@ export function mapExpensesRows(userId, data) {
   return data.expenses.map(item => ({
     id:item.id,
     user_id:userId,
-    description:item.description,
+    description:item.description || 'Despesa sem descrição',
     category:item.category || 'outros',
     value:item.value || 0,
     due_date:item.dueDate,

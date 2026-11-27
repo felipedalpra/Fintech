@@ -23,3 +23,11 @@ test('receita pendente não envia string vazia para coluna date do Supabase', ()
   expect(row.due_date).toBe('2026-11-12')
   expect(row.origin_label).toBe('Instagram')
 })
+
+test('lançamentos antigos sem descrição recebem fallback não nulo no payload', () => {
+  const [revenue] = mapExtraRevenuesRows('user-1', {
+    extraRevenues:[{ id:'revenue-legacy', value:10, date:'2026-11-27' }],
+  })
+
+  expect(revenue.description).toBe('Receita sem descrição')
+})
