@@ -7,7 +7,7 @@ import { Ico, ICONS } from './CrmCells.jsx'
 import { DEFAULT_STAGES, STAGE_KEYS } from '../lib/crmStages.js'
 import { STAGE_PROB } from '../lib/crmMetrics.js'
 
-export function CrmStageSettings({ open, stages, onClose, onSave }) {
+export function CrmStageSettings({ open, stages, onClose, onSave, insertAfterKey = null }) {
   const [rows, setRows] = useState([])
   const [removed, setRemoved] = useState([])
   const [removeTarget, setRemoveTarget] = useState(null)
@@ -17,7 +17,7 @@ export function CrmStageSettings({ open, stages, onClose, onSave }) {
 
   useEffect(() => {
     if (open) { setRows(stages.map(s => ({ ...s }))); setRemoved([]); setRemoveTarget(null); setNewLabel(''); setError(null); setSaving(false) }
-  }, [open, stages])
+  }, [open, stages, insertAfterKey])
 
   function set(i, patch) { setRows(r => r.map((x, j) => (j === i ? { ...x, ...patch } : x))) }
   function move(i, d) {
@@ -41,7 +41,12 @@ export function CrmStageSettings({ open, stages, onClose, onSave }) {
   function addStage() {
     const label = newLabel.trim()
     if (!label) { setError('Informe o nome da nova etapa.'); return }
-    setRows(r => [...r, { key: `new_${Date.now()}_${Math.random().toString(36).slice(2)}`, label, color: '#64748b', probability: 0, position: r.length, system: false, isNew: true }])
+    setRows(r => {
+      const after = insertAfterKey ? r.findIndex(item => item.key === insertAfterKey) : -1
+      const index = after >= 0 ? after + 1 : r.length
+      const stage = { key: `new_${Date.now()}_${Math.random().toString(36).slice(2)}`, label, color: '#64748b', probability: 0, position: index, system: false, isNew: true }
+      return [...r.slice(0, index), stage, ...r.slice(index)]
+    })
     setNewLabel(''); setError(null)
   }
 

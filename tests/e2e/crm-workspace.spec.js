@@ -111,12 +111,17 @@ test('Kanban exibe etapas clÃ­nicas novas e permite criar e salvar uma etapa prÃ
 })
 
 test('Tabela e Kanban abrem o mesmo cadastro completo e a Tabela permite criar grupo entre etapas', async ({ page }) => {
-  await mockBackend(page)
+  const calls = await mockBackend(page)
   await page.goto('/app/funnel')
 
-  await page.getByTestId('crm-add-stage-between').first().click()
+  await page.getByTestId('crm-add-stage-between').nth(1).click()
   await expect(page.getByText('Configurar etapas comerciais')).toBeVisible()
-  await page.getByRole('button', { name: 'Cancelar' }).click()
+  await page.getByLabel('Nome da nova etapa').fill('Depois da consulta')
+  await page.getByRole('button', { name: '+ Adicionar etapa' }).click()
+  await page.getByRole('button', { name: 'Salvar etapas' }).click()
+  await expect.poll(() => calls.stageWrites.length).toBe(1)
+  const savedLabels = calls.stageWrites[0].map(row => row.label)
+  expect(savedLabels.indexOf('Depois da consulta')).toBe(savedLabels.indexOf('Consulta Agendada') + 1)
 
   await page.getByRole('tab', { name: 'Kanban', exact: true }).click()
   await page.getByRole('button', { name: 'Adicionar lead' }).first().click()

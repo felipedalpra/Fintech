@@ -342,6 +342,11 @@ export function CrmWorkspace({ data }) {
 
   // ----- etapas -----
   const [stagesOpen, setStagesOpen] = useState(false)
+  const [stageInsertAfter, setStageInsertAfter] = useState(null)
+  const openStageSettings = useCallback((afterKey = null) => {
+    setStageInsertAfter(afterKey)
+    setStagesOpen(true)
+  }, [])
   async function saveStages(rows, removed = []) {
     const res = await saveStageSettings(effectiveOwner, rows)
     if (res.error) return res
@@ -462,7 +467,8 @@ export function CrmWorkspace({ data }) {
               procedureOptions={procedureOptions} sourceOptions={sourceOptions}
               onToggleCollapse={onToggleCollapse} onCollapseAll={onCollapseAll} onSort={onSort}
               onResizeColumn={onResizeColumn} onReorderColumn={onReorderColumn} onHideColumn={onHideColumn}
-              onMoveGroup={onMoveGroup} onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null}
+              onMoveGroup={onMoveGroup} onConfigureStages={ws.features.stages ? () => openStageSettings() : null}
+              onAddStage={ws.features.stages ? openStageSettings : null}
               onNewLead={openLead}
               onOpenOpp={onOpenOpp} columnsMenu={columnsMenu}
               selectedIds={effectiveSelected} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
@@ -479,7 +485,7 @@ export function CrmWorkspace({ data }) {
       {isKanban && (
         <OpportunityPipeline ws={ws} opps={kanbanOpps} ownerId={effectiveOwner} procedureName={procedureName}
           onEdit={opp => onOpenOpp(opp)} onError={msg => toast(msg, 'error')}
-          onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null} onNewLead={openLead} />
+          onConfigureStages={ws.features.stages ? () => openStageSettings() : null} onNewLead={openLead} />
       )}
 
       {isAgenda && (
@@ -495,7 +501,8 @@ export function CrmWorkspace({ data }) {
         onCreated={opp => { ws.addOpp(opp); setLeadOpen(false) }} />
       <CrmFieldEditor open={fieldEditor.open} field={fieldEditor.field} onClose={() => setFieldEditor({ open: false, field: null })}
         onSave={saveField} onArchive={archiveField} />
-      <CrmStageSettings open={stagesOpen} stages={ws.stages} onClose={() => setStagesOpen(false)} onSave={saveStages} />
+      <CrmStageSettings open={stagesOpen} stages={ws.stages} insertAfterKey={stageInsertAfter}
+        onClose={() => { setStagesOpen(false); setStageInsertAfter(null) }} onSave={saveStages} />
       <ViewModal state={viewModal} canShare={canManage} onClose={() => setViewModal({ open: false, mode: 'new', view: null })} onSubmit={submitView} />
     </div>
   )

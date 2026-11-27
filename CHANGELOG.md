@@ -9,6 +9,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Added
 - Cadastro de leads unificado entre Tabela e Kanban: ambos usam os mesmos campos completos, respeitam a etapa de origem e a Tabela ganhou um botão `+` entre os grupos para abrir a criação/configuração de etapas sincronizada com o Kanban (`src/components/CrmTable.jsx`, `src/components/OpportunityPipeline.jsx`, `src/components/NewLeadModal.jsx`, `src/components/CrmWorkspace.jsx`, `tests/e2e/crm-workspace.spec.js`, `tests/e2e/opportunity-pipeline.spec.js`).
+- O `+` entre grupos da Tabela agora insere a nova etapa exatamente após o grupo escolhido, preservando a mesma posição no Kanban (`src/components/CrmStageSettings.jsx`, `src/components/CrmTable.jsx`, `src/components/CrmWorkspace.jsx`, `tests/e2e/crm-workspace.spec.js`).
 
 - Editor de oportunidades do CRM agora exibe o telefone do paciente ou lead ao abrir um registro, respeitando o modo de privacidade da plataforma (`src/components/OpportunityEditor.jsx`, `tests/e2e/pipeline-crud.spec.js`).
 - Kanban do CRM com etapas configuráveis por clínica: etapas padrão Encaminhado para Nutrologia e Exames Prontos, criação, edição, reordenação e exclusão segura com realocação e histórico auditável (`src/lib/crmStages.js`, `src/components/CrmStageSettings.jsx`, `supabase/crm_pipeline_stages.sql`).

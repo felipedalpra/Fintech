@@ -23,7 +23,7 @@ const PAGE_ROWS = 150
 export function CrmTable({
   groups, columns, ctx, ws, ownerId, canManage, groupBy, sort, collapsed, toast,
   procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onResizeColumn, onReorderColumn,
-  onHideColumn, onMoveGroup, onConfigureStages, onNewLead, onOpenOpp, columnsMenu,
+  onHideColumn, onMoveGroup, onConfigureStages, onAddStage, onNewLead, onOpenOpp, columnsMenu,
   selectedIds, onToggleSelect, onSetSelected, rowActions, userId,
 }) {
   const scrollRef = useRef(null)
@@ -135,15 +135,15 @@ export function CrmTable({
               canManage={canManage} groupBy={groupBy} sort={sort} toast={toast}
               procedureOptions={procedureOptions} sourceOptions={sourceOptions}
               onToggleCollapse={onToggleCollapse} onCollapseAll={onCollapseAll} onSort={onSort}
-              onHideColumn={onHideColumn} onMoveGroup={onMoveGroup} onConfigureStages={onConfigureStages} onNewLead={onNewLead}
+              onHideColumn={onHideColumn} onMoveGroup={onMoveGroup} onConfigureStages={onConfigureStages} onAddStage={onAddStage} onNewLead={onNewLead}
               onReorderColumn={onReorderColumn} startResize={startResize} onOpenOpp={onOpenOpp} columnsMenu={columnsMenu}
               commitField={commitField} commitCustom={commitCustom} commitStage={commitStage} commitOutcome={commitOutcome}
               selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
               expanded={expanded} onToggleExpand={onToggleExpand} focusNewFor={focusNewFor} onFocusedNew={clearFocusNew}
               onRowMenu={onRowMenu} userId={userId} />
-              {groupBy === 'stage' && canManage && onConfigureStages && gi < groups.length - 1 && (
+              {groupBy === 'stage' && canManage && onAddStage && g.stage && (
               <button type="button" data-testid="crm-add-stage-between" aria-label="Adicionar grupo de etapa"
-                onClick={onConfigureStages}
+                onClick={() => onAddStage(g.stage)}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px 0', padding: '5px 10px', border: `1px dashed ${C.border}`, borderRadius: 8, background: 'transparent', color: C.textDim, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}>
                 <Ico d={ICONS.plus} size={13} />Adicionar grupo
               </button>
@@ -160,7 +160,7 @@ export function CrmTable({
 
 function GroupBlock({
   group, index, groupKeys, isCollapsed, firstRow, visibleCols, widthOf, widths, totalWidth, ctx, ws, ownerId, canManage, groupBy, sort, toast,
-  procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onHideColumn, onMoveGroup, onConfigureStages, onNewLead,
+  procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onHideColumn, onMoveGroup, onConfigureStages, onAddStage, onNewLead,
   onReorderColumn, startResize, onOpenOpp, columnsMenu, commitField, commitCustom, commitStage, commitOutcome,
   selectedIds, onToggleSelect, onSetSelected, expanded, onToggleExpand, focusNewFor, onFocusedNew, onRowMenu, userId,
 }) {
