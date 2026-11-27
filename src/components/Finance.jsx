@@ -1262,6 +1262,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const filteredAccountsReceivable = useMemo(() => {
     const search = String(listFilters.search || '').toLowerCase().trim()
     return m.accountsReceivable.filter(item => {
+      if (!inRange(item.dueDate, range.start, range.end)) return false
       const documents = fiscalDocsFor(item)
       const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
@@ -1273,11 +1274,12 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
       const haystack = `${item.patient || ''} ${item.description || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''} ${fiscalDocumentsSearchText(documents)}`.toLowerCase()
       return haystack.includes(search)
     })
-  }, [m.accountsReceivable, listFilters, fiscalDocumentsByEntry])
+  }, [m.accountsReceivable, listFilters, fiscalDocumentsByEntry, range.start, range.end])
 
   const filteredAccountsPayable = useMemo(() => {
     const search = String(listFilters.search || '').toLowerCase().trim()
     return m.accountsPayable.filter(item => {
+      if (!inRange(item.dueDate, range.start, range.end)) return false
       const documents = fiscalDocsFor(item)
       const launchType = item.source === 'recorrencia' ? 'fixa' : 'variavel'
       if (listFilters.launchType !== 'all' && launchType !== listFilters.launchType) return false
@@ -1289,7 +1291,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
       const haystack = `${item.supplier || ''} ${item.category || ''} ${resolveOrigin(item)} ${item.dueDate || ''} ${fiscalDocumentsSearchText(documents)}`.toLowerCase()
       return haystack.includes(search)
     })
-  }, [m.accountsPayable, listFilters, fiscalDocumentsByEntry])
+  }, [m.accountsPayable, listFilters, fiscalDocumentsByEntry, range.start, range.end])
 
   const activeListFilterConfig = useMemo(() => {
     if (tab === 'entradas') {

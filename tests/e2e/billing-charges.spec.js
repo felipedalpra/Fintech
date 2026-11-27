@@ -41,6 +41,7 @@ test('emite Pix da parcela exata sem permitir editar valor ou vencimento', async
   })
 
   await page.goto('/app/finance')
+  await page.getByRole('button', { name:'Este ano', exact:true }).click()
   await page.getByRole('button', { name:'A receber', exact:true }).click()
   const row = page.getByRole('row').filter({ hasText:'Consulta especial' })
   await expect(row).toBeVisible()
@@ -70,6 +71,36 @@ test('emite Pix da parcela exata sem permitir editar valor ou vencimento', async
   await expect(dialog.getByText('Cobrança recebida')).toBeVisible()
   await expect(dialog.getByRole('button', { name:'Cancelar cobrança' })).toHaveCount(0)
   expect(syncBody).toEqual({ chargeId:'33333333-3333-4333-8333-333333333333' })
+})
+
+test('contas abertas respeitam o período personalizado pelo vencimento', async ({ page }) => {
+  const draft = {
+    procedures:[], surgeries:[], consultations:[], products:[], productSales:[], productPurchases:[],
+    extraRevenues:[
+      { id:'novembro', description:'Receita novembro', value:100, patient:'Paciente Novembro', date:'2026-11-01', competenceDate:'2026-11-01', dueDate:'2026-11-30', status:'pendente' },
+      { id:'dezembro', description:'Receita dezembro', value:200, patient:'Paciente Dezembro', date:'2026-11-26', competenceDate:'2026-11-26', dueDate:'2026-12-15', status:'pendente' },
+      { id:'janeiro', description:'Receita janeiro', value:300, patient:'Paciente Janeiro', date:'2026-11-26', competenceDate:'2026-11-26', dueDate:'2027-01-15', status:'pendente' },
+    ],
+    expenses:[], assets:[], liabilities:[], goals:[], chartAccounts:[],
+  }
+  await page.addInitScript(([key, value]) => {
+    window.localStorage.setItem('surgimetrics_onboarded', 'true')
+    window.sessionStorage.setItem(key, value)
+  }, [DRAFT_KEY, JSON.stringify(draft)])
+
+  await page.goto('/app/finance')
+  await page.getByRole('button', { name:'A receber', exact:true }).click()
+  await page.getByRole('button', { name:'Personalizado', exact:true }).click()
+  const dates = page.locator('input[type="date"]')
+  await dates.nth(0).fill('2026-12-01')
+  await dates.nth(1).fill('2026-12-31')
+
+  await expect(page.getByText('Receita dezembro', { exact:true })).toBeVisible()
+  await expect(page.getByText('Receita novembro', { exact:true })).toHaveCount(0)
+  await expect(page.getByText('Receita janeiro', { exact:true })).toHaveCount(0)
+  await expect(page.getByText('2026-12', { exact:false })).toBeVisible()
+  await expect(page.getByText('2026-11', { exact:false })).toHaveCount(0)
+  await expect(page.getByText('2027-01', { exact:false })).toHaveCount(0)
 })
 
 test('admin conecta o Asaas e recebe confirmação do webhook sem expor a chave', async ({ page }) => {
