@@ -2167,13 +2167,13 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
             <FInput label="Vencimento (previsão de recebimento)" value={form.dueDate || ''} onChange={value => setForm(c => ({ ...c, dueDate:value }))} type="date" />
             <FInput label="Status de pagamento" value={form.paymentStatus || 'pendente'} onChange={value => setForm(c => ({ ...c, paymentStatus:value }))} options={SURGERY_PAYMENT_STATUS} />
             {form.paymentStatus === 'pago' && <FInput label="Data de pagamento" value={form.paymentDate || ''} onChange={value => setForm(c => ({ ...c, paymentDate:value }))} type="date" />}
-            <FInput label="Valor total (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
+            <FInput label="Valor recebido pela clínica (R$)" value={form.totalValue || 0} onChange={value => setForm(c => ({ ...c, totalValue:value }))} type="number" />
             <FInput label="Forma de pagamento" value={form.paymentMethod || 'pix'} onChange={value => setForm(c => ({ ...c, paymentMethod:value }))} options={PAYMENT_METHODS} />
             <div style={{ fontSize:12, color:C.textSub, fontWeight:600, marginBottom:-8 }}>Custos cirúrgicos</div>
-            <FInput label="Custo hospital (R$)" value={form.hospitalCost || 0} onChange={value => setForm(c => ({ ...c, hospitalCost:value }))} type="number" />
-            <FInput label="Custo anestesia (R$)" value={form.anesthesiaCost || 0} onChange={value => setForm(c => ({ ...c, anesthesiaCost:value }))} type="number" />
-            <FInput label="Custo material (R$)" value={form.materialCost || 0} onChange={value => setForm(c => ({ ...c, materialCost:value }))} type="number" />
-            <FInput label="Outros custos (R$)" value={form.otherCosts || 0} onChange={value => setForm(c => ({ ...c, otherCosts:value }))} type="number" />
+            <FInput label="Hospital (informativo — pago direto) (R$)" value={form.hospitalCost || 0} onChange={value => setForm(c => ({ ...c, hospitalCost:value }))} type="number" />
+            <FInput label="Anestesia (informativo — paga direto) (R$)" value={form.anesthesiaCost || 0} onChange={value => setForm(c => ({ ...c, anesthesiaCost:value }))} type="number" />
+            <FInput label="Custo malhas/materiais (R$)" value={form.materialCost || 0} onChange={value => setForm(c => ({ ...c, materialCost:value }))} type="number" />
+            <FInput label="Outros custos da clínica (R$)" value={form.otherCosts || 0} onChange={value => setForm(c => ({ ...c, otherCosts:value }))} type="number" />
             <FInput label="NF / ISSQN (%)" value={form.invoiceIssuancePercent || 0} onChange={value => setForm(c => ({ ...c, invoiceIssuancePercent:value }))} type="number" />
             <ClinicalCostSettlementFields sourceType="surgery" form={form} setForm={setForm} />
             <FInput label="Observações" value={form.notes || ''} onChange={value => setForm(c => ({ ...c, notes:value }))} placeholder="Observações opcionais" />

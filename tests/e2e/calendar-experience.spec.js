@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { buildLedger } from '../../src/lib/financialLedger.js'
 
 const PROCEDURE_ID = '11111111-1111-4111-8111-111111111111'
 const PATIENT_ID = '22222222-2222-4222-8222-222222222222'
@@ -129,12 +130,15 @@ test('cadastra valor e custos de cirurgia pela agenda sem criar lançamento para
   await page.getByRole('button', { name:'Adicionar informações financeiras' }).click()
 
   const finance = page.getByTestId('calendar-financial-fields')
-  const totalInput = finance.getByText('Valor total da cirurgia', { exact:true }).locator('..').locator('input')
+  const totalInput = finance.getByText('Valor recebido pela clínica', { exact:true }).locator('..').locator('input')
   await totalInput.fill('18000')
   await totalInput.press('Tab')
-  const hospitalInput = finance.getByText('Custo hospital', { exact:true }).locator('..').locator('input')
+  const hospitalInput = finance.getByText('Hospital (informativo — pago direto)', { exact:true }).locator('..').locator('input')
   await hospitalInput.fill('3000')
   await hospitalInput.press('Tab')
+  const materialInput = finance.getByText('Custo malhas/materiais', { exact:true }).locator('..').locator('input')
+  await materialInput.fill('1200')
+  await materialInput.press('Tab')
   const invoiceTaxInput = finance.getByText('Emissão de NF (%)', { exact:true }).locator('..').locator('input')
   await invoiceTaxInput.fill('5')
   await invoiceTaxInput.press('Tab')
@@ -149,11 +153,17 @@ test('cadastra valor e custos de cirurgia pela agenda sem criar lançamento para
     invoiceTaxRate:5,
     invoiceTaxAmount:900,
     paymentStatus:'pendente',
-    costSettlements:{
-      hospital_cost:{ status:'pendente' },
-      invoice_tax:{ status:'pendente' },
-    },
+    costSettlements:{ material_cost:{ status:'pendente' }, invoice_tax:{ status:'pendente' } },
   })
+  expect(store.getPayload().surgeries.at(-1).costSettlements.hospital_cost).toBeUndefined()
+
+  const createdSurgery = store.getPayload().surgeries.at(-1)
+  const ledger = buildLedger({ surgeries:[createdSurgery], consultations:[], productSales:[], productPurchases:[], extraRevenues:[], expenses:[] })
+  expect(ledger.entries.find(entry => entry.source_type === 'surgery' && entry.source_component === 'revenue')).toMatchObject({ direction:'receivable', total_amount:18000 })
+  expect(ledger.entries.some(entry => entry.source_type === 'surgery' && entry.source_component === 'hospital_cost')).toBe(false)
+  expect(ledger.entries.some(entry => entry.source_type === 'surgery' && entry.source_component === 'anesthesia_cost')).toBe(false)
+  expect(ledger.entries.find(entry => entry.source_type === 'surgery' && entry.source_component === 'material_cost')).toMatchObject({ direction:'payable', total_amount:1200 })
+  expect(ledger.entries.find(entry => entry.source_type === 'surgery' && entry.source_component === 'invoice_tax')).toMatchObject({ direction:'payable', total_amount:900 })
 })
 
 test('agenda mobile permite navegar e abrir um atendimento', async ({ page }) => {

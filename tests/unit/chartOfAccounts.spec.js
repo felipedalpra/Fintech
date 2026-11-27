@@ -96,7 +96,7 @@ test('DRE respeita deduções, custos e resultado financeiro definidos no plano'
     account('revenue-surgery', 'Cirurgias', 'revenue', 'gross_revenue', 'revenue_surgery_default'),
     account('revenue-other', 'Outras receitas', 'revenue', 'gross_revenue', 'revenue_other'),
     account('deduction', 'ISS', 'revenue_deduction', 'revenue_deductions', 'deduction_invoice_tax'),
-    account('hospital', 'Hospital', 'direct_cost', 'direct_costs', 'cost_surgery_hospital'),
+    account('material', 'Malhas e materiais', 'direct_cost', 'direct_costs', 'cost_surgery_material'),
     account('direct', 'Comissão', 'direct_cost', 'direct_costs'),
     account('operating', 'Aluguel', 'operating_expense', 'administrative'),
     account('fin-revenue', 'Rendimento', 'financial_revenue', 'financial_result'),
@@ -110,7 +110,7 @@ test('DRE respeita deduções, custos e resultado financeiro definidos no plano'
   ].map(([id, chartAccountId, value]) => ({ id, chartAccountId, description:id, value, dueDate:'2026-10-12', competenceDate:'2026-10-12', status:'aberto' }))
   const metrics = buildMetrics({
     chartAccounts,
-    surgeries:[{ id:'s1', totalValue:1000, hospitalCost:100, invoiceIssuancePercent:10, date:'2026-10-12', competenceDate:'2026-10-12', paymentStatus:'pendente', patient:'Ana' }],
+    surgeries:[{ id:'s1', totalValue:1000, materialCost:100, invoiceIssuancePercent:10, date:'2026-10-12', competenceDate:'2026-10-12', paymentStatus:'pendente', patient:'Ana' }],
     extraRevenues:[{ id:'rf1', chartAccountId:'fin-revenue', description:'Aplicação', value:20, date:'2026-10-12', competenceDate:'2026-10-12', status:'recebido' }],
     expenses,
   }, { startDate:'2026-10-01', endDate:'2026-10-31', balanceDate:'2026-10-31' })

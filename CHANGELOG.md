@@ -21,6 +21,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 - A assinatura BRy agora só pode ser solicitada em lotes de exatamente 10 documentos. A fila bloqueia lotes incompletos e o backend rejeita qualquer quantidade diferente, removendo a criação acidental de envelopes individuais. O fluxo ganhou cobertura E2E para lotes com menos de 10, seleção exata, confirmação de custo e bloqueio da assinatura individual. (`src/components/ClinicalWorkspaceViews.jsx`, `api/_lib/clinicalSignatureBry.js`, `api/_lib/bryEasySign.js`, `tests/e2e/clinical-signature-bry.spec.js`.)
 
 ### Fixed
+- Cirurgias agora distinguem o valor recebido pela clínica dos valores pagos diretamente pelo paciente ao hospital e ao anestesista. Hospital/anestesia permanecem informativos e não geram contas a pagar; malhas/materiais, instrumentadora, prótese, outros custos da clínica e emissão de NF continuam no razão financeiro. A prótese permanece como custo da clínica, conforme o fluxo da clínica. (`src/lib/clinicalCosts.js`, `src/financialMetrics.js`, `src/components/Sales.jsx`, `src/components/CalendarFinancialFields.jsx`, `src/components/Finance.jsx`, `tests/unit/financialLedger.spec.js`, `tests/unit/financialFlowFidelity.spec.js`, `tests/e2e/calendar-experience.spec.js`.)
+
 - A ordem dos grupos de etapas na Tabela agora usa a mesma ordem oficial do Kanban e do gerenciador de etapas; preferências antigas de ordenação independente da Tabela não causam mais divergência entre as visualizações (`src/lib/crmWorkspace.js`, `src/components/CrmTable.jsx`).
 
 - Corrigida a referência de etapa sugerida pela IA no Kanban, que causava `STAGE_LABEL is not defined` após a habilitação de etapas personalizadas (`src/components/OpportunityPipeline.jsx`).

@@ -6,7 +6,7 @@ const data = {
   surgeries:[{
     id:'s1', patient:'Ana', patientId:'p1', totalValue:1000,
     date:'2026-01-10', competenceDate:'2026-01-10', dueDate:'2026-02-10',
-    paymentStatus:'pago', paymentDate:'2026-02-10', hospitalCost:100,
+    paymentStatus:'pago', paymentDate:'2026-02-10', materialCost:100,
   }],
   consultations:[{
     id:'c1', patient:'Bia', patientId:'p2', value:300,

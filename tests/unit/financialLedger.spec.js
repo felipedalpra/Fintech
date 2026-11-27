@@ -127,21 +127,21 @@ test('compra de produto: status define pago/aberto; legacy não vira pago; forne
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
 
-test('custos de cirurgia viram títulos a pagar por componente (0 não gera)', () => {
+test('custos da clínica viram títulos a pagar por componente; hospital e anestesia são repasse direto', () => {
   const ledger = buildLedger({
     surgeries: [{
       id: 'sx', totalValue: 10000, date: '2026-09-10', paymentStatus: 'pendente',
-      hospitalCost: 2000, anesthesiaCost: 1000, materialCost: 0, otherCosts: 500,
+      hospitalCost: 2000, anesthesiaCost: 1000, materialCost: 300, otherCosts: 500,
       invoiceIssuancePercent: 10, patient: 'Ana',
     }],
   })
   const costs = ledger.entries.filter(e => e.source_type === 'surgery' && e.direction === 'payable')
   const byComp = Object.fromEntries(costs.map(e => [e.source_component, e.total_amount]))
-  expect(byComp.hospital_cost).toBe(2000)
-  expect(byComp.anesthesia_cost).toBe(1000)
+  expect(byComp.hospital_cost).toBeUndefined()
+  expect(byComp.anesthesia_cost).toBeUndefined()
   expect(byComp.other_cost).toBe(500)
   expect(byComp.invoice_tax).toBe(1000)          // 10% de 10.000
-  expect(byComp.material_cost).toBeUndefined()   // 0 → não gera entrada
+  expect(byComp.material_cost).toBe(300)
   // o título de receita da cirurgia continua existindo
   expect(ledger.entries.some(e => e.source_type === 'surgery' && e.source_component === 'revenue')).toBe(true)
   expect(checkLedgerInvariants(ledger)).toEqual([])
@@ -165,24 +165,22 @@ test('custos clínicos respeitam fornecedor, vencimento e liquidação próprios
   const ledger = buildLedger({
     surgeries:[{
       id:'s-custos', totalValue:0, date:'2026-09-10', competenceDate:'2026-09-10', paymentStatus:'pendente',
-      hospitalCost:1200, anesthesiaCost:800, materialCost:300,
+      hospitalCost:1200, anesthesiaCost:800, materialCost:300, prosthesisCost:900,
       costSettlements:{
-        hospital_cost:{ status:'pendente', dueDate:'2026-10-15', competenceDate:'2026-09-10', supplierId:'f-hospital', supplier:'Hospital X' },
-        anesthesia_cost:{ status:'pago', dueDate:'2026-09-12', paymentDate:'2026-09-18', competenceDate:'2026-09-10', supplierId:'f-anestesia', supplier:'Anestesista Y', paymentMethod:'pix' },
         material_cost:{ status:'cancelado', dueDate:'2026-09-20', competenceDate:'2026-09-10', supplierId:'f-material', supplier:'Material Z' },
+        prosthesis_cost:{ status:'pago', dueDate:'2026-09-12', paymentDate:'2026-09-18', competenceDate:'2026-09-10', supplierId:'f-protese', supplier:'Fornecedor de prótese', paymentMethod:'pix' },
       },
     }],
   })
   const indexByComponent = component => ledger.entries.findIndex(entry => entry.source_component === component)
-  const hospital = indexByComponent('hospital_cost')
-  const anesthesia = indexByComponent('anesthesia_cost')
   const material = indexByComponent('material_cost')
+  const prosthesis = indexByComponent('prosthesis_cost')
 
-  expect(ledger.entries[hospital]).toMatchObject({ status:'pending', party_id:'f-hospital', party_name_snapshot:'Hospital X' })
-  expect(ledger.installments[hospital][0]).toMatchObject({ due_date:'2026-10-15', settlement_date:null, status:'pending' })
-  expect(ledger.entries[anesthesia]).toMatchObject({ status:'paid', party_id:'f-anestesia' })
-  expect(ledger.installments[anesthesia][0]).toMatchObject({ settlement_date:'2026-09-18', payment_method:'pix', status:'paid' })
+  expect(indexByComponent('hospital_cost')).toBe(-1)
+  expect(indexByComponent('anesthesia_cost')).toBe(-1)
   expect(ledger.entries[material].status).toBe('canceled')
+  expect(ledger.entries[prosthesis]).toMatchObject({ status:'paid', party_id:'f-protese' })
+  expect(ledger.installments[prosthesis][0]).toMatchObject({ settlement_date:'2026-09-18', payment_method:'pix', status:'paid' })
   expect(checkLedgerInvariants(ledger)).toEqual([])
 })
 

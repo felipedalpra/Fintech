@@ -4,6 +4,7 @@ import { buildProductCosting } from './lib/inventoryCosting.js'
 import { buildInventoryMovements, stockByProduct } from './lib/inventoryLedger.js'
 import { accountPath, findChartAccount } from './lib/chartOfAccounts.js'
 import { buildRevenueOrigins } from './lib/revenueByOrigin.js'
+import { clinicSurgeryCostAmount } from './lib/clinicalCosts.js'
 
 export { paymentScheduleFlow } from './lib/paymentScheduleFlow.js'
 export { generateRecurringOccurrences } from './lib/recurrenceSchedule.js'
@@ -19,12 +20,7 @@ function invoiceIssuanceCost(baseValue, percentValue) {
   return base * (resolvePercent(percentValue) / 100)
 }
 
-function surgeryCosts(item) {
-  const invoiceTax = item.invoiceTaxAmount != null
-    ? Number(item.invoiceTaxAmount || 0)
-    : invoiceIssuanceCost(item.totalValue || 0, item.invoiceIssuancePercent || 0)
-  return (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + invoiceTax
-}
+function surgeryCosts(item) { return clinicSurgeryCostAmount(item) }
 
 function consultationCosts(item) {
   return item.invoiceTaxAmount != null

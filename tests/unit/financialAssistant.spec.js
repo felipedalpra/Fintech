@@ -18,8 +18,8 @@ const data = {
   procedures:[{ id:'p1', name:'Rinoplastia', price:10_000 }],
   surgeries:[{
     id:'s1', patient:'', procedureId:'p1', totalValue:10_000, date:'2026-10-02',
-    paymentStatus:'pago', paymentDate:'2026-10-02', hospitalCost:3_000,
-    anesthesiaCost:0, materialCost:0, otherCosts:0, invoiceIssuancePercent:0,
+    paymentStatus:'pago', paymentDate:'2026-10-02',
+    hospitalCost:0, anesthesiaCost:0, materialCost:3_000, otherCosts:0, invoiceIssuancePercent:0,
   }],
   consultations:[{
     id:'c1', patient:'', date:'2026-10-03', consultationType:'avaliacao', value:500,

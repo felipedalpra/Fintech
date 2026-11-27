@@ -66,7 +66,7 @@ export function CalendarFinancialFields({ open, onToggle, draft, setDraft, editi
 
           <div className="cal-finance__grid">
             <FInput
-              label={isSurgery ? 'Valor total da cirurgia' : 'Valor da consulta'}
+              label={isSurgery ? 'Valor recebido pela clínica' : 'Valor da consulta'}
               type="number"
               value={isSurgery ? draft.totalValue : draft.value}
               onChange={value => update(isSurgery ? { totalValue:value } : { value })}
@@ -87,22 +87,22 @@ export function CalendarFinancialFields({ open, onToggle, draft, setDraft, editi
 
             {isSurgery && (
               <>
-                <FInput label="Custo hospital" type="number" value={draft.hospitalCost} onChange={hospitalCost => update({ hospitalCost })} placeholder="0" />
-                <FInput label="Custo anestesia" type="number" value={draft.anesthesiaCost} onChange={anesthesiaCost => update({ anesthesiaCost })} placeholder="0" />
-                <FInput label="Custo material" type="number" value={draft.materialCost} onChange={materialCost => update({ materialCost })} placeholder="0" />
+                <FInput label="Hospital (informativo — pago direto)" type="number" value={draft.hospitalCost} onChange={hospitalCost => update({ hospitalCost })} placeholder="0" help="Não entra no contas a pagar da clínica." />
+                <FInput label="Anestesia (informativo — paga direto)" type="number" value={draft.anesthesiaCost} onChange={anesthesiaCost => update({ anesthesiaCost })} placeholder="0" help="Não entra no contas a pagar da clínica." />
+                <FInput label="Custo malhas/materiais" type="number" value={draft.materialCost} onChange={materialCost => update({ materialCost })} placeholder="0" />
                 <FInput label="Custo instrumentadora" type="number" value={draft.instrumentationCost} onChange={instrumentationCost => update({ instrumentationCost })} placeholder="0" />
                 <FInput label="Custo prótese" type="number" value={draft.prosthesisCost} onChange={prosthesisCost => update({ prosthesisCost })} placeholder="0" />
                 {(Number(draft.instrumentationCost) > 0 || Number(draft.prosthesisCost) > 0) && (
                   <div className="cal-finance__notice">Esses valores entram como custo da cirurgia e vão aparecer em Contas a pagar / Saídas do Financeiro.</div>
                 )}
-                <FInput label="Outros custos" type="number" value={draft.otherCosts} onChange={otherCosts => update({ otherCosts })} placeholder="0" />
+                <FInput label="Outros custos da clínica" type="number" value={draft.otherCosts} onChange={otherCosts => update({ otherCosts })} placeholder="0" />
                 <FInput
-                  label="Valor repassado direto a terceiros"
+                  label="Repasse direto a terceiros (hospital/anestesia)"
                   type="number"
                   value={draft.thirdPartyPassthroughValue}
                   onChange={thirdPartyPassthroughValue => update({ thirdPartyPassthroughValue })}
                   placeholder="0"
-                  help="Opcional. O que o paciente paga DIRETO a hospital/anestesista/prótese — não é receita nem despesa da clínica."
+                  help="Use apenas para valores pagos diretamente pelo paciente ao hospital ou anestesista. Não é receita nem despesa da clínica."
                 />
               </>
             )}

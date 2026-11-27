@@ -1,7 +1,7 @@
 export const CLINICAL_COST_COMPONENTS = {
   surgery:[
-    { key:'hospital_cost', label:'Hospital', amountField:'hospitalCost' },
-    { key:'anesthesia_cost', label:'Anestesia', amountField:'anesthesiaCost' },
+    // Hospital e anestesia são pagos diretamente pelo paciente ao fornecedor nesta clínica.
+    // Permanecem no registro da cirurgia apenas para informação/total ao paciente.
     { key:'material_cost', label:'Material', amountField:'materialCost' },
     { key:'instrumentation_cost', label:'Instrumentadora', amountField:'instrumentationCost' },
     { key:'prosthesis_cost', label:'Prótese', amountField:'prosthesisCost' },
@@ -47,6 +47,10 @@ export function clinicalCostRows(item, sourceType) {
       settlement:item?.costSettlements?.[component.key] || null,
     }))
     .filter(component => component.amount > 0)
+}
+
+export function clinicSurgeryCostAmount(item) {
+  return clinicalCostRows(item, 'surgery').reduce((sum, component) => sum + component.amount, 0)
 }
 
 // Só é aplicado quando o usuário salva o atendimento. Registros antigos sem metadados continuam

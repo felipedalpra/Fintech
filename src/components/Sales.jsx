@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useUserRole } from '../context/UserRoleContext.jsx'
 import { PatientSelector } from './PatientSelector.jsx'
 import { ClinicalCostSettlementFields } from './ClinicalCostSettlementFields.jsx'
-import { withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
+import { clinicSurgeryCostAmount, withClinicalCostSettlementDefaults } from '../lib/clinicalCosts.js'
 import { FinancialDrilldownModal, useFinancialDrilldown } from './FinancialDrilldownModal.jsx'
 import { hasChangedReceiptFields, hasRecognizedReceipt } from '../lib/receivablePaymentReversal.js'
 import { useToast } from '../context/ToastContext.jsx'
@@ -236,8 +236,7 @@ export function Sales({ data, setData, saveDataNow }) {
     const procedureValue = data.procedures.find(item => item.id === form.procedureId)?.price || 0
     const resolvedTotal = form.totalValue || procedureValue
     const invoiceIssuancePercent = Math.max(0, Math.min(100, Number(form.invoiceIssuancePercent || 0)))
-    const invoiceIssuanceCost = resolvedTotal * (invoiceIssuancePercent / 100)
-    const totalCosts = (form.hospitalCost || 0) + (form.anesthesiaCost || 0) + (form.materialCost || 0) + (form.instrumentationCost || 0) + (form.prosthesisCost || 0) + (form.otherCosts || 0) + invoiceIssuanceCost
+    const totalCosts = clinicSurgeryCostAmount({ ...form, totalValue:resolvedTotal, invoiceIssuancePercent })
     const installmentValue = form.paymentStatus === 'parcelado' && form.installmentCount >= 2
       ? resolvedTotal / form.installmentCount
       : 0
@@ -343,7 +342,7 @@ export function Sales({ data, setData, saveDataNow }) {
   const surgeriesWithRevenue = data.surgeries.filter(item => item.totalValue > 0)
   const margemMedia = surgeriesWithRevenue.length > 0
     ? surgeriesWithRevenue.reduce((sum, item) => {
-        const costs = (item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100))
+        const costs = clinicSurgeryCostAmount(item)
         const net = (item.totalValue || 0) - costs
         return sum + (net / item.totalValue) * 100
       }, 0) / surgeriesWithRevenue.length
@@ -433,7 +432,7 @@ export function Sales({ data, setData, saveDataNow }) {
               {filtered.length === 0 && <tr><td colSpan={7} style={{ padding:40, textAlign:'center', color:C.textDim, fontSize:13 }}>Nenhuma cirurgia cadastrada.</td></tr>}
               {visible.map(item => {
                 const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
-                const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
+                const netRevenue = (item.totalValue || 0) - clinicSurgeryCostAmount(item)
                 const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
                 const payment = decodePaymentMethod(item.paymentMethod)
                 const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -487,7 +486,7 @@ export function Sales({ data, setData, saveDataNow }) {
           {filtered.length === 0 && <Card><div style={{ color:C.textDim, fontSize:13, textAlign:'center' }}>Nenhuma cirurgia cadastrada.</div></Card>}
           {visible.map(item => {
             const procedure = data.procedures.find(procedureItem => procedureItem.id === item.procedureId)
-            const netRevenue = (item.totalValue || 0) - ((item.hospitalCost || 0) + (item.anesthesiaCost || 0) + (item.materialCost || 0) + (item.instrumentationCost || 0) + (item.prosthesisCost || 0) + (item.otherCosts || 0) + ((item.totalValue || 0) * ((item.invoiceIssuancePercent || 0) / 100)))
+            const netRevenue = (item.totalValue || 0) - clinicSurgeryCostAmount(item)
             const statusColor = STATUS_COLORS[item.paymentStatus] || C.textDim
             const payment = decodePaymentMethod(item.paymentMethod)
             const paymentLabel = payment.paymentScheduleMode === 'duas_datas' && payment.payments.length > 0
@@ -562,14 +561,14 @@ export function Sales({ data, setData, saveDataNow }) {
           <FInput label="Duração (min)" value={form.durationMinutes} onChange={value => setForm(current => ({ ...current, durationMinutes:value }))} type="number" placeholder="180" />
           <FInput label="Cidade" value={form.city} onChange={value => setForm(current => ({ ...current, city:value }))} options={[{ v:'', l:'Cidade a definir' }, ...CITY_OPTIONS.map(item => ({ v:item.value, l:item.label }))]} />
           <FInput label="Local/hospital (opcional)" value={form.locationDetail} onChange={value => setForm(current => ({ ...current, locationDetail:value }))} placeholder="Ex.: Hospital X, sala 2" />
-          <FInput label="Valor total" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" />
+          <FInput label="Valor recebido pela clínica" value={form.totalValue} onChange={value => setForm(current => ({ ...current, totalValue:value }))} type="number" placeholder="0" help="Inclui honorários médicos, malhas/materiais, prótese e demais valores cobrados pela clínica." />
           <FInput
-            label="Valor repassado direto a terceiros (hospital/anestesista/prótese)"
+            label="Repasse direto a terceiros (hospital/anestesia)"
             value={form.thirdPartyPassthroughValue}
             onChange={value => setForm(current => ({ ...current, thirdPartyPassthroughValue:value }))}
             type="number"
             placeholder="0"
-            help="Opcional. O que o paciente paga DIRETO ao terceiro — não é receita nem despesa da clínica, só soma no total informado ao paciente."
+            help="Use apenas para valores pagos diretamente pelo paciente ao hospital ou anestesista. Não é receita nem despesa da clínica; apenas soma ao total informado ao paciente."
           />
           <FInput label="Configuração de pagamento" value={form.paymentScheduleMode} onChange={value => setForm(current => ({ ...current, paymentScheduleMode:value }))} options={PAYMENT_SCHEDULE_MODES} />
           {form.paymentScheduleMode === 'duas_datas' && (
@@ -643,9 +642,9 @@ export function Sales({ data, setData, saveDataNow }) {
               </div>
             </>
           )}
-          <FInput label="Custo hospital" value={form.hospitalCost} onChange={value => setForm(current => ({ ...current, hospitalCost:value }))} type="number" placeholder="0" />
-          <FInput label="Custo anestesia" value={form.anesthesiaCost} onChange={value => setForm(current => ({ ...current, anesthesiaCost:value }))} type="number" placeholder="0" />
-          <FInput label="Custo material" value={form.materialCost} onChange={value => setForm(current => ({ ...current, materialCost:value }))} type="number" placeholder="0" />
+          <FInput label="Hospital (informativo — pago direto)" value={form.hospitalCost} onChange={value => setForm(current => ({ ...current, hospitalCost:value }))} type="number" placeholder="0" help="Registro informativo do valor pago diretamente pelo paciente ao hospital. Não entra no contas a pagar da clínica." />
+          <FInput label="Anestesia (informativo — paga direto)" value={form.anesthesiaCost} onChange={value => setForm(current => ({ ...current, anesthesiaCost:value }))} type="number" placeholder="0" help="Registro informativo do valor pago diretamente pelo paciente ao anestesista. Não entra no contas a pagar da clínica." />
+          <FInput label="Custo malhas/materiais" value={form.materialCost} onChange={value => setForm(current => ({ ...current, materialCost:value }))} type="number" placeholder="0" />
           <FInput label="Custo instrumentadora" value={form.instrumentationCost} onChange={value => setForm(current => ({ ...current, instrumentationCost:value }))} type="number" placeholder="0" />
           <FInput label="Custo prótese" value={form.prosthesisCost} onChange={value => setForm(current => ({ ...current, prosthesisCost:value }))} type="number" placeholder="0" />
           {(Number(form.instrumentationCost) > 0 || Number(form.prosthesisCost) > 0) && (
@@ -653,7 +652,7 @@ export function Sales({ data, setData, saveDataNow }) {
               Esses valores entram como custo da cirurgia e vão aparecer em Contas a pagar / Saídas do Financeiro.
             </div>
           )}
-          <FInput label="Custo outros" value={form.otherCosts} onChange={value => setForm(current => ({ ...current, otherCosts:value }))} type="number" placeholder="0" />
+          <FInput label="Outros custos da clínica" value={form.otherCosts} onChange={value => setForm(current => ({ ...current, otherCosts:value }))} type="number" placeholder="0" />
           <FInput label="Emissão NF (%)" value={form.invoiceIssuancePercent} onChange={value => setForm(current => ({ ...current, invoiceIssuancePercent:value }))} type="number" placeholder="0" />
           <ClinicalCostSettlementFields sourceType="surgery" form={form} setForm={setForm} />
           <div style={{ gridColumn:'1 / -1' }}>

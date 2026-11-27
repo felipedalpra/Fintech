@@ -88,7 +88,7 @@ test('DRE usa competência e não a data de recebimento', () => {
   data.surgeries = [{
     id:'surgery-1', procedureId:'procedure-1', patient:'Ana', totalValue:5000,
     date:'2026-09-20', competenceDate:'2026-10-01', dueDate:'2026-11-01',
-    paymentStatus:'pendente', paymentMethod:'pix', hospitalCost:1000,
+    paymentStatus:'pendente', paymentMethod:'pix', materialCost:1000,
   }, {
     id:'surgery-cancelled', procedureId:'procedure-1', patient:'Cancelada', totalValue:9000,
     date:'2026-10-05', competenceDate:'2026-10-05', dueDate:'2026-10-05',
@@ -129,7 +129,7 @@ test('DRE exporta análise vertical sobre a receita bruta com sinais contábeis'
   const data = baseData()
   data.surgeries = [{
     id:'surgery-av', procedureId:'procedure-1', patient:'Ana', totalValue:1000,
-    date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'pendente', hospitalCost:200,
+    date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'pendente', materialCost:200,
   }]
 
   const report = buildReport('dre', { data, range:RANGE })
@@ -145,7 +145,7 @@ test('Excel financeiro separa positivos, negativos, subtotais e total da DRE por
       ...baseData(),
       surgeries:[{
         id:'surgery-colors', procedureId:'procedure-1', patient:'Ana', totalValue:1000,
-        date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'pendente', hospitalCost:200,
+        date:'2026-10-01', competenceDate:'2026-10-01', paymentStatus:'pendente', materialCost:200,
       }],
     },
     range:RANGE,
