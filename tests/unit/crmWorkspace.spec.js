@@ -158,12 +158,14 @@ test('agrupar por responsável/procedimento/origem/mês não altera nenhuma opor
   expect(JSON.stringify(OPPS)).toBe(snapshot)
 })
 
-test('ordem personalizada dos grupos e mover grupo', () => {
+test('ordem operacional dos grupos e ordem oficial das etapas', () => {
   const keys = ['a', 'b', 'c']
   expect(moveGroup(keys, 'c', -1)).toEqual(['a', 'c', 'b'])
   expect(moveGroup(keys, 'a', -1)).toEqual(keys)
   const g = groupRows(OPPS, 'stage', ctx, ['perdido', 'consulta_agendada'])
-  expect(g.slice(0, 2).map(x => x.key)).toEqual(['perdido', 'consulta_agendada'])
+  // A ordem de etapas é compartilhada com o Kanban; uma preferência antiga da Tabela não a substitui.
+  expect(g.slice(0, 2).map(x => x.key)).toEqual(DEFAULT_STAGES.slice(0, 2).map(s => s.key))
+  expect(groupRows(OPPS, 'responsible', ctx, ['none', 'u1']).map(x => x.key).slice(0, 2)).toEqual(['none', 'u1'])
 })
 
 test('totais do grupo são derivados (soma ignora vazio; distribuição de etapas conta todas as linhas)', () => {

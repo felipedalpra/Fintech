@@ -579,6 +579,10 @@ export function groupRows(opps, groupBy, ctx = {}, groupOrder = []) {
   }
   const keepEmptyStages = ctx.keepEmptyStages !== false
   const visible = groups.filter(g => g.rows.length > 0 || groupBy === 'none' || (groupBy === 'stage' && g.stage && keepEmptyStages))
+  // Etapas são uma configuração do funil, não uma preferência da visualização.
+  // A Tabela e o Kanban precisam obedecer à mesma ordem persistida em `stages.position`.
+  // `groupOrder` continua valendo para agrupamentos operacionais (responsável, origem etc.).
+  if (groupBy === 'stage') return visible
   if (!groupOrder?.length) return visible
   const rank = new Map(groupOrder.map((k, i) => [k, i]))
   return visible

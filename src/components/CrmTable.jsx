@@ -191,8 +191,12 @@ function GroupBlock({
           <Ico d={ICONS.dots} size={16} />
         </button>
         <Popover anchorRef={menuRef} open={menuOpen} onClose={() => setMenuOpen(false)} width={220} label="Opções do grupo">
-          <MenuItem disabled={index === 0} onClick={() => { setMenuOpen(false); onMoveGroup(groupKeys, group.key, -1) }}><Ico d={ICONS.arrowUp} size={13} />Mover grupo para cima</MenuItem>
-          <MenuItem disabled={index === groupKeys.length - 1} onClick={() => { setMenuOpen(false); onMoveGroup(groupKeys, group.key, 1) }}><Ico d={ICONS.arrowDown} size={13} />Mover grupo para baixo</MenuItem>
+          {groupBy === 'stage' ? (
+            <MenuItem disabled>Altere a ordem em “Configurar etapas…”</MenuItem>
+          ) : <>
+            <MenuItem disabled={index === 0} onClick={() => { setMenuOpen(false); onMoveGroup(groupKeys, group.key, -1) }}><Ico d={ICONS.arrowUp} size={13} />Mover grupo para cima</MenuItem>
+            <MenuItem disabled={index === groupKeys.length - 1} onClick={() => { setMenuOpen(false); onMoveGroup(groupKeys, group.key, 1) }}><Ico d={ICONS.arrowDown} size={13} />Mover grupo para baixo</MenuItem>
+          </>}
           <MenuItem onClick={() => { setMenuOpen(false); onCollapseAll(groupKeys, true) }}>Recolher todos os grupos</MenuItem>
           <MenuItem onClick={() => { setMenuOpen(false); onCollapseAll(groupKeys, false) }}>Expandir todos os grupos</MenuItem>
           {groupBy === 'stage' && canManage && onConfigureStages && (
