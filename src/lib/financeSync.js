@@ -56,8 +56,21 @@ function stableValue(value) {
 export function computeRowsToUpsert(baselineRows, currentRows) {
   if (!Array.isArray(baselineRows)) return currentRows || []
   const signature = row => JSON.stringify(stableValue(row))
-  const baselineById = new Map(baselineRows.map(row => [String(row?.id || '').toLowerCase(), signature(row)]))
-  return (currentRows || []).filter(row => baselineById.get(String(row?.id || '').toLowerCase()) !== signature(row))
+  const baselineById = new Map(baselineRows.map(row => [String(row?.id || '').toLowerCase(), row]))
+  return (currentRows || []).filter(row => {
+    const previous = baselineById.get(String(row?.id || '').toLowerCase())
+    return previous === undefined || signature(previous) !== signature(row)
+  }).map(row => {
+    const previous = baselineById.get(String(row?.id || '').toLowerCase())
+    if (!previous || typeof previous !== 'object') return row
+    const patch = { id:row.id }
+    if (row.user_id != null) patch.user_id = row.user_id
+    for (const key of new Set([...Object.keys(previous), ...Object.keys(row)])) {
+      if (key === 'id' || key === 'user_id') continue
+      if (JSON.stringify(stableValue(previous[key])) !== JSON.stringify(stableValue(row[key]))) patch[key] = row[key]
+    }
+    return patch
+  })
 }
 
 // MERGE por id (importar do navegador, Fase 2): mantém tudo do `current` (servidor) e acrescenta

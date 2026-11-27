@@ -87,6 +87,14 @@ test('salvamento incremental envia somente linhas novas ou alteradas', () => {
   expect(computeRowsToUpsert(baseline, current).map(row => row.id)).toEqual(['b', 'c'])
 })
 
+test('salvamento incremental envia apenas campos alterados de uma linha existente', () => {
+  const baseline = [{ id:'a', user_id:'u1', category:'outras_receitas', chart_account_id:null, discount_amount:0 }]
+  const current = [{ id:'a', user_id:'u1', category:'Receita bruta', chart_account_id:'acc-1', discount_amount:0 }]
+  expect(computeRowsToUpsert(baseline, current)).toEqual([{
+    id:'a', user_id:'u1', category:'Receita bruta', chart_account_id:'acc-1',
+  }])
+})
+
 test('sem baseline, salvamento incremental mantém carga completa segura', () => {
   const rows = [{ id:'a' }, { id:'b' }]
   expect(computeRowsToUpsert(null, rows)).toEqual(rows)
