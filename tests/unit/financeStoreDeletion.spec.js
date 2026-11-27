@@ -1,5 +1,29 @@
 import { expect, test } from '@playwright/test'
-import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds } from '../../src/lib/financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds, resolveFinancialDraftId } from '../../src/lib/financeSync.js'
+
+test('retry de lançamento parcialmente salvo reutiliza a mesma chave', () => {
+  const generated = []
+  const createId = () => {
+    const id = `draft-${generated.length + 1}`
+    generated.push(id)
+    return id
+  }
+
+  const firstAttempt = resolveFinancialDraftId({ draftId:'draft-stable', createId })
+  const retry = resolveFinancialDraftId({ draftId:firstAttempt, createId })
+
+  expect(firstAttempt).toBe('draft-stable')
+  expect(retry).toBe(firstAttempt)
+  expect(generated).toEqual([])
+})
+
+test('identidade de edição e conciliação vence a identidade temporária do formulário', () => {
+  const createId = () => 'novo'
+  expect(resolveFinancialDraftId({ editingId:'edit-1', sourceId:'source-1', draftId:'draft-1', createId })).toBe('edit-1')
+  expect(resolveFinancialDraftId({ sourceId:'source-1', draftId:'draft-1', createId })).toBe('source-1')
+  expect(resolveFinancialDraftId({ draftId:'draft-1', createId })).toBe('draft-1')
+  expect(resolveFinancialDraftId({ createId })).toBe('novo')
+})
 
 // MERGE por id (importar do navegador): nunca remove/sobrescreve o do servidor.
 test('mergeById: adiciona só o que o servidor não tem', () => {

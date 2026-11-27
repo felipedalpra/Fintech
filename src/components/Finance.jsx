@@ -23,7 +23,7 @@ import { buildDrePresentation, flattenVisibleDreRows } from '../lib/drePresentat
 import { releaseBankStatementLineClaims } from '../lib/bankReconciliationStore.js'
 import { BillingChargeButton } from './BillingChargeButton.jsx'
 import { paymentScheduleFlow } from '../lib/paymentScheduleFlow.js'
-import { isProtectedFinancialImportRow } from '../lib/financeSync.js'
+import { isProtectedFinancialImportRow, resolveFinancialDraftId } from '../lib/financeSync.js'
 import { archiveFinancialImportSource } from '../lib/financialImportStore.js'
 import { hasChangedReceiptFields, hasRecognizedReceipt, reverseReceivableInstallment, withReceivedInstallmentHistory } from '../lib/receivablePaymentReversal.js'
 import { FiscalDocumentCell, FiscalDocumentModal, FiscalDocumentSummary } from './FiscalDocumentModal.jsx'
@@ -723,9 +723,23 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         date:receiptDate,
         receivedDate:received ? receiptDate : null,
       }
-      const revenueRecord = { ...normalizedRevenue, id:editing || reconciliationReturn?.sourceId || uid() }
+      const revenueRecordId = resolveFinancialDraftId({
+        editingId:editing,
+        sourceId:reconciliationReturn?.sourceId,
+        draftId:form.id,
+        createId:uid,
+      })
+      if (!form.id && !editing) setForm(current => ({ ...current, id:revenueRecordId }))
+      const revenueRecord = { ...normalizedRevenue, id:revenueRecordId }
       const saved = await persistLaunch(
-        current => ({ ...current, extraRevenues:editing ? current.extraRevenues.map(item => item.id === editing ? revenueRecord : item) : [...current.extraRevenues, revenueRecord] }),
+        current => ({
+          ...current,
+          extraRevenues:editing
+            ? current.extraRevenues.map(item => item.id === editing ? revenueRecord : item)
+            : current.extraRevenues.some(item => item.id === revenueRecord.id)
+              ? current.extraRevenues.map(item => item.id === revenueRecord.id ? { ...item, ...revenueRecord } : item)
+              : [...current.extraRevenues, revenueRecord],
+        }),
         { collection:'extraRevenues', record:revenueRecord },
       )
       if (!saved) return
@@ -763,12 +777,21 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         status: isOpenExpense ? 'aberto' : 'pago',
       }
       if (isOpenExpense) {
-        const expenseRecord = { ...normalizedExpense, id:editing || reconciliationReturn?.sourceId || uid() }
+        const expenseRecordId = resolveFinancialDraftId({
+          editingId:editing,
+          sourceId:reconciliationReturn?.sourceId,
+          draftId:form.id,
+          createId:uid,
+        })
+        if (!form.id && !editing) setForm(current => ({ ...current, id:expenseRecordId }))
+        const expenseRecord = { ...normalizedExpense, id:expenseRecordId }
         const saved = await persistLaunch(current => ({
           ...current,
           expenses: editing
             ? current.expenses.map(record => record.id === editing ? expenseRecord : record)
-            : [...current.expenses, expenseRecord],
+            : current.expenses.some(record => record.id === expenseRecord.id)
+              ? current.expenses.map(record => record.id === expenseRecord.id ? { ...record, ...expenseRecord } : record)
+              : [...current.expenses, expenseRecord],
         }), { collection:'expenses', record:expenseRecord })
         if (!saved) return
         toast(editing ? 'Despesa atualizada.' : 'Despesa registrada como a pagar.')
@@ -776,13 +799,20 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
         returnToReconciliation(expenseRecord)
         return
       }
+      const expenseRecordId = resolveFinancialDraftId({
+        editingId:editing,
+        sourceId:reconciliationReturn?.sourceId,
+        draftId:form.id,
+        createId:uid,
+      })
+      if (!form.id && !editing) setForm(current => ({ ...current, id:expenseRecordId }))
       setConfirmState({
         action:'confirm-expense-save',
         title:editing ? 'Confirmar atualização da saída' : 'Confirmar lançamento da saída',
         message:`Confirma lançar ${money(Number(normalizedExpense.value || 0))} em "${normalizedExpense.description || 'despesa'}"?`,
         confirmLabel:editing ? 'Confirmar e atualizar' : 'Confirmar e lançar',
         confirmVariant:'success',
-        payload:{ expense:{ ...normalizedExpense, id:editing || reconciliationReturn?.sourceId || uid() }, editing },
+        payload:{ expense:{ ...normalizedExpense, id:expenseRecordId }, editing },
       })
       return
     }

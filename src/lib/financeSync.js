@@ -28,6 +28,13 @@ export function protectedFinancialImportIds(rows = []) {
     .filter(Boolean))
 }
 
+// Um retry de uma gravação parcialmente concluída precisa reutilizar a mesma chave.
+// A prioridade mantém o comportamento correto para edições e para a conciliação; somente
+// quando é uma criação nova o gerador é chamado.
+export function resolveFinancialDraftId({ editingId, sourceId, draftId, createId }) {
+  return editingId || sourceId || draftId || createId()
+}
+
 // READ-BACK (blindagem Fase 2): depois de gravar, confere que CADA linha enviada voltou
 // confirmada pelo servidor. Devolve os ids que foram enviados mas NÃO voltaram (ex.: rejeitados
 // por RLS, escopo errado) — se a lista não for vazia, a gravação não pode ser dada como sucesso.
