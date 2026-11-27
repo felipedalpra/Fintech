@@ -9,6 +9,7 @@ import { createOpportunity, updateOpportunity, setOpportunityOutcome } from '../
 import { opportunityPerson } from '../lib/crmContact.js'
 import { Person360Drawer } from './Person360Drawer.jsx'
 import { BudgetDocuments } from './BudgetDocuments.jsx'
+import { useMask } from '../lib/useMask.js'
 
 // Modal de criar/editar oportunidade (+ fechar como ganho/perdido).
 // Ao editar, ganha abas: Dados / Atualizações / Tarefas / Timeline.
@@ -25,6 +26,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
   const [losing, setLosing] = useState(false)
   const [lostReason, setLostReason] = useState('')
   const [show360, setShow360] = useState(false)
+  const mask = useMask()
 
   useEffect(() => {
     if (!open) return
@@ -72,6 +74,7 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
 
   const memberOpts = [{ v: '', l: 'Sem responsável' }, ...(members || []).map(m => ({ v: m.user_id, l: m.member_email || m.user_id }))]
   const sourceOpts = SOURCE_SUGGESTIONS.map(s => ({ v: s, l: s }))
+  const person = isEdit ? opportunityPerson(opp) : null
 
   const tabBtn = active => ({
     padding: '6px 14px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
@@ -118,7 +121,12 @@ export function OpportunityEditor({ open, onClose, opp, stages, members, ownerId
       <div style={{ display: tab === 'dados' ? 'flex' : 'none', flexDirection: 'column', gap: 14 }}>
         {isEdit
           ? <div><label style={base.label}>{form.patient_id ? 'Paciente' : 'Contato'}</label>
-              <div style={{ ...base.input, display: 'flex', alignItems: 'center', color: C.text }}>{form.patient_name || '—'}</div></div>
+              <div style={{ ...base.input, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3, color: C.text }}>
+                <span>{form.patient_name || '—'}</span>
+                <span style={{ color: C.textSub, fontSize: 12 }} aria-label="Telefone do contato">
+                  {person?.phone ? mask.phone(person.phone) : 'Telefone não informado'}
+                </span>
+              </div></div>
           : <PatientSelector userId={ownerId} value={form.patient_id} onChange={(id, name) => setForm(f => ({ ...f, patient_id: id, patient_name: name }))} />}
 
         <FInput label="Título" value={form.title} onChange={v => set('title', v)} placeholder="Ex.: Rinoplastia" />

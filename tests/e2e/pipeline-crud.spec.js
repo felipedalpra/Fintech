@@ -48,6 +48,7 @@ test('clicar num card abre o editor com o paciente e opções ganho/perdido', as
   await page.getByText('Ana Silva').click()
   // O título do editor passa a mostrar a oportunidade · paciente; abas e ações de fechar existem.
   await expect(page.getByRole('heading', { name: /Ana Silva/ })).toBeVisible()
+  await expect(page.getByLabel('Telefone do contato')).toHaveText('11988887777')
   await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible()
   await expect(page.getByRole('button', { name: '✓ Ganho' })).toBeVisible()
   await expect(page.getByRole('button', { name: '✗ Perdido' })).toBeVisible()

@@ -8,6 +8,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-11-25
 
 ### Added
+- Editor de oportunidades do CRM agora exibe o telefone do paciente ou lead ao abrir um registro, respeitando o modo de privacidade da plataforma (`src/components/OpportunityEditor.jsx`, `tests/e2e/pipeline-crud.spec.js`).
 - Kanban do CRM com etapas configuráveis por clínica: etapas padrão Encaminhado para Nutrologia e Exames Prontos, criação, edição, reordenação e exclusão segura com realocação e histórico auditável (`src/lib/crmStages.js`, `src/components/CrmStageSettings.jsx`, `supabase/crm_pipeline_stages.sql`).
 
 - Membros da clínica agora podem conectar ou reconectar a Google Agenda compartilhada — útil quando todos usam a mesma conta Google operacional — sem ganhar permissão para desconectar a integração. A desconexão continua exclusiva do administrador. (`api/_lib/googleCalendarApi.js`, `api/google/calendar.js`, `src/components/GoogleCalendarBar.jsx`, `src/lib/googleCalendarStatus.js`, `tests/e2e/google-calendar.spec.js`.)
