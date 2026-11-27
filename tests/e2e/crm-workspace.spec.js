@@ -110,6 +110,24 @@ test('Kanban exibe etapas clínicas novas e permite criar e salvar uma etapa pr�
   expect(calls.stageWrites[0].some(row => row.label === 'Retorno pós-operatório')).toBe(true)
 })
 
+test('Tabela e Kanban abrem o mesmo cadastro completo e a Tabela permite criar grupo entre etapas', async ({ page }) => {
+  await mockBackend(page)
+  await page.goto('/app/funnel')
+
+  await page.getByTestId('crm-add-stage-between').first().click()
+  await expect(page.getByText('Configurar etapas comerciais')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancelar' }).click()
+
+  await page.getByRole('tab', { name: 'Kanban', exact: true }).click()
+  await page.getByRole('button', { name: 'Adicionar lead' }).first().click()
+  await expect(page.getByText('Novo lead', { exact: true })).toBeVisible()
+  const dialog = page.locator('h3').filter({ hasText: 'Novo lead' }).locator('..')
+  for (const label of ['Nome', 'WhatsApp / Telefone', 'Valor estimado', 'Procedimento de interesse', 'Origem', 'Responsável']) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible()
+  }
+  await expect(page.getByText(/O lead cai no funil em/)).toBeVisible()
+})
+
 test('link antigo de Indicadores volta para a Tabela sem exibir a aba duplicada', async ({ page }) => {
   await mockBackend(page)
   await page.goto('/app/funnel?view=indicators')

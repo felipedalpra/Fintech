@@ -9,7 +9,7 @@ import { FIELD_STANDARDS, isValidPhone } from '../lib/formFieldStandards.js'
 const PROCEDURES = ['Rinoplastia', 'Mamoplastia', 'Abdominoplastia', 'Lipoaspiração', 'Blefaroplastia', 'Lifting facial', 'Prótese de mama', 'Outro']
 const SOURCES = ['Instagram', 'Indicação', 'WhatsApp', 'Google', 'Facebook', 'Site', 'Outro']
 
-export function NewLeadModal({ open, onClose, ownerId, members, stage = 'primeiro_contato', onCreated }) {
+export function NewLeadModal({ open, onClose, ownerId, members, stage = 'primeiro_contato', stageLabel = 'Primeiro contato', onCreated }) {
   const [form, setForm] = useState({ name: '', phone: '', title: '', source: '', responsible: '', value: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -41,7 +41,7 @@ export function NewLeadModal({ open, onClose, ownerId, members, stage = 'primeir
   return (
     <Modal open={open} onClose={onClose} title="Novo lead" width={480}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ fontSize: 12.5, color: C.textSub, marginTop: -4 }}>Só o essencial — o resto completa depois. O lead cai no funil em <strong style={{ color: C.text }}>Primeiro contato</strong>.</div>
+        <div style={{ fontSize: 12.5, color: C.textSub, marginTop: -4 }}>Só o essencial — o resto completa depois. O lead cai no funil em <strong style={{ color: C.text }}>{stageLabel}</strong>.</div>
         <FInput label="Nome" value={form.name} onChange={v => set('name', v)} placeholder="Nome do lead" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <FInput label="WhatsApp / Telefone" value={form.phone} onChange={v => set('phone', v)} placeholder="(51) 99999-9999"

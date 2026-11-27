@@ -53,3 +53,13 @@ test('mover oportunidade via RPC reflete na hora (update otimista persiste)', as
   // Como a RPC retornou sucesso, o update otimista persiste: Ana agora está em "Consultado".
   await expect(anaCard.locator('select[aria-label="Mover para estágio"]')).toHaveValue('consultado')
 })
+
+test('cadastro rápido do Kanban usa o formulário completo', async ({ page }) => {
+  await page.goto('/app/funnel?view=kanban')
+  await page.getByRole('button', { name: 'Adicionar lead' }).first().click()
+  await expect(page.getByText('Novo lead', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Nome')).toBeVisible()
+  await expect(page.getByLabel('WhatsApp / Telefone')).toBeVisible()
+  await expect(page.getByLabel('Valor estimado')).toBeVisible()
+  await expect(page.getByText(/O lead cai no funil em/)).toBeVisible()
+})

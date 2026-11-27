@@ -5,7 +5,6 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { C } from '../theme.js'
 import { coerceCustomValue, groupSummary, groupFooterSummary, isOverdue, daysSince, sourceKey } from '../lib/crmWorkspace.js'
-import { createManualLead } from '../lib/opportunityActions.js'
 import {
   Ico, ICONS, Popover, MenuItem, fmtMoney,
   PersonCell, StatusCell, MemberCell, OptionListCell, NumberCell, ProbabilityCell, TextCell, DateCell,
@@ -24,7 +23,7 @@ const PAGE_ROWS = 150
 export function CrmTable({
   groups, columns, ctx, ws, ownerId, canManage, groupBy, sort, collapsed, toast,
   procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onResizeColumn, onReorderColumn,
-  onHideColumn, onMoveGroup, onConfigureStages, onOpenOpp, columnsMenu,
+  onHideColumn, onMoveGroup, onConfigureStages, onNewLead, onOpenOpp, columnsMenu,
   selectedIds, onToggleSelect, onSetSelected, rowActions, userId,
 }) {
   const scrollRef = useRef(null)
@@ -130,17 +129,26 @@ export function CrmTable({
           const firstRow = rowCounter
           if (!isCollapsed) rowCounter += g.rows.length + 1
           return (
-            <GroupBlock key={g.key} group={g} index={gi} groupKeys={groupKeys} isCollapsed={isCollapsed} firstRow={firstRow}
+            <Fragment key={g.key}>
+              <GroupBlock group={g} index={gi} groupKeys={groupKeys} isCollapsed={isCollapsed} firstRow={firstRow}
               visibleCols={visibleCols} widthOf={widthOf} widths={widths} totalWidth={totalWidth} ctx={ctx} ws={ws} ownerId={ownerId}
               canManage={canManage} groupBy={groupBy} sort={sort} toast={toast}
               procedureOptions={procedureOptions} sourceOptions={sourceOptions}
               onToggleCollapse={onToggleCollapse} onCollapseAll={onCollapseAll} onSort={onSort}
-              onHideColumn={onHideColumn} onMoveGroup={onMoveGroup} onConfigureStages={onConfigureStages}
+              onHideColumn={onHideColumn} onMoveGroup={onMoveGroup} onConfigureStages={onConfigureStages} onNewLead={onNewLead}
               onReorderColumn={onReorderColumn} startResize={startResize} onOpenOpp={onOpenOpp} columnsMenu={columnsMenu}
               commitField={commitField} commitCustom={commitCustom} commitStage={commitStage} commitOutcome={commitOutcome}
               selectedIds={selectedIds} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
               expanded={expanded} onToggleExpand={onToggleExpand} focusNewFor={focusNewFor} onFocusedNew={clearFocusNew}
               onRowMenu={onRowMenu} userId={userId} />
+              {groupBy === 'stage' && canManage && onConfigureStages && gi < groups.length - 1 && (
+              <button type="button" data-testid="crm-add-stage-between" aria-label="Adicionar grupo de etapa"
+                onClick={onConfigureStages}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 12px 0', padding: '5px 10px', border: `1px dashed ${C.border}`, borderRadius: 8, background: 'transparent', color: C.textDim, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}>
+                <Ico d={ICONS.plus} size={13} />Adicionar grupo
+              </button>
+              )}
+            </Fragment>
           )
         })}
       </div>
@@ -152,7 +160,7 @@ export function CrmTable({
 
 function GroupBlock({
   group, index, groupKeys, isCollapsed, firstRow, visibleCols, widthOf, widths, totalWidth, ctx, ws, ownerId, canManage, groupBy, sort, toast,
-  procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onHideColumn, onMoveGroup, onConfigureStages,
+  procedureOptions, sourceOptions, onToggleCollapse, onCollapseAll, onSort, onHideColumn, onMoveGroup, onConfigureStages, onNewLead,
   onReorderColumn, startResize, onOpenOpp, columnsMenu, commitField, commitCustom, commitStage, commitOutcome,
   selectedIds, onToggleSelect, onSetSelected, expanded, onToggleExpand, focusNewFor, onFocusedNew, onRowMenu, userId,
 }) {
@@ -231,7 +239,7 @@ function GroupBlock({
             </div>
           )}
           {canAdd && (
-            <AddRow group={group} groupBy={groupBy} ownerId={ownerId} ws={ws} toast={toast} rowIndex={firstRow + shown.length}
+            <AddRow group={group} groupBy={groupBy} onNewLead={onNewLead} rowIndex={firstRow + shown.length}
               visibleCols={visibleCols} widthOf={widthOf} totalWidth={totalWidth} />
           )}
           <SummaryRow group={group} visibleCols={visibleCols} widthOf={widthOf} ctx={ctx} />
@@ -508,52 +516,16 @@ const Row = memo(function Row({
 
 // "+ Adicionar oportunidade" no fim do grupo: cria um lead manual (contato + oportunidade, RPC
 // atômica existente) já com a etapa/responsável/origem/procedimento do grupo.
-function AddRow({ group, groupBy, ownerId, ws, toast, rowIndex, visibleCols, widthOf, totalWidth }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [saving, setSaving] = useState(false)
+function AddRow({ group, groupBy, onNewLead, rowIndex, visibleCols, widthOf, totalWidth }) {
   const first = visibleCols[0]
-
-  async function submit() {
-    const n = name.trim()
-    if (!n || saving) return
-    setSaving(true)
-    const res = await createManualLead(ownerId, {
-      name: n,
-      stage: group.stage || 'primeiro_contato',
-      responsibleUserId: groupBy === 'responsible' ? group.responsible || null : null,
-      source: groupBy === 'source' ? group.source || null : null,
-    })
-    if (res.error) { setSaving(false); toast(res.error, 'error'); return }
-    ws.addOpp(res.opp)
-    if (groupBy === 'procedure' && group.procedure) {
-      const r = await ws.updateOpp(res.opp.id, { procedure_id: group.procedure })
-      if (r.error) toast('Oportunidade criada, mas o procedimento não foi salvo.', 'warning')
-    }
-    setSaving(false)
-    setName('')
-    toast('Oportunidade criada.', 'success')
-  }
 
   return (
     <div role="row" style={{ display: 'flex', height: ROW_H, borderBottom: `1px solid ${C.border}`, background: C.card, width: totalWidth }}>
       <div data-cell={`${rowIndex}:0`} style={{ width: widthOf(first), flex: `0 0 ${widthOf(first)}px`, ...stickyFirst(), borderLeft: `5px solid ${group.color}55`, display: 'flex', alignItems: 'center', boxSizing: 'border-box', padding: '0 8px' }}>
-        {open ? (
-          <input autoFocus value={name} disabled={saving} placeholder="Nome do paciente/lead e Enter"
-            aria-label={`Nova oportunidade em ${group.label}`}
-            onChange={e => setName(e.target.value)}
-            onBlur={() => { if (!name.trim()) setOpen(false) }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') submit()
-              if (e.key === 'Escape') { setOpen(false); setName('') }
-            }}
-            style={{ width: '100%', height: 28, boxSizing: 'border-box', padding: '0 8px', border: `1.5px solid ${C.accent}`, borderRadius: 6, background: C.surface, color: C.text, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
-        ) : (
-          <button type="button" onClick={() => setOpen(true)} data-testid="crm-add-row"
+        <button type="button" onClick={() => onNewLead?.(group.stage || 'primeiro_contato')} data-testid="crm-add-row"
             style={{ border: 'none', background: 'transparent', color: C.textSub, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: '0 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Ico d={ICONS.plus} size={13} />Adicionar oportunidade
           </button>
-        )}
       </div>
     </div>
   )

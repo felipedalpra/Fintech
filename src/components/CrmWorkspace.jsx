@@ -266,6 +266,8 @@ export function CrmWorkspace({ data }) {
   // ----- editor / criação -----
   const [editor, setEditor] = useState({ open: false, opp: null, tab: 'dados' })
   const [leadOpen, setLeadOpen] = useState(false)
+  const [leadStage, setLeadStage] = useState('primeiro_contato')
+  const openLead = useCallback(stage => { setLeadStage(stage || 'primeiro_contato'); setLeadOpen(true) }, [])
   const onOpenOpp = useCallback((opp, initialTab = 'dados') => setEditor({ open: true, opp, tab: initialTab }), [])
   // A Agenda mantém as tarefas da clínica inteira; o editor da oportunidade avisa as duas listas.
   const agendaTaskSync = useRef(null)
@@ -443,13 +445,13 @@ export function CrmWorkspace({ data }) {
           sort={config.sort} onSortChange={onSortChange} groupBy={config.groupBy} onGroupByChange={onGroupByChange}
           tableControls={isTable} members={ws.members} memberLabel={ws.memberLabel} stages={ws.stages}
           procedureOptions={procedureOptions} sourceOptions={sourceOptions}
-          onNewLead={() => setLeadOpen(true)} onNewOpportunity={() => setEditor({ open: true, opp: null, tab: 'dados' })}
+          onNewLead={() => openLead('primeiro_contato')} onNewOpportunity={() => setEditor({ open: true, opp: null, tab: 'dados' })}
           schemaReady={ws.features.schema} lastContactAvailable={ws.features.lastContact} rightSlot={saveSlot} />
       )}
 
       {isTable && (
         ws.opps.length === 0 ? (
-          <EmptyState onNewLead={() => setLeadOpen(true)} />
+          <EmptyState onNewLead={() => openLead('primeiro_contato')} />
         ) : (
           <>
             {filtered.length === 0 && (
@@ -461,6 +463,7 @@ export function CrmWorkspace({ data }) {
               onToggleCollapse={onToggleCollapse} onCollapseAll={onCollapseAll} onSort={onSort}
               onResizeColumn={onResizeColumn} onReorderColumn={onReorderColumn} onHideColumn={onHideColumn}
               onMoveGroup={onMoveGroup} onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null}
+              onNewLead={openLead}
               onOpenOpp={onOpenOpp} columnsMenu={columnsMenu}
               selectedIds={effectiveSelected} onToggleSelect={onToggleSelect} onSetSelected={onSetSelected}
               rowActions={rowActions} userId={user?.id} />
@@ -476,7 +479,7 @@ export function CrmWorkspace({ data }) {
       {isKanban && (
         <OpportunityPipeline ws={ws} opps={kanbanOpps} ownerId={effectiveOwner} procedureName={procedureName}
           onEdit={opp => onOpenOpp(opp)} onError={msg => toast(msg, 'error')}
-          onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null} />
+          onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null} onNewLead={openLead} />
       )}
 
       {isAgenda && (
@@ -488,7 +491,8 @@ export function CrmWorkspace({ data }) {
         stages={ws.stages} members={ws.members} ownerId={effectiveOwner} userId={user?.id} onSaved={ws.onEditorSaved}
         onTasksChanged={onTasksChanged} onNotesChanged={ws.bumpNoteCount} />
       <NewLeadModal open={leadOpen} onClose={() => setLeadOpen(false)} ownerId={effectiveOwner} members={ws.members}
-        stage="primeiro_contato" onCreated={opp => { ws.addOpp(opp); setLeadOpen(false) }} />
+        stage={leadStage} stageLabel={ws.stagesByKey?.[leadStage]?.label || leadStage}
+        onCreated={opp => { ws.addOpp(opp); setLeadOpen(false) }} />
       <CrmFieldEditor open={fieldEditor.open} field={fieldEditor.field} onClose={() => setFieldEditor({ open: false, field: null })}
         onSave={saveField} onArchive={archiveField} />
       <CrmStageSettings open={stagesOpen} stages={ws.stages} onClose={() => setStagesOpen(false)} onSave={saveStages} />

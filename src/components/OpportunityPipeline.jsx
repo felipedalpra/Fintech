@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { C } from '../theme.js'
 import './OpportunityPipeline.css'
 import { WhatsAppGlyph } from './WhatsAppGlyph.jsx'
-import { createManualLead } from '../lib/opportunityActions.js'
 import { slaForLead } from '../lib/slaBusinessTime.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { opportunityPerson } from '../lib/crmContact.js'
@@ -58,7 +57,7 @@ function fmtDay(iso) {
 }
 
 // ws = useCrmWorkspace(...). opps = oportunidades ABERTAS já filtradas pela barra do workspace.
-export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, onError, onConfigureStages }) {
+export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, onError, onConfigureStages, onNewLead }) {
   const [dragStage, setDragStage] = useState(null)
   const today = isoDate(new Date())
 
@@ -99,7 +98,7 @@ export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, 
                 members={ws.members}
                 ownerId={ownerId}
                 extras={extras}
-                onLeadCreated={ws.addOpp}
+                onNewLead={onNewLead}
                 onInlineUpdate={inlineUpdate}
                 moveOpp={moveOpp}
                 onAccept={acceptSuggestion}
@@ -116,7 +115,7 @@ export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, 
   )
 }
 
-function PipelineColumn({ stage, opps, allStages, memberLabel, members, ownerId, extras, onLeadCreated, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
+function PipelineColumn({ stage, opps, allStages, memberLabel, members, ownerId, extras, onNewLead, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, movingId, dragActive, onDragEnterStage, onDropStage }) {
   const totalValue = opps.reduce((s, o) => s + (Number(o.value) || 0), 0)
   const s = {
     column: { minWidth: 278, flex: '0 0 278px', background: dragActive ? stage.color + '14' : C.surface, border: `1px solid ${dragActive ? stage.color : C.border}`, borderRadius: 15, paddingBottom: 12, overflow: 'hidden', transition: 'background 0.12s, border-color 0.12s' },
@@ -144,7 +143,7 @@ function PipelineColumn({ stage, opps, allStages, memberLabel, members, ownerId,
         <div style={s.sum}>{totalValue > 0 ? fmtBRL(totalValue) : '—'}</div>
       </div>
       <div style={{ ...s.body, paddingTop: 10 }}>
-        <QuickAddLead ownerId={ownerId} stage={stage.key} onCreated={onLeadCreated} />
+        <QuickAddLead stage={stage} onNewLead={onNewLead} />
         {opps.length === 0
           ? <div style={{ ...s.empty, margin: 0 }}>{dragActive ? 'Soltar aqui' : 'Vazio'}</div>
           : opps.map(o => (
@@ -155,45 +154,10 @@ function PipelineColumn({ stage, opps, allStages, memberLabel, members, ownerId,
   )
 }
 
-// Quick-add inline: botão "+ lead" que vira um campo de 1 linha (nome) e cria o lead
-// já nesta etapa. Para mais campos (telefone, valor…), usar o botão "Novo lead" da barra.
-function QuickAddLead({ ownerId, stage, onCreated }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-
-  async function submit() {
-    const n = name.trim()
-    if (!n || saving) return
-    setSaving(true); setError(null)
-    const res = await createManualLead(ownerId, { name: n, stage })
-    setSaving(false)
-    if (res.error) { setError(res.error); return }
-    onCreated?.(res.opp)
-    setName(''); setOpen(false)
-  }
-
+// O cadastro rápido abre o mesmo formulário completo usado pela Tabela e pela barra.
+function QuickAddLead({ stage, onNewLead }) {
   const trigger = { width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '8px 10px', border: `1.5px dashed ${C.borderBright || C.border}`, borderRadius: 10, background: C.accent + '0d', color: C.accent, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }
-  const input = { width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 9, border: `1px solid ${C.accent}`, background: C.card, color: C.text, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
-
-  if (!open) return <button type="button" style={trigger} onClick={() => setOpen(true)}><Ico d={ICON.plus} size={14} sw={2.4} />Adicionar lead rápido</button>
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Nome do lead…"
-        style={input}
-        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setOpen(false); setName('') } }} />
-      {error && <div style={{ fontSize: 11, color: C.red || '#ef4444' }}>{error}</div>}
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button type="button" onClick={submit} disabled={saving || !name.trim()}
-          style={{ flex: 1, fontSize: 12, fontWeight: 700, padding: '6px 8px', borderRadius: 8, border: 'none', background: C.accent, color: '#fff', cursor: saving || !name.trim() ? 'not-allowed' : 'pointer', opacity: saving || !name.trim() ? 0.6 : 1, fontFamily: 'inherit' }}>
-          {saving ? 'Criando…' : 'Adicionar'}
-        </button>
-        <button type="button" onClick={() => { setOpen(false); setName(''); setError(null) }}
-          style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textSub, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
-      </div>
-    </div>
-  )
+  return <button type="button" style={trigger} onClick={() => onNewLead?.(stage.key)}><Ico d={ICON.plus} size={14} sw={2.4} />Adicionar lead</button>
 }
 
 function OpportunityCard({ opp, extras, currentStage, allStages, memberLabel, members, onInlineUpdate, moveOpp, onAccept, onReject, onEdit, isMoving }) {
