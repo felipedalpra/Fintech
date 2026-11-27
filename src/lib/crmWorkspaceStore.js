@@ -66,7 +66,7 @@ export async function loadOpportunities(ownerId) {
 export async function loadWorkspaceMeta(ownerId) {
   const [team, stages, fields, views, procedures] = await Promise.all([
     supabase.rpc('clinic_team'),
-    supabase.from('crm_stage_settings').select('stage_key, label, color, position, probability').eq('user_id', ownerId),
+    supabase.from('crm_stage_settings').select('stage_key, label, color, position, probability, archived_at').eq('user_id', ownerId),
     supabase.from('crm_custom_fields').select('id, label, field_type, options, position, width, archived_at, created_at')
       .eq('user_id', ownerId).is('archived_at', null).order('position', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('crm_views').select('id, owner_id, name, scope, view_type, config, position, created_at, updated_at')
@@ -247,6 +247,7 @@ export async function saveStageSettings(ownerId, stages) {
     color: s.color,
     position: i,
     probability: s.probability,
+    archived_at: null,
     updated_at: new Date().toISOString(),
   }))
   const { data, error } = await supabase.from('crm_stage_settings')
@@ -255,6 +256,14 @@ export async function saveStageSettings(ownerId, stages) {
   if (error) return { error: friendlyError(error) }
   if ((data || []).length !== rows.length) return { error: 'Sem permissão para configurar as etapas.' }
   return { settings: data }
+}
+
+export async function deleteStage(stageKey, replacementKey) {
+  const { data, error } = await supabase.rpc('crm_delete_stage', {
+    p_stage_key: stageKey, p_replacement_key: replacementKey,
+  })
+  if (error) return { error: friendlyError(error) }
+  return { ok: true, moved: Number(data) || 0 }
 }
 
 function friendlyError(error) {

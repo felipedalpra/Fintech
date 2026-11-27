@@ -1,14 +1,15 @@
 // src/lib/crmStages.js
 // Etapas do funil comercial — fonte ÚNICA de chave/rótulo/cor/probabilidade padrão no frontend.
-// As CHAVES são as 8 da constraint opportunities_stage_check (não mudam aqui). Rótulo, cor, ordem e
-// probabilidade podem ser personalizados por clínica em crm_stage_settings; sem configuração,
-// valem os padrões abaixo. PURO: sem I/O, sem tema.
+// As chaves padrão são estáveis para preservar histórico e automações. Além delas, cada clínica
+// pode ter etapas próprias em crm_stage_settings. PURO: sem I/O, sem tema.
 import { STAGE_PROB } from './crmMetrics.js'
 
 export const DEFAULT_STAGES = [
   { key: 'primeiro_contato',  label: 'Primeiro Contato',  color: '#94a3b8' },
   { key: 'consulta_agendada', label: 'Consulta Agendada', color: '#6366f1' },
   { key: 'consultado',        label: 'Consultado',        color: '#0ea5e9' },
+  { key: 'encaminhado_nutrologia', label: 'Encaminhado para Nutrologia', color: '#06b6d4' },
+  { key: 'exames_prontos',    label: 'Exames Prontos',     color: '#84cc16' },
   { key: 'orcamento_enviado', label: 'Orçamento Enviado', color: '#f59e0b' },
   { key: 'reserva_paga',      label: 'Reserva Paga',      color: '#10b981' },
   { key: 'cirurgia_marcada',  label: 'Cirurgia Marcada',  color: '#14b8a6' },
@@ -33,10 +34,13 @@ function toPercent(fraction) {
 }
 
 // Junta os padrões com as personalizações da clínica. Linha ausente/campo nulo = padrão.
-// Retorna as 8 etapas ordenadas, cada uma com { key, label, color, probability (0–100), position }.
+// Etapas arquivadas não aparecem no quadro. Etapas que não são padrão são customizadas.
 export function resolveStages(settings = []) {
-  const byKey = new Map((settings || []).filter(s => s && STAGE_KEYS.includes(s.stage_key)).map(s => [s.stage_key, s]))
-  return DEFAULT_STAGES
+  const valid = (settings || []).filter(s => s && s.stage_key && !s.archived_at)
+  const byKey = new Map(valid.map(s => [s.stage_key, s]))
+  const archived = new Set((settings || []).filter(s => s && s.stage_key && s.archived_at).map(s => s.stage_key))
+  const defaults = DEFAULT_STAGES
+    .filter(stage => !archived.has(stage.key))
     .map((stage, index) => {
       const custom = byKey.get(stage.key) || {}
       const label = typeof custom.label === 'string' && custom.label.trim() ? custom.label.trim() : stage.label
@@ -45,8 +49,20 @@ export function resolveStages(settings = []) {
         ? Number(custom.probability)
         : toPercent(STAGE_PROB[stage.key])
       const position = Number.isFinite(Number(custom.position)) && custom.position != null ? Number(custom.position) : index
-      return { key: stage.key, label, color, probability, position, defaultIndex: index }
+      return { key: stage.key, label, color, probability, position, defaultIndex: index, system: true }
     })
+  const custom = valid
+    .filter(s => !STAGE_KEYS.includes(s.stage_key))
+    .map((s, index) => ({
+      key: s.stage_key,
+      label: typeof s.label === 'string' && s.label.trim() ? s.label.trim() : s.stage_key,
+      color: /^#[0-9a-f]{6}$/i.test(s.color || '') ? s.color : '#64748b',
+      probability: s.probability != null && Number.isFinite(Number(s.probability)) ? Number(s.probability) : 0,
+      position: Number.isFinite(Number(s.position)) ? Number(s.position) : DEFAULT_STAGES.length + index,
+      defaultIndex: DEFAULT_STAGES.length + index,
+      system: false,
+    }))
+  return [...defaults, ...custom]
     .sort((a, b) => a.position - b.position || a.defaultIndex - b.defaultIndex)
 }
 

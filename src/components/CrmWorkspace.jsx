@@ -15,7 +15,7 @@ import {
   moveGroup, activeFilterCount, sourceKey, isoDate,
 } from '../lib/crmWorkspace.js'
 import {
-  createCustomField, updateCustomField, archiveCustomField, createView, updateView, deleteView, saveStageSettings,
+  createCustomField, updateCustomField, archiveCustomField, createView, updateView, deleteView, saveStageSettings, deleteStage,
 } from '../lib/crmWorkspaceStore.js'
 import { CrmTable } from './CrmTable.jsx'
 import { CrmToolbar } from './CrmToolbar.jsx'
@@ -340,10 +340,16 @@ export function CrmWorkspace({ data }) {
 
   // ----- etapas -----
   const [stagesOpen, setStagesOpen] = useState(false)
-  async function saveStages(rows) {
+  async function saveStages(rows, removed = []) {
     const res = await saveStageSettings(effectiveOwner, rows)
     if (res.error) return res
+    for (const item of removed) {
+      const deleted = await deleteStage(item.key, item.replacementKey)
+      if (deleted.error) return deleted
+    }
     ws.setStageSettings(res.settings)
+    // Releitura inclui novas etapas e exclusões realizadas pela RPC.
+    ws.reload()
     toast('Etapas atualizadas.', 'success')
     return res
   }
@@ -469,7 +475,8 @@ export function CrmWorkspace({ data }) {
 
       {isKanban && (
         <OpportunityPipeline ws={ws} opps={kanbanOpps} ownerId={effectiveOwner} procedureName={procedureName}
-          onEdit={opp => onOpenOpp(opp)} onError={msg => toast(msg, 'error')} />
+          onEdit={opp => onOpenOpp(opp)} onError={msg => toast(msg, 'error')}
+          onConfigureStages={ws.features.stages ? () => setStagesOpen(true) : null} />
       )}
 
       {isAgenda && (

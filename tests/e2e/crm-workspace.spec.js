@@ -11,7 +11,7 @@ const OPPS = [
 const json = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
 
 async function mockBackend(page, { patchFails = false } = {}) {
-  const calls = { patches: [], moves: [], fieldInserts: [], viewInserts: [] }
+  const calls = { patches: [], moves: [], fieldInserts: [], viewInserts: [], stageWrites: [] }
   await page.addInitScript(() => { try { window.localStorage.setItem('surgimetrics_onboarded', 'true') } catch { /* ignore */ } })
   await page.route('**/rest/v1/rpc/clinic_team', route => route.fulfill(json([{ user_id: 'u1', member_email: 'lunara@clinica.com', role: 'gestao' }])))
   await page.route('**/rest/v1/rpc/crm_last_contact', route => route.fulfill(json([{ opportunity_id: 'o1', last_contact_at: new Date(Date.now() - 2 * 86400000).toISOString(), last_contact_source: 'whatsapp' }])))
@@ -31,7 +31,15 @@ async function mockBackend(page, { patchFails = false } = {}) {
     return route.continue()
   })
   for (const t of ['crm_stage_settings', 'tasks', 'opportunity_notes', 'opportunity_stage_history', 'whatsapp_messages']) {
-    await page.route(`**/rest/v1/${t}*`, route => (route.request().method() === 'GET' ? route.fulfill(json([])) : route.continue()))
+    await page.route(`**/rest/v1/${t}*`, route => {
+      if (route.request().method() === 'GET') return route.fulfill(json([]))
+      if (t === 'crm_stage_settings' && route.request().method() === 'POST') {
+        const body = route.request().postDataJSON()
+        calls.stageWrites.push(body)
+        return route.fulfill(json(Array.isArray(body) ? body : [body]))
+      }
+      return route.continue()
+    })
   }
   await page.route('**/rest/v1/crm_custom_fields*', route => {
     const req = route.request()
@@ -84,6 +92,22 @@ test('Tabela é o modo padrão, separado das visões salvas', async ({ page }) =
   await expect(lost.getByTestId('crm-row')).toHaveCount(0)
   await lost.getByRole('button', { name: 'Expandir Perdidos' }).click()
   await expect(lost.getByTestId('crm-row')).toHaveCount(1)
+})
+
+test('Kanban exibe etapas clínicas novas e permite criar e salvar uma etapa própria', async ({ page }) => {
+  const calls = await mockBackend(page)
+  await page.goto('/app/funnel?view=kanban')
+  await expect(page.getByTestId('crm-kanban')).toContainText('Encaminhado para Nutrologia')
+  await expect(page.getByTestId('crm-kanban')).toContainText('Exames Prontos')
+
+  await page.getByRole('button', { name: /Gerenciar etapas/ }).click()
+  await expect(page.getByText('Configurar etapas comerciais')).toBeVisible()
+  await page.getByLabel('Nome da nova etapa').fill('Retorno pós-operatório')
+  await page.getByRole('button', { name: '+ Adicionar etapa' }).click()
+  await expect(page.locator('input[aria-label^="Nome da etapa"]').last()).toHaveValue('Retorno pós-operatório')
+  await page.getByRole('button', { name: 'Salvar etapas' }).click()
+  await expect.poll(() => calls.stageWrites.length).toBe(1)
+  expect(calls.stageWrites[0].some(row => row.label === 'Retorno pós-operatório')).toBe(true)
 })
 
 test('link antigo de Indicadores volta para a Tabela sem exibir a aba duplicada', async ({ page }) => {

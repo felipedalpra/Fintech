@@ -28,18 +28,19 @@ const OPPS = [
   { id: 'o4', stage: 'reserva_paga', status: 'perdido', value: 40000, source: 'Google', procedure_id: 'p1', responsible_user_id: 'u1', created_at: '2026-08-15T12:00:00Z', patients: { full_name: 'Duda Lima' }, custom_values: {} },
 ]
 
-test('etapas: padrão preservado e personalização por clínica sem criar etapa nova', () => {
+test('etapas: padrão preservado e etapas customizadas por clínica', () => {
   expect(stages.map(s => s.key)).toEqual(DEFAULT_STAGES.map(s => s.key))
   const custom = resolveStages([
     { stage_key: 'consultado', label: 'Avaliada', color: '#112233', probability: 45, position: 0 },
-    { stage_key: 'em_negociacao', label: 'Inventada' },
+    { stage_key: 'em_negociacao', label: 'Inventada', position: 99 },
   ])
-  expect(custom).toHaveLength(8)
+  expect(custom).toHaveLength(DEFAULT_STAGES.length + 1)
   expect(custom.find(s => s.key === 'consultado')).toMatchObject({ label: 'Avaliada', color: '#112233', probability: 45 })
   // A tela grava as 8 posições; a ordem salva é respeitada.
   const reordered = resolveStages(DEFAULT_STAGES.map((s, i) => ({ stage_key: s.key, position: s.key === 'consultado' ? -1 : i })))
   expect(reordered[0].key).toBe('consultado')
-  expect(custom.some(s => s.key === 'em_negociacao')).toBe(false)
+  expect(custom.find(s => s.key === 'em_negociacao')).toMatchObject({ label: 'Inventada', system: false })
+  expect(resolveStages([{ stage_key: 'exames_prontos', archived_at: '2026-11-27T00:00:00Z' }]).some(s => s.key === 'exames_prontos')).toBe(false)
   // Cor inválida cai no padrão.
   expect(resolveStages([{ stage_key: 'consultado', color: 'red' }]).find(s => s.key === 'consultado').color).toBe('#0ea5e9')
 })

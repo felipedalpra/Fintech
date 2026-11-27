@@ -6,7 +6,6 @@ import { createManualLead } from '../lib/opportunityActions.js'
 import { slaForLead } from '../lib/slaBusinessTime.js'
 import { initials, avatarColor } from '../lib/avatar.js'
 import { opportunityPerson } from '../lib/crmContact.js'
-import { DEFAULT_STAGES } from '../lib/crmStages.js'
 import { isoDate } from '../lib/crmWorkspace.js'
 import { useMask } from '../lib/useMask.js'
 
@@ -39,8 +38,6 @@ function Avatar({ label, size = 32 }) {
 // (negócio) ligada a um paciente/contato. NÃO carrega dados próprios: recebe o estado compartilhado
 // do workspace (useCrmWorkspace) — o mesmo da Tabela — já filtrado pela barra do workspace.
 // Movimentação atômica/auditável via RPC move_opportunity (dentro do hook).
-const STAGE_LABEL = Object.fromEntries(DEFAULT_STAGES.map(s => [s.key, s.label]))
-
 function fmtBRL(v) {
   if (v == null || v === '') return null
   const n = Number(v)
@@ -61,7 +58,7 @@ function fmtDay(iso) {
 }
 
 // ws = useCrmWorkspace(...). opps = oportunidades ABERTAS já filtradas pela barra do workspace.
-export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, onError }) {
+export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, onError, onConfigureStages }) {
   const [dragStage, setDragStage] = useState(null)
   const today = isoDate(new Date())
 
@@ -86,6 +83,7 @@ export function OpportunityPipeline({ ws, opps, ownerId, procedureName, onEdit, 
 
   return (
     <div data-testid="crm-kanban">
+      {onConfigureStages && <button type="button" onClick={onConfigureStages} style={{ marginBottom: 12, border: `1px solid ${C.border}`, borderRadius: 9, padding: '8px 12px', background: C.surface, color: C.textSub, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>⚙ Gerenciar etapas</button>}
       {ws.opps.filter(o => o.status === 'aberto').length === 0
         ? <div style={{ color: C.textSub, fontSize: 14, padding: '40px 0', textAlign: 'center' }}>
             Nenhuma oportunidade aberta. Crie uma em <strong>+ Nova oportunidade</strong> ou cadastre pacientes em <strong>Pacientes</strong>.
