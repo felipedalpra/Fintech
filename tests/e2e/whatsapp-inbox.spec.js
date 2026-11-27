@@ -205,6 +205,9 @@ test('adiciona contato ao funil sem inserir paciente', async ({ page }) => {
 
   await expect.poll(() => rpcPayload).toEqual({ p_contact:'c1', p_title:'Rinoplastia' })
   expect(patientWrites).toBe(0)
+  await expect(page.getByRole('heading', { name:'Registrar oportunidade' })).toBeHidden()
+  await expect(page.locator('.wa-chat-header')).toContainText('+55 (11) 97777-6666')
+  await expect(page.locator('.wa-messages')).toContainText('Quero fazer rino')
 })
 
 test('converte contato em paciente somente após confirmação explícita', async ({ page }) => {

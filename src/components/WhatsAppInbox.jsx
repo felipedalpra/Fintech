@@ -213,6 +213,8 @@ export function WhatsAppInbox() {
   const presenceChannelRef = useRef(null)
   const currentConversationRef = useRef(null)
   const pendingScrollRestoreRef = useRef(null)
+  const autoScrollConversationRef = useRef(null)
+  const classificationConversationRef = useRef(null)
   const textSendRequestRef = useRef(null)
   const numbersRef = useRef([])
   const pendingRealtimeIdsRef = useRef(new Set())
@@ -231,6 +233,10 @@ export function WhatsAppInbox() {
     setHistoricalLoading(true)
     return loadOlderConversationPages(availableNumbers, initialRows, rows => {
       if (historicalRequest !== historicalLoadRequestRef.current || scopeGeneration !== scopeGenerationRef.current) return
+      const container = messagesRef.current
+      if (container && currentConversationRef.current && container.scrollHeight > container.clientHeight) {
+        pendingScrollRestoreRef.current = { scrollHeight:container.scrollHeight, scrollTop:container.scrollTop }
+      }
       setMessages(currentRows => mergeWhatsAppMessageRows(currentRows, rows))
     }).catch(nextError => {
       if (historicalRequest === historicalLoadRequestRef.current && scopeGeneration === scopeGenerationRef.current) {
@@ -630,13 +636,23 @@ export function WhatsAppInbox() {
     const unique = new Map([...current.items, ...history].map(message => [message.id, message]))
     return Array.from(unique.values()).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
   }, [current, olderConversationKey, olderMessages])
-  useEffect(() => { if (!selectedPhone && conversations[0]) setSelectedPhone(conversations[0].key); else if (selectedPhone && !allConversations.some(c => c.key === selectedPhone)) setSelectedPhone(conversations[0]?.key || null) }, [allConversations, conversations, selectedPhone])
+  useEffect(() => {
+    if (!selectedPhone && conversations[0]) {
+      setSelectedPhone(conversations[0].key)
+      return
+    }
+    if (selectedPhone && !allConversations.some(c => c.key === selectedPhone)) {
+      if (classificationConversationRef.current === selectedPhone) return
+      setSelectedPhone(conversations[0]?.key || null)
+    }
+  }, [allConversations, conversations, selectedPhone])
   useEffect(() => {
     setOlderMessages([])
     setOlderConversationKey(selectedPhone)
     setHasOlder(true)
     setLoadingOlder(false)
     pendingScrollRestoreRef.current = null
+    autoScrollConversationRef.current = selectedPhone
   }, [selectedPhone])
   useEffect(() => {
     const container = messagesRef.current
@@ -647,7 +663,13 @@ export function WhatsAppInbox() {
       pendingScrollRestoreRef.current = null
       return
     }
-    container.scrollTo({ top:container.scrollHeight, behavior:'smooth' })
+    const openedConversation = autoScrollConversationRef.current === selectedPhone
+    const distanceFromBottom = container.scrollHeight - container.clientHeight - container.scrollTop
+    const userIsNearBottom = distanceFromBottom <= 80
+    if (openedConversation || userIsNearBottom) {
+      container.scrollTo({ top:container.scrollHeight, behavior:openedConversation ? 'auto' : 'smooth' })
+    }
+    if (openedConversation) autoScrollConversationRef.current = null
   }, [thread.length, selectedPhone])
   useEffect(() => {
     if (!current) return
@@ -835,12 +857,16 @@ export function WhatsAppInbox() {
   }
   async function addContactToFunnel() {
     if (!current?.contactId || contactBusy) return
+    const conversationKey = current.key
+    classificationConversationRef.current = conversationKey
     setContactBusy(true); setContactError(null)
     const result = await createWhatsAppContactLead(current.contactId, leadTitle)
     setContactBusy(false)
-    if (result.error) { setContactError(result.error); return }
+    if (result.error) { classificationConversationRef.current = null; setContactError(result.error); return }
     setContactModal(null)
     await reloadMessageWindow()
+    setSelectedPhone(conversationKey)
+    classificationConversationRef.current = null
   }
   async function convertCurrentContact(patientId = null) {
     if (!current?.contactId || contactBusy) return
