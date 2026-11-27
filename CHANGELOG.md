@@ -8,6 +8,7 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 ## [Unreleased] - 2026-11-25
 
 ### Added
+- Ficha do paciente: o resumo agora separa próximas e realizadas para cirurgias e consultas, exibindo procedimento/tipo, data, horário e status de pagamento a partir dos registros já vinculados (`src/components/Patients.jsx`).
 - Cadastro de leads unificado entre Tabela e Kanban: ambos usam os mesmos campos completos, respeitam a etapa de origem e a Tabela ganhou um botão `+` entre os grupos para abrir a criação/configuração de etapas sincronizada com o Kanban (`src/components/CrmTable.jsx`, `src/components/OpportunityPipeline.jsx`, `src/components/NewLeadModal.jsx`, `src/components/CrmWorkspace.jsx`, `tests/e2e/crm-workspace.spec.js`, `tests/e2e/opportunity-pipeline.spec.js`).
 - O `+` entre grupos da Tabela agora insere a nova etapa exatamente após o grupo escolhido, preservando a mesma posição no Kanban (`src/components/CrmStageSettings.jsx`, `src/components/CrmTable.jsx`, `src/components/CrmWorkspace.jsx`, `tests/e2e/crm-workspace.spec.js`).
 

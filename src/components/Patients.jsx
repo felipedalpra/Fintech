@@ -13,6 +13,7 @@ import { uploadPatientPhoto, signedPatientPhotoUrl, removePatientPhoto } from '.
 import { buildPatientSaveRpcArgs, confirmedPatientSave } from '../lib/patientPersistence.js'
 import { AutoGrowTextarea } from './AutoGrowTextarea.jsx'
 import { FIELD_STANDARDS, validateContactIdentity, isValidPhone } from '../lib/formFieldStandards.js'
+import { procedureDisplayName } from '../lib/customProcedure.js'
 
 const SEX_OPTIONS = [
   { v: '', l: 'Não informado' },
@@ -404,6 +405,7 @@ export function Patients({ data }) {
           userId={effectiveUserId}
           surgeries={patientSurgeries}
           consultations={patientConsultations}
+          procedures={data?.procedures || []}
           totalFinanceiro={totalFinanceiro}
           clinicalAccess={clinicalAccess}
           canArchiveBudgetDocuments={role === 'admin' || role === 'gestao'}
@@ -496,7 +498,7 @@ function PatientPhoto({ patient, ownerId }) {
   )
 }
 
-function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, totalFinanceiro, clinicalAccess, canArchiveBudgetDocuments }) {
+function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries, consultations, procedures, totalFinanceiro, clinicalAccess, canArchiveBudgetDocuments }) {
   const isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false
   const drawerTabs = ['resumo', 'pessoal', ...(clinicalAccess ? ['anamnese'] : []), 'financeiro', 'whatsapp']
 
@@ -581,6 +583,7 @@ function Drawer({ patient, tab, onTabChange, onClose, onEdit, userId, surgeries,
               userId={userId}
               surgeries={surgeries}
               consultations={consultations}
+              procedures={procedures}
               totalFinanceiro={totalFinanceiro}
               clinicalAccess={clinicalAccess}
             />
@@ -623,19 +626,26 @@ function TabSection({ title, children }) {
   )
 }
 
-function ResumoTab({ patient, surgeries, consultations, totalFinanceiro, clinicalAccess }) {
+function ResumoTab({ patient, surgeries, consultations, procedures, totalFinanceiro, clinicalAccess }) {
   const sexLabel = { F: 'Feminino', M: 'Masculino', outro: 'Outro' }
+  const referenceDate = today()
+  const surgeryName = surgery => procedureDisplayName(surgery, procedures, 'Cirurgia')
+  const consultationName = consultation => consultation.consultationType || 'Consulta'
+  const upcomingSurgeries = surgeries.filter(item => item.date && item.date >= referenceDate)
+  const completedSurgeries = surgeries.filter(item => item.date && item.date < referenceDate)
+  const upcomingConsultations = consultations.filter(item => item.date && item.date >= referenceDate)
+  const completedConsultations = consultations.filter(item => item.date && item.date < referenceDate)
 
   // Unified timeline
   const timeline = [
     ...surgeries.map(s => ({
       id: s.id, date: s.date, type: 'cirurgia',
-      label: 'Cirurgia', desc: fmt(s.totalValue),
+      label: s.date >= referenceDate ? 'Próxima cirurgia' : 'Cirurgia realizada', desc: `${surgeryName(s)}${s.startTime ? ` · ${s.startTime}` : ''}`,
       color: C.cyan,
     })),
     ...consultations.map(c => ({
       id: c.id, date: c.date, type: 'consulta',
-      label: 'Consulta', desc: fmt(c.value),
+      label: c.date >= referenceDate ? 'Próxima consulta' : 'Consulta realizada', desc: `${consultationName(c)}${c.startTime ? ` · ${c.startTime}` : ''}`,
       color: C.green,
     })),
   ].filter(e => e.date).sort((a, b) => (b.date || '').localeCompare(a.date || ''))
@@ -667,6 +677,13 @@ function ResumoTab({ patient, surgeries, consultations, totalFinanceiro, clinica
             <div style={{ fontSize: 10, color: C.textDim, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2 }}>{s.label}</div>
           </div>
         ))}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <PatientEventSection title="Próximas cirurgias" items={upcomingSurgeries} color={C.cyan} empty="Nenhuma cirurgia futura cadastrada." renderTitle={surgeryName} />
+        <PatientEventSection title="Cirurgias realizadas" items={completedSurgeries} color={C.cyan} empty="Nenhuma cirurgia realizada cadastrada." renderTitle={surgeryName} />
+        <PatientEventSection title="Próximas consultas" items={upcomingConsultations} color={C.green} empty="Nenhuma consulta futura cadastrada." renderTitle={consultationName} />
+        <PatientEventSection title="Consultas realizadas" items={completedConsultations} color={C.green} empty="Nenhuma consulta realizada cadastrada." renderTitle={consultationName} />
       </div>
 
       {/* TCLE */}
@@ -705,6 +722,30 @@ function ResumoTab({ patient, surgeries, consultations, totalFinanceiro, clinica
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function PatientEventSection({ title, items, color, empty, renderTitle }) {
+  const ordered = [...items].sort((a, b) => (a.date || '').localeCompare(b.date || '') || String(a.startTime || '').localeCompare(String(b.startTime || '')))
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>{title}</div>
+      {ordered.length === 0 ? (
+        <div style={{ color: C.textDim, fontSize: 12, padding: '4px 0' }}>{empty}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {ordered.map(item => (
+            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 10px', background: C.surface, border: `1px solid ${C.border}`, borderLeft: `3px solid ${color}`, borderRadius: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: C.text, fontSize: 13, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{renderTitle(item)}</div>
+                <div style={{ color: C.textDim, fontSize: 11, marginTop: 3 }}>{formatDateBR(item.date)}{item.startTime ? ` · ${item.startTime}` : ''}</div>
+              </div>
+              {item.paymentStatus && <Badge color={item.paymentStatus === 'pago' ? C.green : item.paymentStatus === 'cancelado' ? C.red : C.yellow} small>{item.paymentStatus}</Badge>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
