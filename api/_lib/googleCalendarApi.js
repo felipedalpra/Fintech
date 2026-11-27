@@ -51,7 +51,7 @@ export function pickPrimaryRow(rows) {
 
 export function deriveCalendarAccess(userId, { ownedClinic = null, membership = null, memberClinic = null } = {}) {
   if (ownedClinic?.owner_id === userId) {
-    return { ownerId:userId, clinicId:ownedClinic.id || null, role:'admin', isOwner:true, canManage:true }
+    return { ownerId:userId, clinicId:ownedClinic.id || null, role:'admin', isOwner:true, canManage:true, canReconnect:true }
   }
   if (membership?.clinic_id && memberClinic?.owner_id) {
     return {
@@ -60,11 +60,12 @@ export function deriveCalendarAccess(userId, { ownedClinic = null, membership = 
       role:membership.role || 'equipe',
       isOwner:false,
       canManage:membership.role === 'admin',
+      canReconnect:true,
     }
   }
   // Compatibilidade com contas anteriores à criação de `clinics`: o próprio usuário
   // continua sendo o escopo canônico e pode administrar a sua conexão.
-  return { ownerId:userId, clinicId:null, role:'admin', isOwner:true, canManage:true }
+  return { ownerId:userId, clinicId:null, role:'admin', isOwner:true, canManage:true, canReconnect:true }
 }
 
 export async function resolveCalendarAccess(userId) {

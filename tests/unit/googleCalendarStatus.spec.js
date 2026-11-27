@@ -2,14 +2,18 @@ import { expect, test } from '@playwright/test'
 import { statusFromResponse, statusFromFailure } from '../../src/lib/googleCalendarStatus.js'
 
 test('resposta normal preenche o estado', () => {
-  const s = statusFromResponse({ configured: true, connected: true, canManage: true, email: 'clinica@x.com' })
-  expect(s).toMatchObject({ loading: false, configured: true, connected: true, canManage: true, statusError: '' })
+  const s = statusFromResponse({ configured: true, connected: true, canManage: true, canReconnect: true, email: 'clinica@x.com' })
+  expect(s).toMatchObject({ loading: false, configured: true, connected: true, canManage: true, canReconnect: true, statusError: '' })
 })
 
 test('API antiga sem canManage continua podendo gerenciar', () => {
   // Compatibilidade durante o deploy: a versão anterior não enviava o campo.
   expect(statusFromResponse({ configured: true }).canManage).toBe(true)
   expect(statusFromResponse({ configured: true, canManage: false }).canManage).toBe(false)
+})
+
+test('membro da clínica pode reconectar a agenda compartilhada', () => {
+  expect(statusFromResponse({ configured:true, connected:false, needsReconnect:true, canManage:false, canReconnect:true })).toMatchObject({ needsReconnect:true, canManage:false, canReconnect:true })
 })
 
 test('FALHA não pode virar "não configurado" — tem que virar erro visível', () => {

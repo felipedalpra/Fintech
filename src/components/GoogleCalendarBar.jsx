@@ -84,26 +84,28 @@ export function GoogleCalendarBar({ google }) {
   const label = status.connected
     ? 'Google Agenda conectada'
     : status.needsReconnect
-      ? status.canManage ? 'Reconectar' : 'Reconexão necessária'
-      : status.canManage ? 'Conectar' : 'Aguardando conexão'
+      ? status.canReconnect ? 'Reconectar' : 'Reconexão necessária'
+      : status.canReconnect ? 'Conectar' : 'Aguardando conexão'
   const managementHint = status.canManage
     ? status.connected
       ? `${status.email || 'Google Agenda conectada'} — conexão compartilhada pela clínica; clique para desconectar`
       : 'Conectar a agenda Google compartilhada da clínica'
     : status.connected
       ? `${status.email || 'Google Agenda conectada'} — conexão compartilhada e gerenciada pelos administradores da clínica`
-      : 'A conexão compartilhada deve ser feita por um administrador da clínica'
+      : status.canReconnect
+        ? 'A conexão compartilhada pode ser conectada ou reconectada por qualquer membro da clínica'
+        : 'A conexão compartilhada deve ser feita por um administrador da clínica'
 
   return (
     <div className="google-calendar-control">
       <button
         type="button"
         className={`google-calendar-button${status.connected ? ' is-connected' : ''}${status.needsReconnect ? ' needs-reconnect' : ''}${!status.canManage ? ' is-view-only' : ''}`}
-        disabled={busy || !status.canManage}
+        disabled={busy || (status.connected ? !status.canManage : !status.canReconnect)}
         onClick={() => status.connected ? setConfirmOpen(true) : run(google.connect)}
         aria-label={status.connected
           ? status.canManage ? 'Google Agenda da clínica conectada. Desconectar' : 'Google Agenda da clínica conectada'
-          : status.canManage ? `${label} Google Agenda da clínica` : label}
+          : status.canReconnect ? `${label} Google Agenda da clínica` : label}
         title={managementHint}
       >
         <GoogleCalendarIcon />

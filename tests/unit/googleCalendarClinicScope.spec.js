@@ -10,6 +10,7 @@ test('owner administra a conexão compartilhada da própria clínica', () => {
     role:'admin',
     isOwner:true,
     canManage:true,
+    canReconnect:true,
   })
 })
 
@@ -17,20 +18,20 @@ test('admin membro usa o owner como escopo e pode gerenciar a conexão', () => {
   expect(deriveCalendarAccess('member-admin', {
     membership:{ clinic_id:'clinic-1', role:'admin' },
     memberClinic:{ id:'clinic-1', owner_id:'owner-1' },
-  })).toMatchObject({ ownerId:'owner-1', clinicId:'clinic-1', role:'admin', isOwner:false, canManage:true })
+  })).toMatchObject({ ownerId:'owner-1', clinicId:'clinic-1', role:'admin', isOwner:false, canManage:true, canReconnect:true })
 })
 
-test('demais perfis usam a mesma conexão sem poder conectar ou desconectar', () => {
+test('demais perfis usam a mesma conexão, podem reconectar e não podem desconectar', () => {
   for (const role of ['gestao', 'concierge', 'equipe']) {
     expect(deriveCalendarAccess(`member-${role}`, {
       membership:{ clinic_id:'clinic-1', role },
       memberClinic:{ id:'clinic-1', owner_id:'owner-1' },
-    })).toMatchObject({ ownerId:'owner-1', clinicId:'clinic-1', role, isOwner:false, canManage:false })
+    })).toMatchObject({ ownerId:'owner-1', clinicId:'clinic-1', role, isOwner:false, canManage:false, canReconnect:true })
   }
 })
 
 test('conta legada sem clínica mantém o próprio escopo', () => {
-  expect(deriveCalendarAccess('legacy-user')).toMatchObject({ ownerId:'legacy-user', role:'admin', isOwner:true, canManage:true })
+  expect(deriveCalendarAccess('legacy-user')).toMatchObject({ ownerId:'legacy-user', role:'admin', isOwner:true, canManage:true, canReconnect:true })
 })
 
 test('id do evento é estável por clínica e registro e válido para o Google', () => {

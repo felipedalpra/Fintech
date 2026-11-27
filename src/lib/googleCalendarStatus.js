@@ -14,6 +14,7 @@ export const INITIAL_STATUS = {
   email: '',
   sharedByClinic: false,
   canManage: false,
+  canReconnect: false,
   statusError: '',
 }
 
@@ -28,6 +29,7 @@ export function statusFromResponse(next = {}) {
     // Compatibilidade durante o deploy: a API antiga não enviava este campo e
     // permitia que qualquer usuário gerenciasse a própria conexão.
     canManage: next.canManage !== false,
+    canReconnect: next.canReconnect === true || (next.canReconnect == null && next.canManage !== false),
     statusError: '',
   }
 }

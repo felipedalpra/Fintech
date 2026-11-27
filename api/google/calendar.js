@@ -64,7 +64,7 @@ async function handleCallback(req, res, config) {
     const actorUserId = verifyState(req.query.state, config.stateSecret)
     if (!actorUserId) return res.status(400).send('Estado de autorizacao invalido ou expirado.')
     const access = await resolveCalendarAccess(actorUserId)
-    if (!access.canManage) throw new CalendarAccessError()
+    if (!access.canReconnect) throw new CalendarAccessError()
 
     const token = await exchangeCode(config, String(req.query.code))
     if (!String(token.scope || '').includes('calendar.events')) return back('scope')
@@ -91,6 +91,7 @@ async function handleStatus(req, res, config) {
     email:connection?.account_email || '',
     sharedByClinic:true,
     canManage:access.canManage,
+    canReconnect:access.canReconnect,
     links:Object.fromEntries(links.map(link => [linkKey(link.record_type, link.record_id), link.synced_hash])),
   })
 }
@@ -99,7 +100,7 @@ async function handleConnect(req, res, config) {
   if (!isConfigured(config)) return res.status(503).json({ error:'Integracao Google Agenda nao configurada.' })
   const user = await getAuthenticatedUser(req)
   const access = await resolveCalendarAccess(user.id)
-  if (!access.canManage) throw new CalendarAccessError()
+  if (!access.canReconnect) throw new CalendarAccessError()
   const state = signState(user.id, config.stateSecret)
   return res.status(200).json({ url:buildAuthUrl(config, state) })
 }

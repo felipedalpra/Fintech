@@ -74,13 +74,22 @@ test('membro usa a agenda compartilhada sem poder desconectar', async ({ page })
   await expect(control).toHaveAttribute('title', /gerenciada pelos administradores/)
 })
 
-test('membro aguarda o administrador conectar a agenda da clínica', async ({ page }) => {
-  await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:false, email:'', sharedByClinic:true, canManage:false, links:{} } })
+test('membro sem permissão aguarda o administrador conectar a agenda da clínica', async ({ page }) => {
+  await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:false, email:'', sharedByClinic:true, canManage:false, canReconnect:false, links:{} } })
   await page.goto('/app/calendar')
 
   const control = page.getByRole('button', { name:'Aguardando conexão' })
   await expect(control).toBeVisible()
   await expect(control).toBeDisabled()
+})
+
+test('membro pode reconectar a agenda compartilhada da clínica', async ({ page }) => {
+  await mockGoogleCalendar(page, { status:{ configured:true, connected:false, needsReconnect:true, sharedByClinic:true, canManage:false, canReconnect:true, links:{} } })
+  await page.goto('/app/calendar')
+
+  const control = page.getByRole('button', { name:'Reconectar Google Agenda da clínica' })
+  await expect(control).toBeVisible()
+  await expect(control).toBeEnabled()
 })
 
 test('envia consulta com horario para a Google Agenda ao salvar', async ({ page }) => {

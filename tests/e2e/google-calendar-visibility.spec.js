@@ -42,7 +42,7 @@ test('clínica sem a integração continua sem ver nada do Google', async ({ pag
 
 test('sem permissão o botão aparece desabilitado e explica — não some', async ({ page }) => {
   await base(page)
-  await statusResponde(page, { body: { configured: true, connected: false, canManage: false } })
+  await statusResponde(page, { body: { configured: true, connected: false, canManage: false, canReconnect: false } })
   await page.goto('/app/calendar')
   const botao = page.locator('.google-calendar-button')
   await expect(botao).toBeVisible()
