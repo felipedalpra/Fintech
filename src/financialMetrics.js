@@ -73,9 +73,14 @@ function ledgerPresentation(entry, source, data) {
   const patient = entry.party_name_snapshot || source?.patient || source?.patientName || 'Paciente não informado'
   const product = mapProduct(products, source?.productId)
 
-  if (cost && type === 'surgery') return {
-    origin:'custo_cirurgico', source:'custo_cirurgico', category:entry.category || LEDGER_COMPONENT_CATEGORY[entry.source_component] || 'outros',
-    description:`Custo cirúrgico - ${patient}`, accountDescription:`Custo cirúrgico - ${patient}`,
+  if (cost && type === 'surgery') {
+    const procedure = mapProcedureName(procedures, source?.procedureId)
+    const surgeryPatient = source?.patient || source?.patientName || patient
+    const referenceLabel = `Cirurgia: ${procedure} — ${surgeryPatient}`
+    return {
+      origin:'custo_cirurgico', source:'custo_cirurgico', category:entry.category || LEDGER_COMPONENT_CATEGORY[entry.source_component] || 'outros',
+      description:`Custo cirúrgico - ${patient}`, accountDescription:`Custo cirúrgico - ${patient}`, referenceLabel,
+    }
   }
   if (cost && type === 'consultation') return {
     origin:'custo_consulta', source:'custo_consulta', category:entry.category || 'nota_fiscal_consulta',
@@ -192,6 +197,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
       dreSection:entry.dre_section || null,
       competenceDate:entry.competence_date,
       patientId:entry.party_id || null,
+      referenceLabel:presentation.referenceLabel || '',
       openInstallments:openRows.length,
       installmentsTotal:rows.length,
       status:rawStatus && !['pago', 'recebido'].includes(rawStatus) ? rawStatus : 'pendente',

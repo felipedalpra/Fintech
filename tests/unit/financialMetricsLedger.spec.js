@@ -83,6 +83,23 @@ test('drill-downs reconciliam a centavo com os indicadores financeiros', () => {
   expect(sum('equity')).toBeCloseTo(metrics.equity, 2)
 })
 
+test('conta a pagar de custo cirúrgico identifica cirurgia, procedimento e paciente', () => {
+  const metrics = buildMetrics({
+    ...data,
+    surgeries:[{
+      ...data.surgeries[0],
+      id:'s-reference', patient:'Ana', patientId:'p1', procedureId:'proc-rino', paymentStatus:'pendente',
+      materialCost:100, paymentDate:'',
+      costSettlements:{ material_cost:{ status:'pendente', dueDate:'2026-01-20' } },
+    }],
+    procedures:[{ id:'proc-rino', name:'Rinoplastia' }],
+  }, { startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31' })
+
+  expect(metrics.accountsPayable).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana' }),
+  ]))
+})
+
 test('Fase 10: posição histórica mantém título aberto até a data da liquidação', () => {
   const january = buildMetrics(data, {
     startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31',
