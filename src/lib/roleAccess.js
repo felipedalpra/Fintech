@@ -8,7 +8,10 @@ export const ROLE_ACCESS = {
     'finance', 'financial-import', 'fiscal-documents', 'bank-reconciliation', 'goals', 'recurrences', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai', 'settings',
   ],
   financeiro: [
-    'finance', 'bank-reconciliation', 'settings',
+    // Perfil cumulativo para o Jonas: mantém o acesso operacional anterior e adiciona
+    // as rotinas financeiras sem liberar a camada gerencial.
+    'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras', 'settings',
+    'finance', 'bank-reconciliation',
   ],
   concierge: [
     'meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras', 'settings',

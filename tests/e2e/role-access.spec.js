@@ -106,4 +106,9 @@ test('financeiro operacional vê apenas as rotinas financeiras', async ({ page }
   await expect(page.getByRole('button', { name:'Indicadores', exact:true })).toHaveCount(0)
   await expect(page.getByText('Caixa atual', { exact:true })).toHaveCount(0)
   await expect(page.getByTitle('Abrir copiloto')).toHaveCount(0)
+
+  await page.goto('/app/meu-dia')
+  await expect(page.getByRole('button', { name:'Atendimentos', exact:true })).toBeVisible()
+  await expect(page.getByRole('heading', { name:'Meu dia', exact:true })).toBeVisible()
+  await expect(page.getByRole('button', { name:'Financeiro', exact:true })).toBeVisible()
 })

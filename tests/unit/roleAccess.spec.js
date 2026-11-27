@@ -20,6 +20,9 @@ test('concierge e equipe não acessam dados financeiros ou IA financeira', () =>
 })
 
 test('financeiro operacional acessa as rotinas financeiras, mas não a camada gerencial', () => {
+  for (const section of ['meu-dia', 'plans', 'sales', 'consultations', 'calendar', 'products', 'patients', 'funnel', 'inbox', 'tarefas', 'esteiras']) {
+    expect(canRoleAccess('financeiro', section)).toBe(true)
+  }
   for (const section of ['finance', 'bank-reconciliation', 'settings']) {
     expect(canRoleAccess('financeiro', section)).toBe(true)
   }
