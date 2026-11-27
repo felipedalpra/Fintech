@@ -80,6 +80,18 @@ export function computeRowsToUpsert(baselineRows, currentRows) {
   })
 }
 
+// Um patch incremental ainda precisa ser um registro válido caso o id não exista mais
+// no banco. Completar com a linha-base preserva os campos obrigatórios e evita que o
+// upsert tente inserir NULL durante uma classificação.
+export function hydrateRowsToUpsert(baselineRows, rowsToUpsert) {
+  if (!Array.isArray(baselineRows)) return rowsToUpsert || []
+  const baselineById = new Map(baselineRows.map(row => [String(row?.id || '').toLowerCase(), row]))
+  return (rowsToUpsert || []).map(row => {
+    const baseline = baselineById.get(String(row?.id || '').toLowerCase())
+    return baseline ? { ...baseline, ...row } : row
+  })
+}
+
 // MERGE por id (importar do navegador, Fase 2): mantém tudo do `current` (servidor) e acrescenta
 // só os itens de `incoming` cujo id ainda não existe. NUNCA remove nem sobrescreve o do servidor.
 export function mergeById(current, incoming) {

@@ -1,5 +1,5 @@
 import { createEmptyData, isDataEmpty, normalizeData } from '../dataModel.js'
-import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds, shouldWriteIndicatorInputs } from './financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, hydrateRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds, shouldWriteIndicatorInputs } from './financeSync.js'
 import {
   consultationFromRow,
   mapConsultationsRows,
@@ -401,7 +401,7 @@ async function syncTable(table, userId, rows, baselineRows) {
     ? protectedFinancialImportIds(baselineRows)
     : null
   const idsToDelete = computeIdsToDelete(baselineIds, rows, protectedIds)
-  const rowsToUpsert = computeRowsToUpsert(baselineRows, rows)
+  const rowsToUpsert = hydrateRowsToUpsert(baselineRows, computeRowsToUpsert(baselineRows, rows))
 
   if (idsToDelete.length > 0) {
     // SOFT-DELETE: nunca apaga fisicamente — marca archived_at. Exclusão fica reversível

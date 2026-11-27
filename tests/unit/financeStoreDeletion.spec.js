@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { computeIdsToDelete, computeRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds, resolveFinancialDraftId } from '../../src/lib/financeSync.js'
+import { computeIdsToDelete, computeRowsToUpsert, hydrateRowsToUpsert, missingRowIds, mergeById, protectedFinancialImportIds, resolveFinancialDraftId } from '../../src/lib/financeSync.js'
 
 test('retry de lançamento parcialmente salvo reutiliza a mesma chave', () => {
   const generated = []
@@ -117,6 +117,13 @@ test('salvamento incremental envia apenas campos alterados de uma linha existent
   expect(computeRowsToUpsert(baseline, current)).toEqual([{
     id:'a', user_id:'u1', category:'Receita bruta', chart_account_id:'acc-1',
   }])
+})
+
+test('upsert incremental completa o patch com a linha-base antes de inserir', () => {
+  const baseline = [{ id:'legacy-1', description:'Receita antiga', category:'outras_receitas', value:10 }]
+  const patch = computeRowsToUpsert(baseline, [{ ...baseline[0], category:'nutricao' }])
+  expect(patch[0]).toEqual({ id:'legacy-1', category:'nutricao' })
+  expect(hydrateRowsToUpsert(baseline, patch)[0]).toEqual({ ...baseline[0], category:'nutricao' })
 })
 
 test('sem baseline, salvamento incremental mantém carga completa segura', () => {
