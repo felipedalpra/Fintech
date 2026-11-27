@@ -98,6 +98,19 @@ test('conta a pagar de custo cirúrgico identifica cirurgia, procedimento e paci
   expect(metrics.accountsPayable).toEqual(expect.arrayContaining([
     expect.objectContaining({ source:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana' }),
   ]))
+  const paidMetrics = buildMetrics({
+    ...data,
+    surgeries:[{
+      ...data.surgeries[0],
+      id:'s-reference-paid', patient:'Ana', patientId:'p1', procedureId:'proc-rino', paymentStatus:'pago',
+      materialCost:100, paymentDate:'2026-01-20',
+      costSettlements:{ material_cost:{ status:'pago', dueDate:'2026-01-20', paymentDate:'2026-01-20' } },
+    }],
+    procedures:[{ id:'proc-rino', name:'Rinoplastia' }],
+  }, { startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31' })
+  expect(paidMetrics.exitsFinancial).toEqual(expect.arrayContaining([
+    expect.objectContaining({ origin:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana' }),
+  ]))
 })
 
 test('Fase 10: posição histórica mantém título aberto até a data da liquidação', () => {

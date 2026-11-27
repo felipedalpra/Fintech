@@ -160,6 +160,7 @@ function buildLedgerProjection(data, { startDate, endDate, balanceDate, recurren
           installmentDisplayNumber:row.installment_number,
           installmentsTotal:rows.length,
           sourceComponent:entry.source_component,
+          referenceLabel:presentation.referenceLabel || '',
           paymentMethod:row.payment_method || '',
           chartAccountId:entry.chart_account_id || null,
           accountNature:entry.account_nature || null,

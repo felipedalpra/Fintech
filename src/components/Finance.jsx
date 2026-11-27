@@ -1689,7 +1689,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </Card>
         )}
 
-        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3, 4]} pagerTestId="exits-pager" rows={filteredExitsFinancial.map(item => {
+        <RecordTable columns={['Data', 'Categoria', 'Descrição', 'Referente a', 'Origem do contato', 'Valor', 'Documento fiscal', 'Ações']} sortableColumns={[0, 1, 3, 4, 5]} pagerTestId="exits-pager" rows={filteredExitsFinancial.map(item => {
           const editSourceMap = { despesa:data.expenses, compra_produto:data.productPurchases }
           const editTypeMap = { despesa:'expense', compra_produto:'product-purchase' }
           const sourceRecord = (editSourceMap[item.origin] || []).find(r => r.id === item.referenceId)
@@ -1709,7 +1709,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
               {removeBtn || <span style={{ color:C.textDim, fontSize:11 }}>—</span>}
             </div>
           )
-          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, resolveOrigin(item), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, actionCell], rawCells:[item.date, item.category, item.description, resolveOrigin(item), item.value, fiscalDocumentsSearchText(fiscalDocsFor(item)), ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
+          return { key:item.id, cells:[formatDateBR(item.date), item.category, item.description, item.referenceLabel || '—', resolveOrigin(item), <span style={{ color:C.red, fontWeight:700 }}>{money(item.value)}</span>, <FiscalDocumentCell documents={fiscalDocsFor(item)} onClick={() => openFiscalDocuments(item)} />, actionCell], rawCells:[item.date, item.category, item.description, item.referenceLabel || '', resolveOrigin(item), item.value, fiscalDocumentsSearchText(fiscalDocsFor(item)), ['despesa','compra_produto'].includes(item.origin) ? 1 : 0] }
         })} emptyMessage="Nenhuma saída financeira no período." />
       </>}
 
