@@ -426,7 +426,7 @@ function BrowserDataRecovery() {
   )
 }
 
-const ROLE_LABELS = { admin:'Administrador', gestao:'Gestão', concierge:'Concierge', equipe:'Equipe' }
+const ROLE_LABELS = { admin:'Administrador', gestao:'Gestão', financeiro:'Financeiro operacional', concierge:'Concierge', equipe:'Equipe' }
 
 function FullPlatformExport({ data, profile, clinicName, loadingProfile }) {
   const [exporting, setExporting] = useState(false)
@@ -604,6 +604,7 @@ function TeamSettings({ clinicId }) {
               options={[
                 { v:'admin', l:'Administrador' },
                 { v:'gestao', l:'Gestão' },
+                { v:'financeiro', l:'Financeiro operacional' },
                 { v:'concierge', l:'Concierge' },
                 { v:'equipe', l:'Equipe' },
               ]}
@@ -659,6 +660,7 @@ function TeamSettings({ clinicId }) {
                   >
                     <option value="admin">Administrador</option>
                     <option value="gestao">Gestão</option>
+                    <option value="financeiro">Financeiro operacional</option>
                     <option value="concierge">Concierge</option>
                     <option value="equipe">Equipe</option>
                   </select>

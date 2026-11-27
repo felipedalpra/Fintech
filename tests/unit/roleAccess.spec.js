@@ -19,6 +19,15 @@ test('concierge e equipe não acessam dados financeiros ou IA financeira', () =>
   }
 })
 
+test('financeiro operacional acessa as rotinas financeiras, mas não a camada gerencial', () => {
+  for (const section of ['finance', 'bank-reconciliation', 'settings']) {
+    expect(canRoleAccess('financeiro', section)).toBe(true)
+  }
+  for (const section of ['dashboard', 'goals', 'reports', 'ledger-check', 'data-quality', 'chart-of-accounts', 'ai']) {
+    expect(canRoleAccess('financeiro', section)).toBe(false)
+  }
+})
+
 test('perfis operacionais preservam agenda, pacientes, WhatsApp e tarefas', () => {
   for (const role of ['concierge', 'equipe']) {
     for (const page of ['meu-dia', 'calendar', 'patients', 'inbox', 'tarefas']) {

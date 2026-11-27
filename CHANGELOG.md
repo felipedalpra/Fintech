@@ -9,6 +9,8 @@ Este projeto segue o padrão de changelog por versão, com categorias fixas:
 
 ### Added
 
+- Criado o perfil **Financeiro operacional**, separado de Gestão. Ele pode executar rotinas de lançamentos, contas a receber/pagar, cobranças e conciliação, sem acesso ao Dashboard, caixa atual, DRE, fluxo, indicadores, metas, relatórios gerenciais, plano de contas, alertas financeiros ou assistente financeiro. (`src/lib/roleAccess.js`, `src/components/Finance.jsx`, `src/components/Settings.jsx`, `src/pages/FinanceWorkspace.jsx`, `api/_lib/billing.js`, `supabase/financeiro_operacional_role.sql`, `tests/e2e/role-access.spec.js`.)
+
 - A assinatura BRy agora só pode ser solicitada em lotes de exatamente 10 documentos. A fila bloqueia lotes incompletos e o backend rejeita qualquer quantidade diferente, removendo a criação acidental de envelopes individuais. O fluxo ganhou cobertura E2E para lotes com menos de 10, seleção exata, confirmação de custo e bloqueio da assinatura individual. (`src/components/ClinicalWorkspaceViews.jsx`, `api/_lib/clinicalSignatureBry.js`, `api/_lib/bryEasySign.js`, `tests/e2e/clinical-signature-bry.spec.js`.)
 
 ### Fixed

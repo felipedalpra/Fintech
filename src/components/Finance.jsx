@@ -241,7 +241,8 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
   const { financialPrivacyMode } = useFinancialPrivacy()
   const { toast } = useToast()
   const { ownerId, role } = useUserRole()
-  const [tab, setTab] = useState(defaultTab)
+  const operationalFinance = role === 'financeiro'
+  const [tab, setTab] = useState(operationalFinance ? 'receber' : defaultTab)
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ start:'', end:'' })
   const [modalType, setModalType] = useState(() => readModalDraft()?.modalType || null)
@@ -1149,6 +1150,13 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
     ['fluxo', 'Fluxo de caixa'],
     ['indicadores', 'Indicadores'],
   ]
+  const visibleTabs = operationalFinance
+    ? tabs.filter(([id]) => ['entradas', 'saidas', 'receber', 'pagar', 'inadimplencia'].includes(id))
+    : tabs
+
+  useEffect(() => {
+    if (operationalFinance && !visibleTabs.some(([id]) => id === tab)) setTab('receber')
+  }, [operationalFinance, tab])
 
   // Compatibilidade visual quando o schema/plano de contas ainda não estiver disponível.
   const legacyDreRows = [
@@ -1426,7 +1434,7 @@ export function Finance({ data, setData, saveDataNow, applyServerConfirmedData, 
           </div>
 
           <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2, alignItems:'center' }}>
-            {tabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} style={{ background:tab === id ? C.card : 'transparent', color:tab === id ? C.text : C.textSub, border:tab === id ? `1px solid ${C.border}` : '1px solid transparent', borderRadius:999, padding:'9px 14px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s', whiteSpace:'nowrap' }}>{label}</button>)}
+            {visibleTabs.map(([id, label]) => <button key={id} onClick={() => setTab(id)} style={{ background:tab === id ? C.card : 'transparent', color:tab === id ? C.text : C.textSub, border:tab === id ? `1px solid ${C.border}` : '1px solid transparent', borderRadius:999, padding:'9px 14px', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', transition:'all 0.2s', whiteSpace:'nowrap' }}>{label}</button>)}
           </div>
         </div>
       </div>

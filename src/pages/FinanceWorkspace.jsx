@@ -58,7 +58,7 @@ const CareTracks = lazyNamed(() => import('../components/CareTracks.jsx'), 'Care
 // Cada área tem uma barra no topo; a sidebar mostra a sub-navegação da área ativa.
 // `roles` controla a visibilidade da área na barra; `comingSoon` = área sem features ainda (Fases 2/4).
 // IA não é item de menu — vive no CopilotWidget global.
-const ALL_ROLES = ['admin', 'gestao', 'concierge', 'equipe']
+const ALL_ROLES = ['admin', 'gestao', 'financeiro', 'concierge', 'equipe']
 
 const AREAS = [
   {
@@ -107,7 +107,7 @@ const AREAS = [
     ],
   },
   {
-    id:'financeiro', label:'Financeiro', icon:'finance', roles:['admin', 'gestao'],
+    id:'financeiro', label:'Financeiro', icon:'finance', roles:['admin', 'gestao', 'financeiro'],
     sections:[
       { title:'Movimento', items:[
         { id:'finance', label:'Financeiro', icon:'finance', hint:'Caixa, DRE e balanço' },
@@ -711,6 +711,7 @@ export function FinanceWorkspace() {
   const { mode, toggleTheme } = useTheme()
   const { presentationMode, togglePresentationMode } = useFinancialPrivacy()
   const { canAccess, clinicName, ownerId, role, loading: roleLoading, scopeError } = useUserRole()
+  const canSeeFinancialIndicators = role === 'admin' || role === 'gestao'
   const isLightMode = mode === 'light'
   const [data, setRaw] = useState(createEmptyData)
   const [loading, setLoading] = useState(true)
@@ -1228,7 +1229,7 @@ export function FinanceWorkspace() {
         </div>
         <div data-testid="notification-bell-dock" style={{ flex:'0 0 auto', display:'flex', alignItems:'center', gap:8, marginLeft:isMobile ? 8 : 14, paddingLeft:isMobile ? 8 : 14, background:C.surface, borderLeft:`1px solid ${C.border}` }}>
           {isInboxPage && !isMobile && <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact />}
-          <NotificationBell data={safeData} summary={summary} canFinance={canAccess('finance')} onNavigate={id => navigate(`/app/${id}`)} />
+          <NotificationBell data={safeData} summary={summary} canFinance={canSeeFinancialIndicators} onNavigate={id => navigate(`/app/${id}`)} />
         </div>
       </nav>
 
@@ -1276,7 +1277,7 @@ export function FinanceWorkspace() {
           {isMobile && <div style={{ fontSize:10, color:C.textDim, marginTop:1 }}>{presentationMode ? maskEmail(user.email) : user.email}</div>}
         </div>
 
-        {canAccess('finance') && activeAreaId !== 'clinico' && <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
+        {canSeeFinancialIndicators && activeAreaId !== 'clinico' && <div style={{ padding:isMobile ? '16px 20px' : (ultraCompactDesktop ? '7px 12px' : '9px 14px'), borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg, transparent, ${C.accent}0F)` }}>
           <div style={{ fontSize:10, color:C.textDim, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6 }}>Resumo rápido</div>
           <div style={{ display:'flex', flexDirection:'column', gap:ultraCompactDesktop ? 2 : 4 }}>
             <div>
@@ -1449,7 +1450,7 @@ export function FinanceWorkspace() {
             <strong style={{ color:C.text, fontSize:17 }}>WhatsApp</strong>
             <span style={{ flex:1 }} />
             <FeatureExportButton page={page} data={safeData} clinicName={clinicName} compact />
-            <NotificationBell data={safeData} summary={summary} canFinance={canAccess('finance')} onNavigate={id => navigate(`/app/${id}`)} />
+            <NotificationBell data={safeData} summary={summary} canFinance={canSeeFinancialIndicators} onNavigate={id => navigate(`/app/${id}`)} />
           </div>
         )}
 

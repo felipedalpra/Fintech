@@ -10,4 +10,4 @@ alter table public.clinic_members
 
 alter table public.clinic_members
   add constraint clinic_members_role_check
-  check (role in ('admin', 'gestao', 'concierge', 'equipe'));
+  check (role in ('admin', 'gestao', 'financeiro', 'concierge', 'equipe'));

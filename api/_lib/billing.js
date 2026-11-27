@@ -64,7 +64,7 @@ async function authContext(req, { requireFinance = true, requireAdmin = false } 
   const { data:ownerId, error:ownerError } = await scoped.rpc('data_owner_id')
   if (ownerError || !ownerId) throw Object.assign(new Error('Não foi possível identificar a clínica.'), { statusCode:403 })
   if (requireFinance) {
-    const { data:canManage, error:roleError } = await scoped.rpc('finance_role_can_manage')
+    const { data:canManage, error:roleError } = await scoped.rpc('finance_role_can_operate')
     if (roleError || !canManage) throw Object.assign(new Error('Seu perfil não pode administrar cobranças.'), { statusCode:403 })
   }
   if (requireAdmin && userData.user.id !== ownerId) {

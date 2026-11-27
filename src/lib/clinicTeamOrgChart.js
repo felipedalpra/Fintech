@@ -8,11 +8,12 @@
 export const ORG_ROLE_LABELS = {
   admin:'Administrador',
   gestao:'Gestão',
+  financeiro:'Financeiro operacional',
   concierge:'Concierge',
   equipe:'Equipe',
 }
 
-const ROLE_ORDER = ['admin', 'gestao', 'concierge', 'equipe']
+const ROLE_ORDER = ['admin', 'gestao', 'financeiro', 'concierge', 'equipe']
 
 function displayName(member) {
   const professional = String(member?.professional_name || '').trim()

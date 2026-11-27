@@ -93,3 +93,17 @@ test('equipe grava uma consulta sem esbarrar na tabela de indicadores protegida 
   await expect(page.getByText('não foram confirmadas no banco', { exact:false })).toHaveCount(0)
   expect(indicatorWrites).toEqual([])
 })
+
+test('financeiro operacional vê apenas as rotinas financeiras', async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem('surgimetrics_e2e_role', 'financeiro'))
+  await page.goto('/app/finance')
+
+  await expect(page.getByTestId('sub-nav').getByRole('button', { name:'Financeiro', exact:true })).toBeVisible()
+  await expect(page.getByRole('button', { name:'A receber', exact:true })).toBeVisible()
+  await expect(page.getByRole('button', { name:'A pagar', exact:true })).toBeVisible()
+  await expect(page.getByRole('button', { name:'DRE', exact:true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name:'Fluxo de caixa', exact:true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name:'Indicadores', exact:true })).toHaveCount(0)
+  await expect(page.getByText('Caixa atual', { exact:true })).toHaveCount(0)
+  await expect(page.getByTitle('Abrir copiloto')).toHaveCount(0)
+})
