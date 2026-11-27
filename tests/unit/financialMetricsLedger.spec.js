@@ -96,7 +96,7 @@ test('conta a pagar de custo cirúrgico identifica cirurgia, procedimento e paci
   }, { startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31' })
 
   expect(metrics.accountsPayable).toEqual(expect.arrayContaining([
-    expect.objectContaining({ source:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana' }),
+    expect.objectContaining({ source:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana · 10/01/2026' }),
   ]))
   const paidMetrics = buildMetrics({
     ...data,
@@ -109,7 +109,7 @@ test('conta a pagar de custo cirúrgico identifica cirurgia, procedimento e paci
     procedures:[{ id:'proc-rino', name:'Rinoplastia' }],
   }, { startDate:'2026-01-01', endDate:'2026-01-31', balanceDate:'2026-01-31' })
   expect(paidMetrics.exitsFinancial).toEqual(expect.arrayContaining([
-    expect.objectContaining({ origin:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana' }),
+    expect.objectContaining({ origin:'custo_cirurgico', referenceLabel:'Cirurgia: Rinoplastia — Ana · 10/01/2026' }),
   ]))
 })
 

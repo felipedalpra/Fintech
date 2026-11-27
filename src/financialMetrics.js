@@ -32,6 +32,11 @@ function mapProcedureName(procedures, id) {
   return procedures.find(item => item.id === id)?.name || 'Sem procedimento'
 }
 
+function formatReferenceDate(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : ''
+}
+
 function mapProduct(products, id) {
   return products.find(item => item.id === id)
 }
@@ -76,7 +81,8 @@ function ledgerPresentation(entry, source, data) {
   if (cost && type === 'surgery') {
     const procedure = mapProcedureName(procedures, source?.procedureId)
     const surgeryPatient = source?.patient || source?.patientName || patient
-    const referenceLabel = `Cirurgia: ${procedure} — ${surgeryPatient}`
+    const surgeryDate = formatReferenceDate(source?.date)
+    const referenceLabel = `Cirurgia: ${procedure} — ${surgeryPatient}${surgeryDate ? ` · ${surgeryDate}` : ''}`
     return {
       origin:'custo_cirurgico', source:'custo_cirurgico', category:entry.category || LEDGER_COMPONENT_CATEGORY[entry.source_component] || 'outros',
       description:`Custo cirúrgico - ${patient}`, accountDescription:`Custo cirúrgico - ${patient}`, referenceLabel,
